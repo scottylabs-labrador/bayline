@@ -891,14 +891,17 @@ const TrackGeo = (() => {
   // ======================================================================================================
   function buildBridge(mb, ch, ba, bb) {
     const a = Math.max(ba, ch.s0), b = Math.min(bb, ch.s1); if (b <= a) return;
-    const len = bb - ba; const type = len < 22 ? 'slab' : len < 70 ? 'truss' : 'deck';
+    // grade separations under stations are concrete: the platforms cover the deck edges, so no girders or parapets there
+    const len = bb - ba, atSt = stationAt(ba, 30) || stationAt(bb, 30);
+    const type = len < 22 || (atSt && len < 70) ? 'slab' : len < 70 ? 'truss' : 'deck';
     const ss = []; for (let s = a; s < b; s += 5) ss.push(s); ss.push(b);
+    const runs = []; { let r = []; for (const s of ss) { if (atSt && stationAt(s, 3)) { if (r.length > 1) runs.push(r); r = []; } else r.push(s); } if (r.length > 1) runs.push(r); }
     const edges = (s) => { sortedLanes(s); return [_arr[0] - 2.35, _arr[3] + 2.35]; };
     const bottom = type === 'deck' ? -1.25 : -1.45;
     // deck slab: outer curb faces, sides and underside (segments ordered so every normal faces out)
     mb.sweep(ss, (s) => { const [l, r] = edges(s); return [[l + 0.3, -0.45, l, -0.45, PAL.concrete], [l, -0.45, l, bottom, PAL.concrete], [r, bottom, l, bottom, PAL.concreteDark], [r, bottom, r, -0.45, PAL.concrete], [r, -0.45, r - 0.3, -0.45, PAL.concrete]]; }, ch.ox, ch.oz);
-    if (type === 'slab') {   // concrete parapets
-      mb.sweep(ss, (s) => { const [l, r] = edges(s); return [[l, -0.45, l, 0.55, PAL.concrete], [l, 0.55, l + 0.28, 0.55, PAL.concrete], [l + 0.28, 0.55, l + 0.28, -0.45, PAL.concrete], [r - 0.28, -0.45, r - 0.28, 0.55, PAL.concrete], [r - 0.28, 0.55, r, 0.55, PAL.concrete], [r, 0.55, r, -0.45, PAL.concrete]]; }, ch.ox, ch.oz);
+    if (type === 'slab') {   // concrete parapets (not along platforms)
+      for (const rs of runs) mb.sweep(rs, (s) => { const [l, r] = edges(s); return [[l, -0.45, l, 0.55, PAL.concrete], [l, 0.55, l + 0.28, 0.55, PAL.concrete], [l + 0.28, 0.55, l + 0.28, -0.45, PAL.concrete], [r - 0.28, -0.45, r - 0.28, 0.55, PAL.concrete], [r - 0.28, 0.55, r, 0.55, PAL.concrete], [r, 0.55, r, -0.45, PAL.concrete]]; }, ch.ox, ch.oz);
     } else if (type === 'truss') {   // through plate girders with stiffeners
       mb.sweep(ss, (s) => { const [l, r] = edges(s); const gl = l - 0.35, gr = r + 0.35;
         return [[gl - 0.3, -1.8, gl - 0.3, -1.75, PAL.steelGreen], [gl, -1.75, gl, 0.95, PAL.steelGreen], [gl - 0.28, 0.95, gl + 0.28, 0.95, PAL.steelGreen], [gl + 0.02, 0.95, gl + 0.02, -1.75, PAL.steelGreen],
@@ -907,8 +910,8 @@ const TrackGeo = (() => {
         for (const lat of [l - 0.42, r + 0.42]) mb.box(Fs.x + Fs.rx * lat - ch.ox, Fs.y - 0.4, Fs.z + Fs.rz * lat - ch.oz, T, UP, R, 0.012, 1.35, 0.085, PAL.steelGreen); }
     } else {   // deck girders under the slab + railings
       mb.sweep(ss, (s) => { const [l, r] = edges(s); const out = []; for (const g of [l + 0.9, (l + r) / 2 - 0.9, (l + r) / 2 + 0.9, r - 0.9]) out.push([g - 0.012, -1.25, g - 0.012, -2.9, PAL.steel], [g - 0.25, -2.9, g + 0.25, -2.9, PAL.steel], [g + 0.012, -2.9, g + 0.012, -1.25, PAL.steel]); return out; }, ch.ox, ch.oz);
-      mb.sweep(ss, (s) => { const [l, r] = edges(s); return [[l - 0.02, 0.6, l + 0.02, 0.6, PAL.galv], [r - 0.02, 0.6, r + 0.02, 0.6, PAL.galv], [l - 0.02, 0.1, l + 0.02, 0.1, PAL.galv], [r - 0.02, 0.1, r + 0.02, 0.1, PAL.galv]]; }, ch.ox, ch.oz);
-      for (let s = Math.ceil(a / 2) * 2; s < b; s += 2) { const Fs = frameAt(s); const [l, r] = edges(s);
+      for (const rs of runs) mb.sweep(rs, (s) => { const [l, r] = edges(s); return [[l - 0.02, 0.6, l + 0.02, 0.6, PAL.galv], [r - 0.02, 0.6, r + 0.02, 0.6, PAL.galv], [l - 0.02, 0.1, l + 0.02, 0.1, PAL.galv], [r - 0.02, 0.1, r + 0.02, 0.1, PAL.galv]]; }, ch.ox, ch.oz);
+      for (let s = Math.ceil(a / 2) * 2; s < b; s += 2) { if (atSt && stationAt(s, 3)) continue; const Fs = frameAt(s); const [l, r] = edges(s);
         for (const lat of [l, r]) { const x = Fs.x + Fs.rx * lat - ch.ox, z = Fs.z + Fs.rz * lat - ch.oz; mb.cyl(x, Fs.y - 0.45, z, x, Fs.y + 0.62, z, 0.025, 0.025, 5, PAL.galv); } }
     }
     // piers (from the deck bottom down to the real ground) and abutments

@@ -128,13 +128,18 @@ const Env = (() => {
       sun.color.copy(Sky.sunLight.color); sun.intensity = Sky.sunLight.intensity;
       const a = Sky.ambient, al = Math.max(1e-4, 0.2126 * a.r + 0.7152 * a.g + 0.0722 * a.b);
       hemi.color.setRGB(a.r / al, a.g / al, a.b / al).multiplyScalar(0.55).addScalar(0.45);
-      hemi.groundColor.setRGB(0.54, 0.45, 0.32).multiplyScalar(0.35 + 0.65 * sunUp);
     } else {
       sun.color.setRGB(1, 0.96, 0.9); sun.intensity = 3.0 * sunUp;
       hemi.color.set(0xd8e4f2); hemi.groundColor.set(0x6a5a3a);
     }
     sun.castShadow = sunUp > 0.05;
     hemi.intensity = 0.16 + 0.3 * sunUp + 0.12 * state.night;
+    if (typeof Sky !== 'undefined') {
+      // ground bounce: the sunlit ground (albedo ~0.2) lights every downward-facing surface (canopy soffits, the
+      // shaded flanks of trains and walls) at ~albedo x (direct + sky) irradiance, in the hemisphere light's units
+      const gb = 0.2 * (sun.intensity * Math.max(sunDir.y, 0) + hemi.intensity) / hemi.intensity;
+      hemi.groundColor.setRGB(1.06 * gb, 0.97 * gb, 0.84 * gb);
+    }
     const moonUp = U.smooth(-0.03, 0.2, moonDir.y);
     moon.intensity = 0.3 * state.night * moonUp * (0.25 + 0.75 * state.moonPhase);
     moon.position.copy(camPos).addScaledVector(moonDir, 600); moon.target.position.copy(camPos);

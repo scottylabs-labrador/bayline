@@ -174,12 +174,72 @@ const Terrain = (() => {
     t.anisotropy = maxAniso; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
     return (waveTex = t);
   }
+  // ---------- eye-level ground detail: four tileable grey-scale patterns in one mipmapped texture ----------
+  // R asphalt (aggregate), G dirt (grit and pebbles), B grass (blades over soil), A concrete (speckle and voids): 512 px
+  // over a 2.5 m tile (5 mm/px). Each channel has mean 0.5 and modulates the photo's local colour; mipmaps and
+  // anisotropic filtering band-limit it at any distance.
+  const GTILE = 2.5;
+  let groundTex = null;
+  function groundDetailTexture() {
+    if (groundTex) return groundTex;
+    const N = 512, M = N - 1, r = U.rng(4242), C = [0, 1, 2, 3].map(() => new Float32Array(N * N).fill(0.5));
+    const vnoise = (a, cells, amp) => {                    // tileable smooth value noise with `cells` lattice cells per side
+      const g = new Float32Array(cells * cells); for (let i = 0; i < g.length; i++) g[i] = r() * 2 - 1;
+      for (let y = 0; y < N; y++) {
+        const fy = y * cells / N, y0 = Math.floor(fy), ty = fy - y0, sy = ty * ty * (3 - 2 * ty), r0 = (y0 % cells) * cells, r1 = ((y0 + 1) % cells) * cells;
+        for (let x = 0; x < N; x++) {
+          const fx = x * cells / N, x0 = Math.floor(fx), tx = fx - x0, sx = tx * tx * (3 - 2 * tx), c0 = x0 % cells, c1 = (x0 + 1) % cells;
+          a[y * N + x] += amp * ((g[r0 + c0] * (1 - sx) + g[r0 + c1] * sx) * (1 - sy) + (g[r1 + c0] * (1 - sx) + g[r1 + c1] * sx) * sy);
+        }
+      }
+    };
+    const grain = (a, amp) => { for (let i = 0; i < N * N; i++) a[i] += (r() * 2 - 1) * amp; };
+    // soft-edged disc (wraps around the tile); dome > 0 brightens the middle (a rounded stone), ring > 0 adds a contact shadow
+    const disc = (a, cx, cy, rad, v, dome = 0, ring = 0) => {
+      const R = Math.ceil(rad + 2);
+      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+        const d = Math.hypot(dx, dy), o = ((cy + dy) & M) * N + ((cx + dx) & M);
+        const w = Math.min(1, Math.max(0, rad + 0.5 - d));
+        if (w > 0) a[o] += (v + dome * (1 - d / (rad + 0.5)) - a[o]) * w;
+        else if (ring && d < rad + 2) a[o] -= ring * (1 - (d - rad - 0.5) / 1.5);
+      }
+    };
+    const blade = (a, x, y, ang, len, v) => {              // one grass blade seen from above: a 1 px stroke, lighter at the tip
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      for (let t = 0; t < len; t++) { const o = ((Math.round(y + dy * t)) & M) * N + ((Math.round(x + dx * t)) & M); a[o] += (v + 0.12 * t / len - a[o]) * 0.85; }
+    };
+    const ri = () => Math.floor(r() * N);
+    // R: asphalt — bitumen with light and dark aggregate, a few larger stones
+    { const a = C[0]; vnoise(a, 4, 0.05); vnoise(a, 16, 0.04); grain(a, 0.05);
+      for (let i = 0; i < 16000; i++) disc(a, ri(), ri(), 0.35 + r() * 1.1, r() < 0.68 ? 0.62 + 0.2 * r() : 0.3 + 0.1 * r());
+      for (let i = 0; i < 700; i++) disc(a, ri(), ri(), 1.4 + r() * 1.5, 0.6 + 0.2 * r(), 0.05, 0.05); }
+    // G: dirt — grit and pebbles with rounded tops and contact shadows over a mottled soil
+    { const a = C[1]; vnoise(a, 3, 0.07); vnoise(a, 12, 0.06); vnoise(a, 48, 0.05); grain(a, 0.07);
+      for (let i = 0; i < 14000; i++) disc(a, ri(), ri(), 0.35 + r() * 0.6, 0.5 + (r() - 0.5) * 0.36);
+      for (let i = 0; i < 1100; i++) disc(a, ri(), ri(), 1.2 + Math.pow(r(), 2) * 5, 0.42 + 0.3 * r(), 0.1, 0.08); }
+    // B: grass — soil showing between thousands of blades in every direction
+    { const a = C[2]; a.fill(0.3); vnoise(a, 8, 0.05); grain(a, 0.04);
+      for (let i = 0; i < 26000; i++) blade(a, r() * N, r() * N, r() * 6.2832, 5 + r() * 11, 0.48 + 0.3 * r()); }
+    // A: concrete — fine speckle, air voids, faint trowel mottling
+    { const a = C[3]; vnoise(a, 2, 0.035); vnoise(a, 10, 0.03); vnoise(a, 40, 0.02); grain(a, 0.03);
+      for (let i = 0; i < 6000; i++) disc(a, ri(), ri(), 0.35 + r() * 0.55, r() < 0.6 ? 0.36 : 0.6); }
+    const d = new Uint8Array(N * N * 4), sd = [0.085, 0.11, 0.13, 0.06];
+    for (let c = 0; c < 4; c++) {
+      const a = C[c]; let m = 0, v = 0; for (let i = 0; i < N * N; i++) m += a[i]; m /= N * N;
+      for (let i = 0; i < N * N; i++) v += (a[i] - m) ** 2; const k = sd[c] / Math.sqrt(v / (N * N));
+      for (let i = 0; i < N * N; i++) d[i * 4 + c] = Math.max(0, Math.min(255, Math.round(((a[i] - m) * k + 0.5) * 255)));
+    }
+    const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+    t.anisotropy = maxAniso; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
+    return (groundTex = t);
+  }
   function makeMaterial() {
     const u = {
       hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
       iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
-      skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind,
+      skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind, uGround: { value: groundDetailTexture() },
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
@@ -204,11 +264,15 @@ const Terrain = (() => {
           uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo;
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel;
           uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
-          uniform float night; uniform float time; uniform sampler2D uWaveN; uniform float uWindW;
+          uniform float night; uniform float time; uniform sampler2D uWaveN; uniform float uWindW; uniform sampler2D uGround;
           varying vec3 vW; varying vec2 vUV;
           float th(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
           float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
             return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }
+          // band-limited noise: fades to its mean as the pattern nears the pixel footprint (fw = footprint in noise
+          // units), so no term can alias into stripes or radial streaks at grazing angles
+          float tnb(vec2 p, float fw) { return mix(0.5, tn(p), 1.0 - smoothstep(0.15, 0.4, fw)); }
+          float thb(vec2 p, float fw) { return mix(0.5, th(floor(p)), 1.0 - smoothstep(0.06, 0.2, fw)); }
           vec3 gN; float gRough; vec3 gEmis; float gWater;
           // one wave layer: LEAN sample of the slope map in a frame rotated by (c, s); returns the slope rotated back
           // (xy) and the unresolved slope variance inside the pixel footprint (z)
@@ -228,6 +292,8 @@ const Terrain = (() => {
             vec4 mk = texture2D(mTex, (mUV.xy + vUV * mUV.zw) * mTC.x + mTC.y);
             float water = smoothstep(0.45, 0.6, mk.r);
             float dcam = distance(vW, cameraPosition);
+            vec2 qdx = dFdx(vW.xz), qdy = dFdy(vW.xz);                         // taken here, outside any branch
+            float fwq = abs(qdx.x) + abs(qdy.x) + abs(qdx.y) + abs(qdy.y);
             // ---- albedo: the photograph (or a quiet fallback before it streams in) ----
             vec3 col;
             if (iHas > 0.5) {
@@ -236,7 +302,9 @@ const Terrain = (() => {
               // eye level: the photo's baked-in cars, shadows and lines smear into blobs at grazing angles, so near a low
               // camera the ground becomes a synthesized surface (asphalt, concrete, grass, dry grass, dirt) whose colour is
               // the photo's local ~5 m average; aerial views keep the photograph untouched
-              float lowCam = 1.0 - smoothstep(12.0, 55.0, cameraPosition.y - vW.y);
+              // only a camera at eye/cab height (walking, platforms, the cab) sees the smear; from trackside, chase and
+              // helicopter heights the super-resolved photograph itself looks better, so it stays
+              float lowCam = 1.0 - smoothstep(5.0, 16.0, cameraPosition.y - vW.y);
               float eye = lowCam * (1.0 - smoothstep(0.45, 0.6, mk.r));
               if (eye > 0.01) {
                 vec3 lf = textureLod(iTex, iuv, clamp(log2(5.0 / iTexel), 0.0, 10.0)).rgb;
@@ -246,19 +314,21 @@ const Terrain = (() => {
                 float sat = (max(lf.r, max(lf.g, lf.b)) - min(lf.r, min(lf.g, lf.b))) / max(lum, 0.03);
                 float veg = smoothstep(-0.005, 0.03, lf.g - max(lf.r * 0.96, lf.b));
                 float grey = 1.0 - smoothstep(0.1, 0.24, sat);
-                vec2 q = vW.xz; float fwq = fwidth(q.x) + fwidth(q.y);
-                float fine = 1.0 - smoothstep(0.02, 0.1, fwq), mid = 1.0 - smoothstep(0.1, 0.45, fwq);
-                // pavement: asphalt (dark) or concrete (light), aggregate grain, soft wear, sealed cracks
-                float grain = (th(floor(q * 14.0)) - 0.5) * fine + (tn(q * 2.3) - 0.5) * 0.6 * mid;
-                float wear = tn(q * 0.35);
-                float crack = (1.0 - smoothstep(0.0, 0.02, abs(tn(q * 0.41 + 7.7) - 0.5))) * smoothstep(0.5, 0.75, tn(q * 0.07)) * mid;
-                vec3 pave = lf * (0.92 + 0.16 * grain + 0.1 * (wear - 0.5)) * (1.0 - 0.3 * crack);
-                // vegetation: grass with clumps and blades, straw patches where the photo is golden
-                float clump = tn(q * 1.3), blades = th(floor(q * 22.0));
-                vec3 grass = lf * (0.8 + 0.34 * clump + 0.22 * (blades - 0.5) * fine);
-                grass = mix(grass, grass * vec3(1.08, 1.02, 0.86), smoothstep(0.5, 0.8, tn(q * 0.23)) * 0.6);
-                // bare ground: soil with pebbles
-                vec3 dirt = lf * (0.86 + 0.26 * tn(q * 1.9) + 0.18 * (th(floor(q * 18.0)) - 0.5) * fine);
+                vec2 q = vW.xz;
+                // real surface texture: two rotated scales of the detail tile (no visible repeat), mip-filtered
+                vec2 q2 = vec2(0.8 * q.x + 0.6 * q.y, -0.6 * q.x + 0.8 * q.y) / ${(GTILE * 2.9).toFixed(2)};
+                vec2 q2dx = vec2(0.8 * qdx.x + 0.6 * qdx.y, -0.6 * qdx.x + 0.8 * qdx.y) / ${(GTILE * 2.9).toFixed(2)};
+                vec2 q2dy = vec2(0.8 * qdy.x + 0.6 * qdy.y, -0.6 * qdy.x + 0.8 * qdy.y) / ${(GTILE * 2.9).toFixed(2)};
+                vec4 gd = mix(textureGrad(uGround, q / ${GTILE.toFixed(1)}, qdx / ${GTILE.toFixed(1)}, qdy / ${GTILE.toFixed(1)}), textureGrad(uGround, q2, q2dx, q2dy), 0.38) - 0.5;
+                // pavement: asphalt (dark) or concrete (light) with its aggregate and soft wear; the photo gives the tint
+                float wear = tnb(q * 0.35, fwq * 0.35), asph = 1.0 - smoothstep(0.07, 0.2, lum);
+                vec3 pave = lf * (1.0 + mix(gd.a * 1.3, gd.r * 1.8, asph) + 0.12 * (wear - 0.5));
+                // vegetation: grass blades over soil, clumps, straw patches where the photo is golden
+                float clump = tnb(q * 1.3, fwq * 1.3);
+                vec3 grass = lf * (0.86 + 0.28 * clump) * (1.0 + gd.b * 1.9);
+                grass = mix(grass, grass * vec3(1.08, 1.02, 0.86), smoothstep(0.5, 0.8, tnb(q * 0.23, fwq * 0.23)) * 0.6);
+                // bare ground: soil with grit and pebbles
+                vec3 dirt = lf * (0.9 + 0.2 * tnb(q * 1.9, fwq * 1.9)) * (1.0 + gd.g * 1.8);
                 vec3 synth = mix(mix(dirt, pave, grey), grass, veg * (1.0 - grey * 0.6));
                 col = mix(col, synth, eye * 0.96);
               }
@@ -273,33 +343,30 @@ const Terrain = (() => {
             if (det > 0.0) {
               // surface-aware micro detail from the landcover class (mask A): each pattern fades before it can alias
               vec2 p = vW.xz; float cls = floor(mk.a * 255.0 + 0.5);
-              float fw = fwidth(p.x) + fwidth(p.y);
-              float fine = 1.0 - smoothstep(0.03, 0.12, fw), mid = 1.0 - smoothstep(0.12, 0.5, fw);
-              float d1 = tn(p * 1.7), d2 = tn(p * 0.43);
-              // every noise term is band-limited by its footprint (fwidth), or it aliases into stripes at grazing angles
-              float f17 = 1.0 - smoothstep(0.08, 0.35, fw), f04 = 1.0 - smoothstep(0.3, 1.4, fw), f21 = 1.0 - smoothstep(0.06, 0.28, fw);
-              float gain = ((d1 - 0.5) * 0.18 * f17 + (d2 - 0.5) * 0.12 * f04) * det;   // broad variation everywhere
-              float bump = 0.3;
+              float fw = fwq;
+              float d1 = tnb(p * 1.7, fw * 1.7), d2 = tnb(p * 0.43, fw * 0.43);
+              float gain = ((d1 - 0.5) * 0.18 + (d2 - 0.5) * 0.12) * det;          // broad variation everywhere
+              float bump = 0.3, bf = 1.0 - smoothstep(0.07, 0.19, fw);
               if (cls > 5.5 && cls < 6.5) {                                       // pavement: asphalt grain, patching, cracks
-                float g1 = th(floor(p * 9.0)), g2 = tn(p * 0.21);
-                float crack = (1.0 - smoothstep(0.0, 0.035, abs(tn(p * 0.33) - 0.5))) * smoothstep(0.55, 0.8, tn(p * 0.045 + 3.1));
-                gain += ((g1 - 0.5) * 0.10 * fine + (g2 - 0.5) * 0.08 * mid - crack * 0.22 * fine) * det; bump = 0.12;
+                float g2 = tnb(p * 0.21, fw * 0.21);
+                float ga = textureGrad(uGround, p / ${GTILE.toFixed(1)}, qdx / ${GTILE.toFixed(1)}, qdy / ${GTILE.toFixed(1)}).r - 0.5;
+                gain += (ga * 0.9 + (g2 - 0.5) * 0.08) * det; bump = 0.12;
               } else if (cls < 0.5 || cls > 6.5) {                                // grass / natural / forest floor
-                float b1 = tn(p * 3.3) * mid + 0.5 * (1.0 - mid), b2 = tn(p * 11.0);
-                gain += ((b1 - 0.5) * 0.16 * mid + (b2 - 0.5) * 0.14 * fine) * det;
-                col = mix(col, col * vec3(0.94, 1.05, 0.9), (b1 - 0.4) * 0.35 * mid * det);   // green / straw variation
+                float b1 = tnb(p * 3.3, fw * 3.3), b2 = tnb(p * 11.0, fw * 11.0);
+                gain += ((b1 - 0.5) * 0.16 + (b2 - 0.5) * 0.14) * det;
+                col = mix(col, col * vec3(0.94, 1.05, 0.9), (b1 - 0.4) * 0.35 * det);   // green / straw variation
                 bump = cls > 6.5 ? 0.55 : 0.45;
               } else if (cls > 0.5 && cls < 1.5) {                                // farmland: furrows
                 float ang = floor(tn(floor(p / 160.0)) * 4.0) * 0.785; vec2 dr = vec2(cos(ang), sin(ang));
-                gain += sin(dot(p, dr) * 6.2832 / 0.9) * 0.06 * mid * det; bump = 0.4;
+                gain += sin(dot(p, dr) * 6.2832 / 0.9) * 0.06 * (1.0 - smoothstep(0.1, 0.3, fw / 0.9)) * det; bump = 0.4;
               } else if (cls > 3.5 && cls < 4.5) {                               // sand
-                gain += (th(floor(p * 14.0)) - 0.5) * 0.08 * fine * det; bump = 0.15;
+                gain += (thb(p * 14.0, fw * 14.0) - 0.5) * 0.08 * det; bump = 0.15;
               } else if (cls > 4.5 && cls < 5.5) {                               // rock
-                gain += (tn(p * 0.9) - 0.5) * 0.2 * det; bump = 0.7;
+                gain += (tnb(p * 0.9, fw * 0.9) - 0.5) * 0.2 * det; bump = 0.7;
               }
               col *= 1.0 + gain;
               float a = tn(p * 2.1), b = tn((p + vec2(0.3, 0.0)) * 2.1), c = tn((p + vec2(0.0, 0.3)) * 2.1);
-              nW = normalize(nW + vec3(a - b, 0.0, a - c) * bump * det * f21);
+              nW = normalize(nW + vec3(a - b, 0.0, a - c) * bump * det * bf);
             }
             // ---- water: keep the photo's tint (South Bay silt, Pacific blue); wind waves from the LEAN slope map ----
             gWater = water;
