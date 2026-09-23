@@ -96,23 +96,36 @@ const Flora = (() => {
       leaf(mx + Math.cos(a) * d, my + Math.sin(a) * d, r() * TAU, o.leafL * lerp(0.7, 1.1, r()), o.leafW * lerp(0.8, 1.2, r()), o.palette[Math.floor(r() * o.palette.length)]);
     }
   }
-  function paintRedwood(g, x0, y0, seed) {   // flat drooping sprays: rachis + two rows of short flat needles
+  function paintRedwood(g, x0, y0, seed) {   // fern-like flat sprays: branchlets with alternate twigs, each twig two rows of short flat needles
     const r = rng(seed); const S = RS; g.save(); g.beginPath(); g.rect(x0 + 4, y0 + 4, S - 8, S - 8); g.clip();
-    const pal = [[46, 74, 40], [55, 86, 46], [38, 64, 36], [64, 92, 50]];
-    for (let b = 0; b < 9; b++) {
-      let px = x0 + S * 0.08 + r() * 40, py = y0 + S * (0.12 + b * 0.095) + r() * 12, a = 0.1 + (r() - 0.5) * 0.3;
-      const segs = 22, len = S * lerp(0.75, 0.9, r());
-      for (let i = 0; i < segs; i++) {
-        const nx = px + Math.cos(a) * len / segs, ny = py + Math.sin(a) * len / segs; a += 0.012;
-        g.strokeStyle = col(92, 70, 48); g.lineWidth = 2.2; g.beginPath(); g.moveTo(px, py); g.lineTo(nx, ny); g.stroke();
-        const nl = lerp(22, 8, i / segs);
-        for (const s of [-1, 1]) for (let k = 0; k < 3; k++) {
-          const t = k / 3; const qx = lerp(px, nx, t), qy = lerp(py, ny, t); const na = a + s * lerp(1.2, 1.45, r());
-          g.strokeStyle = col(...jitterColor(pal[Math.floor(r() * 4)], r, 0.25)); g.lineWidth = 3.4; g.lineCap = 'round';
-          g.beginPath(); g.moveTo(qx, qy); g.lineTo(qx + Math.cos(na) * nl, qy + Math.sin(na) * nl); g.stroke();
+    const pal = [[40, 66, 36], [50, 80, 42], [34, 58, 32], [58, 88, 46]], tip = [92, 122, 60];
+    // one twig from (x, y) along angle a: a thin stem with needles (~2-3 cm on a ~2 m card) alternating on both sides,
+    // shortening and turning to lighter new growth toward the tip
+    const twig = (x, y, a, len, c0) => {
+      const dx = Math.cos(a), dy = Math.sin(a), n = Math.max(3, Math.round(len / 3.1));
+      g.strokeStyle = col(70, 60, 40); g.lineWidth = 1.2; g.beginPath(); g.moveTo(x, y); g.lineTo(x + dx * len, y + dy * len); g.stroke();
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n, px = x + dx * len * t, py = y + dy * len * t, nl = lerp(7.5, 3.5, t) * lerp(0.85, 1.15, r());
+        g.fillStyle = col(...jitterColor([lerp(c0[0], tip[0], t * t), lerp(c0[1], tip[1], t * t), lerp(c0[2], tip[2], t * t)], r, 0.18));
+        for (const sd of [-1, 1]) {
+          const na = a + sd * lerp(1.1, 1.35, r());
+          g.save(); g.translate(px + Math.cos(na) * nl * 0.5, py + Math.sin(na) * nl * 0.5); g.rotate(na);
+          g.beginPath(); g.ellipse(0, 0, nl * 0.5, 1.3, 0, 0, TAU); g.fill(); g.restore();
         }
+      }
+    };
+    for (let b = 0; b < 7; b++) {
+      // a gently curving branchlet across the card; alternate twigs shorten toward its tip
+      let px = x0 + S * 0.06 + r() * 30, py = y0 + S * (0.1 + b * 0.125) + (r() - 0.5) * 20, a = (r() - 0.5) * 0.35;
+      const segs = 14, len = S * lerp(0.7, 0.88, r()), base = pal[Math.floor(r() * 4)];
+      for (let i = 0; i < segs; i++) {
+        const nx = px + Math.cos(a) * len / segs, ny = py + Math.sin(a) * len / segs; a += (r() - 0.45) * 0.06;
+        g.strokeStyle = col(88, 66, 44); g.lineWidth = lerp(2.4, 1.2, i / segs); g.beginPath(); g.moveTo(px, py); g.lineTo(nx, ny); g.stroke();
+        const u = i / segs, tl = lerp(58, 20, u) * lerp(0.8, 1.1, r());
+        twig(nx, ny, a + (i % 2 ? 1 : -1) * lerp(0.75, 0.95, r()), tl, base);
         px = nx; py = ny;
       }
+      twig(px, py, a, 22, base);                                            // the leader
     }
     g.restore();
   }

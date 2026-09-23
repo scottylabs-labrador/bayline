@@ -82,7 +82,8 @@ const GroundCover = (() => {
           float grassy = ok * max(greenish, golden * 0.9) * smoothstep(0.08, 0.15, lum) * (1.0 - smoothstep(0.58, 0.7, lum));
           float d = distance(wBase.xz, uCam.xz);
           float fade = smoothstep(${R.toFixed(1)}, ${(R * 0.62).toFixed(1)}, d) * uFade;
-          float sc = step(0.45, grassy) * fade * (0.7 + 0.6 * fract(aTuft.w * 7.3));
+          // tufts shrink toward the edge of a grassy patch instead of stopping at a hard, sawtooth boundary
+          float sc = smoothstep(0.3, 0.62, grassy + (fract(aTuft.w * 5.1) - 0.5) * 0.12) * fade * (0.7 + 0.6 * fract(aTuft.w * 7.3));
           float ang = aTuft.w * 6.2832;
           vec3 p = position; p.xz = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * p.xz;
           float lawn = greenish * (1.0 - golden) * smoothstep(0.1, 0.25, sat);   // vivid, irrigated green = mowed lawn
