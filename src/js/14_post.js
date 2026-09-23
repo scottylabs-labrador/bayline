@@ -121,12 +121,15 @@ const Post = (() => {
       if (probe < 0.002 && skyFogReach((ro + rd * t0).xz) < 0.002) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
       float mu = dot(rd, uSkySunDir);
       float phase = 0.3 + 3.4 * skyPhaseHG(mu, 0.62);
-      vec3 L = vec3(0.0); float T = 1.0; float N = float(uSteps);
-      for (int i = 0; i < 32; i++) {
-        if (i >= uSteps) break;
+      // grazing rays cross kilometres of the layer's top: up to twice the steps there (the arcs of equal-distance
+      // step boundaries otherwise show as rings on the fog top), and each step gets its own stratified jitter
+      int ns = uSteps + int(float(uSteps) * clamp(1.0 - abs(rd.y) * 5.0, 0.0, 1.0));
+      vec3 L = vec3(0.0); float T = 1.0; float N = float(ns);
+      for (int i = 0; i < 40; i++) {
+        if (i >= ns) break;
         float a0 = float(i) / N, a1 = float(i + 1) / N;
         float ta0 = t0 + seg * a0 * a0, ta1 = t0 + seg * a1 * a1, dt = ta1 - ta0;
-        vec3 p = ro + rd * mix(ta0, ta1, jit);
+        vec3 p = ro + rd * mix(ta0, ta1, fract(jit + float(i) * 0.618034));
         float dens = skyFogDensity(p);
         if (dens > 0.001) {
           float sig = dens * 0.0045; float Ts = exp(-sig * dt);
@@ -304,7 +307,7 @@ const Post = (() => {
       fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; pass(fogMat, rtFog);
       // 4. composite -> HDR
       compMat.uniforms.tScene.value = rtScene.texture; compMat.uniforms.tDepth.value = depth; compMat.uniforms.tAO.value = rtAO[0].texture;
-      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(0.75 / rtFog.width, 0.75 / rtFog.height);
+      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
       pass(compMat, rtHDR);
       // 5. bloom
       const exposure = Env.state.exposure || 1, night = U.uNight.value;
