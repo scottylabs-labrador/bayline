@@ -34,7 +34,8 @@ def W(lat, lon): return ((lon - LON0) * MLON, -(lat - LAT0) * MLAT)
 R_TRACK = 3000.0          # buildings / roads / areas within this of the line
 R_LANDMARK = 1500.0
 CORES = {'sf_core': (37.7560, -122.4270, 37.8080, -122.3840), 'sj_core': (37.3200, -121.9050, 37.3460, -121.8750),
-         'sf_city': (37.7030, -122.5160, 37.8125, -122.3550)}     # all of San Francisco (matches the imagery AOI)
+         'sf_city': (37.7030, -122.5160, 37.8125, -122.3550),     # all of San Francisco (matches the imagery AOI)
+         'east_bay': (37.7600, -122.3350, 37.8429, -122.2150), 'treasure_island': (37.8050, -122.3800, 37.8350, -122.3550)}
 CELL = 25.0
 
 def landmarks():

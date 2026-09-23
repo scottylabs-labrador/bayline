@@ -56,11 +56,12 @@ in parallel, on demand, around the camera, from `/data/v2/` on the same host.
   - every 400 m tile (L8) to 0.39 m/px, which also sharpens every photo roof.
   At eye level the photo gives way to synthesized asphalt, concrete, grass or soil (mipmapped detail
   textures tinted by the photo), and instanced grass grows wherever the photo shows lawn or golden summer fields.
-  Beyond the corridor band, all of San Francisco (the Presidio, Golden Gate Park, the Sunset and Richmond) has the
-  same 0.39 m/px imagery, trees and buildings, and the Golden Gate and Marin Headlands have 0.8 m/px imagery.
+  Beyond the corridor band, all of San Francisco (the Presidio, Golden Gate Park, the Sunset and Richmond), the
+  Oakland/Emeryville/Alameda shore and Treasure Island have the same 0.39 m/px imagery, trees and buildings, and the
+  Golden Gate and Marin Headlands have 0.8 m/px imagery. The Pacific breaks in lines of surf along Ocean Beach.
 - **Water:** open water sits at sea level while the bathymetry colours it; wind waves come from a tileable
   slope map (LEAN mapping), so the sun glitter widens with distance and gusts drift across the Bay.
-- **Buildings:** every OpenStreetMap building near the line and across San Francisco, streamed in 800 m
+- **Buildings:** every OpenStreetMap building near the line, across San Francisco and on the East Bay shore, streamed in 800 m
   tiles, with real heights and roof shapes, and roofs textured from the same photograph.
 - **Trees:** individual crowns detected in the imagery, so every tree stands where the photo shows it.
 - **Light:** a physically based sky and atmosphere, the marine layer, and an HDR post pipeline

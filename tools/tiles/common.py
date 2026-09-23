@@ -173,10 +173,12 @@ def _level_tiles_near(L, cand, pts, r):
 
 # areas of interest beyond the corridor bands: (lat_s, lon_w, lat_n, lon_e, finest level). All of San Francisco gets
 # the 0.39 m/px L8 imagery (flyovers of the Presidio, Golden Gate Park, the Sunset and the waterfront), the Golden Gate
-# and the south face of the Marin Headlands get L7.
+# and the south face of the Marin Headlands get L7, the East Bay shore and Treasure Island L8.
 AOI = [
     (37.7030, -122.5160, 37.8125, -122.3550, 8),     # San Francisco
     (37.8050, -122.5400, 37.8429, -122.4600, 7),     # Golden Gate, Marin Headlands (world edge at 37.8429)
+    (37.7600, -122.3350, 37.8429, -122.2150, 8),     # Oakland, Emeryville, Alameda: the far shore seen from SF and the bridge
+    (37.8050, -122.3800, 37.8350, -122.3550, 8),     # Treasure Island and Yerba Buena
 ]
 
 
