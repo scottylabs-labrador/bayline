@@ -319,7 +319,9 @@ const Player = (() => {
         break;
       }
     }
-    c.fov = U.lerp(c.fov, fovTarget, Math.min(1, dt * 4)); c.updateProjectionMatrix();
+    // portrait screens: widen the vertical field so the horizontal one doesn't collapse to a slit (cab, window, walk)
+    const fovEff = c.aspect < 1 ? Math.min(100, 2 * Math.atan(Math.tan(fovTarget * U.DEG / 2) / Math.pow(c.aspect, 0.75)) / U.DEG) : fovTarget;
+    c.fov = U.lerp(c.fov, fovEff, Math.min(1, dt * 4)); c.updateProjectionMatrix();
     // near plane: tiny indoors, larger outdoors at altitude (log depth handles the rest)
     const alt = c.position.y - Terrain.h(c.position.x, c.position.z); c.near = mode === 'onboard' || mode === 'cab' ? 0.03 : alt > 500 ? 1 : 0.1; c.updateProjectionMatrix();
   }
