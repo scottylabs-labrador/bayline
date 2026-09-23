@@ -117,6 +117,15 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (c === 'Digit0') { Env.goLive(); UI.toast('Live time'); return; }
       let i = scales.indexOf(Env.time.scale); if (i < 0) i = 0; i = U.clamp(i + (c === 'Equal' ? 1 : -1), 0, scales.length - 1); Env.time.scale = scales[i]; if (scales[i] !== 1) Env.time.live = false; UI.toast('Time ×' + scales[i]); return; }
     if (c === 'KeyP') { document.body.classList.toggle('photo'); return; }
+    if (c === 'KeyL') {   // copy a link to this exact view (clock, weather, camera)
+      const cp = Env.camera.position, ll = Geo.w2ll(cp.x, cp.z), d = Env.camera.getWorldDirection(new THREE.Vector3());
+      const sec = Env.time.sec, hh = String(Math.floor(sec / 3600)).padStart(2, '0'), mm = String(Math.floor(sec / 60) % 60).padStart(2, '0');
+      const parts = ['auto', 't=' + hh + ':' + mm, 'll=' + [ll.lat.toFixed(5), ll.lon.toFixed(5), Math.round(cp.y), Math.atan2(d.x, -d.z).toFixed(2), Math.asin(U.clamp(d.y, -1, 1)).toFixed(2)].join(',')];
+      if (Env.state.weather && Env.state.weather !== 'auto') parts.push('w=' + Env.state.weather);
+      const url = location.origin + location.pathname + '#' + parts.join('&');
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => UI.toast('Link to this view copied'), () => UI.toast(url, 8));
+      return;
+    }
     if (c === 'KeyK' && Env.state) { const W = ['auto', 'clear', 'fog', 'cloudy', 'haze']; const i = (W.indexOf(Env.state.weather || 'auto') + 1) % W.length; Env.state.weather = W[i]; UI.toast('Weather: ' + ({ auto: "today's forecast", clear: 'clear skies', fog: 'the marine layer rolls in', cloudy: 'clouds', haze: 'hazy' })[W[i]]); return; }
     if (c === 'KeyV' && typeof Sound !== 'undefined') { Sound.setMuted(!Sound.muted); UI.toast(Sound.muted ? 'Sound off' : 'Sound on'); return; }
   });

@@ -42,7 +42,7 @@ time up.
 | `Tab` / `F` | Follow the next or the nearest train |
 | `-` / `=` / `0` | Slow down / speed up time / back to live |
 | **Driving:** `W`/`S` | Power and brake notches. `W` at departure closes the doors and departs; doors open themselves at the stop mark. `X` coast, `O` doors, `Q` reverser, `Space` horn, `G` bell, `Backspace` emergency, `R` release, `A` autopilot. On-screen buttons do the same. |
-| `K` / `P` | Cycle the weather · photo mode (hide the interface) |
+| `K` / `P` / `L` | Cycle the weather · photo mode (hide the interface) · copy a link to this view |
 
 Link options (after `#`, joined with `&`): `t=17:30` sets the clock, `at=palo_alto` starts at a station
 (`cam=orbit&dist=400` orbits it), `ll=37.8045,-122.4705,265,-0.78,-0.03` flies the camera to a viewpoint (lat, lon, altitude m, yaw,

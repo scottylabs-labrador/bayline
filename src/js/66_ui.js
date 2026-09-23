@@ -13,7 +13,7 @@ const UI = (() => {
     // keys list
     const K = [['1', 'Cab view'], ['2', 'Onboard: walk the train'], ['3', 'Chase camera'], ['4', 'Trackside camera'], ['5', 'Helicopter'], ['6', 'Walk on the ground'], ['7', 'Fly anywhere'], ['8', 'Orbit / overview'],
       ['WASD / arrows', 'Move · look with mouse'], ['Shift', 'Run / fly faster'], ['E', 'Board · step off · sit · stand'], ['Tab', 'Follow the next train'], ['B', 'Departure board (nearest station)'], ['M', 'Live map'], ['J', 'Missions'],
-      ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['P', 'Photo mode (hide the interface)'], ['K', 'Weather: auto · clear · fog · cloudy · haze'], ['Esc', 'Release mouse / close'],
+      ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['P', 'Photo mode (hide the interface)'], ['K', 'Weather: auto · clear · fog · cloudy · haze'], ['L', 'Copy a link to this view'], ['Esc', 'Release mouse / close'],
       ['Driving: W / S', 'Power / brake notches (W also closes the doors)'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Q', 'Reverser (when stopped)'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot']];
     el.keys.innerHTML = K.map(([k, v]) => `<div><span>${v}</span><kbd>${k}</kbd></div>`).join('');
     initMap();
