@@ -133,7 +133,7 @@ const Env = (() => {
       hemi.color.set(0xd8e4f2); hemi.groundColor.set(0x6a5a3a);
     }
     sun.castShadow = sunUp > 0.05;
-    hemi.intensity = 0.16 + 0.3 * sunUp + 0.12 * state.night;
+    hemi.intensity = 0.16 + 0.42 * sunUp + 0.12 * state.night;       // daylight fill stands in for the multi-bounce light a real street gets
     if (typeof Sky !== 'undefined') {
       // ground bounce: the sunlit ground (albedo ~0.2) lights every downward-facing surface (canopy soffits, the
       // shaded flanks of trains and walls) at ~albedo x (direct + sky) irradiance, in the hemisphere light's units
