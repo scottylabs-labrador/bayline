@@ -47,7 +47,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     const st = Stations.list[Track.byId.palo_alto.idx]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: 420 }); Player.orbit.pitch = 0.32;
   }
   // title-screen cinematics: helicopter on a real train, a slow drone orbit of a landmark, a trackside pass
-  const HERO = ['Salesforce Tower', 'Golden Gate Bridge', 'Hoover Tower', "Levi's Stadium", 'Bay Bridge (West Span)', 'Oracle Park', 'Coit Tower', 'Apple Park', 'Transamerica Pyramid', 'Main Quad & Memorial Church'];
+  const HERO = ['Salesforce Tower', 'Golden Gate Bridge', 'Hoover Tower', "Levi's Stadium", 'Bay Bridge (West Span)', 'Oracle Park', 'Coit Tower', 'Apple Park', 'Transamerica Pyramid', 'Main Quad & Memorial Church',
+    'Sutro Tower', 'Alcatraz Island', 'Ferry Building', 'Bay Bridge (East Span)', 'Painted Ladies'];
   let cineT = 14, cineI = 0;
   function nextShot() {
     cineI = (cineI + 1) % 3;
