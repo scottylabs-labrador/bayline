@@ -132,9 +132,9 @@ const UI = (() => {
         let l = L, x = tx, y = ty, img = null;
         for (; l >= 0; l--, x >>= 1, y >>= 1) { const im = mapImg(l, x, y, l === L); if (im) { img = im; break; } }
         if (!img) continue; drewPhoto = true;
-        const TL = Terrain.tileSize(l), s = T / TL, sx = (tx * T - x * TL) / TL * 512, sy = (ty * T - y * TL) / TL * 512;
+        const TL = Terrain.tileSize(l), s = T / TL, IW = img.width || 512, sx = (tx * T - x * TL) / TL * IW, sy = (ty * T - y * TL) / TL * IW;   // tiles may be 512 or 1024 px
         const [px, py] = w2m(T0.X0 + tx * T, T0.Z0 + ty * T, c);
-        g.drawImage(img, sx, sy, 512 * s, 512 * s, Math.floor(px), Math.floor(py), Math.ceil(T * pxPerM) + 1, Math.ceil(T * pxPerM) + 1);
+        g.drawImage(img, sx, sy, IW * s, IW * s, Math.floor(px), Math.floor(py), Math.ceil(T * pxPerM) + 1, Math.ceil(T * pxPerM) + 1);
       }
       g.fillStyle = 'rgba(8,12,16,0.28)'; g.fillRect(0, 0, W, H);   // dim a little so the line and trains read
     }
