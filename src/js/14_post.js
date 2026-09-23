@@ -185,17 +185,17 @@ const Post = (() => {
         if (uUseAO > 0.5) col *= aoUp(vUv, d);
         vec3 wp = ro + rd * tS;
         if (uSkySunDir.y > 0.02 && uCloudCover > 0.01) {       // moving cloud shadows on the land
-          vec3 cp = wp + uSkySunDir * ((1900.0 - wp.y) / uSkySunDir.y);
+          vec3 cp = wp + uSkySunDir * ((uCloudBase + 250.0 - wp.y) / uSkySunDir.y);
           col *= 1.0 - 0.55 * skyCloudDens(cp.xz) * smoothstep(0.02, 0.2, uSkySunDir.y);
         }
         vec3 T; vec3 ins = skyAerial(ro.y, rd, tS, T); col = col * T + ins;
       }
       // cumulus deck: three slices through the 1.6-2.3 km layer (domed tops, darker bases, silver lining)
-      bool above = ro.y > 2150.0; vec4 cl = vec4(0.0);
+      bool above = ro.y > uCloudBase + 500.0; vec4 cl = vec4(0.0);
       if (uCloudCover > 0.001) {
         for (int s = 0; s < 3; s++) {
           float si = above ? float(2 - s) : float(s);
-          float H = 1650.0 + si * 330.0; vec2 ch = blLevelHits(ro.y, rd, H);
+          float H = uCloudBase + si * 330.0; vec2 ch = blLevelHits(ro.y, rd, H);
           float tc = ro.y < H ? ch.y : ch.x;                   // the deck curves down to the horizon
           if (tc <= 0.0 || tc >= tS || tc > 5e5) continue;
           vec3 cp = ro + rd * tc;

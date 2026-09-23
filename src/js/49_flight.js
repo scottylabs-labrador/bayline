@@ -57,6 +57,8 @@ const Flight = (() => {
       Env.setSolarLocation(a.lat, a.lon);
       if (c.time !== undefined && c.time !== null && c.time !== 'now') Env.setLocalClock(c.time * 3600);
       else if (c.time === 'now') Env.goLive();
+      // the real weather at the field first: the wind picks the runway
+      if (typeof Weather !== 'undefined') { await Promise.race([Weather.fetchAt(a.lat, a.lon), new Promise(r => setTimeout(r, 2500))]); Weather.windAt(a.elev + 10, wind); }
       const { rw, end } = c.rw ? { rw: c.rw, end: c.end || 0 } : runwayChoice(a, c.rwIdent);
       const e0 = Airports.runwayEnd(a, rw, end);
       // tiles under the start point first (elevation for the physics, imagery follows): park the free camera there
@@ -103,6 +105,7 @@ const Flight = (() => {
       UI.setPlaceFn(placeLabel); UI.setSubFn(subLine);
       if (typeof Net !== 'undefined') {}
       const where = `${a.ident}${a.iata ? ' / ' + a.iata : ''} · ${a.name}`;
+      if (typeof Weather !== 'undefined' && Weather.now) setTimeout(() => { if (active) UI.toast(`${a.ident} weather: ${Weather.text()}`, 7); }, 7500);
       UI.toast(pos === 'runway' ? `${T.name} on runway ${e.ident}, ${where}. Hold W for takeoff power (the parking brake lets go), ↓ to rotate at ${T.v.r} kt, G gear up. H: all keys` : pos === 'final' ? `${T.name} on an ${c.dist || 8} nm final to runway ${e.ident}, ${where}` : `${T.name} inbound to ${where}`, 7);
       emit('start', cfg);
     } finally { loading = false; }
@@ -423,8 +426,10 @@ const Flight = (() => {
     const menu = typeof FHud !== 'undefined' && FHud.menuOpen();
     if (!crashed && !menu) {
       input.update(dt);
-      // light turbulence that grows with wind and near the ground in the afternoon
-      gust.set(Math.sin(flightTime * 0.7) + Math.sin(flightTime * 1.9 + 1), Math.sin(flightTime * 1.3 + 2) * 0.6, Math.cos(flightTime * 0.9)).multiplyScalar(0.35 + wind.length() * 0.12);
+      // the real wind at this altitude (Open-Meteo), with gusts and light turbulence that grow with it near the ground
+      if (typeof Weather !== 'undefined') Weather.windAt(ac.pos.y, wind);
+      const wn = typeof Weather !== 'undefined' && Weather.now, gustAmp = wn ? Math.max(0, wn.wind.g - wn.wind.s) * 0.35 * Math.exp(-Math.max(0, ac.out.agl) / 1500) : 0;
+      gust.set(Math.sin(flightTime * 0.7) + Math.sin(flightTime * 1.9 + 1), Math.sin(flightTime * 1.3 + 2) * 0.6, Math.cos(flightTime * 0.9)).multiplyScalar(0.3 + wind.length() * 0.06 + gustAmp);
       env.wind = tv3.copy(wind).add(gust);
       // the ground under a parked or taxiing aircraft can change as finer terrain streams in or a runway is refitted:
       // carry the aircraft with it instead of letting the gear springs launch it
@@ -456,7 +461,7 @@ const Flight = (() => {
   const api = {
     init, start, stop, update, restart, fromHash, on, input, cam, warn, prefs,
     get active() { return active; }, get loading() { return loading; }, get ac() { return ac; }, get fcs() { return fcs; }, get type() { return T; }, get model() { return model; }, get cfg() { return cfg; },
-    get crashed() { return crashed; }, get landed() { return landed; }, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
+    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
   };
   return api;
 })();

@@ -40,6 +40,16 @@ const FHud = (() => {
   #ftouch .thr i{position:absolute;left:6px;right:6px;height:26px;border-radius:8px;background:rgba(255,255,255,.35)}
   #ftouch .btns{position:absolute;right:98px;bottom:22px;display:grid;grid-template-columns:repeat(2,64px);gap:8px;pointer-events:auto}
   #ftouch .btns button{border:1px solid rgba(255,255,255,.2);background:rgba(16,19,24,.45);border-radius:10px;padding:9px 0;font-size:12px;font-weight:600;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+  #fcu{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:12;display:flex;gap:6px;align-items:stretch;padding:6px 8px;pointer-events:auto;font-family:var(--mono);user-select:none;-webkit-user-select:none}
+  #fcu .g{display:flex;flex-direction:column;align-items:center;padding:0 6px;border-left:1px solid var(--line)} #fcu .g:first-child{border-left:none}
+  #fcu .l{font-size:10px;letter-spacing:.12em;color:var(--ink-faint)} #fcu .v{font-size:15px;font-weight:600;color:#ffb347;min-width:58px;text-align:center;cursor:ns-resize}
+  #fcu .v.dash{color:var(--ink-faint)} #fcu .r{display:flex;align-items:center;gap:3px}
+  #fcu button{border:1px solid var(--line);background:rgba(255,255,255,.06);border-radius:6px;padding:1px 7px;font-size:12px;line-height:18px;color:var(--ink)}
+  #fcu button:hover{background:rgba(255,255,255,.14)} #fcu .k{font-weight:700;letter-spacing:.06em;padding:5px 9px;font-size:12px}
+  #fcu .k.on{background:rgba(62,240,138,.18);border-color:rgba(62,240,138,.7);color:#8dffc0} #fcu .k.arm{border-color:rgba(67,217,255,.7);color:#9be8ff}
+  body.photo #fcu{display:none!important}
+  @media (max-width:1320px) and (min-width:761px){#fcu{top:74px}}
+  @media (max-width:760px){#fcu{top:auto;bottom:250px;transform:translateX(-50%) scale(.82);transform-origin:bottom center} #fcu .g.hide-s{display:none}}
   @media (max-width:760px){.fgrid{grid-template-columns:1fr 1fr} .fres{grid-template-columns:1fr}}
   `;
   function init() {
@@ -48,7 +58,49 @@ const FHud = (() => {
     window.addEventListener('resize', resize); resize();
   }
   function resize() { dpr = Math.min(2, devicePixelRatio || 1); W = innerWidth; H = innerHeight; if (cv) { cv.width = W * dpr; cv.height = H * dpr; } }
-  function show(v) { shown = v; if (cv) cv.hidden = !v; if (!v) { menu(false); if (crashEl) crashEl.hidden = true; } touchUi(v); }
+  function show(v) { shown = v; if (cv) cv.hidden = !v; if (!v) { menu(false); if (crashEl) crashEl.hidden = true; } touchUi(v); fcu(v); }
+
+  // ---------------------------------------------------------------- the autopilot panel (flight control unit)
+  let fcuEl = null, fcuT = 0;
+  function fcu(on) {
+    if (!fcuEl) {
+      fcuEl = document.createElement('div'); fcuEl.id = 'fcu'; fcuEl.className = 'panel'; fcuEl.hidden = true;
+      const val = (id, label, cls = '') => `<div class="g ${cls}"><span class="l">${label}</span><div class="r"><button data-d="${id}:-">−</button><span class="v" data-v="${id}">---</span><button data-d="${id}:+">+</button></div></div>`;
+      fcuEl.innerHTML = `<div class="g"><span class="l">AUTOPILOT</span><div class="r"><button class="k" data-k="ap">AP</button><button class="k" data-k="athr">A/THR</button><button class="k" data-k="appr">APPR</button></div></div>`
+        + val('spd', 'SPD') + val('hdg', 'HDG') + val('alt', 'ALT') + val('vs', 'V/S', 'hide-s');
+      document.body.appendChild(fcuEl);
+      const step = { spd: [5, 1], hdg: [5, 1], alt: [1000, 100], vs: [500, 100] };
+      const adjust = (id, sign, fine) => {
+        const F = Flight, A = F.fcs && F.fcs.ap, ac = F.ac; if (!A) return;
+        const d = sign * step[id][fine ? 1 : 0];
+        if (id === 'spd') A.spd = Math.max(40, Math.round((A.spd === null ? ac.out.cas / KT : A.spd) + d));
+        if (id === 'hdg') A.hdg = ((Math.round((A.hdg === null ? F.euler.hdg / D : A.hdg / D) + d) % 360 + 360) % 360) * D;
+        if (id === 'alt') A.alt = Math.max(0, Math.round(((A.alt === null ? ac.pos.y / FT : A.alt / FT) + d) / 100) * 100) * FT;
+        if (id === 'vs') { const cur = A.vs === null ? 0 : A.vs / FT * 60; A.vs = Math.max(-6000, Math.min(6000, Math.round((cur + d) / 100) * 100)) * FT / 60; if (Math.abs(A.vs) < 1e-6) A.vs = 500 * FT / 60; }
+        fcuT = 0;
+      };
+      fcuEl.addEventListener('click', (e) => {
+        const b = e.target.closest('button'); if (!b) return; e.stopPropagation();
+        if (b.dataset.d) { const [id, sg] = b.dataset.d.split(':'); adjust(id, sg === '+' ? 1 : -1, e.shiftKey); }
+        if (b.dataset.k === 'ap') Flight.toggleAP(); if (b.dataset.k === 'athr') Flight.input.press('KeyU'); if (b.dataset.k === 'appr') Flight.armApproach();
+        fcuT = 0;
+      });
+      fcuEl.addEventListener('wheel', (e) => { const v = e.target.closest('[data-v]'); if (!v) return; e.preventDefault(); e.stopPropagation(); adjust(v.dataset.v, e.deltaY < 0 ? 1 : -1, e.shiftKey); }, { passive: false });
+      fcuEl.addEventListener('mousedown', (e) => e.stopPropagation());
+    }
+    fcuEl.hidden = !on;
+  }
+  function fcuUpdate(F, dt) {
+    if (!fcuEl || fcuEl.hidden) return; fcuT -= dt; if (fcuT > 0) return; fcuT = 0.15;
+    const A = F.fcs.ap, q = (s2) => fcuEl.querySelector(s2);
+    const setV = (id, t, dash) => { const e = q(`[data-v=${id}]`); e.textContent = t; e.classList.toggle('dash', !!dash); };
+    setV('spd', A.spd === null ? '---' : String(A.spd), A.spd === null || !A.athr);
+    setV('hdg', A.hdg === null ? '---' : String(Math.round(A.hdg / D) % 360 || 360).padStart(3, '0'), A.hdg === null || !A.on || A.appr);
+    setV('alt', A.alt === null ? '-----' : String(Math.round(A.alt / FT)), A.alt === null || !A.on);
+    setV('vs', A.vs === null ? '----' : (A.vs >= 0 ? '+' : '') + Math.round(A.vs / FT * 60), A.vs === null || !A.on);
+    q('[data-k=ap]').classList.toggle('on', A.on); q('[data-k=athr]').classList.toggle('on', A.athr);
+    const ab = q('[data-k=appr]'); ab.classList.toggle('on', !!(A.appr && A.gs)); ab.classList.toggle('arm', !!(A.appr && !A.gs));
+  }
   function note(t) { notes.push({ t, age: 0 }); if (notes.length > 4) notes.shift(); }
 
   // ---------------------------------------------------------------- drawing helpers
@@ -191,11 +243,12 @@ const FHud = (() => {
   function info(F, x, y, s) {
     const ac = F.ac, o = ac.out; const ll = Globe.w2ll(ac.pos.x, ac.pos.z);
     const atm = FDM.atmosphere(ac.pos.y), lines = [
-      ['GS', Math.round(o.gs / KT) + ' kt'], ['TAS', Math.round(o.tas / KT) + ' kt'], ['OAT', Math.round(atm.T - 273.15) + '°C'],
+      ['GS', Math.round(o.gs / KT) + ' kt'], ['TAS', Math.round(o.tas / KT) + ' kt'], ['WIND', windText(ac)], ['OAT', (typeof Weather !== 'undefined' && Weather.now ? Math.round(Weather.now.temp - (ac.pos.y - Weather.now.elev) * 0.0065) : Math.round(atm.T - 273.15)) + '°C'],
       ['POS', `${Math.abs(ll.lat).toFixed(3)}${ll.lat >= 0 ? 'N' : 'S'} ${Math.abs(ll.lon).toFixed(3)}${ll.lon >= 0 ? 'E' : 'W'}`], ['TIME', fmtT(F.flightTime)]];
-    const w = 200 * s, h = (lines.length * 17 + 12) * s; rr(x, y, w, h, 8 * s, COL.box);
+    const w = 200 * s, h = (lines.length * 17 + 12) * s; y -= (lines.length - 5) * 17 * s; rr(x, y, w, h, 8 * s, COL.box);
     lines.forEach(([k, v], i) => { txt(k, x + 10 * s, y + (14 + i * 17) * s, 10.5 * s, COL.line.replace('.18', '.6'), 'left', 'mono', 500); txt(v, x + w - 10 * s, y + (14 + i * 17) * s, 11 * s, COL.white, 'right'); });
   }
+  function windText(ac) { const w = Flight.wind; if (!w || w.lengthSq() < 0.25) return 'CALM'; const from = (Math.atan2(-w.x, w.z) / D + 360) % 360; return String(Math.round(from / 10) * 10 % 360 || 360).padStart(3, '0') + '° / ' + Math.round(Math.hypot(w.x, w.z) / KT) + ' kt'; }
   const fmtT = (t) => `${Math.floor(t / 3600)}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(Math.floor(t) % 60).padStart(2, '0')}`;
 
   // ---------------------------------------------------------------- conformal HUD (cockpit view)
@@ -233,8 +286,8 @@ const FHud = (() => {
   function warnings(F, s, dt) {
     const L = F.warn.list; const blink = (performance.now() / 350 | 0) % 2 === 0;
     L.slice(0, 3).forEach((t, i) => { const red = /STALL|PULL UP|OVERSPEED|TOO LOW|TAIL/.test(t); const w = Math.max(140, t.length * 12) * s;
-      rr(W / 2 - w / 2, 70 * s + i * 34 * s, w, 28 * s, 6 * s, red ? (blink ? 'rgba(200,20,10,.85)' : 'rgba(120,10,5,.85)') : 'rgba(40,30,0,.8)', red ? '#ff6a5e' : COL.amber);
-      txt(t, W / 2, 84 * s + i * 34 * s, 15 * s, red ? '#fff' : COL.amber); });
+      rr(W / 2 - w / 2, (W < 1320 ? 140 : 80) * s + i * 34 * s, w, 28 * s, 6 * s, red ? (blink ? 'rgba(200,20,10,.85)' : 'rgba(120,10,5,.85)') : 'rgba(40,30,0,.8)', red ? '#ff6a5e' : COL.amber);
+      txt(t, W / 2, (W < 1320 ? 154 : 94) * s + i * 34 * s, 15 * s, red ? '#fff' : COL.amber); });
     notes = notes.filter(n => (n.age += dt) < 2.2);
     notes.forEach((n, i) => { const a = Math.min(1, (2.2 - n.age) * 2); g.globalAlpha = a; rr(W / 2 - 110 * s, H * 0.3 + i * 30 * s, 220 * s, 24 * s, 6 * s, 'rgba(8,10,14,.7)'); txt(n.t, W / 2, H * 0.3 + 12 * s + i * 30 * s, 13 * s, COL.green); g.globalAlpha = 1; });
   }
@@ -317,6 +370,7 @@ const FHud = (() => {
     else hudData(F, s);
     if (!small) { systems(F, W - 16, H - 16, s); info(F, 16, H - 16 - 104 * s, s); }
     warnings(F, s, dt);
+    fcuUpdate(F, dt);
     // the panel texture ~12 times a second while in the cockpit
     if (cockpit) { panelT -= dt; if (panelT <= 0) { panelT = 0.08; panel(F); } }
   }

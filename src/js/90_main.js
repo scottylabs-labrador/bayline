@@ -230,6 +230,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (bay) Terrain.update(Env.camera);
     if (typeof Globe !== 'undefined') safeFrame('globe', () => Globe.update(Env.camera));
     if (typeof Airports !== 'undefined') safeFrame('airports', () => Airports.update(Env.camera));
+    if (typeof Weather !== 'undefined' && World.started) safeFrame('weather', () => Weather.update(dt));
     if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
     if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));

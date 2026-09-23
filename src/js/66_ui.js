@@ -233,6 +233,7 @@ const UI = (() => {
       const names = { cab: 'Cab', onboard: 'Onboard', chase: 'Chase', trackside: 'Trackside', heli: 'Helicopter', walk: 'On foot', fly: 'Flying', orbit: 'Overview' };
       el.hmode.textContent = typeof Flight !== 'undefined' && Flight.active ? 'Flying · ' + Flight.type.short : (Sim.drive ? 'Driving · ' : '') + (names[Player.mode] || Player.mode);
       el.hspeed.textContent = Env.time.live && Env.time.scale === 1 ? 'Live' : (Env.time.scale + '×');
+      { const fl = typeof Flight !== 'undefined' && Flight.active; el.hspeed.hidden = fl; el.hnet.parentElement.hidden = fl; }
       if (typeof Net !== 'undefined') { el.hnet.textContent = Net.status.text || 'Solo'; el.hdot.classList.toggle('on', !!Net.status.online); }
       drawStrip();
       // cab panel

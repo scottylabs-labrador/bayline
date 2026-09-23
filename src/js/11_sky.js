@@ -161,6 +161,8 @@ const Sky = (() => {
 
   // ---------------------------------------------------------------- weather (deterministic per date) + marine-layer schedule
   const weather = { kind: 'auto', fog: 0.6, clouds: 0.2, cirrus: 0.3, haze: 2.2, ymd: '' };
+  let live = null; const cloudDrift = new THREE.Vector2();          // real weather (72_weather.js) when set
+  function setLive(l) { live = l; }
   const debug = {};            // e.g. Sky.debug.fogDens = 0 to switch the marine layer off while tuning
   function dailyWeather(ymd) {
     const r = U.rng(U.hashStr('bayline-wx-' + ymd)); const m = +ymd.slice(4, 6);
@@ -191,7 +193,7 @@ const Sky = (() => {
     uSkySunColor: { value: new THREE.Vector3(3, 3, 3) }, uSkyAmbient: { value: new THREE.Vector3(0.3, 0.35, 0.45) }, uSkyGlow: { value: new THREE.Vector3(0, 0, 0) },
     uSkyBMs: { value: MIE_BASE * 2 }, uSkyBMe: { value: MIE_BASE * 2 / 0.9 }, uSkyGain: { value: SKY_GAIN }, uSkyNight: U.uNight, uSkyTime: U.uTime, uSkyCamH: { value: 2 },
     uSkySunE: { value: SUN_E }, uSkyMoon: { value: 0 }, uSkyMoonUp: { value: 0 },
-    uCloudTex: { value: cloudTex }, uCloudCover: { value: 0.2 }, uCirrus: { value: 0.3 }, uCloudOfs: { value: new THREE.Vector2() },
+    uCloudTex: { value: cloudTex }, uCloudCover: { value: 0.2 }, uCirrus: { value: 0.3 }, uCloudOfs: { value: new THREE.Vector2() }, uCloudBase: { value: 1650 },
     uFogMap: { value: fogMap }, uFogNoise: { value: fogNoise }, uFogTop: { value: 400 }, uFogDist: { value: 8000 }, uFogDens: { value: 1 }, uFogOfs: { value: new THREE.Vector3() },
     uWorld: { value: new THREE.Vector4(WORLD.X0, WORLD.Z0, WORLD.SIZE, 0) },
   };
@@ -224,7 +226,7 @@ vec3 skyRadiance(vec3 dir) { return texture2D(uSkyTex, skyEquirectUV(normalize(d
   const glslFx = /* glsl */`
 #ifndef BAYLINE_SKYFX
 #define BAYLINE_SKYFX
-uniform sampler2D uCloudTex; uniform float uCloudCover, uCirrus; uniform vec2 uCloudOfs;
+uniform sampler2D uCloudTex; uniform float uCloudCover, uCirrus, uCloudBase; uniform vec2 uCloudOfs;
 uniform sampler2D uFogMap; uniform highp sampler3D uFogNoise; uniform float uFogTop, uFogDist, uFogDens; uniform vec3 uFogOfs; uniform vec4 uWorld;
 vec2 skyRaySph(vec3 ro, vec3 rd, float r) { float b = dot(ro, rd); float c = dot(ro, ro) - r * r; float d = b * b - c; if (d < 0.0) return vec2(-1.0); d = sqrt(d); return vec2(-b - d, -b + d); }
 // single scattering from altitude h0 along rd to space (or the ground); T = transmittance of the ray
@@ -417,6 +419,7 @@ float skyFogDensity(vec3 p) {
     const ymd = Env.serviceDay().ymd;
     if (ymd !== weather.ymd) { Object.assign(weather, dailyWeather(ymd), { ymd }); }
     const kind = st.weather || 'auto'; let wFog = weather.fog, wClouds = weather.clouds, wCirrus = weather.cirrus, wHaze = weather.haze;
+    if (kind === 'auto' && live) { wClouds = live.clouds; wCirrus = live.cirrus; wHaze = live.haze; }
     if (kind === 'clear') { wFog = 0; wClouds = 0.05; wCirrus = 0.15; wHaze = 1.2; }
     else if (kind === 'fog') { wFog = 1; wHaze = Math.max(wHaze, 2.5); }
     else if (kind === 'cloudy') { wClouds = 0.72; wCirrus = 0.5; wHaze = Math.max(wHaze, 2.6); }
@@ -447,8 +450,10 @@ float skyFogDensity(vec3 p) {
     uniforms.uSkyGlow.value.set(0.055 * glow, 0.034 * glow, 0.018 * glow);
     // clouds & wind drift (from the WNW, ~6 m/s, like the sea breeze)
     uniforms.uCloudCover.value = wClouds; uniforms.uCirrus.value = wCirrus;
+    uniforms.uCloudBase.value = kind === 'auto' && live && live.base ? live.base : 1650;
     const tw = Env.time.sec + (+ymd.slice(6, 8)) * 86400;
-    uniforms.uCloudOfs.value.set(tw * 6 / 11000 * 0.8, tw * 6 / 11000 * 0.35);
+    if (live && kind === 'auto') { const wd = (live.windDir + 180) * Math.PI / 180, ws = live.windSpeed; cloudDrift.x += Math.sin(wd) * ws * dt / 11000; cloudDrift.y += -Math.cos(wd) * ws * dt / 11000; uniforms.uCloudOfs.value.set(tw * 6 / 11000 * 0.8 + cloudDrift.x, tw * 6 / 11000 * 0.35 + cloudDrift.y); }
+    else uniforms.uCloudOfs.value.set(tw * 6 / 11000 * 0.8, tw * 6 / 11000 * 0.35);
     // marine layer
     const fs = fogSchedule(Env.time.sec, wFog);
     uniforms.uFogTop.value = fs.top; uniforms.uFogDist.value = fs.dist; uniforms.uFogDens.value = wFog > 0.02 && (typeof Globe === 'undefined' || Globe.frame.bay) ? 0.4 + 0.8 * wFog : 0;   // the marine layer map covers the Bay only
@@ -461,7 +466,7 @@ float skyFogDensity(vec3 p) {
     if (key !== bakeKey) { bakeKey = key; bake(); }
   }
   return {
-    uniforms, glsl, glslFx, update, rebuildFogMap, sunLight, ambient, weather, envScene, domeMat, debug,
+    uniforms, glsl, glslFx, update, rebuildFogMap, sunLight, ambient, weather, envScene, domeMat, debug, setLive, get live() { return live; },
     transmittance: (h, mu, out = [0, 0, 0]) => transmittance(h, mu, uniforms.uSkyBMe.value, out),
     get fogMapReady() { return fogMapReady; }, WORLD, SKY_GAIN,
   };
