@@ -483,8 +483,14 @@ const TrackGeo = (() => {
       const gnd = (lat) => U.clamp(Terrain.h(F.x + F.rx * lat, F.z + F.rz * lat) - F.y, -5, 2.5) - 0.12;
       const set = (i, lat, y, c) => { pts[i][0] = lat; pts[i][1] = y; pts[i][2] = c; };
       // centre: tie ends of every lane (canted); crowded lanes merge
-      for (let k = 0; k < 4; k++) { set(4 + 2 * k, lanes[k] - TIE_HALF, -0.212 + cant(lanes[k] - TIE_HALF), C_BALL); set(5 + 2 * k, lanes[k] + TIE_HALF, -0.212 + cant(lanes[k] + TIE_HALF), C_BALL); }
+      // padded slots (fewer than 4 tracks) collapse onto the outer tie end of the last real track, not its centre
+      for (let k = 0; k < 4; k++) {
+        const real = k < n; const lo = real ? lanes[k] - TIE_HALF : lanes[n - 1] + TIE_HALF, hi = real ? lanes[k] + TIE_HALF : lanes[n - 1] + TIE_HALF;
+        set(4 + 2 * k, lo, 0, C_BALL); set(5 + 2 * k, hi, 0, C_BALL);
+      }
       for (let i = 5; i < 11; i += 2) if (pts[i + 1][0] < pts[i][0]) { const m = (pts[i][0] + pts[i + 1][0]) / 2; pts[i][0] = m; pts[i + 1][0] = m; }
+      // heights from the FINAL lateral positions, so merged points never leave a step (a thin wall) behind
+      for (let i = 4; i < 12; i++) pts[i][1] = -0.212 + cant(pts[i][0]);
       set(3, aL - 1.62, -0.235 + cant(aL - 1.3), C_BALL); set(12, aR + 1.62, -0.235 + cant(aR + 1.3), C_BALL);
       if (br) {
         set(0, aL - 2.05, -0.45, C_DECK); set(1, aL - 2.05, -0.45, C_DECK); set(2, aL - 1.95, -0.62, C_DECK);
