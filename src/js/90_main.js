@@ -171,6 +171,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   let last = performance.now(), fpsAcc = 0, fpsN = 0, calm = 0;
   const TIERS = [ { name: 'ultra', dpr: 2, lod: 4.8, post: 'high' }, { name: 'high', dpr: 1.5, lod: 4.2, post: 'high' }, { name: 'medium', dpr: 1.25, lod: 3.4, post: 'medium' }, { name: 'low', dpr: 1, lod: 2.6, post: 'low' } ];
   let tier = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 3 : 1;
+  // #q=ultra|high|medium|low forces a quality tier and turns the automatic tiering off
+  const qForced = TIERS.findIndex(t => t.name === hash.get('q')); if (qForced >= 0) tier = qForced;
   function applyTier() {
     const T = TIERS[tier]; Env.renderer.setPixelRatio(Math.min(T.dpr, devicePixelRatio)); Terrain.lodFactor.value = T.lod;
     if (typeof Post !== 'undefined' && Post.setQuality) safe('post', () => Post.setQuality(T.post));
@@ -189,7 +191,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     // automatic quality tiers: resolution, terrain detail and post effects follow the frame time
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 2.5) { const avg = fpsAcc / fpsN; fpsAcc = 0; fpsN = 0;
-      if (avg > 0.026 && tier < TIERS.length - 1) { tier++; applyTier(); } else if (avg < 0.0135 && tier > 0) { calm++; if (calm >= 4) { calm = 0; tier--; applyTier(); } } else calm = 0; }
+      if (qForced >= 0) {} else if (avg > 0.026 && tier < TIERS.length - 1) { tier++; applyTier(); } else if (avg < 0.0135 && tier > 0) { calm++; if (calm >= 4) { calm = 0; tier--; applyTier(); } } else calm = 0; }
     streamUi();
     const camP = Env.camera.position;
     // the Bay's afternoon sea breeze: calm mornings, gusty 2–6 PM, easing at night (trees, flags, water)
