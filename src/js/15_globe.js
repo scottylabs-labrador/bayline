@@ -16,7 +16,7 @@ const Globe = (() => {
   const N = 32, NV = (N + 1) * (N + 1);                 // quads per tile side, grid vertices
   const HZ_MAX = 14, SIZE = 256;                        // terrarium: finest zoom used, pixels per tile
   const BX0 = -45056, BZ0 = -49152, BS = 102400;        // the Bayline square (Bay frame)
-  const group = new THREE.Group(); group.name = 'globe';
+  const group = new THREE.Group(); group.name = 'globe'; group.layers.enable(1);
   const stats = { nodes: 0, drawn: 0, hTiles: 0, iTiles: 0, loading: 0, built: 0, fails: 0 };
 
   // ------------------------------------------------------------------ frame
@@ -36,6 +36,13 @@ const Globe = (() => {
     return frame;
   }
   const onFrame = (f) => frameListeners.push(f);
+  // keep the anchor (camera or aircraft) near the frame origin: flat-frame distortion stays < ~1.5 %
+  function maybeRebase(p) {
+    const d = Math.hypot(p.x, p.z);
+    if (frame.bay) { if (d < 175000) return false; }
+    else if (d < 150000) { const ll = w2ll(p.x, p.z); if (Math.hypot((ll.lat - Geo.LAT0) * Geo.MLAT, (ll.lon - Geo.LON0) * Geo.MLON) > 140000) return false; }
+    const ll = w2ll(p.x, p.z); setFrame(ll.lat, ll.lon); return true;
+  }
 
   // ------------------------------------------------------------------ web mercator
   const lonOf = (x, z) => x / 2 ** z * 360 - 180;
@@ -276,7 +283,7 @@ const Globe = (() => {
     geo.setIndex(indexAttr); geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, (mn + mx) / 2, 0), tile * 0.9 + (mx - mn) + 100);
     if (!n.mesh) {
       n.mesh = new THREE.Mesh(geo, makeMaterial()); n.mesh.frustumCulled = false; n.mesh.receiveShadow = true; n.mesh.matrixAutoUpdate = false;
-      n.mesh.renderOrder = -3; group.add(n.mesh);
+      n.mesh.renderOrder = -3; n.mesh.layers.enable(1); group.add(n.mesh);
     }
     n.mn = mn; n.mx = mx; n.hKey = hr ? key(hr.z, hr.x, hr.y) : -1; n.hZ = hr ? hr.z : -1;
     n.mlonB = frame.mlon; n.mlatB = frame.mlat; n.frameId = -1; place(n); stats.built++;
@@ -371,6 +378,6 @@ const Globe = (() => {
     try { maxAniso = Math.min(8, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
     Env.scene.add(group);
   }
-  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, inBayline, h, hAt, ensure, lodK,
+  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, maybeRebase, inBayline, h, hAt, ensure, lodK,
     set enabled(v) { enabled = !!v; }, get enabled() { return enabled; }, tx, ty, lonOf, latOf, inUS };
 })();

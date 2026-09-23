@@ -24,6 +24,11 @@ const Player = (() => {
   // ---------- input ----------
   function init() {
     const c = Env.canvas;
+    // a new frame: carry every position over through latitude/longitude
+    if (typeof Globe !== 'undefined') Globe.onFrame((f, o) => {
+      const cv = (p, kx = 'x', kz = 'z') => { const lat = o.lat0 - p[kz] / o.mlat, lon = o.lon0 + p[kx] / o.mlon; p[kx] = (lon - f.lon0) * f.mlon; p[kz] = -(lat - f.lat0) * f.mlat; };
+      cv(fly); cv(walk); cv(orbit, 'tx', 'tz'); cv(cam().position); cam().updateMatrixWorld();
+    });
     window.addEventListener('keydown', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
       keys.add(e.code);
@@ -316,7 +321,7 @@ const Player = (() => {
         if (down('KeyS', 'ArrowDown')) { fly.x -= fx * sp; fly.y -= fy * sp; fly.z -= fz * sp; }
         if (down('KeyD', 'ArrowRight')) { fly.x += rx * sp; fly.z += rz * sp; } if (down('KeyA', 'ArrowLeft')) { fly.x -= rx * sp; fly.z -= rz * sp; }
         if (down('KeyE', 'Space')) fly.y += sp; if (down('KeyQ', 'ControlLeft')) fly.y -= sp;
-        fly.x = U.clamp(fly.x, -300000, 300000); fly.z = U.clamp(fly.z, -300000, 300000); fly.y = U.clamp(fly.y, groundAt(fly.x, fly.z) + 1.8, 30000);
+        fly.y = U.clamp(fly.y, groundAt(fly.x, fly.z) + 1.8, 30000);
         c.position.set(fly.x, fly.y, fly.z); worldLook(look.yaw, look.pitch);
         break;
       }
@@ -361,6 +366,7 @@ const Player = (() => {
     if (mode === 'onboard' && tr) return { mode: 'ride', trip: tr.trip.id, s: tr.s, car: ob.car, x: ob.x, y: ob.y, z: ob.z, yaw: look.yaw, speed: tr.dir ? tr.v : -tr.v };
     if (mode === 'cab' && tr) return { mode: tr.driven ? 'drive' : 'cab', trip: tr.trip.id, s: tr.s, car: tr.dir ? 0 : 99, x: 0, y: 0, z: 0, yaw: 0, speed: tr.dir ? tr.v : -tr.v };
     if (Sim.drive) { const D = Sim.drive; return { mode: 'drive', trip: D.trip.id, s: D.s, car: -1, x: c.position.x, y: c.position.y, z: c.position.z, yaw: 0, speed: D.dir ? D.v : -D.v }; }
+    if (typeof Globe !== 'undefined' && !Globe.frame.bay) return { mode: 'map', trip: '', s: 0, car: -1, x: 0, y: 0, z: 0, yaw: 0, speed: 0 };   // away from the Bay
     return { mode: mode === 'walk' ? 'walk' : 'fly', trip: '', s: 0, car: -1, x: c.position.x, y: c.position.y, z: c.position.z, yaw: look.yaw, speed: 0 };
   }
   return { init, update, setMode, setFocus, interact, teleportToStation, focusTrain, state, on, releaseLock,

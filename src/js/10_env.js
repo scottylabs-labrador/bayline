@@ -16,6 +16,7 @@ const Env = (() => {
 
   // ---------- time ----------
   const LAT = 37.45, LON = -122.12;
+  const loc = { lat: LAT, lon: LON };      // where the sun and moon are computed (follows the camera around the planet)
   const time = { sec: 8 * 3600, date: new Date(), scale: 1, paused: false, live: true };
   function pacificParts(d) {
     const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, weekday: 'short' });
@@ -35,9 +36,9 @@ const Env = (() => {
     const g = 2 * Math.PI / 365 * (doy - 1 + (hourUTC - 12) / 24);
     const eqt = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
     const decl = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
-    const tst = hourUTC * 60 + eqt + 4 * LON;             // true solar time, minutes
+    const tst = hourUTC * 60 + eqt + 4 * loc.lon;         // true solar time, minutes
     const ha = (tst / 4 - 180) * U.DEG;                    // hour angle
-    const lat = LAT * U.DEG;
+    const lat = loc.lat * U.DEG;
     const cosZ = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(ha);
     const zen = Math.acos(U.clamp(cosZ, -1, 1)); const el = Math.PI / 2 - zen;
     let az = Math.acos(U.clamp((Math.sin(lat) * Math.cos(zen) - Math.sin(decl)) / (Math.cos(lat) * Math.sin(zen)), -1, 1));
@@ -60,6 +61,9 @@ const Env = (() => {
   scene.add(sun, sun.target);
   const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x6a5a3a, 0.45); scene.add(hemi);
   const moon = new THREE.DirectionalLight(0x9fb4ff, 0.0); scene.add(moon, moon.target);
+  // layer 1 = the planet-wide layer (sky, lights, globe, aircraft): outside the Bay frame the camera sees only it,
+  // so every Bayline object (layer 0 only) drops out without being touched
+  for (const o of [camera, sky, sun, sun.target, hemi, moon, moon.target]) o.layers.enable(1);
   scene.fog = null;       // aerial perspective + marine layer are done in post from depth (14_post.js)
 
   // ---------- image-based lighting (PMREM of the sky) ----------
@@ -160,6 +164,12 @@ const Env = (() => {
     const p = pacificParts(time.date); const wd = new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay();
     return { kind: (wd === 0 || wd === 6) ? 'wkend' : 'wkday', ymd: `${p.y}${String(p.m).padStart(2, '0')}${String(p.d).padStart(2, '0')}` };
   }
+  // local time at the solar location (away from the Bay): UTC plus the longitude's nominal zone
+  function utcOffsetHere() { return Math.round(loc.lon / 15); }
+  function localSec(sec = time.sec) { return ((sec - pacificOffsetHours(time.date) * 3600 + utcOffsetHere() * 3600) % 86400 + 86400) % 86400; }
+  function setLocalClock(lsec) { time.sec = ((lsec + pacificOffsetHours(time.date) * 3600 - utcOffsetHere() * 3600) % 86400 + 86400) % 86400; time.live = false; }
+  function setSolarLocation(lat, lon) { loc.lat = lat; loc.lon = lon; }
   function clockText(sec = time.sec) { const h = Math.floor(sec / 3600) % 24, m = Math.floor(sec / 60) % 60; const ap = h < 12 ? 'AM' : 'PM'; return `${(h % 12) || 12}:${String(m).padStart(2, '0')} ${ap}`; }
-  return { renderer, scene, camera, canvas, sky, sun, hemi, moon, time, state, sunDir, moonDir, update, setClock, goLive, serviceDay, clockText, nowPacificSeconds, refreshEnv, shadowCam: SC };
+  return { renderer, scene, camera, canvas, sky, sun, hemi, moon, time, state, sunDir, moonDir, update, setClock, goLive, serviceDay, clockText, nowPacificSeconds, refreshEnv, shadowCam: SC,
+    setSolarLocation, localSec, setLocalClock, utcOffsetHere, loc };
 })();

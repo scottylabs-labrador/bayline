@@ -90,11 +90,13 @@ const U = (() => {
     t.anisotropy = opts.aniso || 4; if (opts.repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; } if (opts.nearest) { t.magFilter = THREE.NearestFilter; }
     t.userData.canvas = c; t.userData.ctx = ctx; return t;
   }
+  // put an object tree on the planet-wide layer (visible in every frame, see Env)
+  function global(o) { o.traverse(c => c.layers.enable(1)); return o; }
   // Shared uniforms that custom shaders may reference (updated once per frame by the engine).
   const uNight = { value: 0 };   // 0 = full day, 1 = full night
   const uTime = { value: 0 };    // seconds since page start (for animation)
   const uWind = { value: 0.4 };  // 0..1
   const BEND_K = 1 / (2 * 6371000);   // drop (m) = BEND_K * d²
   return { clamp, lerp, invLerp, smooth, TAU, DEG, wrapAngle, rng, hash2, hashStr, noise2, fbm2, BEND_K, BEND_GLSL,
-           mergeGeometries, place, tint, canvasTexture, uNight, uTime, uWind };
+           mergeGeometries, place, tint, canvasTexture, uNight, uTime, uWind, global };
 })();

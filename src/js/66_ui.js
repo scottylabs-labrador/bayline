@@ -202,8 +202,15 @@ const UI = (() => {
 
   // ---------- per frame ----------
   let slow = 0;
+  let placeFn = null;                    // (x, z) -> label away from the Bay (airports, set by Flight)
+  let subFn = null, stripOff = false;       // HUD sub-line away from the Bay; hide the line strip (flight)
   function whereText() {
-    const p = Env.camera.position; const n = Track.nearest(p.x, p.z, 4000);
+    const p = Env.camera.position;
+    if (typeof Globe !== 'undefined' && (!Globe.frame.bay || !Globe.inBayline(p.x, p.z))) {
+      const t = placeFn && placeFn(p.x, p.z); if (t) return t;
+      const ll = Globe.w2ll(p.x, p.z); return `${Math.abs(ll.lat).toFixed(3)}° ${ll.lat >= 0 ? 'N' : 'S'}  ${Math.abs(ll.lon).toFixed(3)}° ${ll.lon >= 0 ? 'E' : 'W'}`;
+    }
+    const n = Track.nearest(p.x, p.z, 4000);
     if (!n) { const st = Stations.nearest(p, 1e9); return st ? `${(Math.hypot(st.x - p.x, st.z - p.z) / 1000).toFixed(1)} km from ${st.name}` : ''; }
     const st = Track.stationNear(n.s, 400); if (st) return st.name;
     let a = null, b = null; for (const s of Stations.list) { if (s.s <= n.s) a = s; else { b = s; break; } }
@@ -214,12 +221,13 @@ const UI = (() => {
     slow -= dt; const tick = slow <= 0; if (tick) slow = 0.2;
     const t = Env.time.sec;
     if (tick) {
-      const s = Math.floor(t % 60); el.hclock.innerHTML = Env.clockText(t).replace(' ', `<span style="font-size:15px;color:var(--ink-dim)">:${String(s).padStart(2, '0')} </span>`);
+      const away = typeof Globe !== 'undefined' && !Globe.frame.bay, tl = away ? Env.localSec(t) : t, s = Math.floor(tl % 60);
+      el.hclock.innerHTML = Env.clockText(tl).replace(' ', `<span style="font-size:15px;color:var(--ink-dim)">:${String(s).padStart(2, '0')} </span>`) + (away ? `<span style="font-size:12px;color:var(--ink-faint);margin-left:8px">local, UTC${Env.utcOffsetHere() >= 0 ? '+' : '−'}${Math.abs(Env.utcOffsetHere())}</span>` : '');
       el.hwhere.textContent = whereText();
       const tr = Player.focusTrain(); let sub = '';
       if (tr) { const ns = tr.plan && tr.seg ? tr.trip.stops[Sim.nextStopK(tr.plan, tr.seg)] : null; sub = `${Sim.routeShort(tr.trip)} ${tr.trip.id} → ${(Sim.TT.names[Sim.TT.stations[(tr.trip.stops[tr.trip.stops.length - 1] || [0])[0]]] || '')} · ${Math.round(tr.v / Sim.MPH)} mph${ns ? ' · next ' + Sim.TT.names[Sim.TT.stations[ns[0]]] : ''}`; }
       else sub = `${Sim.running.length} trains running · ${Env.serviceDay().kind === 'wkday' ? 'weekday' : 'weekend'} timetable`;
-      el.hsub.textContent = sub;
+      el.hsub.textContent = away ? (subFn ? subFn() || '' : '') : sub;
       const names = { cab: 'Cab', onboard: 'Onboard', chase: 'Chase', trackside: 'Trackside', heli: 'Helicopter', walk: 'On foot', fly: 'Flying', orbit: 'Overview' };
       el.hmode.textContent = (Sim.drive ? 'Driving · ' : '') + (names[Player.mode] || Player.mode);
       el.hspeed.textContent = Env.time.live && Env.time.scale === 1 ? 'Live' : (Env.time.scale + '×');
@@ -227,7 +235,7 @@ const UI = (() => {
       drawStrip();
       // cab panel
       const D = Sim.drive; const showCab = !!D || Player.mode === 'onboard';   // riding in the cab: the desk displays say it all
-      el.cab.hidden = !showCab; el.drivebar.hidden = !D; el.strip.hidden = !!D;
+      el.cab.hidden = !showCab; el.drivebar.hidden = !D; el.strip.hidden = !!D || (typeof Globe !== 'undefined' && !Globe.frame.bay) || stripOff;
       if (showCab) {
         const trr = D ? Sim.trainByKey(D.plan.key) : tr; const v = D ? D.v : trr ? trr.v : 0; const s = D ? D.s : trr ? trr.s : 0;
         el.cspeed.textContent = Math.round(v / Sim.MPH); el.climit.textContent = 'limit ' + Math.round(Track.limit(s) / Sim.MPH);
@@ -262,5 +270,6 @@ const UI = (() => {
     if (el.touch) el.joy.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly') || anyOpen();
     if (!el.mapov.hidden) drawMap();
   }
-  return { init, update, toast, openBoard, openMissions, openMap, showResult, closeAll, anyOpen, get boardStation() { return boardStation; } };
+  const setPlaceFn = (f) => { placeFn = f; }, setSubFn = (f) => { subFn = f; }, setStripOff = (v) => { stripOff = !!v; };
+  return { setPlaceFn, setSubFn, setStripOff, init, update, toast, openBoard, openMissions, openMap, showResult, closeAll, anyOpen, get boardStation() { return boardStation; } };
 })();

@@ -145,7 +145,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     function update() {
       let n = 0; if (typeof Net === 'undefined') return;
       for (const o of Net.others()) {
-        if (o.modeName === 'drive' || o.modeName === 'cab') continue;
+        if (o.modeName === 'drive' || o.modeName === 'cab' || o.modeName === 'menu' || o.modeName === 'map') continue;
         let x = o.x, y = o.y, z = o.z;
         if (o.modeName === 'ride') { const tr = Sim.running.find(r => r.trip.id === o.trip); if (!tr || !tr.entry) continue; const car = tr.entry.consist.cars[o.car]; if (!car) continue; v.set(o.x, o.y, o.z); car.group.localToWorld(v); x = v.x; y = v.y; z = v.z; }
         else if (o.modeName === 'fly') y -= 1.6; else if (o.modeName === 'walk') y -= 1.62;
@@ -216,25 +216,29 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Sim.update(dt, camP);
     Game.update(Env.time.paused ? 0 : dt * Env.time.scale);
     Player.update(dt);
+    // the frame follows the camera around the planet; outside the Bay only the planet-wide layer draws and updates
+    if (typeof Globe !== 'undefined') safeFrame('rebase', () => { if (Globe.maybeRebase(Env.camera.position)) UI.toast(Globe.frame.bay ? 'Back over the Bay' : 'Leaving the Bay: the world beyond is live satellite imagery', 4); });
+    const bay = typeof Globe === 'undefined' || Globe.frame.bay;
+    if (typeof Globe !== 'undefined') { const ll = Globe.w2ll(Env.camera.position.x, Env.camera.position.z); Env.setSolarLocation(ll.lat, ll.lon); }
+    Env.camera.layers.mask = bay ? 3 : 2;
     const cp = Env.camera.position; envArg.night = U.uNight.value; envArg.time = Env.time.sec; envArg.camPos = cp;
-    Terrain.update(Env.camera);
+    if (bay) Terrain.update(Env.camera);
     if (typeof Globe !== 'undefined') safeFrame('globe', () => Globe.update(Env.camera));
-    TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp);
-    Stations.update(dt, cp, Sim.running);
-    if (typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
-    if (World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
-    if (World.air) safeFrame('air', () => World.air.update(dt, envArg));
-    if (World.birds) safeFrame('birds', () => World.birds.update(dt, envArg));
-    if (World.traffic) safeFrame('traffic', () => { const T = World.traffic; T.tick -= dt;
+    if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
+    if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
+    if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
+    if (bay && World.air) safeFrame('air', () => World.air.update(dt, envArg));
+    if (bay && World.birds) safeFrame('birds', () => World.birds.update(dt, envArg));
+    if (bay && World.traffic) safeFrame('traffic', () => { const T = World.traffic; T.tick -= dt;
       const alt = cp.y - Terrain.h(cp.x, cp.z);
       if (T.tick <= 0) { T.tick = 1.2;
         // re-stream when the camera moved, and keep retrying while empty (street tiles stream in after boot)
         const moved = Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650, empty = !T.lanes || !T.lanes.length;
         if (alt < 1500 && (moved || (empty && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500), { x: cp.x, z: cp.z }, Towns.areasNear ? Towns.areasNear(cp.x, cp.z, 500, 3) : []); } }
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
-    if (typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
-    if (typeof GroundCover !== 'undefined') safeFrame('groundcover', () => GroundCover.update(cp));
-    if (typeof Boats !== 'undefined') safeFrame('boats', () => Boats.update(dt, envArg));
+    if (bay && typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
+    if (bay && typeof GroundCover !== 'undefined') safeFrame('groundcover', () => GroundCover.update(cp));
+    if (bay && typeof Boats !== 'undefined') safeFrame('boats', () => Boats.update(dt, envArg));
     Avatars.update();
     if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }

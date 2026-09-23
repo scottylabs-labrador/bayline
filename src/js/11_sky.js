@@ -451,7 +451,7 @@ float skyFogDensity(vec3 p) {
     uniforms.uCloudOfs.value.set(tw * 6 / 11000 * 0.8, tw * 6 / 11000 * 0.35);
     // marine layer
     const fs = fogSchedule(Env.time.sec, wFog);
-    uniforms.uFogTop.value = fs.top; uniforms.uFogDist.value = fs.dist; uniforms.uFogDens.value = wFog > 0.02 ? 0.4 + 0.8 * wFog : 0;
+    uniforms.uFogTop.value = fs.top; uniforms.uFogDist.value = fs.dist; uniforms.uFogDens.value = wFog > 0.02 && (typeof Globe === 'undefined' || Globe.frame.bay) ? 0.4 + 0.8 * wFog : 0;   // the marine layer map covers the Bay only
     uniforms.uFogOfs.value.set(tw * 3.2 / 2600, tw * 0.15 / 700, tw * 1.1 / 2600);
     if (debug.fogDens !== undefined) uniforms.uFogDens.value = debug.fogDens;
     if (debug.clouds !== undefined) uniforms.uCloudCover.value = debug.clouds;
