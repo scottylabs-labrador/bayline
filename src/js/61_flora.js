@@ -20,7 +20,7 @@ const Flora = (() => {
   const V3 = THREE.Vector3;
   // SPEC_v2 world tiling (level 7 = 800 m tiles)
   const X0 = -45056, Z0 = -49152, SIZE = 102400, L7 = 7, T7 = SIZE / 128;
-  const KINDS = ['oak', 'redwood', 'eucalyptus', 'palm', 'sycamore', 'cypress', 'pine', 'street', 'fanpalm'];
+  const KINDS = ['oak', 'redwood', 'eucalyptus', 'palm', 'sycamore', 'cypress', 'pine', 'street', 'fanpalm', 'shrub'];   // shrub: generated along the line
   const NK = KINDS.length;
   const Q = {   // quality tiers
     high: { near: 135, mid: 560, far: 1650, load: 1900, shadows: true, nearMax: 1400, midMax: 9000, farMax: 160000 },
@@ -508,6 +508,9 @@ const Flora = (() => {
       perTwig: 6, shell: 80, shellInner: 0.65, shellY: [-0.6, 1], leafSize: 1.35, leaf: REG.streetLeaf, bark: REG.barkPlane, crown: [0, 5.3, 0, 3.5, 2.8, 3.5] },
     eucalyptus: { H: 32, R: 7, trunkH: 14, trunkR: 0.62, lean: 1.6, limbs: 5, limbEl: [0.3, 1.25], attach: [0.7, 1.0], limbR: 0.45, limbBend: 0.3, twigs: 6, twigBend: -0.5,
       perTwig: 6, shell: 120, shellInner: 0.55, shellY: [-0.7, 1], leafSize: 2.3, leaf: REG.eucLeaf, bark: REG.barkEuc, crown: [0.4, 24, 0, 6.6, 8.2, 6.6], hang: true, aspect: 0.7 },
+    // multi-stemmed evergreen shrub (oleander / pittosporum hedges along the right of way)
+    shrub: { H: 2.8, R: 1.8, trunkH: 0.22, trunkR: 0.07, lean: 0.25, limbs: 8, limbEl: [0.55, 1.35], attach: [0.3, 1.0], limbR: 0.7, limbBend: 0.25, twigs: 3, twigBend: 0.15,
+      perTwig: 6, shell: 110, shellInner: 0.55, shellY: [-0.8, 1], leafSize: 0.95, leaf: REG.streetLeaf, bark: REG.barkPlane, crown: [0, 1.45, 0, 1.75, 1.3, 1.75], clumps: 9, clumpR: 0.5, flatten: 1.2 },
   };
   function buildBroadleaf(kind, lod, seed) {
     const p = SPECIES[kind]; const { B, cards, skeleton, r } = broadleaf(p, seed);
@@ -653,9 +656,10 @@ const Flora = (() => {
   const BUILD = {
     oak: (lod, s) => buildBroadleaf('oak', lod, s), sycamore: (lod, s) => buildBroadleaf('sycamore', lod, s), street: (lod, s) => buildBroadleaf('street', lod, s),
     eucalyptus: (lod, s) => buildBroadleaf('eucalyptus', lod, s), redwood: buildRedwood, pine: buildPine, cypress: buildCypress, palm: buildPalm, fanpalm: buildFanPalm,
+    shrub: (lod, s) => buildBroadleaf('shrub', lod, s),
   };
   // model reference dimensions (height, crown radius) used to scale instances to the data
-  const DIM = { oak: [9.5, 7.0], redwood: [34, 5.0], eucalyptus: [32, 6.8], palm: [13.5, 5.3], sycamore: [17, 6.7], cypress: [15, 6.5], pine: [20, 6.2], street: [8, 3.6], fanpalm: [23, 2.5] };
+  const DIM = { oak: [9.5, 7.0], redwood: [34, 5.0], eucalyptus: [32, 6.8], palm: [13.5, 5.3], sycamore: [17, 6.7], cypress: [15, 6.5], pine: [20, 6.2], street: [8, 3.6], fanpalm: [23, 2.5], shrub: [2.8, 1.8] };
 
   // ==========================================================================================
   // MATERIALS: one foliage material for every species/LOD (atlas via aReg), wind in the vertex shader,
@@ -983,6 +987,38 @@ const Flora = (() => {
     }
     return any ? M : null;
   }
+  const SHRUB = KINDS.indexOf('shrub'), _rf = {};
+  function rowShrubs(x0, z0, H) {
+    if (typeof Track === 'undefined' || !Track.X || !Track.frame || !Track.offsets) return null;
+    const TX = Track.X, TZ = Track.Z, N = Track.n, step = Track.step || 5, out = [];
+    const xing = (Track.feat && Track.feat.crossings) || [];
+    const mAt = typeof Terrain !== 'undefined' && Terrain.maskAt ? Terrain.maskAt : null;
+    const [Hm, Rm] = DIM.shrub;
+    for (let i = 0; i < N; i += 2) {                                            // a slot every 10 m of line
+      const lx = TX[i] - x0, lz = TZ[i] - z0; if (lx < -20 || lz < -20 || lx > T7 + 20 || lz > T7 + 20) continue;
+      const s = i * step;
+      if (Track.inTunnel(s) || Track.onBridge(s) || Track.stationNear(s, 160)) continue;
+      let nearX = false; for (const c of xing) if (Math.abs(c.s - s) < 30) { nearX = true; break; } if (nearX) continue;
+      Track.frame(s, _rf); const offs = Track.offsets(s); let lo = -2.3, hi = 2.3; if (offs.length) { lo = Math.min(...offs); hi = Math.max(...offs); }
+      for (const side of [-1, 1]) {
+        const hs = hash(i * 3 + (side > 0 ? 1 : 0), 7717); if (hs < 0.38) continue;          // gaps in the hedge
+        const cnt = 1 + Math.floor(hash(i + 911, side * 31 + 5) * 2.6);
+        for (let k = 0; k < cnt; k++) {
+          const along = (hash(i * 7 + k, side * 13 + 11) - 0.5) * 9.5, out1 = 0.7 + hash(i * 5 + k, side * 17 + 3) * 2.4;
+          const lat = side < 0 ? lo - 7.6 - out1 : hi + 7.6 + out1;
+          const x = _rf.x + _rf.dx * along + _rf.rx * lat, z = _rf.z + _rf.dz * along + _rf.rz * lat;
+          if (x < x0 || z < z0 || x >= x0 + T7 || z >= z0 + T7) continue;          // each tile adds only its own
+          if (mAt) { if (mAt(x, z, 0) > 0.5) continue; const cls = Math.round(mAt(x, z, 3) * 255); if (cls === 6) continue; }
+          const hh = hash(Math.round(x * 7), Math.round(z * 7));
+          const sy = lerp(0.65, 1.3, hh), sx = lerp(0.7, 1.25, hash(Math.round(z * 5), Math.round(x * 3)));
+          const yaw = hh * TAU, br = lerp(0.8, 1.05, hash(Math.round(x * 3), 21)), hue = (hash(Math.round(z * 3), 23) - 0.5) * 0.1;
+          out.push([x, H(x, z) - 0.1 * sy, z, Math.cos(yaw) * sx, Math.sin(yaw) * sx, sy, br * (1 + hue), br, br * (1 - hue), hh]);
+          void Hm; void Rm;
+        }
+      }
+    }
+    return out;
+  }
   async function loadTile(t) {
     t.state = 'loading'; stats.loading++;
     const t0 = performance.now();
@@ -1032,7 +1068,17 @@ const Flora = (() => {
         K[m] = kind; m++; ysum += y;
       }
       if (t.dead) return;
-      t.D = D; t.K = K; t.n = m; t.ym = m ? ysum / m : 0; t.state = 'ready'; dirty = true; stats.trees += m;
+      // hedges and shrubs along the right of way (oleander, pittosporum, ivy on the fences) are too small for the crown
+      // detection, so they are generated: just outside the fence line on both sides, with irregular gaps, never at
+      // stations, crossings, tunnels, bridges, on water or on paved ground
+      const extra = mask ? rowShrubs(x0, z0, H) : null;
+      let DD = D, KK = K;
+      if (extra && extra.length) {
+        DD = new Float32Array((m + extra.length) * NF); DD.set(D.subarray(0, m * NF)); KK = new Uint8Array(m + extra.length); KK.set(K.subarray(0, m));
+        for (const e of extra) { DD.set(e, m * NF); KK[m] = SHRUB; ysum += e[1]; m++; }
+        stats.shrubs = (stats.shrubs || 0) + extra.length;
+      }
+      t.D = DD; t.K = KK; t.n = m; t.ym = m ? ysum / m : 0; t.state = 'ready'; dirty = true; stats.trees += m;
       if (m) pendingFar.push(t);
     } catch (e) {
       if (!t.dead) { t.state = e && e.notFound ? 'missing' : 'empty'; t.n = 0; }
