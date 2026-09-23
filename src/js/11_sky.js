@@ -367,7 +367,9 @@ float skyFogDensity(vec3 p) {
   });
   Env.sky.material = domeMat;
   const envScene = new THREE.Scene();
-  const envMat = domeMat.clone(); envMat.uniforms = Object.assign({ uSunDisk: { value: 0 }, uDomeScale: { value: 0.68 } }, uniforms);   // env map: same sky, ambient kept at the tuned level
+  // env map: same sky, ambient kept at the tuned level (built directly: clone() would try to copy the render-target texture uniform)
+  const envMat = new THREE.ShaderMaterial({ uniforms: Object.assign({ uSunDisk: { value: 0 }, uDomeScale: { value: 0.68 } }, uniforms), vertexShader: domeMat.vertexShader, fragmentShader: domeMat.fragmentShader,
+    side: domeMat.side, depthWrite: domeMat.depthWrite, fog: false, toneMapped: domeMat.toneMapped });
   const envSky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), envMat); envSky.scale.setScalar(100); envScene.add(envSky);
 
   // ---------------------------------------------------------------- per-frame update
