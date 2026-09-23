@@ -51,13 +51,18 @@ in parallel, on demand, around the camera, from `/data/v2/` on the same host.
 - **Ground:** a chunked-LOD quadtree (L0 102 km … L9 200 m tiles) that drapes 0.6 m USDA NAIP aerial
   photography over high-resolution terrain (AWS Terrain Tiles), carved exactly to the railway profile.
   It sharpens progressively like a globe viewer, and masks drive water, night lights and landcover.
-  Near the line (L9) the photography is super-resolved 4× on the GPU (Real-ESRGAN via PyTorch MPS) to
-  0.2 m/px, so the ground stays crisp at street level.
+  The photography is sharpened on the GPU with Real-ESRGAN (PyTorch MPS on Apple silicon):
+  - near the line (L9) to 0.2 m/px, so the ground stays crisp at street level;
+  - every 400 m tile (L8) to 0.39 m/px, which also sharpens every photo roof.
+  At eye level the photo gives way to synthesized asphalt, concrete, grass or soil whose colour comes from the
+  photo, and instanced grass grows wherever the photo shows lawn or golden summer fields.
 - **Buildings:** every OpenStreetMap building near the line, streamed in 800 m tiles, with real heights
   and roof shapes, and roofs textured from the same photograph.
 - **Trees:** individual crowns detected in the imagery, so every tree stands where the photo shows it.
 - **Light:** a physically based sky and atmosphere, the marine layer, and an HDR post pipeline
-  (SSAO, aerial perspective, bloom, ACES grading).
+  (SSAO, aerial perspective, bloom, ACES grading). Building glass reflects the real sky.
+- **Life on the Bay:** sailboats off Crissy Field and Coyote Point, ferries from the Ferry Building, container
+  ships under the Golden Gate, and planes landing at SFO and SJC, all derived from the clock like the trains.
 - **Railway:** the real timetable, PTC braking-curve supervision, signals driven by train occupancy,
   and working crossing gates.
 
@@ -84,6 +89,7 @@ Rebuild the world data. This needs network access; downloads are cached in `data
 python3 tools/bake_gtfs.py && python3 tools/bake_world.py        # timetable, track, core terrain
 python3 tools/bake_tiles.py                                        # NAIP imagery, heights, masks, trees -> data/pub/v2/tiles
 python3 tools/sr_tiles.py                                          # GPU super-resolution of the near-track imagery (L9)
+python3 tools/sr_l8.py                                             # GPU upgrade of every L8 tile to 1024 px
 python3 tools/fetch_osm.py && python3 tools/bake_towns.py          # buildings and roads -> data/pub/v2/tiles/b
 sh tools/publish_data.sh                                           # rsync data/pub/v2 to the server volume
 ```
