@@ -149,7 +149,7 @@ const Env = (() => {
     scene.fog.density = state.fogDensity * (1 + state.night * 0.4);
     // lights
     const sunUp = U.smooth(-2, 6, eDeg);
-    sun.intensity = 3.4 * sunUp; pal('sun', eDeg, sun.color);
+    sun.intensity = (2.3 + 0.9 * (1 - U.smooth(15, 55, eDeg))) * sunUp;   // softer at midday so bright albedos don't clip pal('sun', eDeg, sun.color);
     focus.copy(camPos);
     sun.position.copy(focus).addScaledVector(sunDir, 600); sun.target.position.copy(focus);
     // stabilise shadow texels to reduce shimmering
@@ -157,10 +157,10 @@ const Env = (() => {
     sun.position.x = Math.round(sun.position.x / texel) * texel; sun.position.z = Math.round(sun.position.z / texel) * texel;
     sun.target.position.x = Math.round(sun.target.position.x / texel) * texel; sun.target.position.z = Math.round(sun.target.position.z / texel) * texel;
     sun.castShadow = sunUp > 0.05;
-    hemi.intensity = 0.22 + 0.38 * sunUp + 0.12 * state.night;
+    hemi.intensity = 0.2 + 0.3 * sunUp + 0.12 * state.night;
     hemi.color.copy(skyU.zenith.value).lerp(tmpC.set(0xfff4e6), 0.62); hemi.groundColor.copy(skyU.ground.value).lerp(tmpC.set(0x8a7250), 0.3);
     moon.intensity = 0.35 * state.night; moon.position.copy(focus).addScaledVector(moonDir, 600); moon.target.position.copy(focus);
-    renderer.toneMappingExposure = 0.95 + state.night * 0.55;
+    renderer.toneMappingExposure = 0.86 + state.night * 0.62 + (1 - U.smooth(8, 40, eDeg)) * 0.08 * (1 - state.night);
     sky.position.copy(camPos);
     U.uTime.value += dt;
     refreshEnv(false);

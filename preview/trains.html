@@ -21,7 +21,7 @@
 <script>
 (() => {
   const VIEWS = ['exterior', 'nose', 'side', 'doors', 'interior-lower', 'interior-upper', 'gangway', 'bike', 'wc', 'cab', 'roof',
-    'diesel', 'diesel-rear', 'diesel-interior', 'diesel-cab', 'night-exterior', 'night-interior', 'night-diesel', 'lod'];
+    'diesel', 'diesel-rear', 'diesel-interior', 'diesel-lower', 'diesel-vestibule', 'diesel-cab', 'night-exterior', 'night-interior', 'night-diesel', 'lod', 'plan', 'diesel-plan'];
   const hp = new URLSearchParams(location.hash.slice(1));
   const view = hp.get('view') || 'exterior', showMeta = hp.get('meta') === '1';
   document.getElementById('links').innerHTML = VIEWS.map(v => `<a href="#view=${v}" onclick="setTimeout(()=>location.reload())">${v}</a>`).join('');
@@ -33,7 +33,7 @@
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = night ? 1.0 : 0.95;
   document.body.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(view.includes('interior') || view === 'cab' || view === 'gangway' || view === 'bike' || view === 'wc' || view === 'diesel-cab' ? 70 : 42, innerWidth / innerHeight, 0.05, 120000);
+  const camera = new THREE.PerspectiveCamera(view.includes('interior') || view === 'cab' || view === 'gangway' || view === 'bike' || view === 'wc' || view.startsWith('diesel-') && view !== 'diesel-rear' ? 70 : 42, innerWidth / innerHeight, 0.05, 120000);
 
   // sky dome + PMREM environment from it
   const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: {
@@ -77,11 +77,12 @@
   c.setPantograph(1);
   c.setNight(night ? 1 : 0);
   c.setLights({ head: 1, tail: 1, interior: 1, cab: 1, lead: 'front' });
-  const inside = view.includes('interior') || ['gangway', 'bike', 'wc', 'cab', 'diesel-cab'].includes(view);
+  const inside = view.includes('interior') || ['gangway', 'bike', 'wc', 'cab', 'diesel-cab', 'diesel-lower', 'diesel-vestibule'].includes(view);
   if (inside || view === 'doors' || view === 'night-exterior') c.setInteriorVisible(true);
   if (view === 'nose' || view === 'exterior') c.cars[0].setInteriorVisible(true);
   if (view === 'doors' || view === 'night-exterior') c.setDoors('right', 1);
   if (view === 'lod') { c.cars.forEach((car, i) => car.setLOD(i < 2 ? 0 : i < 4 ? 1 : 2)); }
+  if (hp.get('xray') === '1' || view === 'plan' || view === 'diesel-plan') { c.setInteriorVisible(true); for (const car of c.cars) { car.ext.visible = false; car.glass.visible = false; car.decals.visible = false; } }
 
   // walking metadata overlay (#meta=1)
   if (showMeta) for (const car of c.cars) {
@@ -113,12 +114,15 @@
     case 'roof': set(X(1) + 6, 8.5, 9, X(1) + 8, 4.6, 0); break;
     case 'diesel': set(x0 + L0 / 2 + 11, 3.4, 12, x0 - 6, 2.2, 0); break;
     case 'diesel-rear': { const n = c.cars.length - 1, xl = X(n) - c.cars[n].length / 2; set(xl - 10, 3.2, 10, xl + 6, 2.4, 0); break; }
-    case 'diesel-interior': set(X(2) + 5, 2.5 + 1.55, -0.1, X(2) - 5, 3.7, 0.1); break;
+    case 'diesel-interior': set(X(2) + 3.6, 2.52 + 1.5, -0.1, X(2) - 5, 3.6, 0.1); break;
+    case 'diesel-lower': set(X(2) + 3.6, 0.55 + 1.55, 0.1, X(2) - 5, 1.5, 0); break;
+    case 'diesel-vestibule': set(X(2) - 4.5, 2.52 + 1.4, 0.6, X(2) - 11, 1.6, -0.2); break;
     case 'diesel-cab': { const e = c.cars[0].cabEye; set(x0 + e[0], e[1], e[2], x0 + e[0] + 10, e[1] - 1.0, e[2]); break; }
     case 'night-exterior': set(X(1) + 18, 2.8, 13, X(1) - 4, 2.2, 0); break;
     case 'night-interior': set(X(2) + 2.6, 0.62 + 1.6, -0.05, X(2) - 4, 1.8, 0.05); break;
     case 'night-diesel': set(x0 + L0 / 2 + 14, 3, 12, x0 - 8, 2.2, 0); break;
     case 'lod': set(x0 + 30, 22, 70, x0 - 60, 2, 0); break;
+    case 'plan': case 'diesel-plan': { const k = +(hp.get('car') || 2); camera.up.set(0, 0, -1); set(X(k), 19, 0, X(k), 0, 0); camera.fov = 42; camera.updateProjectionMatrix(); break; }
     default: set(x0 + L0 / 2 + 15, 3.6, 12.5, x0 - 10, 2.0, 0);
   }
   // orbit controls

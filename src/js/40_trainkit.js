@@ -918,7 +918,7 @@ const TrainKit = (() => {
       const n = 11, run = (xBot - xTop) / n, rise = (E.YU - E.YL) / n, zin = Math.abs(z0) < Math.abs(z1) ? z0 : z1, sz = Math.sign(z0 + z1);
       for (let i = 0; i < n; i++) {
         const xa = xBot - i * run, xb = xBot - (i + 1) * run, top = E.YL + (i + 1) * rise;
-        X.box('panel', Math.min(xa, xb), E.YL, z0, Math.max(xa, xb), top, z1);
+        X.box('panelDk', Math.min(xa, xb), E.YL, z0, Math.max(xa, xb), top, z1);
         T.hq('floor', Math.min(xa, xb), Math.max(xa, xb), z0, z1, top + 0.002, true);
         T.hq('stepEdge', Math.min(xa, xa - Math.sign(run) * 0.05), Math.max(xa, xa - Math.sign(run) * 0.05), z0, z1, top + 0.004, true);
       }
@@ -999,19 +999,19 @@ const TrainKit = (() => {
       T.xq('panel', p.cabBack + 0.02, -WI, WI, E.YCAB, 3.95, 1);
       X.box('desk', n0 + 1.3, E.YCAB, -1.2, n0 + 2.15, E.YCAB + 0.72, 1.2);
       X.boxR('deskLt', n0 + 1.52, E.YCAB + 0.8, 0.1, 0.5, 0.06, 2.3, 0, 0, 0.42);
-      X.boxR('screenOff', n0 + 1.6, E.YCAB + 0.86, 0.4, 0.05, 0.34, 0.98, 0, 0, 0.55);
-      screenX(C, n0 + 1.572, E.YCAB + 0.87, 0.16, 0.44, 0.3, 1, [0, 0, 0.5, 1], 0.55);
-      screenX(C, n0 + 1.572, E.YCAB + 0.87, 0.64, 0.44, 0.3, 1, [0.5, 0, 1, 1], 0.55);
-      for (let i = 0; i < 6; i++) X.cyl(i % 3 ? 'btnYellow' : 'btnGreen', n0 + 1.43, E.YCAB + 0.8, -0.3 + i * 0.1, 0.022, 0.02, 'y', 8);
-      X.cyl('btnRed', n0 + 1.4, E.YCAB + 0.8, 0.95, 0.045, 0.03, 'y', 12);
+      X.boxR('screenOff', n0 + 1.62, E.YCAB + 0.93, 0.4, 0.05, 0.34, 0.98, 0, 0, -0.55);
+      screenX(C, n0 + 1.59, E.YCAB + 0.94, 0.16, 0.44, 0.3, -1, [0, 0, 0.5, 1], 0.55);
+      screenX(C, n0 + 1.59, E.YCAB + 0.94, 0.64, 0.44, 0.3, -1, [0.5, 0, 1, 1], 0.55);
+      for (let i = 0; i < 6; i++) X.cyl(i % 3 ? 'btnYellow' : 'btnGreen', n0 + 1.5, E.YCAB + 0.83, -0.75 + i * 0.07, 0.013, 0.015, 'y', 8);
+      X.cyl('btnRed', n0 + 1.45, E.YCAB + 0.8, 1.02, 0.035, 0.03, 'y', 12);
       X.box('cabSeat', n0 + 0.55, E.YCAB, 0.3, n0 + 0.65, E.YCAB + 0.42, 0.54);
       X.box('cabSeat', n0 + 0.35, E.YCAB + 0.42, 0.16, n0 + 0.85, E.YCAB + 0.52, 0.68);
       X.boxR('cabSeat', n0 + 0.33, E.YCAB + 0.95, 0.42, 0.1, 0.85, 0.5, 0, 0, 0.12);
       for (const s of [-1, 1]) X.box('seatDk', n0 + 0.45, E.YCAB + 0.7, 0.42 + s * 0.28 - 0.03, n0 + 0.85, E.YCAB + 0.74, 0.42 + s * 0.28 + 0.03);
       X.box('cabSeat', n0 + 0.5, E.YCAB + 0.42, -0.72, n0 + 0.9, E.YCAB + 0.5, -0.3);
       X.box('band', n0 + 1.35, 3.62, -0.95, n0 + 1.42, 3.66, 0.95);
-      X.box('frameLt', n0 + 1.25, E.YCAB + 0.72, 0.0, n0 + 1.45, E.YCAB + 0.78, 0.24);
-      handle = { pivot: [n0 + 1.35, E.YCAB + 0.78, 0.12] };
+      X.box('frameLt', n0 + 1.25, E.YCAB + 0.72, -0.34, n0 + 1.45, E.YCAB + 0.78, -0.1);
+      handle = { pivot: [n0 + 1.35, E.YCAB + 0.78, -0.22] };
     }
     const hg = new Parts();
     hg.rod('steel', 0, 0, 0, 0, 0.2, 0, 0.012, 6); hg.box('black', -0.03, 0.18, -0.05, 0.03, 0.24, 0.05); hg.box('frameLt', -0.06, -0.01, -0.03, 0.06, 0.02, 0.03);
@@ -1025,7 +1025,397 @@ const TrainKit = (() => {
     return d.int;
   }
 
-  // ================================================================================== DIESEL (inserted above)
+  // ------------------------------------------------------------------------------------------ DIESEL: MP36-like locomotive
+  // Car 0 of the diesel set; cab at +X (south). 21.0 m over couplers, 3.2 m wide, 4.7 m tall.
+  const D = { L: 21.0, W: 1.6, DECK: 1.40, CABF: 1.95, WR: 0.508, WB: 2.74, TRK: 6.55,
+    BW: 1.50, BTOP: 2.95, SL_Z: 1.12, SL_Y: 4.30, BR: 0.457, BWB: 2.59, BYL: 0.55, BYM: 1.12, BYU: 2.52, BYUB: 2.38, BDD: 7.1 };
+  function locoDesign() {
+    const X = new Parts(), T = new Tri(), G = new Tri(), S = new Tri(), W = D.W;
+    const cab0 = 4.35, cab1 = 8.9, nose1 = 10.05, hood0 = -9.75, hz = 1.25, cz = 1.58;
+    // frame, sills, walkway, fuel tank, reservoirs
+    X.box('frame', -10.1, 1.12, -W, 10.1, D.DECK, W);
+    for (const s of [-1, 1]) { X.box('red', -10.1, 1.17, s > 0 ? W : -W - 0.012, 10.1, 1.33, s > 0 ? W + 0.012 : -W); X.box('frameLt', -9.9, D.DECK, s * 1.42 - 0.12, 9.9, D.DECK + 0.012, s * 1.42 + 0.12); }
+    X.box('frame', -3.9, 0.62, -1.3, 3.5, 1.12, 1.3); X.box('frame', -3.8, 0.5, -1.05, 3.4, 0.62, 1.05);
+    X.box('frameLt', 3.5, 0.62, -1.3, 3.56, 1.1, 1.3); X.box('frameLt', -3.96, 0.62, -1.3, -3.9, 1.1, 1.3);
+    X.cyl('steel', 1.2, 1.02, 1.31, 0.09, 0.05, 'z', 10);
+    for (const s of [-1, 1]) X.cyl('frameLt', 0, 0.84, s * 1.43, 0.14, 5.6, 'x', 12);
+    // trucks
+    for (const bx of [D.TRK, -D.TRK]) bogie(X, bx, D.WB, D.WR, true, true);
+    // long hood (sides with painted panel seams and grilles), roof, rear wall
+    const seams = [-8, -6.2, -4.4, -2.6, -0.8, 1.0, 2.8];
+    const hoodColor = (x, y) => {
+      if (x < -6.8 && x > -9.4 && y > 3.0 && y < 4.1) return 'grille';
+      if (x > -3.3 && x < -1.4 && y > 2.6 && y < 3.3) return 'grille';
+      if (seams.some(sx => Math.abs(x - sx) < 0.02)) return 'bodyLo';
+      return y < 2.05 ? 'body' : y < 2.2 ? 'red' : y < 3.35 ? 'body' : y < 3.75 ? 'band' : 'body';
+    };
+    const hxs = seams.flatMap(v => [v - 0.02, v + 0.02]).concat([-9.4, -6.8, -3.3, -1.4]);
+    for (const s of [-1, 1]) wallGrid(T, hood0, cab0, D.DECK, 4.25, [], hoodColor, (u, v) => [u, v, s * hz], [0, 0, s], hxs, [2.05, 2.2, 2.6, 3.0, 3.3, 3.35, 3.75, 4.1]);
+    const hoodRoof = [[hz, 4.25], [1.12, 4.38], [0.9, 4.42], [-0.9, 4.42], [-1.12, 4.38], [-hz, 4.25]];
+    extrudeX(T, hoodRoof, hood0, cab0, () => 'roof');
+    capX(X, [[-hz, D.DECK], [hz, D.DECK], ...hoodRoof], hood0, -1, 'body');
+    // radiator section: raised fan deck with three fans, dynamic brake blister, exhausts
+    X.box('body', -9.7, 4.25, -hz, -4.6, 4.52, hz); X.box('roofDk', -9.65, 4.52, -hz + 0.05, -4.65, 4.55, hz - 0.05);
+    for (const fx of [-8.85, -7.2, -5.55]) {
+      X.cyl('grille', fx, 4.555, 0, 0.66, 0.02, 'y', 24); X.cyl('frameLt', fx, 4.57, 0, 0.12, 0.03, 'y', 10);
+      for (let k = 0; k < 4; k++) X.boxR('black', fx, 4.568, 0, 1.2, 0.012, 0.16, 0, k * Math.PI / 4 + 0.2, 0);
+      X.torus('frameLt', fx, 4.57, 0, 0.66, Math.PI / 2, 0, 0);
+    }
+    X.box('body', 0.6, 4.42, -1.0, 3.6, 4.62, 1.0); X.cyl('grille', 2.1, 4.625, 0, 0.5, 0.02, 'y', 20);
+    for (let k = 0; k < 4; k++) X.boxR('black', 2.1, 4.64, 0, 0.9, 0.012, 0.12, 0, k * Math.PI / 4, 0);
+    X.box('black', -1.5, 4.42, -0.35, -0.9, 4.62, 0.35); X.box('black', -0.6, 4.42, -0.3, -0.1, 4.58, 0.3); X.box('black', -4.2, 4.42, 0.4, -3.8, 4.6, 0.8);
+    X.box('roofDk', -3.4, 4.42, -0.9, -2.2, 4.5, 0.9);
+    // cab: side walls with windows, front wall with windscreens, roof
+    const cabWin = [{ x0: 6.05, x1: 7.2, y0: 2.95, y1: 3.88 }, { x0: 7.32, x1: 8.55, y0: 2.95, y1: 3.88 }];
+    const cabColor = (x, y) => y < 2.05 ? 'red' : y < 2.85 ? 'body' : y < 3.98 ? 'band' : 'body';
+    const cabIn = (x, y) => y < 2.6 ? 'panelDk' : 'panel';
+    for (const s of [-1, 1]) {
+      wallGrid(T, cab0, cab1, D.DECK, 4.3, cabWin, cabColor, (u, v) => [u, v, s * cz], [0, 0, s], [], [2.05, 2.85, 3.98]);
+      wallGrid(T, cab0, cab1, D.CABF, 4.25, cabWin, cabIn, (u, v) => [u, v, s * (cz - 0.06)], [0, 0, -s]);
+      for (const h of cabWin) { const z = s * (cz - 0.012);
+        if (s > 0) G.quad(null, [h.x0, h.y0, z], [h.x1, h.y0, z], [h.x1, h.y1, z], [h.x0, h.y1, z], [0, 0, 1], [[0.5, 0.03], [0.5, 0.03], [0.5, 0.03], [0.5, 0.03]]);
+        else G.quad(null, [h.x1, h.y0, z], [h.x0, h.y0, z], [h.x0, h.y1, z], [h.x1, h.y1, z], [0, 0, -1], [[0.5, 0.03], [0.5, 0.03], [0.5, 0.03], [0.5, 0.03]]);
+        const [a, b] = [Math.min(s * cz, s * (cz - 0.06)), Math.max(s * cz, s * (cz - 0.06))];
+        T.hq('panelDk', h.x0, h.x1, a, b, h.y0, true); T.hq('panelDk', h.x0, h.x1, a, b, h.y1, false); T.xq('panelDk', h.x0, a, b, h.y0, h.y1, 1); T.xq('panelDk', h.x1, a, b, h.y0, h.y1, -1); }
+    }
+    const fwin = [{ x0: -1.38, x1: -0.1, y0: 2.95, y1: 3.9 }, { x0: 0.1, x1: 1.38, y0: 2.95, y1: 3.9 }];
+    wallGrid(T, -cz, cz, D.DECK, 4.3, [...fwin, { x0: -1.16, x1: 1.16, y0: 0, y1: 2.9 }], (u, v) => v < 2.9 ? 'red' : v < 3.98 ? 'band' : 'body', (u, v) => [cab1, v, u], [1, 0, 0], [], [2.9, 3.98]);
+    wallGrid(T, -cz + 0.06, cz - 0.06, D.CABF, 4.25, fwin, () => 'panel', (u, v) => [cab1 - 0.06, v, u], [-1, 0, 0]);
+    for (const h of fwin) { G.quad(null, [cab1 + 0.005, h.y0, h.x1], [cab1 + 0.005, h.y0, h.x0], [cab1 + 0.005, h.y1, h.x0], [cab1 + 0.005, h.y1, h.x1], [1, 0, 0], [[0.5, 0.03], [0.5, 0.03], [0.5, 0.03], [0.5, 0.03]]);
+      T.hq('panelDk', cab1 - 0.06, cab1, h.x0, h.x1, h.y0, true); T.hq('panelDk', cab1 - 0.06, cab1, h.x0, h.x1, h.y1, false); }
+    wallGrid(T, -cz, cz, D.DECK, 4.3, [{ x0: -hz, x1: hz, y0: 0, y1: 4.25 }], () => 'body', (u, v) => [cab0, v, u], [-1, 0, 0]);
+    const cabRoof = [[cz, 4.3], [1.42, 4.47], [1.05, 4.56], [-1.05, 4.56], [-1.42, 4.47], [-cz, 4.3]];
+    extrudeX(T, cabRoof, cab0, cab1, () => 'body', 0, 3.0);
+    capX(X, [[-cz, 4.3], [cz, 4.3], [1.42, 4.47], [1.05, 4.56], [-1.05, 4.56], [-1.42, 4.47]], cab1, 1, 'body');
+    T.hq('floor', cab0, cab1, -cz, cz, D.CABF, true); T.hq('ceiling', cab0, cab1, -cz, cz, 4.25, false);
+    T.xq('panel', cab0 + 0.06, -cz, cz, D.CABF, 4.25, 1);
+    // short nose, number boards, lights, pilots, couplers, handrails, horn, bell
+    X.box('red', cab1, D.DECK, -1.16, nose1, 2.72, 1.16);
+    X.boxR('red', (cab1 + nose1) / 2 - 0.02, 2.8, 0, nose1 - cab1 + 0.04, 0.22, 2.32, 0, 0, -0.14);
+    X.box('band', nose1, 1.52, -0.36, nose1 + 0.012, 2.6, 0.36);
+    X.box('band', cab1 + 0.1, 4.02, -1.3, cab1 + 0.14, 4.28, -0.5); X.box('band', cab1 + 0.1, 4.02, 0.5, cab1 + 0.14, 4.28, 1.3);
+    for (const s of [-1, 1]) S.quad(null, ...(() => { const x = cab1 + 0.145, z0 = s * 0.55, z1 = s * 1.25, a = Math.min(z0, z1), b = Math.max(z0, z1);
+      return [[x, 4.05, b], [x, 4.05, a], [x, 4.25, a], [x, 4.25, b]]; })(), [1, 0, 0], [[0, 0], [1, 0], [1, 0.5], [0, 0.5]]);
+    const glow = { head: [], tail: [] };
+    for (const s of [-1, 1]) {
+      X.cyl('lampRim', nose1 + 0.01, 2.45, s * 0.2, 0.1, 0.04, 'x', 16); X.cyl('headLamp', nose1 + 0.03, 2.45, s * 0.2, 0.08, 0.02, 'x', 16); glow.head.push([nose1 + 0.1, 2.45, s * 0.2]);
+      X.box('frameLt', 10.2, 1.12, s * 1.3 - 0.12, 10.36, 1.4, s * 1.3 + 0.12); X.cyl('headLamp', 10.37, 1.26, s * 1.3, 0.075, 0.03, 'x', 14); glow.head.push([10.45, 1.26, s * 1.3]);
+      X.cyl('tailLamp', cab1 + 0.12, 4.18, s * 1.42, 0.05, 0.03, 'x', 12); glow.tail.push([cab1 + 0.18, 4.18, s * 1.42]);
+    }
+    for (const [x, dir] of [[10.1, 1], [-10.1, -1]]) {
+      X.boxR('band', x + dir * 0.18, 0.72, 0, 0.1, 0.9, 3.0, 0, 0, dir * 0.35);
+      X.box('yellow', Math.min(x, x + dir * 0.36), 1.1, -1.5, Math.max(x, x + dir * 0.36), 1.14, 1.5);
+      X.rod('frame', x, 0.87, 0, x + dir * 0.36, 0.87, 0, 0.1, 8); X.box('frame', Math.min(x + dir * 0.3, x + dir * 0.45), 0.72, -0.2, Math.max(x + dir * 0.3, x + dir * 0.45), 1.02, 0.2);
+      for (const s of [-1, 1]) { X.box('frame', x - 0.3, 0.55, s * 1.45 - 0.2, x + 0.3, 0.58, s * 1.45 + 0.2); X.box('frame', x - 0.3, 0.85, s * 1.45 - 0.2, x + 0.3, 0.88, s * 1.45 + 0.2); X.box('yellow', x - 0.3, 0.55, s * 1.62 - 0.01, x + 0.3, 1.12, s * 1.62); }
+    }
+    for (const s of [-1, 1]) {
+      for (let x = -9.6; x <= 4.4; x += 1.75) X.rod('steel', x, D.DECK, s * 1.52, x, 2.45, s * 1.52, 0.02, 6);
+      X.rod('steel', -9.6, 2.45, s * 1.52, 4.3, 2.45, s * 1.52, 0.022, 6); X.rod('steel', -9.6, 1.95, s * 1.52, 4.3, 1.95, s * 1.52, 0.016, 6);
+    }
+    for (const [dz, dir] of [[-0.2, 1], [0, 1], [0.2, 1], [-0.1, -1], [0.1, -1]]) X.rod('chrome', 6.15, 4.7, dz, 6.15 + dir * 0.42, 4.7, dz, 0.045, 10, 2.4);
+    X.box('frameLt', 5.9, 4.56, -0.3, 6.4, 4.64, 0.3);
+    X.cyl('brass', 8.2, 4.7, -0.9, 0.16, 0.22, 'y', 14); X.cyl('frameLt', 8.2, 4.58, -0.9, 0.04, 0.1, 'y', 6);
+    X.box('frameLt', 5.1, 4.56, 0.8, 5.4, 4.64, 1.1); X.rod('black', 5.25, 4.64, 0.95, 5.25, 5.1, 0.95, 0.012, 4);
+    const ext = U.mergeGeometries([X.geo(), T.geo()]);
+    return {
+      kind: 'diesel', type: 'loco', panto: false, length: D.L, width: 2 * W, height: 4.72, bogieOffsets: [D.TRK, -D.TRK],
+      ext, glass: G.geo(), signs: S.geo(), glow, wheelR: D.WR, axles: [D.TRK + D.WB / 2, D.TRK - D.WB / 2, -D.TRK + D.WB / 2, -D.TRK - D.WB / 2],
+      leaves: [], leafKey: 'none', sillY: D.DECK, bodyW: W,
+      floorRegions: [{ name: 'cab', x0: cab0 + 0.15, x1: cab1 - 0.2, z0: -1.4, z1: 1.4, y: D.CABF }], ramps: [], gangways: { front: null, rear: null },
+      seats: [{ x: 7.62, y: D.CABF + 1.2, z: 0.78, yaw: 0 }, { x: 7.62, y: D.CABF + 1.2, z: -0.8, yaw: 0 }], doors: [],
+      cabEye: [7.55, D.CABF + 1.27, 0.76], pantoX: null,
+      lodSpec: { cab0, cab1, nose1, hood0, hz, cz },
+    };
+  }
+
+  // ------------------------------------------------------------------------------------------ DIESEL: bilevel coach / cab car
+  // Bombardier-BiLevel-like: vertical lower sides, sloped (trapezoid) upper sides, end vestibules at the
+  // intermediate level with side-by-side stairs up and down. 'cab' = coach with a control cab at +X.
+  const BL = { L: 25.9, XE: 12.72, DD: 7.1, BOT: 0.40, BOTE: 1.0, W: 1.50, WI: 1.43, TOPV: 2.95, SZ: 1.12, SY: 4.30, ISZ: 1.06, ISY: 4.22,
+    YL: 0.55, YM: 1.12, YU: 2.52, YUB: 2.38, UP0: 4.9, DN0: 6.1, CEILV: 3.9, BOG: 8.9, DOORC: 11.475, DOORW: 0.95, LEAFY: 0.45, DTOP: 2.95, GW: 0.45, GTOP: 3.05 };
+  const blArc = [0, 30, 60, 90].map(a => [0.62 + 0.5 * Math.cos(a * Math.PI / 180), 4.30 + 0.5 * Math.sin(a * Math.PI / 180)]);
+  const blSection = bot => [[-BL.W, bot], [-BL.W, BL.TOPV], ...blArc.map(([z, y]) => [-z, y]), ...blArc.slice().reverse(), [BL.W, BL.TOPV], [BL.W, bot]];
+  const blRoof = () => [...blArc, ...blArc.slice().reverse().map(([z, y]) => [-z, y])];
+  const blIRoof = () => [[BL.ISZ, BL.ISY], [0.85, 4.5], [0.5, 4.6], [-0.5, 4.6], [-0.85, 4.5], [-BL.ISZ, BL.ISY]];
+  const slopeZ = (y, wBot, wTop, y0, y1) => wBot + (wTop - wBot) * (y - y0) / (y1 - y0);
+  function blPlan(type) {
+    const cab = type === 'cab';
+    const doors = cab ? [-BL.DOORC] : [-BL.DOORC, BL.DOORC];
+    return { type, cab, L: BL.L, xA: -BL.XE, xB: BL.XE, doors, bogies: [BL.BOG, -BL.BOG] };
+  }
+  function blOpenings(p) {
+    const win = [], doors = [];
+    const row = (a, b, n, y0, y1, gap = 0.3) => { const w = (b - a - (n - 1) * gap) / n; for (let i = 0; i < n; i++) win.push({ x0: a + i * (w + gap), x1: a + i * (w + gap) + w, y0, y1 }); };
+    row(-6.85, 6.85, 6, 0.95, 2.05); row(-6.85, 6.85, 6, 3.1, 4.0);
+    row(7.35, 10.55, 2, 1.85, 2.8); row(-10.55, -7.35, 2, 1.85, 2.8);
+    for (const dc of p.doors) doors.push({ x0: dc - BL.DOORW / 2, x1: dc + BL.DOORW / 2, y0: BL.LEAFY, y1: BL.DTOP });
+    return { win, doors };
+  }
+  function blSideColor(x, y) {
+    if (Math.abs(x) < BL.DD) return y < 0.62 ? 'bodyLo' : y < 0.85 ? 'body' : y < 2.15 ? 'band' : y < 2.28 ? 'body' : y < 2.42 ? 'red' : y < 3.02 ? 'body' : y < 4.08 ? 'band' : 'body';
+    return y < 1.12 ? 'bodyLo' : y < 1.6 ? 'body' : y < 1.72 ? 'red' : y < 1.78 ? 'body' : y < 2.88 ? 'band' : 'body';
+  }
+  function blLayout(p) {
+    const S = [], Tb = [], both = [...AISLE_Z, ...AISLE_Z.map(z => -z)];
+    bays(S, Tb, -BL.UP0, BL.UP0, BL.YL, both); bays(S, Tb, -BL.UP0, BL.UP0, BL.YU, both);
+    bays(S, Tb, -9.15, -7.25, BL.YM, both);
+    bays(S, Tb, 7.25, 9.15, BL.YM, p.cab ? AISLE_Z.map(z => -z) : both);
+    return { seats: S, tables: Tb };
+  }
+  function blWalk(p) {
+    const R = [], ramps = [], wi = BL.WI - 0.1;
+    const add = (name, x0, x1, z0, z1, y) => R.push({ name, x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0, z1, y });
+    add('lower', -BL.UP0, BL.UP0, -wi, wi, BL.YL); add('lower', BL.UP0, BL.DN0, -wi, -0.1, BL.YL); add('lower', -BL.DN0, -BL.UP0, 0.1, wi, BL.YL);
+    add('upper', -BL.UP0, BL.UP0, -wi, wi, BL.YU);
+    add('vestF', BL.DD, BL.XE - 0.08, -wi, wi, BL.YM); add('vestR', -BL.XE + 0.08, -BL.DD, -wi, wi, BL.YM);
+    ramps.push({ x0: BL.UP0, x1: BL.DD, z0: 0.1, z1: 1.3, y0: BL.YU, y1: BL.YM }, { x0: BL.DN0, x1: BL.DD, z0: -1.3, z1: -0.1, y0: BL.YL, y1: BL.YM });
+    ramps.push({ x0: -BL.DD, x1: -BL.UP0, z0: -1.3, z1: -0.1, y0: BL.YM, y1: BL.YU }, { x0: -BL.DD, x1: -BL.DN0, z0: 0.1, z1: 1.3, y0: BL.YM, y1: BL.YL });
+    add('gangR', -BL.L / 2, -BL.XE + 0.08, -0.4, 0.4, BL.YM);
+    const gangways = { rear: { x: -BL.L / 2, z0: -0.4, z1: 0.4, y: BL.YM }, front: null };
+    if (p.cab) {
+      R.find(r => r.name === 'vestF').x1 = 11.0;
+      add('vestF', 11.0, BL.XE - 0.1, -wi, -0.1, BL.YM);
+      ramps.push({ x0: 11.0, x1: 11.35, z0: 0.3, z1: 0.9, y0: BL.YM, y1: 1.45 });
+      add('cab', 11.35, 12.55, 0.15, 1.33, 1.45);
+    } else { add('gangF', BL.XE - 0.08, BL.L / 2, -0.4, 0.4, BL.YM); gangways.front = { x: BL.L / 2, z0: -0.4, z1: 0.4, y: BL.YM }; }
+    return { floorRegions: R, ramps, gangways };
+  }
+  // Build the side (vertical + sloped parts) of a bilevel body. colorAt(x,y); holes in (x,y); z = +-w at the bottom.
+  function blSide(T, xA, xB, bot, holes, colorAt, s, inner) {
+    const w0 = inner ? BL.WI : BL.W, w1 = inner ? BL.ISZ : BL.SZ, y1 = inner ? BL.ISY : BL.SY, n = inner ? -s : s;
+    wallGrid(T, xA, xB, bot, BL.TOPV, holes, colorAt, (u, v) => [u, v, s * w0], [0, 0, n], [BL.DD, -BL.DD], [0.62, 0.85, 1.12, 1.6, 1.72, 1.78, 2.15, 2.28, 2.42, 2.88]);
+    const dz = w1 - w0, dy = y1 - BL.TOPV, l = Math.hypot(dz, dy);
+    wallGrid(T, xA, xB, BL.TOPV, y1, holes, colorAt, (u, v) => [u, v, s * slopeZ(v, w0, w1, BL.TOPV, y1)], [0, (inner ? 1 : -1) * dz / l, n * dy / l], [BL.DD, -BL.DD], [3.02, 4.08]);
+  }
+  function blDesign(type) {
+    const p = blPlan(type), { win, doors } = blOpenings(p), W = BL.W, WI = BL.WI;
+    const X = new Parts(), T = new Tri(), G = new Tri(), S = new Tri();
+    const cut = [{ x0: p.xA - 1, x1: -BL.DD, y0: 0, y1: BL.BOTE }, { x0: BL.DD, x1: p.xB + 1, y0: 0, y1: BL.BOTE }];
+    const icut = [{ x0: p.xA - 1, x1: -BL.DD, y0: 0, y1: BL.YM }, { x0: BL.DD, x1: p.xB + 1, y0: 0, y1: BL.YM }, { x0: -BL.DD, x1: BL.DD, y0: 0, y1: BL.YL }];
+    const inColor = (x, y) => y < (Math.abs(x) < BL.DD ? 0.85 : 1.6) ? 'panel' : (y > 2.36 && y < 2.54 && Math.abs(x) < BL.UP0) ? 'panelDk' : 'wall';
+    const doorHoles = doors.map(h => ({ ...h, y0: 0 }));
+    for (const s of [-1, 1]) {
+      blSide(T, p.xA, p.xB, BL.BOT, [...win, ...doorHoles, ...cut], blSideColor, s, false);
+      blSide(T, p.xA, p.xB, BL.BOT, [...win, ...doors, ...icut], inColor, s, true);
+      for (const h of win) {
+        const sl = h.y0 > 3, zo = y => s * (sl ? slopeZ(y, W, BL.SZ, BL.TOPV, BL.SY) : W), zi = y => s * (sl ? slopeZ(y, WI, BL.ISZ, BL.TOPV, BL.ISY) : WI);
+        const a = [h.x0, h.y0, zo(h.y0) - s * 0.012], b = [h.x1, h.y0, zo(h.y0) - s * 0.012], c = [h.x1, h.y1, zo(h.y1) - s * 0.012], d = [h.x0, h.y1, zo(h.y1) - s * 0.012];
+        if (s > 0) G.quad(null, a, b, c, d, null, [[0, 0.1], [1, 0.1], [1, 1], [0, 1]]); else G.quad(null, b, a, d, c, null, [[0, 0.1], [1, 0.1], [1, 1], [0, 1]]);
+        T.quad('panelDk', [h.x0, h.y0, zi(h.y0)], [h.x1, h.y0, zi(h.y0)], [h.x1, h.y0, zo(h.y0)], [h.x0, h.y0, zo(h.y0)], [0, 1, 0]);
+        T.quad('panelDk', [h.x0, h.y1, zo(h.y1)], [h.x1, h.y1, zo(h.y1)], [h.x1, h.y1, zi(h.y1)], [h.x0, h.y1, zi(h.y1)], [0, -1, 0]);
+        T.quad('panelDk', [h.x0, h.y0, zo(h.y0)], [h.x0, h.y1, zo(h.y1)], [h.x0, h.y1, zi(h.y1)], [h.x0, h.y0, zi(h.y0)], [1, 0, 0]);
+        T.quad('panelDk', [h.x1, h.y0, zi(h.y0)], [h.x1, h.y1, zi(h.y1)], [h.x1, h.y1, zo(h.y1)], [h.x1, h.y0, zo(h.y0)], [-1, 0, 0]);
+      }
+      for (const dc of p.doors) {   // door well: two steps down to the platform
+        const z0 = Math.min(s * (W - 0.33), s * W), z1 = Math.max(s * (W - 0.33), s * W), zm = s * (W - 0.16);
+        X.box('frame', dc - 0.5, BL.LEAFY - 0.05, z0, dc + 0.5, BL.BOTE, z1);
+        X.box('floorLt', dc - 0.47, 0.78, Math.min(zm, s * (W - 0.33)), dc + 0.47, 0.8, Math.max(zm, s * (W - 0.33)));
+        X.box('stepEdge', dc - 0.47, 0.8, Math.min(zm, zm + s * 0.04), dc + 0.47, 0.803, Math.max(zm, zm + s * 0.04));
+        X.box('stepEdge', dc - 0.47, BL.YM, Math.min(s * (W - 0.34), s * (W - 0.3)), dc + 0.47, BL.YM + 0.004, Math.max(s * (W - 0.34), s * (W - 0.3)));
+      }
+      const sx0 = 7.45, sx1 = 8.85, sy0 = 2.42, sy1 = 2.6, sz = s * (W + 0.008);
+      X.box('black', sx0 - 0.04, sy0 - 0.04, Math.min(s * (W - 0.01), s * (W + 0.006)), sx1 + 0.04, sy1 + 0.04, Math.max(s * (W - 0.01), s * (W + 0.006)));
+      if (s > 0) S.quad(null, [sx0, sy0, sz], [sx1, sy0, sz], [sx1, sy1, sz], [sx0, sy1, sz], [0, 0, 1], [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]);
+      else S.quad(null, [sx1, sy0, sz], [sx0, sy0, sz], [sx0, sy1, sz], [sx1, sy1, sz], [0, 0, -1], [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]);
+    }
+    extrudeX(T, blRoof(), p.xA, p.xB, (i, y) => y > 4.79 ? 'roof' : 'body', 0, 2.5);
+    extrudeX(T, blIRoof(), -BL.DD, BL.DD, () => 'ceiling', 0, 7);
+    for (const z of [-0.42, 0.42]) T.hq('light', -BL.DD + 0.3, BL.DD - 0.3, z - 0.06, z + 0.06, 4.59, false);
+    T.hq('frame', -BL.DD, BL.DD, -W, W, BL.BOT, false); T.hq('frame', p.xA, -BL.DD, -W, W, BL.BOTE, false); T.hq('frame', BL.DD, p.xB, -W, W, BL.BOTE, false);
+    T.xq('bodyLo', -BL.DD, -W, W, BL.BOT, BL.BOTE, -1); T.xq('bodyLo', BL.DD, -W, W, BL.BOT, BL.BOTE, 1);
+    // inner floors, slab, stairs, vestibules, ceilings
+    T.hq('floor', -BL.DD, BL.DD, -WI, WI, BL.YL, true);
+    T.slab(-BL.UP0, BL.UP0, -WI, WI, BL.YUB, BL.YU, 'floor', 'ceiling', 'panel');
+    for (const z of [-0.55, 0.55]) T.hq('light', -BL.UP0 + 0.2, BL.UP0 - 0.2, z - 0.06, z + 0.06, BL.YUB - 0.006, false);
+    const stairs = (dir) => {  // dir +1 front end, -1 rear end (rotational symmetry)
+      const zu = dir > 0 ? [0.05, WI] : [-WI, -0.05], zd = dir > 0 ? [-WI, -0.05] : [0.05, WI];
+      const nu = 8, ru = (BL.DD - BL.UP0) / nu, hu = (BL.YU - BL.YM) / nu;
+      for (let i = 0; i < nu; i++) { const xa = dir * (BL.DD - i * ru), xb = dir * (BL.DD - (i + 1) * ru), top = BL.YM + (i + 1) * hu;
+        X.box('panelDk', Math.min(xa, xb), BL.YL, zu[0], Math.max(xa, xb), top, zu[1]); T.hq('floor', Math.min(xa, xb), Math.max(xa, xb), zu[0], zu[1], top + 0.002, true);
+        T.hq('stepEdge', Math.min(xa, xa - dir * 0.05), Math.max(xa, xa - dir * 0.05), zu[0], zu[1], top + 0.004, true); }
+      const nd = 3, rd = (BL.DD - BL.DN0) / nd, hd = (BL.YM - BL.YL) / nd;
+      for (let i = 0; i < nd; i++) { const xa = dir * (BL.DD - i * rd), xb = dir * (BL.DD - (i + 1) * rd), top = BL.YM - (i + 1) * hd;
+        X.box('panelDk', Math.min(xa, xb), BL.YL, zd[0], Math.max(xa, xb), top + hd, zd[1]);
+        T.hq('stepEdge', Math.min(xb, xb + dir * 0.05), Math.max(xb, xb + dir * 0.05), zd[0], zd[1], top + hd + 0.003, true); }
+      const zin = dir > 0 ? 0.05 : -0.05;
+      X.rod('pole', dir * BL.DD, BL.YM + 0.9, zin, dir * BL.UP0, BL.YU + 0.9, zin, 0.02); X.rod('pole', dir * BL.DD, BL.YM + 0.9, -zin, dir * BL.DN0, BL.YL + 0.9, -zin, 0.02);
+      X.rod('pole', dir * BL.UP0, BL.YU, -zin * 20, dir * BL.UP0, BL.YU + 1.0, -zin * 20, 0.022);
+      X.rod('pole', dir * BL.UP0, BL.YU + 1.0, -zin * 20, dir * BL.UP0, BL.YU + 1.0, -dir * WI, 0.022);
+      G.quad(null, [dir * BL.UP0, BL.YU, Math.min(-zin * 20, -dir * WI)], [dir * BL.UP0, BL.YU, Math.max(-zin * 20, -dir * WI)], [dir * BL.UP0, BL.YU + 1, Math.max(-zin * 20, -dir * WI)], [dir * BL.UP0, BL.YU + 1, Math.min(-zin * 20, -dir * WI)], [1, 0, 0], [[0.5, 0.03], [0.5, 0.03], [0.5, 0.03], [0.5, 0.03]]);
+      const xv0 = Math.min(dir * BL.DD, dir * (BL.XE - 0.07)), xv1 = Math.max(dir * BL.DD, dir * (BL.XE - 0.07));
+      T.hq('floor', xv0, xv1, -WI, WI, BL.YM, true);
+      T.hq('ceiling', xv0, xv1, -WI, WI, BL.CEILV, false); T.hq('light', xv0 + 0.3, xv1 - 0.3, -0.08, 0.08, BL.CEILV - 0.006, false);
+      T.xq('wall', dir * BL.DD, -WI, WI, BL.CEILV, 4.62, -dir);
+    };
+    stairs(1); stairs(-1);
+    // gangway ends
+    const gh = { z0: -BL.GW, z1: BL.GW, y0: BL.YM, y1: BL.GTOP };
+    const ends = p.cab ? [[p.xA, -1]] : [[p.xA, -1], [p.xB, 1]];
+    for (const [xe, s] of ends) {
+      capX(X, blSection(BL.BOTE), xe, s, 'body', gh);
+      const xi = xe - s * 0.07;
+      wallGrid(T, -WI, WI, BL.YM, BL.CEILV, [{ x0: -BL.GW, x1: BL.GW, y0: BL.YM, y1: BL.GTOP }], (u, v) => v < 1.6 ? 'panel' : 'wall', (u, v) => [xi, v, u], [-s, 0, 0]);
+      const xa = Math.min(xi, xe), xb = Math.max(xi, xe);
+      T.hq('panelDk', xa, xb, -BL.GW, BL.GW, BL.GTOP, false); T.zq('panelDk', -BL.GW, xa, xb, BL.YM, BL.GTOP, 1); T.zq('panelDk', BL.GW, xa, xb, BL.YM, BL.GTOP, -1);
+      const xc = s * BL.L / 2;
+      bellows(T, T, xe, xc, 0.68, 1.02, 3.22, 0.52, BL.YM, 3.12);
+      T.hq('floorLt', Math.min(xi, xc), Math.max(xi, xc), -0.5, 0.5, BL.YM + 0.004, true);
+      X.rod('frame', xe - s * 0.4, 0.87, 0, xc, 0.87, 0, 0.1, 8); X.box('frame', Math.min(xc, xc - s * 0.15), 0.72, -0.2, Math.max(xc, xc - s * 0.15), 1.02, 0.2);
+    }
+    // cab car front: windscreen wall, lights, pilot, sign, horn
+    let glow = null;
+    if (p.cab) {
+      const xf = p.xB, fwin = [{ x0: -1.25, x1: -0.12, y0: 2.05, y1: 2.85 }, { x0: 0.12, x1: 1.25, y0: 2.05, y1: 2.85 }];
+      wallGrid(T, -W, W, BL.BOTE, BL.TOPV, fwin, (u, v) => v < 1.95 ? 'red' : 'band', (u, v) => [xf, v, u], [1, 0, 0], [], [1.95]);
+      capX(X, [[-W, BL.TOPV], [W, BL.TOPV], ...blArc, ...blArc.slice().reverse().map(([z, y]) => [-z, y])], xf, 1, 'body');
+      for (const h of fwin) { G.quad(null, [xf + 0.004, h.y0, h.x1], [xf + 0.004, h.y0, h.x0], [xf + 0.004, h.y1, h.x0], [xf + 0.004, h.y1, h.x1], [1, 0, 0], [[0.5, 0.03], [0.5, 0.03], [0.5, 0.03], [0.5, 0.03]]);
+        T.hq('panelDk', xf - 0.07, xf, h.x0, h.x1, h.y0, true); T.hq('panelDk', xf - 0.07, xf, h.x0, h.x1, h.y1, false); }
+      wallGrid(T, -WI, WI, BL.YM, BL.CEILV, fwin, (u, v) => v < 1.6 ? 'panel' : 'wall', (u, v) => [xf - 0.07, v, u], [-1, 0, 0]);
+      glow = { head: [], tail: [] };
+      for (const s of [-1, 1]) {
+        X.box('band', xf, 1.42, s * 0.62 - 0.2, xf + 0.05, 1.68, s * 0.62 + 0.2);
+        X.cyl('headLamp', xf + 0.06, 1.55, s * 0.55, 0.08, 0.02, 'x', 16); glow.head.push([xf + 0.12, 1.55, s * 0.55]);
+        X.cyl('tailLamp', xf + 0.06, 1.55, s * 0.74, 0.055, 0.02, 'x', 14); glow.tail.push([xf + 0.12, 1.55, s * 0.74]);
+        X.cyl('tailLamp', xf + 0.03, 4.25, s * 0.42, 0.05, 0.03, 'x', 12); glow.tail.push([xf + 0.1, 4.25, s * 0.42]);
+        X.box('frameLt', xf + 0.05, 0.85, s * 1.22 - 0.1, xf + 0.25, 1.05, s * 1.22 + 0.1); X.cyl('headLamp', xf + 0.26, 0.95, s * 1.22, 0.07, 0.02, 'x', 14); glow.head.push([xf + 0.32, 0.95, s * 1.22]);
+      }
+      X.boxR('band', xf + 0.2, 0.62, 0, 0.1, 0.8, 2.9, 0, 0, 0.35);
+      X.rod('frame', xf, 0.87, 0, BL.L / 2, 0.87, 0, 0.1, 8); X.box('frame', BL.L / 2 - 0.15, 0.72, -0.2, BL.L / 2, 1.02, 0.2);
+      X.box('black', xf, 3.15, -0.7, xf + 0.02, 3.47, 0.7);
+      S.quad(null, [xf + 0.025, 3.2, 0.64], [xf + 0.025, 3.2, -0.64], [xf + 0.025, 3.42, -0.64], [xf + 0.025, 3.42, 0.64], [1, 0, 0], [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]);
+      for (const [dz, dir] of [[-0.12, 1], [0.12, 1], [0, -1]]) X.rod('chrome', 11.3, 4.93, dz, 11.3 + dir * 0.36, 4.93, dz, 0.04, 10, 2.4);
+      X.box('frameLt', 11.15, 4.78, -0.2, 11.45, 4.9, 0.2);
+      X.boxR('black', xf + 0.01, 2.1, 0.7, 0.02, 0.5, 0.025, 0.9, 0, 0); X.boxR('black', xf + 0.01, 2.1, -0.7, 0.02, 0.5, 0.025, -0.9, 0, 0);
+    }
+    // roof: AC units over the vestibules
+    for (const cx of [-10.0, 10.0]) { X.box('roof', cx - 1.1, 4.62, -0.6, cx + 1.1, 4.9, 0.6); X.cyl('grille', cx, 4.905, 0, 0.3, 0.01, 'y', 16); }
+    p.bogies.forEach(bx => bogie(X, bx, D.BWB, D.BR, false, true));
+    const walk = blWalk(p), lay = blLayout(p);
+    const seats = lay.seats.map(s => ({ x: s.x + Math.cos(s.yaw) * 0.12, y: s.y + 1.18, z: s.z, yaw: s.yaw }));
+    if (p.cab) seats.push({ x: 11.9, y: 1.45 + 1.18, z: 0.72, yaw: 0 });
+    const doorsMeta = []; for (const dc of p.doors) for (const s of [1, -1]) doorsMeta.push({ x: dc, side: s, width: BL.DOORW, sillY: BL.YM });
+    const leaves = []; for (const dc of p.doors) for (const s of [1, -1]) for (const k of [-1, 1]) leaves.push({ dc, s, k });
+    return {
+      kind: 'diesel', type, panto: false, plan: p, length: BL.L, width: 2 * W, height: 4.82, bogieOffsets: p.bogies.slice(),
+      ext: U.mergeGeometries([X.geo(), T.geo()]), glass: G.geo(), signs: S.geo(), glow, wheelR: D.BR,
+      axles: p.bogies.flatMap(b => [b + D.BWB / 2, b - D.BWB / 2]),
+      leaves, leafKey: 'bilevel', leafW: BL.DOORW / 2, leafH: BL.DTOP - BL.LEAFY, leafWin: [-0.14, 0.14, 1.25, 2.2], sillY: BL.YM, leafY: BL.LEAFY, bodyW: W,
+      floorRegions: walk.floorRegions, ramps: walk.ramps, gangways: walk.gangways, seats, layout: lay, doors: doorsMeta,
+      cabEye: p.cab ? [11.9, 1.45 + 1.22, 0.72] : null, pantoX: null, win, doorsOpen: doors,
+    };
+  }
+  function dslDesign(t) { return t === 'loco' ? locoDesign() : blDesign(t); }
+
+  // Diesel LODs, decals and interiors
+  function dslLod(d, level) {
+    const X = new Parts(), T = new Tri();
+    const lamps = () => { if (!d.glow) return; for (const h of d.glow.head) X.box('headLamp', h[0] - 0.1, h[1] - 0.08, h[2] - 0.08, h[0], h[1] + 0.08, h[2] + 0.08);
+      for (const h of d.glow.tail) X.box('tailLamp', h[0] - 0.1, h[1] - 0.06, h[2] - 0.06, h[0], h[1] + 0.06, h[2] + 0.06); };
+    if (d.type === 'loco') {
+      const o = d.lodSpec;
+      X.box('frame', -10.1, 1.12, -D.W, 10.1, D.DECK, D.W); X.box('frame', -3.9, 0.55, -1.3, 3.5, 1.12, 1.3);
+      X.box('body', o.hood0, D.DECK, -o.hz, o.cab0, 4.35, o.hz); X.box('band', o.hood0 + 0.05, 3.35, -o.hz - 0.01, o.cab0, 3.75, o.hz + 0.01);
+      X.box('body', -9.7, 4.35, -o.hz, -4.6, 4.55, o.hz);
+      X.box('body', o.cab0, D.DECK, -o.cz, o.cab1, 4.45, o.cz); X.box('red', o.cab0 + 0.02, D.DECK, -o.cz - 0.01, o.cab1, 2.05, o.cz + 0.01);
+      X.box('lodGlass', o.cab0 + 1.6, 2.95, -o.cz - 0.012, o.cab1 - 0.3, 3.88, o.cz + 0.012); X.box('lodGlass', o.cab1, 2.95, -1.38, o.cab1 + 0.012, 3.9, 1.38);
+      X.box('red', o.cab1, D.DECK, -1.16, o.nose1, 2.85, 1.16);
+      for (const bx of [D.TRK, -D.TRK]) X.box('frame', bx - 1.9, 0.1, -1.2, bx + 1.9, 1.12, 1.2);
+      lamps(); return X.geo();
+    }
+    const p = d.plan, W = BL.W, holes = [{ x0: p.xA - 1, x1: -BL.DD, y0: 0, y1: BL.BOTE }, { x0: BL.DD, x1: p.xB + 1, y0: 0, y1: BL.BOTE }];
+    const inR = (hs, x, y) => hs.some(h => x > h.x0 && x < h.x1 && y > h.y0 && y < h.y1);
+    const color = level === 1 ? (x, y) => inR(d.win, x, y) ? 'lodGlass' : inR(d.doorsOpen, x, y) ? 'bodyLo' : blSideColor(x, y)
+      : (x, y) => { const c = blSideColor(x, y); return c === 'band' ? 'lodGlass' : c; };
+    for (const s of [-1, 1]) {
+      wallGrid(T, p.xA, p.xB, BL.BOT, BL.TOPV, holes, color, (u, v) => [u, v, s * W], [0, 0, s], level === 1 ? [BL.DD, -BL.DD, ...d.win.flatMap(h => [h.x0, h.x1]), ...d.doorsOpen.flatMap(h => [h.x0, h.x1])] : [BL.DD, -BL.DD], [0.62, 0.85, 0.95, 1.12, 1.6, 1.72, 1.78, 1.85, 2.05, 2.15, 2.28, 2.42, 2.8, 2.88]);
+      const dz = BL.SZ - W, dy = BL.SY - BL.TOPV, l = Math.hypot(dz, dy);
+      wallGrid(T, p.xA, p.xB, BL.TOPV, BL.SY, [], color, (u, v) => [u, v, s * slopeZ(v, W, BL.SZ, BL.TOPV, BL.SY)], [0, -dz / l, s * dy / l], level === 1 ? [BL.DD, -BL.DD, ...d.win.flatMap(h => [h.x0, h.x1])] : [BL.DD, -BL.DD], [3.02, 3.1, 4.0, 4.08]);
+    }
+    extrudeX(T, level === 1 ? blRoof() : [[BL.SZ, BL.SY], [0.62, 4.8], [-0.62, 4.8], [-BL.SZ, BL.SY]], p.xA, p.xB, (i, y) => y > 4.79 ? 'roof' : 'body', 0, 2.5);
+    T.hq('frame', -BL.DD, BL.DD, -W, W, BL.BOT, false); T.xq('bodyLo', -BL.DD, -W, W, BL.BOT, BL.BOTE, -1); T.xq('bodyLo', BL.DD, -W, W, BL.BOT, BL.BOTE, 1);
+    capX(X, blSection(BL.BOTE), p.xA, -1, 'body'); capX(X, blSection(BL.BOTE), p.xB, 1, 'body');
+    if (p.cab) { X.box('red', p.xB, BL.BOTE, -W, p.xB + 0.01, 1.95, W); X.box('lodGlass', p.xB, 2.05, -1.25, p.xB + 0.012, 2.85, 1.25); }
+    for (const bx of p.bogies) X.box('frame', bx - 1.75, 0.12, -1.15, bx + 1.75, 1.0, 1.15);
+    lamps();
+    return U.mergeGeometries([X.geo(), T.geo()]);
+  }
+  function dslDecals(d, number) {
+    decalAtlas();
+    const T = new Tri();
+    for (const s of [-1, 1]) {
+      if (d.type === 'loco') {
+        const o = d.lodSpec;
+        decalZ(T, 'word', -2.4, 2.8, s * (o.hz + 0.007), 2.7, 0.54, s);
+        numberZ(T, number, 7.25, 2.47, s * (o.cz + 0.007), 0.3, s);
+      } else {
+        decalZ(T, 'word', -8.7, 1.37, s * (BL.W + 0.007), 1.6, 0.32, s);
+        numberZ(T, number, 8.7, 1.37, s * (BL.W + 0.007), 0.26, s);
+        for (const dc of d.plan.doors) decalZ(T, 'wheelchair', dc + Math.sign(dc) * 0.78, 2.35, s * (BL.W + 0.007), 0.34, 0.34, s);
+      }
+    }
+    if (d.type === 'cab') decalX(T, 'wordW', BL.XE + 0.008, 1.2, 0, 1.1, 0.22, 1);
+    return T.geo();
+  }
+  function cabDesk(X, C, x0, x1, y, z0, z1, eyeZ) {   // desk facing +X with two screens in front of eyeZ; returns handle pivot
+    X.box('desk', x0, y, z0, x1, y + 0.72, z1);
+    X.boxR('deskLt', x0 + 0.2, y + 0.8, (z0 + z1) / 2, 0.42, 0.06, z1 - z0, 0, 0, 0.42);
+    X.boxR('screenOff', x0 + 0.28, y + 0.92, eyeZ, 0.05, 0.32, 0.92, 0, 0, -0.55);
+    screenX(C, x0 + 0.25, y + 0.93, eyeZ - 0.22, 0.42, 0.28, -1, [0, 0, 0.5, 1], 0.55);
+    screenX(C, x0 + 0.25, y + 0.93, eyeZ + 0.22, 0.42, 0.28, -1, [0.5, 0, 1, 1], 0.55);
+    for (let i = 0; i < 5; i++) X.cyl(i % 2 ? 'btnYellow' : 'btnGreen', x0 + 0.14, y + 0.83, z0 + 0.1 + i * 0.06, 0.013, 0.015, 'y', 8);
+    X.cyl('btnRed', x0 + 0.12, y + 0.83, z1 - 0.1, 0.035, 0.03, 'y', 12);
+    X.box('frameLt', x0 - 0.05, y + 0.72, eyeZ - 0.72, x0 + 0.15, y + 0.78, eyeZ - 0.5);
+    return [x0 + 0.05, y + 0.78, eyeZ - 0.61];
+  }
+  function cabChair(X, x, y, z) {
+    X.box('cabSeat', x - 0.05, y, z - 0.1, x + 0.05, y + 0.42, z + 0.1);
+    X.box('cabSeat', x - 0.25, y + 0.42, z - 0.26, x + 0.25, y + 0.52, z + 0.26);
+    X.boxR('cabSeat', x - 0.27, y + 0.95, z, 0.1, 0.85, 0.5, 0, 0, 0.12);
+    for (const s of [-1, 1]) X.box('seatDk', x - 0.15, y + 0.7, z + s * 0.28 - 0.03, x + 0.25, y + 0.74, z + s * 0.28 + 0.03);
+  }
+  function dslInterior(d) {
+    if (d.int) return d.int;
+    const X = new Parts(), T = new Tri(), G = new Tri(), P = new Tri(), C = new Tri();
+    let pivot = null, seatsL = [];
+    if (d.type === 'loco') {
+      pivot = cabDesk(X, C, 7.95, 8.8, D.CABF, 0.05, 1.5, 0.76);
+      cabChair(X, 7.4, D.CABF, 0.76); cabChair(X, 7.4, D.CABF, -0.8);
+      X.box('deskLt', 8.2, D.CABF, -1.5, 8.8, D.CABF + 0.8, -0.3);
+      X.box('panelDk', 4.45, D.CABF, -0.4, 4.5, D.CABF + 1.95, 0.4);
+      X.box('band', 8.62, 3.9, -1.4, 8.8, 3.95, 1.4);
+      T.hq('light', 5.2, 8.2, -0.1, 0.1, 4.245, false);
+    } else {
+      const p = d.plan, WI = BL.WI;
+      seatsL = d.layout.seats;
+      for (const t of d.layout.tables) { const za = t.z > 0 ? 0.78 : -WI + 0.02, zb = t.z > 0 ? WI - 0.02 : -0.78; X.box('table', t.x - 0.3, t.y + 0.71, za, t.x + 0.3, t.y + 0.745, zb); }
+      for (const dir of [1, -1]) {
+        X.rod('pole', dir * 9.6, BL.YM, 0, dir * 9.6, BL.CEILV, 0, 0.022, 10);
+        const xm = dir * (BL.XE - 0.09);
+        if (!(p.cab && dir > 0)) { X.box('black', xm - 0.02, 3.35, -0.34, xm + 0.02, 3.65, 0.34); screenX(P, xm - dir * 0.022, 3.5, 0, 0.6, 0.24, -dir); }
+        X.box('black', dir * BL.UP0 - 0.02, 3.8, -0.4, dir * BL.UP0 + 0.02, 4.1, 0.4); screenX(P, dir * BL.UP0 - dir * 0.022, 3.95, 0, 0.72, 0.26, -dir);
+        for (const s of [-1, 1]) X.box('pole', dir > 0 ? 7.3 : -10.4, 3.25, s > 0 ? 1.0 : -WI, dir > 0 ? 10.4 : -7.3, 3.27, s > 0 ? WI : -1.0);
+        for (const dc of p.doors) if (Math.sign(dc) === dir) for (const s of [-1, 1]) { X.rod('pole', dc - 0.55, BL.YM, s * (WI - 0.3), dc - 0.55, BL.YM + 1.9, s * (WI - 0.3), 0.02); X.rod('pole', dc + 0.55, BL.YM, s * (WI - 0.3), dc + 0.55, BL.YM + 1.9, s * (WI - 0.3), 0.02); }
+      }
+      if (p.cab) {
+        const xf = BL.XE - 0.07;
+        X.box('panelDk', 11.33, 1.45 - 0.33, 0.05, xf, 1.45, WI);
+        X.box('panel', 11.3, 1.12, 0.03, 11.35, 3.1, 0.3); X.box('panel', 11.3, 1.12, 1.0, 11.35, 3.1, WI);
+        X.box('panel', 11.35, 1.45, 0.03, xf, 3.1, 0.07);
+        pivot = cabDesk(X, C, 12.12, xf, 1.45, 0.1, WI, 0.72);
+        cabChair(X, 11.72, 1.45, 0.72);
+        X.box('band', xf - 0.12, 2.95, 0.1, xf, 3.0, WI);
+      }
+    }
+    const hg = new Parts();
+    hg.rod('steel', 0, 0, 0, 0, 0.2, 0, 0.012, 6); hg.box('black', -0.03, 0.18, -0.05, 0.03, 0.24, 0.05); hg.box('frameLt', -0.06, -0.01, -0.03, 0.06, 0.02, 0.03);
+    d.int = {
+      furn: U.mergeGeometries([X.geo(), T.geo()]), glass: G.geo(), pis: P.geo(), cab: C.geo(),
+      seatMatrices: mat4List(seatsL, s => [s.x, s.y, s.z, s.yaw]), seatCount: seatsL.length, bikeMatrices: new Float32Array(0), bikeCount: 0,
+      handle: pivot ? { pivot } : null, handleGeo: pivot ? hg.geo() : null,
+    };
+    return d.int;
+  }
+
 
   // ------------------------------------------------------------------------------------------ runtime: canvases
   const ROUTE_COLORS = { 'Local': '#3d6f86', 'Local Weekday': '#3d6f86', 'Local Weekend': '#3d6f86', 'Limited': '#c79a4f', 'Express': '#c4122f', 'South County': '#7d9e62' };
@@ -1151,9 +1541,9 @@ const TrainKit = (() => {
       this.decals = new THREE.Mesh(d.kind === 'emu' ? emuDecals(d, number, flags || {}) : dslDecals(d, number, flags || {}), atlasMat()); this.decals.name = 'decals';
       this.signs = d.signs.attributes.position.count ? new THREE.Mesh(d.signs, consist.signMat) : null;
       this.wheels = new THREE.InstancedMesh(wheelGeo(d.wheelR), mat, d.axles.length); this.wheels.name = 'wheels';
-      const lg = leafGeos(d);
-      this.doorsO = d.leaves.length ? new THREE.InstancedMesh(lg.o, mat, d.leaves.length) : null;
-      this.doorsG = d.leaves.length ? new THREE.InstancedMesh(lg.g, consist.glassExt, d.leaves.length) : null;
+      const lg = d.leaves.length ? leafGeos(d) : null;
+      this.doorsO = lg ? new THREE.InstancedMesh(lg.o, mat, d.leaves.length) : null;
+      this.doorsG = lg ? new THREE.InstancedMesh(lg.g, consist.glassExt, d.leaves.length) : null;
       this.panto = null;
       if (d.pantoX != null) { this.panto = new THREE.Mesh(pantoGeo(0), mat); this.panto.position.set(d.pantoX, E.TOP + PANTO_HINGE, 0); this.pantoT = -1; }
       this.lod0 = [this.ext, this.glass, this.decals, this.wheels];
@@ -1187,7 +1577,7 @@ const TrainKit = (() => {
         const l = d.leaves[i], cs = this.flip ? -l.s : l.s, t = dt[cs > 0 ? 1 : 0];
         const out = smooth(0, 0.2, t) * 0.055, slide = smooth(0.15, 1, t) * (lw + 0.02);
         _iq.setFromAxisAngle(_Y, l.s > 0 ? 0 : Math.PI);
-        _im.compose(_ip.set(l.dc + l.k * (lw / 2 + slide), d.sillY, l.s * (d.bodyW + 0.004 + out)), _iq, _is);
+        _im.compose(_ip.set(l.dc + l.k * (lw / 2 + slide), d.leafY != null ? d.leafY : d.sillY, l.s * (d.bodyW + 0.004 + out)), _iq, _is);
         this.doorsO.setMatrixAt(i, _im); this.doorsG.setMatrixAt(i, _im);
       }
       this.doorsO.instanceMatrix.needsUpdate = true; this.doorsG.instanceMatrix.needsUpdate = true;
@@ -1219,7 +1609,8 @@ const TrainKit = (() => {
       return (this.int = g);
     }
     setInteriorVisible(v) {
-      v = !!v; if (v && !this.int) this.buildInterior();
+      v = !!v; if (v === this.intVisible) return;
+      if (v && !this.int) this.buildInterior();
       this.intVisible = v;
       if (this.int) this.int.visible = v && this.lod === 0;
       const gm = v ? this.consist.glassIn : this.consist.glassExt;

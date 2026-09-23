@@ -114,11 +114,11 @@ const Terrain = (() => {
             float slope = 1.0 - nW.y;
             float n1 = fbm(p * 0.0011), n2 = vn(p * 0.013), n3 = vn(p * 0.09), n4 = hsh(floor(p * 0.5));
             // --- wild land: golden grass, oak woodland, chaparral, redwoods ---
-            vec3 grassA = vec3(0.72, 0.58, 0.31), grassB = vec3(0.80, 0.68, 0.42), grassC = vec3(0.58, 0.52, 0.30);
+            vec3 grassA = vec3(0.58, 0.44, 0.21), grassB = vec3(0.66, 0.52, 0.28), grassC = vec3(0.47, 0.42, 0.23);
             vec3 col = mix(grassA, grassB, smoothstep(0.3, 0.8, n1));
             col = mix(col, grassC, smoothstep(0.55, 0.9, n2) * 0.5);
             float northF = clamp(-nW.z * 2.2 + 0.25, 0.0, 1.0);
-            float wood = smoothstep(0.52, 0.72, n1 * 0.55 + northF * 0.45 + slope * 0.9 + n2 * 0.25 - 0.15);
+            float wood = smoothstep(0.46, 0.68, n1 * 0.55 + northF * 0.45 + slope * 0.9 + n2 * 0.25 - 0.15);
             vec3 oak = mix(vec3(0.20, 0.25, 0.12), vec3(0.30, 0.33, 0.16), n3);
             float speck = smoothstep(0.62, 0.9, vn(p * 0.35)) * smoothstep(0.35, 0.75, n1 + northF * 0.3);
             col = mix(col, oak, max(wood, speck * 0.8));
@@ -156,7 +156,9 @@ const Terrain = (() => {
               float farU = smoothstep(2200.0, 7000.0, dcam);   // average out sub-pixel lots in the distance (no shimmer)
               vec3 avgCity = mix(vec3(0.40, 0.40, 0.33), vec3(0.47, 0.44, 0.38), n1) * (0.92 + 0.12 * vn(p * 0.002));
               city = mix(city, avgCity, farU);
-              vec3 near = mix(vec3(0.42, 0.44, 0.30), vec3(0.50, 0.49, 0.44), n3);    // under real towns: lawn/pavement mix
+              // under the streamed towns: natural suburban ground (lawns, dry grass, canopy) so gaps between houses read well
+              vec3 near = mix(vec3(0.34, 0.40, 0.21), vec3(0.52, 0.45, 0.27), smoothstep(0.35, 0.75, n2));
+              near = mix(near, vec3(0.17, 0.24, 0.12), smoothstep(0.55, 0.8, vn(p * 0.05) * 0.7 + n3 * 0.4) * 0.8);
               city = mix(city, near, nearTown);
               col = mix(col, city, smoothstep(0.1, 0.45, urb));
               // night lights along streets

@@ -158,7 +158,7 @@ const UI = (() => {
       if (typeof Net !== 'undefined') { el.hnet.textContent = Net.status.text || 'Solo'; el.hdot.classList.toggle('on', !!Net.status.online); }
       drawStrip();
       // cab panel
-      const D = Sim.drive; const showCab = !!D || Player.mode === 'cab' || Player.mode === 'onboard';
+      const D = Sim.drive; const showCab = !!D || Player.mode === 'onboard';   // riding in the cab: the desk displays say it all
       el.cab.hidden = !showCab;
       if (showCab) {
         const trr = D ? Sim.trainByKey(D.plan.key) : tr; const v = D ? D.v : trr ? trr.v : 0; const s = D ? D.s : trr ? trr.s : 0;

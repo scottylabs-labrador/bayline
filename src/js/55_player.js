@@ -113,7 +113,9 @@ const Player = (() => {
     fovTarget = 70;
   }
   function lowestFloorNear(car, x, z) { let best = null, bd = 1e9; for (const r of car.floorRegions) { const cx = U.clamp(x, r.x0, r.x1), cz = U.clamp(z, r.z0, r.z1); const d = Math.hypot(cx - x, cz - z) + r.y * 0.3; if (d < bd) { bd = d; best = r; } } if (best) { ob.x = U.clamp(x, best.x0 + 0.2, best.x1 - 0.2); ob.z = U.clamp(z, best.z0 + 0.2, best.z1 - 0.2); return best.y; } return 1.2; }
-  function sit(car, i) { const s = car.seats[i]; if (!s) return; ob.seat = i; ob.x = s.x; ob.z = s.z; ob.y = s.y - EYE + 0.35; look.yaw = s.yaw; look.pitch = -0.05; }
+  function sit(car, i) { const s = car.seats[i]; if (!s) return; ob.seat = i; Sim.freeSeat(focusTrain(), ob.car, i); ob.x = s.x; ob.z = s.z; ob.y = s.y - EYE + 0.35;
+    // look out of the window, angled a little toward the direction the seat faces
+    const sz = Math.sign(s.z) || 1; const fwd = Math.cos(s.yaw) >= 0 ? 1 : -1; look.yaw = sz * Math.PI / 2 - sz * fwd * 0.4; look.pitch = -0.06; }
   function stand(car) { const s = car.seats[ob.seat]; ob.seat = -1; if (!s) return; // step into the aisle
     let best = null, bd = 1e9; for (const r of car.floorRegions) { const cx = U.clamp(s.x, r.x0 + 0.25, r.x1 - 0.25), cz = U.clamp(0, r.z0 + 0.25, r.z1 - 0.25); const d = Math.hypot(cx - s.x, cz - s.z) + Math.abs(r.y - (s.y - 1.2)) * 2; if (d < bd) { bd = d; best = [cx, r.y, cz]; } }
     if (best) { ob.x = best[0]; ob.y = best[1]; ob.z = best[2]; } }

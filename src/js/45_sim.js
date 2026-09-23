@@ -200,6 +200,7 @@ const Sim = (() => {
 
   // ---------- per-frame ----------
   let focusKey = null;                 // plan key the player is riding/driving/following (always gets a consist)
+  let camNear = null;
   const stTmp = {};
   function update(dt, camPos) {
     replan();
@@ -224,6 +225,7 @@ const Sim = (() => {
         else if (o.s > 0) { const p0 = planById(o.trip) || null; running.push({ plan: p0, trip: p0 ? p0.trip : { id: 'X' + o.id, route: 'Local Weekday', head: '', stops: [] }, key: 'net' + o.id, kind: 'emu', dir, s: o.s, v: Math.abs(o.speed), a: 0, seg: null, len: 0, remote: o }); }
       }
     }
+    camNear = Track.nearest(camPos.x, camPos.z, 40);
     // distances; pick near trains for consists
     for (const tr of running) { Track.frame(tr.s, F); tr.x = F.x; tr.z = F.z; tr.y = F.y; tr.dist = Math.hypot(F.x - camPos.x, F.z - camPos.z, (F.y - camPos.y) * 0.5); }
     running.sort((a, b) => (b.key === focusKey) - (a.key === focusKey) || a.dist - b.dist);
@@ -259,6 +261,7 @@ const Sim = (() => {
     dots.geometry.setDrawRange(0, dotN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
     const alt = camPos.y - Terrain.h(camPos.x, camPos.z); dots.visible = alt > 350; dots.material.opacity = U.smooth(350, 1200, alt);
     for (let i = running.length - 1; i >= 0; i--) if (running[i].hidden) running.splice(i, 1);
+    updateBeam();
   }
 
   function destText(tr) {
@@ -291,13 +294,29 @@ const Sim = (() => {
     if (c.setPantograph) c.setPantograph(tr.kind === 'emu' ? 1 : 0);
     c.speed = tr.dir ? tr.v : -tr.v;
     const lod = tr.dist < 450 ? 0 : tr.dist < 1400 ? 1 : 2; if (e.lod !== lod) { c.setLOD(lod); e.lod = lod; }
-    const inside = tr.key === focusKey && Player.onboard();
-    const iv = inside || tr.dist < 90; if (e.iv !== iv) { c.setInteriorVisible(iv); e.iv = iv; }
+    const inside = tr.key === focusKey && (Player.onboard() || Player.inCab());
+    // interiors only when you're aboard, or standing right beside the train (lit glass reads better from afar)
+    const span0 = Math.min(sFrontOf(tr), sFrontOf(tr) - tr.len), span1 = Math.max(sFrontOf(tr), sFrontOf(tr) - tr.len);
+    const beside = camNear && camNear.dist < 14 && camNear.s > span0 - 8 && camNear.s < span1 + 8;
+    const iv = inside || beside; if (e.iv !== iv) { c.setInteriorVisible(iv); e.iv = iv; }
     if (tr.key === focusKey || tr.dist < 300) {
       const ns = nextStopName(tr);
       c.setDisplay({ route: routeShort(tr.trip), nextStop: ns, destination: (TT.names[TT.stations[(tr.trip.stops[tr.trip.stops.length - 1] || [0])[0]]] || ''), clock: Env.clockText(t) });
     }
+    // cab desk displays for the train you're in (TrainKit throttles the canvas redraw itself)
+    if (tr.key === focusKey && (Player.inCab() || tr.driven)) {
+      const D = tr.driven ? drive : null; const sig = TrackGeo.nextSignal(tr.s, tr.dir);
+      let nsName = '', distFt = 0;
+      if (D && typeof Game !== 'undefined' && Game.stopInfo) { const inf = Game.stopInfo(); if (inf) { nsName = inf.name; distFt = Math.max(0, inf.togo) * 3.281; } }
+      else if (tr.plan && tr.seg) { const ns = tr.trip.stops[nextStopK(tr.plan, tr.seg)]; if (ns) { nsName = TT.names[TT.stations[ns[0]]]; distFt = Math.abs(stopS(ns[0], tr.dir) - tr.s) * 3.281; } }
+      const over = tr.v - Track.limit(tr.s);
+      c.setCab({ speedMph: tr.v / MPH, limitMph: Track.limit(tr.s) / MPH,
+        throttle: D ? Math.max(0, D.lever) : U.clamp(tr.a / 0.85, 0, 1), brake: D ? Math.max(0, -D.lever) + (D.emergency ? 1 : 0) : U.clamp(-tr.a / 0.75, 0, 1),
+        signal: sig ? ['stop', 'approach', 'clear'][sig.aspect] : 'clear', nextStop: nsName, distFt, clock: Env.clockText(t),
+        ptc: D && D.penalty ? 'enforcing' : over > 1.3 ? 'warning' : 'active' });
+    }
     c.update(dt);
+    paxFor(e, tr, iv && (tr.key === focusKey || tr.dist < 60));
     // door world positions (for crowds walking to the doors)
     if (tr.doorsOpen && tr.dist < 700) {
       tr.doorWorld = [];
@@ -306,15 +325,58 @@ const Sim = (() => {
     } else tr.doorWorld = null;
   }
   const doorSide_ = (si, dir) => doorSide(si, dir);
+  const sFrontOf = (tr) => tr.dir ? tr.s : tr.s + tr.len;   // car 0 (south end) coupler
+  // seated passengers (Life people, one instanced set per car, parented to the car) for the train you're on / next to
+  const KINDS = ['commuter', 'commuter', 'office', 'student', 'tourist', 'senior', 'kid', 'cyclist'];
+  function paxFor(e, tr, show) {
+    if (typeof Life === 'undefined' || !Life.createPeople) return;
+    const cars = e.consist.cars; const bucket = Math.floor(Env.time.sec / 1200);
+    for (let ci = 0; ci < cars.length; ci++) {
+      const car = cars[ci];
+      if (!show) { if (car._pax) car._pax.mesh.visible = false; continue; }
+      if (!car._pax) { if (!car.seats || !car.seats.length) continue; try { car._pax = Life.createPeople(Math.min(car.seats.length, 110)); } catch (err) { continue; } car._pax.mesh.frustumCulled = false; car.group.add(car._pax.mesh); car._paxKey = ''; }
+      car._pax.mesh.visible = true;
+      const key = tr.key + ':' + bucket;
+      if (car._paxKey !== key) { car._paxKey = key; populate(car, tr, ci, bucket); }
+    }
+  }
+  function populate(car, tr, ci, bucket) {
+    const P = car._pax; const r = U.rng(U.hashStr(tr.trip.id + ':' + ci + ':' + bucket));
+    const h = Env.time.sec / 3600; const peak = (h > 6.5 && h < 9.5) || (h > 16 && h < 19.5);
+    const load = peak ? 0.55 : h > 22 || h < 6 ? 0.1 : 0.28;
+    let k = 0; car._paxSeat = [];
+    for (let si = 0; si < car.seats.length && k < P.max; si++) {
+      const st = car.seats[si]; if (Math.abs(st.x) > 11.2 || car.type === 'loco') continue;
+      if (r() >= load) continue;
+      try { P.look(k, { kind: KINDS[Math.floor(r() * KINDS.length)], seed: Math.floor(r() * 1e6) }); } catch (err) {}
+      P.sitAtEye(k, st.x, st.y, st.z, st.yaw); car._paxSeat[k] = si; k++;
+    }
+    P.count = k; P.update(0.1);
+  }
+  // hide the passenger sitting in (car, seat) so the player can take that seat
+  function freeSeat(tr, ci, si) { const car = tr && tr.entry && tr.entry.consist.cars[ci]; if (!car || !car._pax || !car._paxSeat) return; const k = car._paxSeat.indexOf(si); if (k >= 0) { car._pax.hide(k); car._paxSeat[k] = -1; } }
   function nextStopName(tr) {
     if (!tr.plan) return '';
     if (tr.driven) return drive.nextName || '';
     const k = tr.seg ? nextStopK(tr.plan, tr.seg) : 0; const s = tr.trip.stops[k]; return s ? TT.names[TT.stations[s[0]]] : '';
   }
 
+  // headlight beam for the train you're following (one real light, always in the scene to avoid shader recompiles)
+  let beam = null; const _b1 = new THREE.Vector3(), _b2 = new THREE.Vector3();
+  function initBeam() {
+    beam = new THREE.SpotLight(0xfff0d8, 0, 260, 0.34, 0.65, 1.3); beam.castShadow = false;
+    Env.scene.add(beam, beam.target);
+  }
+  function updateBeam() {
+    const night = U.uNight.value; const tr = focusKey ? running.find(r => r.key === focusKey) : null;
+    if (!tr || !tr.entry || night < 0.15) { beam.intensity = 0; return; }
+    const cs = tr.entry.consist.cars; const car = tr.dir ? cs[0] : cs[cs.length - 1]; const sg = tr.dir ? 1 : -1;
+    _b1.set(sg * car.length / 2, 1.1, 0); car.group.localToWorld(_b1); _b2.set(sg * (car.length / 2 + 60), 0.2, 0); car.group.localToWorld(_b2);
+    beam.position.copy(_b1); beam.target.position.copy(_b2); beam.intensity = 2600 * U.smooth(0.15, 0.6, night);
+  }
   async function init() {
     TT = await Data.json('timetable');
-    initFar();
+    initFar(); initBeam();
     replan();
   }
   // the consist entry for a key (for the player to attach to)
@@ -323,5 +385,5 @@ const Sim = (() => {
 
   return { init, update, stateAt, nextStopK, nextDepartures, departures, planById, routeShort, routeColor, kindOf, stopS, doorSide, trainByKey, nearestTrain,
     startDrive, stopDrive, get drive() { return drive; }, running, get plans() { return plans; }, get TT() { return TT; },
-    setFocus(k) { focusKey = k; }, get focus() { return focusKey; }, get maxLen() { return maxLen; }, destText, MPH };
+    setFocus(k) { focusKey = k; }, get focus() { return focusKey; }, get maxLen() { return maxLen; }, destText, MPH, freeSeat };
 })();

@@ -667,7 +667,7 @@ const Life = (() => {
       return { near: mergeT(P), far: mergeT(F), H, lod: 450, doubleSide: true };
     },
     sycamore() {   // London plane / sycamore: mottled pale trunk, broad rounded crown of fresh green
-      const H = 16, leaf = [0x69893a, 0x779744, 0x5d7c33, 0x84a14c], P = [], F = [];
+      const H = 16, leaf = [0x5e7a38, 0x6a8540, 0x546f32, 0x758f49], P = [], F = [];
       P.push(tp(cylY(0.42, 0.28, 0, 6.0, 9), 0xaca58a, { H, ao: 0.72, vary: 0.45 }));
       for (const [x, y, z] of [[2.4, 10.5, 1.0], [-2.2, 11, -1.1], [0.5, 12.5, 1.9], [-0.6, 12, -2.2]]) P.push(tp(limb([0, 5.5, 0], [x * 0.75, y - 1.2, z * 0.75], 0.2, 0.09), 0x9f9a80, { H, vary: 0.3 }));
       foliage(P, [[0, 12.3, 0, 3.6, 1, 0.82, 1], [2.9, 10.8, 1.1, 2.9, 1, 0.85, 1], [-2.9, 11.2, -1.1, 3.0, 1, 0.82, 1], [0.9, 13.6, -2.0, 2.4, 1, 0.85, 1],
@@ -699,7 +699,7 @@ const Life = (() => {
       return { near: mergeT(P), far: mergeT(F), H, lod: 380 };
     },
     street() {   // small ornamental street tree (pear / crape myrtle / ash)
-      const H = 7.5, leaf = [0x78984a, 0x86a652, 0x6c8c40, 0x91ad5a], P = [], F = [];
+      const H = 7.5, leaf = [0x6a8744, 0x76934c, 0x5f7b3c, 0x81994f], P = [], F = [];
       P.push(tp(cylY(0.15, 0.1, 0, 2.9, 7), 0x66584a, { H, ao: 0.6 }));
       P.push(tp(limb([0, 2.5, 0], [0.9, 4.2, 0.4], 0.08, 0.04, 4), 0x66584a, { H }));
       P.push(tp(limb([0, 2.5, 0], [-0.8, 4.4, -0.5], 0.08, 0.04, 4), 0x66584a, { H }));
@@ -859,6 +859,89 @@ const Life = (() => {
   let roadMat = null, airMat = null;
 
   // ------------------------------------------------------------------------------------------
+  // Light flares: camera-facing additive glows for lamps (headlights, tail lights, aircraft nav,
+  // strobes, beacons, landing lights). A flare mesh shares its vehicle mesh's instanceMatrix and
+  // aInst buffers, so it costs one extra draw call and no extra CPU work. Distant lights keep a
+  // minimum on-screen size, so arrivals over the bay read as a string of lights at night.
+  // ------------------------------------------------------------------------------------------
+  let lampSink = null;
+  function lamp(p, kind, size) { if (lampSink) lampSink.push({ p, kind, size }); }
+  function withLamps(build) { lampSink = []; const m = build(); m.lamps = lampSink; lampSink = null; return m; }
+  function flareGeometry(lamps) {
+    const n = lamps.length, P = new Float32Array(n * 12), C = new Float32Array(n * 8), K = new Float32Array(n * 4), S = new Float32Array(n * 4), idx = [];
+    lamps.forEach((l, i) => {
+      for (let c = 0; c < 4; c++) { P.set(l.p, (i * 4 + c) * 3); K[i * 4 + c] = l.kind; S[i * 4 + c] = l.size; }
+      C.set([-1, -1, 1, -1, 1, 1, -1, 1], i * 8);
+      idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(P, 3));   // lamp centre, vehicle-local
+    g.setAttribute('aCorner', new THREE.BufferAttribute(C, 2));
+    g.setAttribute('aKind', new THREE.BufferAttribute(K, 1));
+    g.setAttribute('aSize', new THREE.BufferAttribute(S, 1));
+    g.setIndex(idx); return g;
+  }
+  const FLARE_VS = `
+    #include <common>
+    #include <logdepthbuf_pars_vertex>
+    attribute vec2 aCorner; attribute float aKind; attribute float aSize; attribute vec4 aInst;
+    uniform float uNight; uniform float uTime; uniform float uFamily;
+    varying vec2 vUv; varying vec3 vCol;
+    void main() {
+      mat4 m = modelMatrix * instanceMatrix;
+      vec4 wp = m * vec4(position, 1.0);
+      vec3 fwd = normalize((m * vec4(1.0, 0.0, 0.0, 0.0)).xyz);
+      float scl = length(instanceMatrix[0].xyz);
+      float face = dot(fwd, normalize(cameraPosition - wp.xyz));
+      vec3 col = vec3(0.0); float I = 0.0;
+      if (uFamily < 0.5) {
+        if (aKind < 0.5) { col = vec3(1.0, 0.9, 0.72); I = (smoothstep(-0.15, 0.75, face) * 1.25 + 0.06) * uNight; }
+        else { col = vec3(1.0, 0.07, 0.03); I = (smoothstep(0.15, -0.75, face) * 0.75 + 0.08) * (1.0 + 1.6 * aInst.y) * uNight; }
+      } else {
+        float t = uTime + aInst.w, lit = 0.25 + 0.75 * uNight;
+        if (aKind < 0.5) { col = vec3(1.0, 0.95, 0.86); I = aInst.z * (0.5 + 1.6 * smoothstep(-0.2, 0.85, face)) * lit; }
+        else if (aKind < 1.5) { col = vec3(1.0, 0.05, 0.03); I = 0.9 * lit; }
+        else if (aKind < 2.5) { col = vec3(0.12, 1.0, 0.35); I = 0.9 * lit; }
+        else if (aKind < 3.5) { col = vec3(1.0); I = 0.55 * uNight; }
+        else if (aKind < 4.5) { col = vec3(1.0); I = (step(0.93, fract(t * 1.05)) + step(0.93, fract(t * 1.05 + 0.1))) * 2.2 * lit; }
+        else if (aKind < 5.5) { col = vec3(1.0, 0.1, 0.04); I = step(0.86, fract(t * 0.95 + 0.5)) * 1.5 * lit; }
+        else { col = vec3(1.0, 0.95, 0.86); I = step(0.5, aInst.y) * aInst.z * (0.2 + 1.2 * smoothstep(0.2, 0.9, face)) * lit; }
+      }
+      vec4 mv = viewMatrix * wp;
+      float size = max(aSize * scl, -mv.z * 0.0024) * (0.55 + 0.45 * clamp(I, 0.0, 1.0));
+      mv.xy += aCorner * size;
+      gl_Position = projectionMatrix * mv;
+      #include <logdepthbuf_vertex>
+      vUv = aCorner; vCol = col * I * min(scl * 1.5, 1.0);
+      if (I * scl < 0.004) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);
+    }`;
+  const FLARE_FS = `
+    #include <common>
+    #include <logdepthbuf_pars_fragment>
+    varying vec2 vUv; varying vec3 vCol;
+    void main() {
+      #include <logdepthbuf_fragment>
+      float d2 = dot(vUv, vUv);
+      float a = (exp(-d2 * 12.0) * 1.2 + exp(-d2 * 4.0) * 0.22) * (1.0 - smoothstep(0.55, 1.0, d2));
+      gl_FragColor = vec4(vCol * a, 1.0);
+      #include <colorspace_fragment>
+    }`;
+  const flareMats = {};
+  function flareMaterial(family) {
+    return flareMats[family] || (flareMats[family] = new THREE.ShaderMaterial({
+      uniforms: { uNight: U.uNight, uTime: U.uTime, uFamily: { value: family } }, vertexShader: FLARE_VS, fragmentShader: FLARE_FS,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  }
+  // a flare mesh riding on an existing vehicle InstancedMesh (shares its instance buffers)
+  function flaresFor(vmesh, inst, lamps, family, cap) {
+    const g = flareGeometry(lamps); g.setAttribute('aInst', inst);
+    const f = new THREE.InstancedMesh(g, flareMaterial(family), cap);
+    f.instanceMatrix = vmesh.instanceMatrix; f.count = 0; f.renderOrder = 3; f.name = vmesh.name + '-flares';
+    f.position.copy(vmesh.position); f.frustumCulled = vmesh.frustumCulled; f.boundingSphere = vmesh.boundingSphere;
+    return f;
+  }
+
+  // ------------------------------------------------------------------------------------------
   // road vehicle models (+X forward, origin on the ground at the vehicle center)
   // ------------------------------------------------------------------------------------------
   const GLASS = 0x1b232b, TIRE = 0x161616, RIM = 0x8e9399, LAMP = 0xdfe6ea, TAIL = 0x6a0c0c, TRIM = 0x202225;
@@ -879,6 +962,7 @@ const Life = (() => {
   }
   function lights(parts, xf, xr, yf, yr, zf, zr, wf = 0.3, wr = 0.34) {
     for (const s of [-1, 1]) {
+      lamp([xf + 0.03, yf, s * zf], 0, 0.6); lamp([xr - 0.03, yr, s * zr], 1, 0.45);
       parts.push(vp(box(0.05, 0.09, wf, xf, yf, s * zf), LAMP, { glow: 1, rough: 0.1 }));
       parts.push(vp(box(0.05, 0.08, wr, xr, yr, s * zr), TAIL, { glow: 2, rough: 0.2 }));
     }
@@ -954,7 +1038,7 @@ const Life = (() => {
   const BUS_PAINT = [0x1f4e8c, 0xb32d2a, 0x2f7d4a, 0x1b7f86, 0x2a3b5c];
   const VEH_TYPES = ['sedan', 'suv', 'pickup', 'van', 'bus', 'truck'];
   const vehCache = {};
-  const vehModel = t => vehCache[t] || (vehCache[t] = VEHICLES[t]());
+  const vehModel = t => vehCache[t] || (vehCache[t] = withLamps(VEHICLES[t]));
 
   function toPts(p) {
     if (p instanceof Float32Array || p instanceof Float64Array) return p;
@@ -997,7 +1081,8 @@ const Life = (() => {
       const mesh = new THREE.InstancedMesh(geo, roadMat.m, maxCars); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.customDepthMaterial = roadMat.d; mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'traffic-' + t; mesh.count = 0;
       mesh.boundingSphere = new THREE.Sphere(new V3(), 1);
-      meshes[t] = { mesh, inst }; group.add(mesh);
+      const flare = flaresFor(mesh, inst, vehModel(t).lamps, 0, maxCars); flare.visible = false;
+      meshes[t] = { mesh, inst, flare }; group.add(mesh, flare);
     }
     // night: soft pools of headlight on the road ahead of each car (one additive instanced quad each)
     let pools = null;
@@ -1112,7 +1197,8 @@ const Life = (() => {
             _q.setFromAxisAngle(_up, yaw); _s.set(11 * fade, 1, 5.5 * fade); _m.compose(_v2, _q, _s); pools.setMatrixAt(pi++, _m);
           }
         }
-        for (const t of VEH_TYPES) { const M = meshes[t]; if (M.mesh.count) { M.mesh.instanceMatrix.needsUpdate = true; M.inst.needsUpdate = true; } }
+        for (const t of VEH_TYPES) { const M = meshes[t]; if (M.mesh.count) { M.mesh.instanceMatrix.needsUpdate = true; M.inst.needsUpdate = true; }
+          M.flare.count = M.mesh.count; M.flare.visible = night > 0.03 && M.mesh.count > 0; }
         if (pools) { pools.visible = !!lit && pi > 0; pools.count = pi; if (lit) { pools.material.opacity = 0.5 * sstep(0.05, 0.6, night); pools.instanceMatrix.needsUpdate = true; } }
       },
     };
@@ -1163,6 +1249,8 @@ const Life = (() => {
       P.push(vp(box(0.3, 0.3, 0.3, tl.x - 0.3, tl.y + 0.1, tl.z + s * 0.1), s < 0 ? 0x550000 : 0x004400, { glow: s < 0 ? 2 : 3 }));
       P.push(vp(box(0.25, 0.25, 0.25, tt.x + 0.1, tt.y + 0.1, tt.z), 0xdddddd, { glow: 5 }));
       P.push(vp(box(0.4, 0.3, 0.3, o.wx + o.chord * 0.52, y0 - 0.1, s * (R + 1.2)), 0xdddddd, { glow: 1 }));
+      lamp([tl.x - 0.3, tl.y + 0.1, tl.z + s * 0.3], s < 0 ? 1 : 2, 0.9); lamp([tt.x + 0.1, tt.y + 0.1, tt.z + s * 0.2], 4, 2.2);
+      lamp([o.wx + o.chord * 0.56, y0 - 0.1, s * (R + 1.2)], 0, 1.1 * R);
     }
     // horizontal stabilizer + fin
     for (const s of [-1, 1]) {
@@ -1174,6 +1262,7 @@ const Life = (() => {
     P.push(vp(slab([v3(fx + o.fChord * 0.4, fy, -0.25), v3(fx - o.fChord * 0.6, fy + 0.3, -0.25), v3(fx - o.fChord * 0.6 - o.fSweep, fy + o.finH, -0.12), v3(fx - o.fSweep + 0.2, fy + o.finH, -0.12),
       v3(fx + o.fChord * 0.4, fy, 0.25), v3(fx - o.fChord * 0.6, fy + 0.3, 0.25), v3(fx - o.fChord * 0.6 - o.fSweep, fy + o.finH, 0.12), v3(fx - o.fSweep + 0.2, fy + o.finH, 0.12)]), WHITE, { paint: 1, rough: 0.35 }));
     P.push(vp(box(0.3, 0.3, 0.3, L0 - o.tail - 0.2, R * 0.55 + 0.2, 0), 0xdddddd, { glow: 4 }));
+    lamp([L0 - o.tail - 0.4, R * 0.55 + 0.2, 0], 3, 0.9); lamp([(L0 + L1) * 0.45, R + 0.3, 0], 5, 1.4); lamp([(L0 + L1) * 0.45, -R - 0.3, 0], 5, 1.4);
     P.push(vp(box(0.5, 0.2, 0.4, (L0 + L1) * 0.45, R + 0.1, 0), 0x440000, { glow: 6 }));
     P.push(vp(box(0.5, 0.2, 0.4, (L0 + L1) * 0.45, -R - 0.1, 0), 0x440000, { glow: 6 }));
     // landing gear (collapsed in the shader when retracted)
@@ -1181,6 +1270,7 @@ const Life = (() => {
     P.push(vp(box(0.25, gh, 0.25, L1 - 2.5, gy - gh / 2, 0), 0x7c8187, { gear: 1, metal: 0.6, rough: 0.4 }));
     { const w = new THREE.CylinderGeometry(0.45, 0.45, 0.5, 10); w.rotateX(Math.PI / 2); w.translate(L1 - 2.5, -o.gearH + 0.45, 0); P.push(vp(w, TIRE, { gear: 1, rough: 0.9 })); }
     P.push(vp(box(0.35, 0.3, 0.3, L1 - 2.3, gy - gh * 0.3, 0), 0xdddddd, { gear: 1, glow: 1 }));
+    lamp([L1 - 2.1, gy - gh * 0.3, 0], 6, 1.6);
     for (const s of [-1, 1]) {
       const mx = o.wx - o.chord * 0.2, mz = s * R * 0.75;
       P.push(vp(box(0.35, gh, 0.35, mx, gy - gh / 2, mz), 0x7c8187, { gear: 1, metal: 0.6, rough: 0.4 }));
@@ -1206,13 +1296,13 @@ const Life = (() => {
       P.push(vp(slab([v3(-3.2, 0.35, -0.06), v3(-4.3, 0.35, -0.06), v3(-4.5, 1.7, -0.04), v3(-3.9, 1.7, -0.04), v3(-3.2, 0.35, 0.06), v3(-4.3, 0.35, 0.06), v3(-4.5, 1.7, 0.04), v3(-3.9, 1.7, 0.04)]), WHITE, { paint: 1, rough: 0.4 }));
       P.push(vp(cylX(0.95, 0.95, 3.02, 3.05, 12, -0.05), 0x222222, { rough: 0.8 }));
       for (const [x, z] of [[2.2, 0], [0.4, -1.1], [0.4, 1.1]]) { const w = new THREE.CylinderGeometry(0.2, 0.2, 0.12, 8); w.rotateX(Math.PI / 2); w.translate(x, -0.95, z); P.push(vp(w, TIRE, { rough: 0.9 })); P.push(vp(seg3(v3(x, -0.95, z), v3(x * 0.8, -0.45, z * 0.5), 0.03, 0.03, 4), 0x999999, { rough: 0.5 })); }
-      for (const s of [-1, 1]) P.push(vp(box(0.2, 0.15, 0.15, 1.1, 0.95, s * 5.5), s < 0 ? 0x550000 : 0x004400, { glow: s < 0 ? 2 : 3 }));
-      P.push(vp(box(0.2, 0.15, 0.2, 1.8, 0.95, -1.3), 0xdddddd, { glow: 1 }));
-      P.push(vp(box(0.2, 0.2, 0.2, -4.4, 1.75, 0), 0x440000, { glow: 6 }));
+      for (const s of [-1, 1]) { P.push(vp(box(0.2, 0.15, 0.15, 1.1, 0.95, s * 5.5), s < 0 ? 0x550000 : 0x004400, { glow: s < 0 ? 2 : 3 })); lamp([1.1, 0.95, s * 5.6], s < 0 ? 1 : 2, 0.45); }
+      P.push(vp(box(0.2, 0.15, 0.2, 1.8, 0.95, -1.3), 0xdddddd, { glow: 1 })); lamp([1.95, 0.95, -1.3], 0, 0.9);
+      P.push(vp(box(0.2, 0.2, 0.2, -4.4, 1.75, 0), 0x440000, { glow: 6 })); lamp([-4.4, 1.9, 0], 5, 0.6);
       return { geo: U.mergeGeometries(P), gearH: 1.15 };
     },
   };
-  const planeCache = {}; const planeModel = t => planeCache[t] || (planeCache[t] = PLANES[t]());
+  const planeCache = {}; const planeModel = t => planeCache[t] || (planeCache[t] = withLamps(PLANES[t]));
   const TAIL_COLORS = [0x1d3b75, 0xb3202a, 0x0f6f73, 0x203a5c, 0xe07a1f, 0x2a6ab0, 0x6a1f5c, 0x0b4f3a, 0x8a1c1c, 0x1f7a3f, 0x13294b, 0x3a3f8f, 0xd9a21b];
 
   // Runways (OpenStreetMap aeroway=runway geometry). start = where a landing aircraft crosses the
@@ -1352,7 +1442,8 @@ const Life = (() => {
         const inst = new THREE.InstancedBufferAttribute(new Float32Array(f.cap[i] * 4), 4); inst.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('aInst', inst);
         const mesh = new THREE.InstancedMesh(geo, airMat.m, f.cap[i]); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         mesh.customDepthMaterial = airMat.d; mesh.castShadow = true; mesh.frustumCulled = false; mesh.count = 0; mesh.position.copy(f.anchor); mesh.name = 'aircraft-' + t;
-        f.meshes[t] = { mesh, inst, cap: f.cap[i], gearH: planeModel(t).gearH }; f.list.push(f.meshes[t]); group.add(mesh);
+        const flare = flaresFor(mesh, inst, planeModel(t).lamps, 1, f.cap[i]);
+        f.meshes[t] = { mesh, inst, flare, cap: f.cap[i], gearH: planeModel(t).gearH }; f.list.push(f.meshes[t]); group.add(mesh, flare);
       });
     }
     // West-flow operations (the usual configuration): SFO lands 28L/28R in pairs and departs 1L/1R,
@@ -1404,7 +1495,7 @@ const Life = (() => {
           const f = fields[g.field], rw = rws[g.rw];
           for (let j = 0; j < g.n; j++) { gaPattern(rw.L, g.side, t + j * 97.3, sample); place(f.meshes.cessna, f, rw, sample, g.colors[j % g.colors.length], j * 3.3); }
         }
-        for (const k in fields) for (const m of fields[k].list) { m.mesh.instanceMatrix.needsUpdate = true; m.inst.needsUpdate = true; }
+        for (const k in fields) for (const m of fields[k].list) { m.mesh.instanceMatrix.needsUpdate = true; m.inst.needsUpdate = true; m.flare.count = m.mesh.count; }
       },
       // for UIs/minimaps/cameras: current aircraft (world coords); allocates, so not for per-frame hot paths
       positions() {
@@ -1574,5 +1665,5 @@ const Life = (() => {
   }
 
   return { createPeople, createTraffic, createAirTraffic, createTrees, createBirds, makeLook, RUNWAYS, stats,
-    TREE_KINDS: Object.keys(TREE_BUILDERS), PERSON: { standEye: 1.60, sitEye: 1.17, seatHeight: 0.46, height: 1.72 } };
+    TREE_KINDS: Object.keys(TREE_BUILDERS), PERSON: { standEye: 1.61, sitEye: 1.18, seatHeight: 0.46, height: 1.72 } };
 })();

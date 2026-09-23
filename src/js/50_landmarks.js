@@ -461,7 +461,7 @@ const Landmarks = (() => {
     const g = seatedGroup(ctx, 37.767888, -122.387421, { bearing: 0 });
     const k = new Kit();
     k.lathe('glass', 0x7b95a6, [[0, 0], [70, 0], [70, 9], [0, 9]], 40, 0, 0, 0, 1, 0.84);
-    k.lathe(floodMat(0xf3e6d8, 0.16, { roughness: 0.6, metalness: 0.1 }), 0xeee9df, [[66, 9], [72, 9], [73, 16], [71, 30], [66, 38], [40, 42], [0, 43], [0, 36], [62, 34], [66, 9]], 40, 0, 0, 0, 1, 0.84);
+    k.lathe(floodMat(0xf3e6d8, 0.07, { roughness: 0.6, metalness: 0.1 }), 0xeee9df, [[66, 9], [72, 9], [73, 16], [71, 30], [66, 38], [40, 42], [0, 43], [0, 36], [62, 34], [66, 9]], 40, 0, 0, 0, 1, 0.84);
     for (let i = 0; i < 64; i++) { const a = i / 64 * Math.PI * 2; const r = 72.6; k.box('smooth', 0xf6f2ea, 0.8, 26, 2.5, Math.cos(a) * r, 9, Math.sin(a) * r * 0.84, -a + (i % 2 ? 0.35 : -0.35)); }
     k.box('lights', 0xffe7c2, 1, 1, 1, 0, 43.5, 0);
     k.toGroup(g, { name: 'chase' });
@@ -1154,7 +1154,7 @@ const Landmarks = (() => {
   });
 
   // --- Pulgas Water Temple (1938): Corinthian ring temple at the end of the Hetch Hetchy aqueduct.
-  let PULGAS_BEARING = 330;
+  const PULGAS_BEARING = 73;   // temple -> reflecting pool (OSM)
   def('Pulgas Water Temple', 37.483328, -122.317175, 90, 'A classical ring of Corinthian columns (1938) where Hetch Hetchy water from Yosemite arrives, with a long reflecting pool.', (ctx) => {
     const g = seatedGroup(ctx, 37.483328, -122.317175, { bearing: PULGAS_BEARING });
     const k = new Kit(), stone = 0xe8e0cc;
@@ -1166,13 +1166,13 @@ const Landmarks = (() => {
     k.add('smooth', ringSectorFlat(7.4, 9.6, 15.5, 0, Math.PI * 2, 36), 0xe3dac5);
     k.cyl('water', 0x3f6f7e, 5.5, 5.5, 0.3, 0, 1.3, 0, 24);
     // reflecting pool with stone curb, extending along local +X
-    k.box('solid', 0xd4ccb8, 104, 0.6, 16, 62, 0, 0); k.box('water', 0x416f86, 100, 0.3, 12, 62, 0.4, 0);
+    k.box('solid', 0xd4ccb8, 56, 0.6, 14, 38, 0, 0); k.box('water', 0x416f86, 52, 0.3, 10, 38, 0.4, 0);
     k.toGroup(g, { name: 'pulgas' });
     return g;
   });
 
   // --- Stanford: Hoover Tower, the Main Quad with Memorial Church, Stanford Stadium, the Dish.
-  let QUAD_AXIS = 20;   // bearing from Memorial Church toward the Oval / Palm Drive
+  const QUAD_AXIS = 15.5;   // bearing of Palm Drive (Memorial Church -> the Oval), from OSM
   def('Hoover Tower', 37.427615, -122.166995, 90, 'The 87 m library tower (1941) of the Hoover Institution, with a carillon and an observation deck under its red-tile dome.', (ctx) => {
     const g = seatedGroup(ctx, 37.427615, -122.166995, { bearing: QUAD_AXIS + 90 });
     const k = new Kit(), tan = 0xdcc59c, tile = 0xb5654a;
@@ -1188,8 +1188,8 @@ const Landmarks = (() => {
     k.toGroup(g, { name: 'hoover' });
     return g;
   });
-  def('Main Quad & Memorial Church', 37.4273, -122.1703, 180, 'Stanford\'s sandstone Main Quad (1891) with Memorial Church and its golden mosaic facade at the head of Palm Drive.', (ctx) => {
-    const g = seatedGroup(ctx, 37.42745, -122.17030, { bearing: QUAD_AXIS + 90 });   // local +Z = toward the church
+  def('Main Quad & Memorial Church', 37.427524, -122.170249, 180, 'Stanford\'s sandstone Main Quad (1891) with Memorial Church and its golden mosaic facade at the head of Palm Drive.', (ctx) => {
+    const g = seatedGroup(ctx, 37.427524, -122.170249, { bearing: QUAD_AXIS + 90 });   // OSM centre; local +Z = toward the church
     const k = new Kit(), sand = 0xd8c197, tile = 0xb5654a;
     // Inner Quad arcade ring (1 storey), outer quad (2-3 storeys), all under red tile
     const ring = (hx, hz, d, h, roofH, gapN, gapS) => {
@@ -1225,8 +1225,8 @@ const Landmarks = (() => {
     const mm = new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ map: mos, roughness: 0.35, metalness: 0.55 })); mm.name = 'memchu:mosaic'; g.add(mm);
     return g;
   });
-  def('Stanford Stadium', 37.433044, -122.158072, 160, 'Home of Stanford football since 1921, rebuilt in 2006 as a 50,000-seat bowl.', (ctx) => {
-    const g = seatedGroup(ctx, 37.433044, -122.158072, { bearing: QUAD_AXIS });
+  def('Stanford Stadium', 37.43453, -122.16109, 160, 'Home of Stanford football since 1921, rebuilt in 2006 as a 50,000-seat bowl.', (ctx) => {
+    const g = seatedGroup(ctx, 37.43453, -122.16109, { bearing: QUAD_AXIS });
     const k = new Kit();
     stadium(k, { fx: 60, fz: 30, lines: true, seat: 0x8a2a2a, tiers: [{ hx: 66, hz: 36, r: 16, dw: 34, yi: 1.5, yo: 16 }] });
     k.add('solid', bowlSoup(roundRect(100, 70, 50, 6), roundRect(106, 76, 56, 6), 16, 14, true).geo(), 0x8d8a82);

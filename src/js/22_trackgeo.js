@@ -121,7 +121,7 @@ const TrackGeo = (() => {
   function buildCatenary(ss, out, ox, oz) {
     const SPAN = 58; const start = Math.ceil(ss[0] / SPAN) * SPAN;
     const lanes = (s) => [Track.lane(s, 1), Track.lane(s, 0)];
-    const HCW = 5.6, HMW = 6.9;
+    const HCW = (typeof TrainKit !== 'undefined' && TrainKit.PANTO_UP_Y) || 5.9, HMW = HCW + 1.25;   // contact wire meets the raised pantograph
     for (let s = start; s <= ss[ss.length - 1]; s += SPAN) {
       if (Track.inTunnel(s)) continue;
       Track.frame(s, F); const [lo, hi] = bedSpan(s); const y = F.y; const yaw = Math.atan2(F.dx, F.dz);
