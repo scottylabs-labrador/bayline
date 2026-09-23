@@ -499,10 +499,12 @@ const TrackGeo = (() => {
         set(0, aL - 3.05, -0.96, C_CESS); set(1, aL - 3.0, -0.96, C_CESS); set(2, aL - 2.0, -0.93, C_BALL);
         set(13, aR + 2.0, -0.93, C_BALL); set(14, aR + 3.0, -0.96, C_CESS); set(15, aR + 3.05, -0.96, C_CESS);
       } else {
+        // the photo terrain is carved to bed level along the line, so the shoulder is a short skirt tucked under it;
+        // it only widens into a real embankment where the ground drops away (no photo sampling: that streaked)
         const gl = gnd(aL - 7.2), gr = gnd(aR + 7.2);
-        const pl = photoAt(F.x + F.rx * (aL - 6.5), F.z + F.rz * (aL - 6.5)), pr = photoAt(F.x + F.rx * (aR + 6.5), F.z + F.rz * (aR + 6.5));
-        set(0, aL - 7.2, gl, pl ? mixc(C_DIRT, pl, 0.7) : C_DIRT); set(1, aL - 3.1, Math.min(-0.97, gl + 0.3), pl ? mixc(C_CESS, pl, 0.3) : C_CESS); set(2, aL - 2.0, -0.93, C_BALL);
-        set(13, aR + 2.0, -0.93, C_BALL); set(14, aR + 3.1, Math.min(-0.97, gr + 0.3), pr ? mixc(C_CESS, pr, 0.3) : C_CESS); set(15, aR + 7.2, gr, pr ? mixc(C_DIRT, pr, 0.7) : C_DIRT);
+        const eL = U.clamp((-gl - 1.35) / 1.2, 0, 1), eR = U.clamp((-gr - 1.35) / 1.2, 0, 1);
+        set(0, aL - U.lerp(3.4, 7.2, eL), U.lerp(-1.55, gl, eL), C_DIRT); set(1, aL - 3.1, Math.min(-0.97, gl + 0.3), C_CESS); set(2, aL - 2.0, -0.93, C_BALL);
+        set(13, aR + 2.0, -0.93, C_BALL); set(14, aR + 3.1, Math.min(-0.97, gr + 0.3), C_CESS); set(15, aR + U.lerp(3.4, 7.2, eR), U.lerp(-1.55, gr, eR), C_DIRT);
       }
       const base = pos.length / 3;
       for (let j = 0; j < 15; j++) {

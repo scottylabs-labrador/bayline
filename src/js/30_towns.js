@@ -1073,7 +1073,7 @@ const Towns = (() => {
   }
 
   // ------------------------------------------------------------------ photo roofs: texture slots per tile
-  function imgAt(x, z) { if (!hasImagery()) return null; try { const r = Terrain.imagery(x, z); return r && r.tex ? r : null; } catch (e) { return null; } }
+  function imgAt(x, z) { if (!hasImagery()) return null; try { const r = Terrain.imagery(x, z, 8); return r && r.tex ? r : null; } catch (e) { return null; } }   // L8 = exactly one 400 m quadrant
   const retainTex = tex => { if (tex && hasTerrain() && typeof Terrain.retain === 'function') try { Terrain.retain(tex); } catch (e) { /* optional API */ } };
   const releaseTex = tex => { if (tex && hasTerrain() && typeof Terrain.release === 'function') try { Terrain.release(tex); } catch (e) { /* optional API */ } };
   // Each slot (tile quadrant) uses the terrain's finest imagery when it is at least level 7; otherwise the tile loads its own

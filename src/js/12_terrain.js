@@ -190,7 +190,14 @@ const Terrain = (() => {
             // ---- albedo: the photograph (or a quiet fallback before it streams in) ----
             vec3 col;
             if (iHas > 0.5) {
-              col = texture2D(iTex, iUV.xy + vUV * iUV.zw).rgb;
+              vec2 iuv = iUV.xy + vUV * iUV.zw;
+              col = texture2D(iTex, iuv).rgb;
+              // eye-level views: parked cars and shadows baked into the photo smear at grazing angles, so near a
+              // low camera the photo softens into its local average and the surface detail below takes over
+              vec3 Vv = normalize(cameraPosition - vW);
+              float graze = 1.0 - smoothstep(0.08, 0.45, Vv.y), lowCam = 1.0 - smoothstep(15.0, 60.0, cameraPosition.y - vW.y);
+              float soft = graze * lowCam * (1.0 - smoothstep(0.45, 0.6, mk.r)) * smoothstep(6.0, 18.0, distance(cameraPosition, vW));
+              if (soft > 0.01) col = mix(col, texture2D(iTex, iuv, 7.0).rgb, soft * 0.97);
             } else {
               float n1 = tn(vW.xz * 0.0015);
               col = mix(vec3(0.46, 0.39, 0.24), vec3(0.34, 0.36, 0.22), smoothstep(0.3, 0.7, n1));
@@ -200,10 +207,35 @@ const Terrain = (() => {
             // ---- near-camera detail so the photo never looks like a blurry decal ----
             float det = smoothstep(420.0, 25.0, dcam) * (1.0 - water);
             if (det > 0.0) {
-              float d1 = tn(vW.xz * 1.7), d2 = tn(vW.xz * 0.43), d3 = th(floor(vW.xz * 6.0));
-              col *= 1.0 + ((d1 - 0.5) * 0.22 + (d2 - 0.5) * 0.14 + (d3 - 0.5) * 0.08) * det;
-              float a = tn(vW.xz * 2.1), b = tn((vW.xz + vec2(0.3, 0.0)) * 2.1), c = tn((vW.xz + vec2(0.0, 0.3)) * 2.1);
-              nW = normalize(nW + vec3(a - b, 0.0, a - c) * 0.35 * det);
+              // surface-aware micro detail from the landcover class (mask A): each pattern fades before it can alias
+              vec2 p = vW.xz; float cls = floor(mk.a * 255.0 + 0.5);
+              float fw = fwidth(p.x) + fwidth(p.y);
+              float fine = 1.0 - smoothstep(0.03, 0.12, fw), mid = 1.0 - smoothstep(0.12, 0.5, fw);
+              float d1 = tn(p * 1.7), d2 = tn(p * 0.43);
+              // every noise term is band-limited by its footprint (fwidth), or it aliases into stripes at grazing angles
+              float f17 = 1.0 - smoothstep(0.08, 0.35, fw), f04 = 1.0 - smoothstep(0.3, 1.4, fw), f21 = 1.0 - smoothstep(0.06, 0.28, fw);
+              float gain = ((d1 - 0.5) * 0.18 * f17 + (d2 - 0.5) * 0.12 * f04) * det;   // broad variation everywhere
+              float bump = 0.3;
+              if (cls > 5.5 && cls < 6.5) {                                       // pavement: asphalt grain, patching, cracks
+                float g1 = th(floor(p * 9.0)), g2 = tn(p * 0.21);
+                float crack = (1.0 - smoothstep(0.0, 0.035, abs(tn(p * 0.33) - 0.5))) * smoothstep(0.55, 0.8, tn(p * 0.045 + 3.1));
+                gain += ((g1 - 0.5) * 0.10 * fine + (g2 - 0.5) * 0.08 * mid - crack * 0.22 * fine) * det; bump = 0.12;
+              } else if (cls < 0.5 || cls > 6.5) {                                // grass / natural / forest floor
+                float b1 = tn(p * 3.3) * mid + 0.5 * (1.0 - mid), b2 = tn(p * 11.0);
+                gain += ((b1 - 0.5) * 0.16 * mid + (b2 - 0.5) * 0.14 * fine) * det;
+                col = mix(col, col * vec3(0.94, 1.05, 0.9), (b1 - 0.4) * 0.35 * mid * det);   // green / straw variation
+                bump = cls > 6.5 ? 0.55 : 0.45;
+              } else if (cls > 0.5 && cls < 1.5) {                                // farmland: furrows
+                float ang = floor(tn(floor(p / 160.0)) * 4.0) * 0.785; vec2 dr = vec2(cos(ang), sin(ang));
+                gain += sin(dot(p, dr) * 6.2832 / 0.9) * 0.06 * mid * det; bump = 0.4;
+              } else if (cls > 3.5 && cls < 4.5) {                               // sand
+                gain += (th(floor(p * 14.0)) - 0.5) * 0.08 * fine * det; bump = 0.15;
+              } else if (cls > 4.5 && cls < 5.5) {                               // rock
+                gain += (tn(p * 0.9) - 0.5) * 0.2 * det; bump = 0.7;
+              }
+              col *= 1.0 + gain;
+              float a = tn(p * 2.1), b = tn((p + vec2(0.3, 0.0)) * 2.1), c = tn((p + vec2(0.0, 0.3)) * 2.1);
+              nW = normalize(nW + vec3(a - b, 0.0, a - c) * bump * det * f21);
             }
             // ---- water: keep the photo's tint (South Bay silt, Pacific blue), add waves and a glossy surface ----
             gRough = mix(0.93, 0.07, water);
@@ -355,9 +387,11 @@ const Terrain = (() => {
     if (!index) return Promise.resolve();
     return Promise.all(detailTiles(x0, z0, x1, z1).map(([L, x, y]) => needHgt(L, x, y, prio))).then(() => {});
   }
-  function imagery(x, z) {
-    if (!index) return null; const T8 = tileSize(LMAX); let tx = Math.floor((x - X0) / T8), ty = Math.floor((z - Z0) / T8);
-    for (let L = LMAX; L >= 0; L--, tx >>= 1, ty >>= 1) { const r = irec.get(K(L, tx, ty)); if (r && r.state === 2) { const T = tileSize(L); return { tex: r.tex, x0: X0 + tx * T, z0: Z0 + ty * T, size: T, L }; } }
+  // finest loaded imagery covering (x,z), optionally capped at level maxL (callers that map one texture onto a fixed
+  // area, like the photo roofs of an 800 m town tile's 400 m quadrants, pass maxL = 8)
+  function imagery(x, z, maxL = LMAX) {
+    if (!index) return null; const Lt = Math.min(LMAX, maxL); const Tt = tileSize(Lt); let tx = Math.floor((x - X0) / Tt), ty = Math.floor((z - Z0) / Tt);
+    for (let L = Lt; L >= 0; L--, tx >>= 1, ty >>= 1) { const r = irec.get(K(L, tx, ty)); if (r && r.state === 2) { const T = tileSize(L); return { tex: r.tex, x0: X0 + tx * T, z0: Z0 + ty * T, size: T, L }; } }
     return null;
   }
   function retain(tex) { for (const r of irec.values()) if (r.tex === tex) { r.refs = (r.refs || 0) + 1; return; } }
