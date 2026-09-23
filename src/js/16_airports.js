@@ -380,7 +380,8 @@ const Airports = (() => {
       if (!a.built && budget-- > 0) { build(a); live.add(a); }
     }
   }
+  function ensureBuilt(a) { if (a.built && a.built.fid !== Globe.frame.id) { unbuild(a); live.delete(a); } if (!a.built) { build(a); live.add(a); } }
   function init() { Env.scene.add(group); }
-  return { init, load, onLoaded, search, byIdent, near, nearest, label, runwayEnd, geom, groundAt, runwaysIn, flattenH, update, group, stats, COUNTRY,
+  return { init, load, onLoaded, search, byIdent, near, nearest, label, runwayEnd, geom, groundAt, runwaysIn, flattenH, update, ensureBuilt, group, stats, COUNTRY,
     get list() { return list; }, hav, bearing };
 })();

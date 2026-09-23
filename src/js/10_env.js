@@ -79,7 +79,7 @@ const Env = (() => {
     if (envRT) envRT.dispose(); envRT = rt; scene.environment = rt.texture;
   }
 
-  const state = { sunEl: 0.5, sunAz: 2, night: 0, weather: 'auto', fogDensity: 0, lightLevel: 1, exposure: 1, moonDir, moonPhase: 0.5, wx: null, shadowSize: 90 };
+  const state = { sunEl: 0.5, sunAz: 2, night: 0, weather: 'auto', fogDensity: 0, lightLevel: 1, exposure: 1, moonDir, moonPhase: 0.5, wx: null, shadowSize: 90, shadowTarget: null };
   const focus = new THREE.Vector3(), camDir = new THREE.Vector3(), lx = new THREE.Vector3(), ly = new THREE.Vector3(), UPV = new THREE.Vector3(0, 1, 0);
   function resize() {
     const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false);
@@ -90,14 +90,16 @@ const Env = (() => {
   // shadow frustum follows the camera: ±90 m at street level, growing with altitude to ±2.2 km for aerial views,
   // pushed ahead of the view direction, quantised in size and snapped to shadow texels in light space (no swimming)
   function updateShadows(camPos) {
-    let ground = 0; try { if (typeof Terrain !== 'undefined' && Terrain.h) ground = Terrain.h(camPos.x, camPos.z) || 0; } catch (e) {}
+    let ground = 0; try { ground = (typeof Player !== 'undefined' && Player.groundAt ? Player.groundAt(camPos.x, camPos.z) : Terrain.h(camPos.x, camPos.z)) || 0; } catch (e) {}
     const alt = Math.max(0, camPos.y - ground);
     let size = U.clamp(90 + alt * 1.35, 90, 2200);
     size = Math.min(2200, 90 * Math.pow(1.35, Math.round(Math.log(size / 90) / Math.log(1.35))));
+    const tgt = state.shadowTarget;     // an aircraft high above the ground: keep its own shadows crisp
+    if (tgt) size = tgt.size;
     state.shadowSize = size;
     camera.getWorldDirection(camDir); const fl = Math.hypot(camDir.x, camDir.z) || 1;
     const push = size * U.clamp(0.25 + alt / 900, 0.25, 0.6);
-    focus.set(camPos.x + camDir.x / fl * push, ground, camPos.z + camDir.z / fl * push);
+    if (tgt) focus.copy(tgt.pos); else focus.set(camPos.x + camDir.x / fl * push, ground, camPos.z + camDir.z / fl * push);
     // light basis exactly as three's lookAt builds it for the shadow camera
     lx.crossVectors(UPV, sunDir); if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0); lx.normalize(); ly.crossVectors(sunDir, lx).normalize();
     const texel = (2 * size) / sun.shadow.mapSize.x;

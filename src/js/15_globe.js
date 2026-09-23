@@ -38,7 +38,7 @@ const Globe = (() => {
   const onFrame = (f) => frameListeners.push(f);
   // keep the anchor (camera or aircraft) near the frame origin: flat-frame distortion stays < ~1.5 %
   function maybeRebase(p) {
-    const d = Math.hypot(p.x, p.z);
+    const d = Math.hypot(p.x, p.z); if (!Number.isFinite(d)) return false;
     if (frame.bay) { if (d < 175000) return false; }
     else if (d < 150000) { const ll = w2ll(p.x, p.z); if (Math.hypot((ll.lat - Geo.LAT0) * Geo.MLAT, (ll.lon - Geo.LON0) * Geo.MLON) > 140000) return false; }
     const ll = w2ll(p.x, p.z); setFrame(ll.lat, ll.lon); return true;

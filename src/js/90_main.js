@@ -35,6 +35,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     safe('globe', () => { if (typeof Globe !== 'undefined') Globe.init(); });
     safe('airports', () => { if (typeof Airports !== 'undefined') { Airports.init(); Airports.load().then(() => Globe.invalidate()).catch(e => console.warn('airports', e)); } });
     UI.init(); Player.init();
+    safe('flight', () => { if (typeof Flight !== 'undefined') { FHud.init(); Flight.init(); } });
     await step(0.96, 'Warming up…');
   } catch (e) { console.error(e); loadmsg.textContent = 'Something went wrong: ' + e.message; return; }
 
@@ -79,7 +80,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (started) return; started = true; World.started = true;
     safe('sound', () => { if (typeof Sound !== 'undefined') Sound.init(); });
     title.style.opacity = 0; setTimeout(() => { title.hidden = true; }, 500); hud.hidden = false;
-    if (mode === 'ride') { const near = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; UI.openBoard(near.idx); UI.toast('Pick a departure to ride. The whole line runs live.', 5); }
+    if (mode === 'fly') { if (typeof Flight !== 'undefined' && !Flight.active && !Flight.loading) FHud.setup(true); }
+    else if (mode === 'ride') { const near = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; UI.openBoard(near.idx); UI.toast('Pick a departure to ride. The whole line runs live.', 5); }
     else if (mode === 'drive') { UI.openMissions('drive'); }
     else { if (Player.mode === 'heli') Player.setMode('chase'); UI.toast('Explore: 1–8 change the view · M map · B departures · J missions · H help', 7); }
   }
@@ -95,6 +97,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (isFinite(yw)) Player.look.yaw = yw; if (isFinite(pt)) Player.look.pitch = pt; }
   }
   if (hash.get('drive')) { const p = Sim.planById(hash.get('drive')); if (p) Game.startDrive(p, { auto: hash.has('autopilot') }); }
+  if (hash.get('fly') && typeof Flight !== 'undefined') { if (!started) start('explore'); Flight.fromHash(hash.get('fly')).catch(e => console.error('fly', e)); }
+  const hfly = $('hfly'); if (hfly) hfly.addEventListener('click', () => { if (typeof Flight !== 'undefined') { if (Flight.active) FHud.menu(true); else FHud.setup(true); } });
 
   // ---------- keyboard ----------
   const scales = [1, 2, 5, 10, 30, 60, 120];
@@ -216,7 +220,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Env.update(dt, camP);
     Sim.update(dt, camP);
     Game.update(Env.time.paused ? 0 : dt * Env.time.scale);
-    Player.update(dt);
+    if (!(typeof Flight !== 'undefined' && Flight.active && safeFrameR('flight', () => Flight.update(dt)))) Player.update(dt);
     // the frame follows the camera around the planet; outside the Bay only the planet-wide layer draws and updates
     if (typeof Globe !== 'undefined') safeFrame('rebase', () => { if (Globe.maybeRebase(Env.camera.position)) UI.toast(Globe.frame.bay ? 'Back over the Bay' : 'Leaving the Bay: the world beyond is live satellite imagery', 4); });
     const bay = typeof Globe === 'undefined' || Globe.frame.bay;
@@ -249,7 +253,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
   let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
-  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+  function safeFrameR(name, f) { if (errs[name] > 20) return false; try { return f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); return false; } }
+  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
     Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bayline</title>
-<meta name="description" content="Bayline: an unofficial simulator of the San Francisco Peninsula commuter rail line, with the real timetable, stations, terrain and towns.">
+<meta name="description" content="Bayline: an unofficial simulator of the San Francisco Peninsula commuter rail line, with the real timetable, stations, terrain and towns, and a flight simulator for real aircraft types from any airport on Earth.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Bayline">
 <meta property="og:title" content="Bayline: a photoreal Peninsula rail simulator">
@@ -64,10 +64,10 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 #title h1{font-family:var(--cond);font-size:clamp(52px,8vw,84px);line-height:.95;margin:8px 0 10px;font-weight:700;letter-spacing:.01em}
 #title h1 span{color:var(--red)}
 #title p.lede{font-size:17px;line-height:1.55;color:var(--ink-dim);margin:0 0 20px;max-width:62ch}
-#title .modes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 16px}
+#title .modes{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0 16px}
 #title .mode{text-align:left;padding:16px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04);transition:all .15s}
 #title .mode:hover{background:rgba(255,255,255,.09);border-color:rgba(255,255,255,.28);transform:translateY(-1px)}
-#title .mode b{display:block;font-size:18px;margin-bottom:4px} #title .mode small{color:var(--ink-dim);font-size:13px;line-height:1.4}
+#title .mode{display:flex;flex-direction:column;justify-content:flex-start} #title .mode b{display:block;font-size:18px;margin-bottom:4px} #title .mode small{color:var(--ink-dim);font-size:13px;line-height:1.4}
 #title .mode.primary{border-color:rgba(224,64,47,.6);background:rgba(224,64,47,.12)}
 #title .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #title .foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px;color:var(--ink-faint);font-size:12px}
@@ -133,7 +133,7 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 #missions .m b{display:block;font-size:16px} #missions .m small{color:var(--ink-dim)}
 #result .score{font-family:var(--mono);font-size:40px;font-weight:600}
 #crosshair{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,.7);z-index:9;pointer-events:none}
-@media (max-width:760px){#strip{display:none} #title .modes{grid-template-columns:1fr} #cab{width:auto;right:12px;left:12px;bottom:112px;padding:10px 12px} #cab .grid{display:none} #hud .tl{min-width:0;max-width:56vw;padding:8px 10px;left:10px;top:10px} #hud .clock{font-size:19px} #hud .where{font-size:12px} #hud .sub{display:none} #hud .tr{top:10px;right:10px;flex-direction:column;align-items:flex-end;gap:5px} #hud .tr .pill{padding:5px 9px;font-size:11px} #title .card{padding:22px 20px 18px} #title .foot{flex-direction:column;align-items:flex-start}}
+@media (max-width:760px){#strip{display:none} #title .modes{grid-template-columns:1fr 1fr} #cab{width:auto;right:12px;left:12px;bottom:112px;padding:10px 12px} #cab .grid{display:none} #hud .tl{min-width:0;max-width:56vw;padding:8px 10px;left:10px;top:10px} #hud .clock{font-size:19px} #hud .where{font-size:12px} #hud .sub{display:none} #hud .tr{top:10px;right:10px;flex-direction:column;align-items:flex-end;gap:5px} #hud .tr .pill{padding:5px 9px;font-size:11px} #title .card{padding:22px 20px 18px} #title .foot{flex-direction:column;align-items:flex-start}}
 </style>
 </head>
 <body>
@@ -150,11 +150,12 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 <div id="title" hidden><div class="card panel">
   <div class="kicker">An unofficial Peninsula rail simulator</div>
   <h1>Bay<span>line</span></h1>
-  <p class="lede">Ride, drive and explore a photoreal replica of the 124&nbsp;km commuter line from 4th&nbsp;&amp;&nbsp;King to Gilroy: all 31 stations, the real timetable running live, real aerial photography, every building and tree along the line, from the tunnels under Potrero Hill to the garlic fields of South County.</p>
+  <p class="lede">Ride, drive and explore a photoreal replica of the 124&nbsp;km commuter line from 4th&nbsp;&amp;&nbsp;King to Gilroy: all 31 stations, the real timetable running live, real aerial photography, every building and tree along the line, from the tunnels under Potrero Hill to the garlic fields of South County. Then take to the air: fly real aircraft types from any of 28,000 airports on Earth.</p>
   <div class="modes">
     <button class="mode primary" data-go="ride"><b>Ride</b><small>Catch the next real departure, walk the train, grab a window seat.</small></button>
     <button class="mode" data-go="drive"><b>Drive</b><small>Take the cab of a scheduled train. Keep time, stop on the mark.</small></button>
     <button class="mode" data-go="explore"><b>Explore</b><small>Fly the whole Bay, drop into any town, watch the line run.</small></button>
+    <button class="mode" data-go="fly"><b>Fly</b><small>Real aircraft types from 28,000 airports on Earth: Cessna to 747, over real terrain.</small></button>
   </div>
   <div class="row" id="timechips">
     <span style="color:var(--ink-faint);font-size:13px;margin-right:4px">Time</span>
@@ -179,6 +180,7 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 <div id="hud" hidden>
   <div class="tl panel"><div class="clock" id="hclock">--:--</div><div class="where" id="hwhere">—</div><div class="sub" id="hsub"></div></div>
   <div class="tr">
+    <button class="pill panel" id="hfly" title="Fly an aircraft from any airport">✈ Fly</button>
     <div class="pill panel" id="hmode">Explore</div>
     <div class="pill panel" id="hspeed">1×</div>
     <div class="pill panel"><span class="dot" id="hdot"></span><span id="hnet">Solo</span></div>
