@@ -171,8 +171,31 @@ def _level_tiles_near(L, cand, pts, r):
     return set(map(tuple, cand[keep].tolist()))
 
 
+# areas of interest beyond the corridor bands: (lat_s, lon_w, lat_n, lon_e, finest level). All of San Francisco gets
+# the 0.39 m/px L8 imagery (flyovers of the Presidio, Golden Gate Park, the Sunset and the waterfront), the Golden Gate
+# and the south face of the Marin Headlands get L7.
+AOI = [
+    (37.7030, -122.5160, 37.8125, -122.3550, 8),     # San Francisco
+    (37.8050, -122.5400, 37.8429, -122.4600, 7),     # Golden Gate, Marin Headlands (world edge at 37.8429)
+]
+
+
+def _aoi_tiles(L, lvl_min):
+    out = set()
+    t = T(L)
+    for (la0, lo0, la1, lo1, lv) in AOI:
+        if lv < lvl_min:
+            continue
+        xa, za = ll2w(la1, lo0); xb, zb = ll2w(la0, lo1)
+        for ty in range(int((za - Z0) // t), int((zb - Z0) // t) + 1):
+            for tx in range(int((xa - X0) // t), int((xb - X0) // t) + 1):
+                if 0 <= tx < (1 << L) and 0 <= ty < (1 << L):
+                    out.add((tx, ty))
+    return out
+
+
 def compute_coverage():
-    """Sets of (tx,ty) for L6, L7, L8 per SPEC_v2 (with ancestor closure)."""
+    """Sets of (tx,ty) for L6, L7, L8 per SPEC_v2 (with ancestor closure), plus the AOI list."""
     tr = track()
     pts = np.stack([tr['X'][::10], tr['Z'][::10]], 1)       # every 50 m
     lms = landmarks()
@@ -194,7 +217,10 @@ def compute_coverage():
         L7 |= _level_tiles_near(7, all7, br_pts, 700.0)
     n8 = 1 << 8
     cand8 = [(x * 2 + dx, y * 2 + dy) for (x, y) in L7 for dy in (0, 1) for dx in (0, 1)]
+    L7 |= _aoi_tiles(7, 7)
+    cand8 = [(x * 2 + dx, y * 2 + dy) for (x, y) in L7 for dy in (0, 1) for dx in (0, 1)]
     L8 = _level_tiles_near(8, cand8, pts, 1000.0) | _level_tiles_near(8, cand8, lm_pts, 600.0)
+    L8 |= _aoi_tiles(8, 8)
     # closure: every tile's ancestors exist
     for (x, y) in L8:
         L7.add((x >> 1, y >> 1))

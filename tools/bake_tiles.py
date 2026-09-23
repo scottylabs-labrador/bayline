@@ -214,6 +214,18 @@ def step_index(a):
     }
     if a.region:
         idx['partial'] = a.region
+    # keep what the GPU passes added (tools/sr_tiles.py: level 9; tools/sr_l8.py: 1024 px L8)
+    try:
+        prev = json.load(open(os.path.join(C.PUB, 'index.json')))
+        pimg = prev.get('products', {}).get('img', {})
+        if '9' in prev.get('levels', {}):
+            idx['levels']['9'] = prev['levels']['9']
+            idx['present']['img']['9'] = len(prev['levels']['9'])
+        for k in ('levels', 'size8', 'size9', 'sr'):
+            if k in pimg:
+                idx['products']['img'][k] = pimg[k]
+    except Exception:
+        pass
     C.write_atomic(os.path.join(C.PUB, 'index.json'), json.dumps(idx, separators=(',', ':')).encode())
     C.log('index.json written;', {p: sum(v.values()) for p, v in idx['present'].items()})
 

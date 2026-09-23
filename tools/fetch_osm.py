@@ -8,7 +8,7 @@ Data (c) OpenStreetMap contributors, ODbL 1.0 — https://www.openstreetmap.org/
     python3 tools/fetch_osm.py --delete-pbf # delete the PBF afterwards
 
 Coverage ("towns v2", see SPEC_v2.md): everything within 3 km of the rail line or 1.5 km of a landmark (parsed from
-src/js/50_landmarks.js), plus the SF and downtown San Jose cores:
+src/js/50_landmarks.js), plus all of San Francisco and the downtown San Jose core:
   buildings and building:parts (footprints + height / levels / roof / colour / material / use tags),
   roads (motorway .. residential, service lanes, pedestrian streets), areas (parks, pitches, playgrounds, parking,
   plazas, cemeteries, landuse residential/commercial/retail/industrial, aerodromes), street lamps, mapped trees.
@@ -33,7 +33,8 @@ def W(lat, lon): return ((lon - LON0) * MLON, -(lat - LAT0) * MLAT)
 
 R_TRACK = 3000.0          # buildings / roads / areas within this of the line
 R_LANDMARK = 1500.0
-CORES = {'sf_core': (37.7560, -122.4270, 37.8080, -122.3840), 'sj_core': (37.3200, -121.9050, 37.3460, -121.8750)}
+CORES = {'sf_core': (37.7560, -122.4270, 37.8080, -122.3840), 'sj_core': (37.3200, -121.9050, 37.3460, -121.8750),
+         'sf_city': (37.7030, -122.5160, 37.8125, -122.3550)}     # all of San Francisco (matches the imagery AOI)
 CELL = 25.0
 
 def landmarks():
