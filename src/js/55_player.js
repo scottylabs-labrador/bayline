@@ -201,7 +201,7 @@ const Player = (() => {
       case 'cab': {
         const car = leadCar(tr); if (!car || !car.cabEye) { setMode('chase'); break; }
         const rear = !tr.dir; const e = car.cabEye;
-        tmpV.set(e[0], e[1], e[2]); car.group.updateMatrixWorld(); car.group.localToWorld(tmpV); c.position.copy(tmpV);
+        tmpV.set(e[0] + (rear ? -0.22 : 0.22), e[1] + 0.1, e[2]); car.group.updateMatrixWorld(); car.group.localToWorld(tmpV); c.position.copy(tmpV);   // a touch forward/up: more track, less desk
         look.yaw = U.clamp(look.yaw, -1.9, 1.9);
         lookQuat((rear ? Math.PI : 0) + look.yaw, look.pitch, tmpQ); c.quaternion.copy(car.group.quaternion).multiply(tmpQ);
         break;

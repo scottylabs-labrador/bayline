@@ -5,7 +5,7 @@
 FROM python:3.12-alpine AS build
 WORKDIR /src
 COPY . .
-RUN python3 build.py                     # writes dist/bayline.html (stdlib-only build script)
+RUN python3 build.py                     # writes dist/index.html (stdlib-only build script; data is streamed, not embedded)
 
 FROM python:3.12-alpine
 RUN apk add --no-cache nginx \
@@ -15,7 +15,7 @@ RUN apk add --no-cache nginx \
 COPY server/nginx.conf /etc/nginx/nginx.conf
 COPY server/mp.py /app/mp.py
 COPY server/entrypoint.sh /entrypoint.sh
-COPY --from=build /src/dist/bayline.html /usr/share/nginx/html/index.html
+COPY --from=build /src/dist/index.html /usr/share/nginx/html/index.html
 RUN chmod +x /entrypoint.sh && gzip -9 -k /usr/share/nginx/html/index.html && nginx -t
 ENV MP_MAX_CONN=150 MP_MAX_PER_IP=3 MP_TICK_HZ=1
 EXPOSE 80

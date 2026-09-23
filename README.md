@@ -1,9 +1,9 @@
 # Bayline
 
-An unofficial, browser-based simulator of the San Francisco Peninsula commuter rail line:
-124 km from 4th & King to Gilroy, all 31 stations, the **real timetable running live**, real
-terrain, real towns and streets, landmarks, road and air traffic, and trains you can ride,
-walk through and drive.
+An unofficial, browser-based, photoreal replica of the San Francisco Peninsula commuter rail line:
+124 km from 4th & King to Gilroy, all 31 stations, the **real timetable running live**, real aerial
+photography on real terrain, every real building and tree along the line, landmarks, road and air
+traffic, and trains you can ride, walk through and drive.
 
 **Play: https://bayline.sheltie.scottylabs.org**
 
@@ -41,37 +41,52 @@ time up.
 | `B` / `M` / `J` / `H` | Departure board · live map · missions · help |
 | `Tab` / `F` | Follow the next or the nearest train |
 | `-` / `=` / `0` | Slow down / speed up time / back to live |
-| **Driving:** `W`/`S` | Power and brake notches (`X` coast, `O` doors, `Space` horn, `G` bell, `Backspace` emergency, `R` release, `A` autopilot) |
+| **Driving:** `W`/`S` | Power and brake notches. `W` at departure closes the doors and departs; doors open themselves at the stop mark. `X` coast, `O` doors, `Q` reverser, `Space` horn, `G` bell, `Backspace` emergency, `R` release, `A` autopilot. On-screen buttons do the same. |
 
-## How it's built
+## How it's built (v2: streamed photoreal)
 
-One self-contained HTML file (three.js r158, all code and data inlined), plus a tiny WebSocket
-relay for presence.
+A small page (three.js r158 + all code, ~1.5 MB) plus a streamed world: every piece of data is fetched
+in parallel, on demand, around the camera, from `/data/v2/` on the same host.
+
+- **Ground:** a chunked-LOD quadtree (L0 102 km … L8 400 m tiles) that drapes 0.6 m USDA NAIP aerial
+  photography over high-resolution terrain (AWS Terrain Tiles), carved exactly to the railway profile.
+  It sharpens progressively like a globe viewer, and masks drive water, night lights and landcover.
+- **Buildings:** every OpenStreetMap building near the line, streamed in 800 m tiles, with real heights
+  and roof shapes, and roofs textured from the same photograph.
+- **Trees:** individual crowns detected in the imagery, so every tree stands where the photo shows it.
+- **Light:** a physically based sky and atmosphere, the marine layer, and an HDR post pipeline
+  (SSAO, aerial perspective, bloom, ACES grading).
+- **Railway:** the real timetable, PTC braking-curve supervision, signals driven by train occupancy,
+  and working crossing gates.
 
 ```
-build.py            concatenates src/js/*.js + data/baked/* + three.js into dist/bayline.html
-src/head.html       page shell, UI markup and CSS
-src/js/             engine modules: env/sky, terrain, track, stations, towns, trains, sim,
-                    landmarks, player, life (people, traffic, aircraft, birds), game, UI, sound, net
-tools/              data pipeline (GTFS, DEM tiles, OSM rail/towns) and a headless screenshot tool
-data/baked/         compact baked data embedded by build.py
-server/             nginx config, multiplayer relay (mp.py), load test
+build.py            src/head.html + src/js/*.js + three.js -> dist/index.html (no data inside)
+src/js/             engine modules (stream, sky/post, terrain, track, stations, towns, trains, sim,
+                    landmarks, player, life, flora, game, UI, sound, net)
+tools/              data pipeline (GTFS, DEM, NAIP tiles, OSM towns/trees), dev server, screenshot + QA tools
+data/baked/         small core inputs (track, timetable, 64 m fallback terrain)
+data/pub/v2/        the published streamed world (gitignored; built by tools, published to the server)
+server/             nginx config (static page, /data/ volume, /ws relay), multiplayer relay, load test
 ```
 
-Build and run locally:
+Run locally:
 
 ```bash
-python3 build.py                         # -> dist/bayline.html (open it directly; multiplayer is off on file://)
-python3 -m http.server -d dist 8080      # or serve it
+python3 build.py                  # -> dist/index.html
+python3 tools/devserver.py        # http://localhost:8123/  (serves dist/ and data/pub/v2 with Range support)
 ```
 
-Rebuilding the data needs network access. The raw downloads land in `data/raw/`, which is gitignored.
+Rebuild the world data. This needs network access; downloads are cached in `data/raw/`:
 
 ```bash
-python3 tools/bake_gtfs.py               # timetable + corridor from the GTFS feed
-sh tools/fetch_dem.sh && python3 tools/fetch_rail.py && python3 tools/bake_world.py   # terrain + track
-python3 tools/fetch_osm.py && python3 tools/bake_towns.py                             # towns
+python3 tools/bake_gtfs.py && python3 tools/bake_world.py        # timetable, track, core terrain
+python3 tools/bake_tiles.py                                        # NAIP imagery, heights, masks, trees -> data/pub/v2/tiles
+python3 tools/fetch_osm.py && python3 tools/bake_towns.py          # buildings and roads -> data/pub/v2/tiles/b
+sh tools/publish_data.sh                                           # rsync data/pub/v2 to the server volume
 ```
+
+QA: `node tools/shot.mjs "http://localhost:8123/#auto&t=08:00" out.png --gpu --wait 70000 --eval "$(cat tools/qa_drive.js)"`
+drives a full run using only keyboard events and reports every guidance step, the stops and the score.
 
 ## Multiplayer, safely
 
@@ -95,9 +110,11 @@ deployment platform (Coolify). It's the "heavier" example next to
 [katmai-sortie](https://github.com/scottylabs-labrador/katmai-sortie): one container with a static
 game **and** a small realtime backend.
 
-- `Dockerfile` has two stages. The first runs `build.py` to make the single HTML file. The final
-  image runs nginx for the page, gzip, `/healthz` and the `/ws` proxy, plus the Python relay as an
+- `Dockerfile` has two stages. The first runs `build.py` to make the page. The final image runs nginx
+  for the page, gzip, `/healthz`, the `/ws` proxy and `/data/`, plus the Python relay as an
   unprivileged user.
+- The world data is not in the image. It lives in a Coolify persistent volume mounted at
+  `/usr/share/nginx/html/data`, filled by `tools/publish_data.sh`, so code deploys stay small and fast.
 - In Sheltie: project **examples** → application **bayline**, build pack *Dockerfile*, port 80,
   health check `/healthz`, domain `https://bayline.sheltie.scottylabs.org`, with a memory limit.
 - Every push to `main` redeploys automatically through a GitHub webhook.
@@ -108,6 +125,7 @@ game **and** a small realtime backend.
 - Track geometry, stations, platforms, crossings, signals, streets, buildings and parks:
   © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, ODbL.
 - Terrain: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen; USGS 3DEP and others).
+- Aerial imagery: USDA National Agriculture Imagery Program (NAIP), via USGS The National Map (public domain).
 - three.js (MIT). Fonts: Barlow, Barlow Condensed and IBM Plex Mono (Google Fonts, OFL).
 
 Code: MIT. Built as a ScottyLabs Sheltie example.

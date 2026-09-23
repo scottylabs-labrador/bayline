@@ -280,7 +280,7 @@ const TrackGeo = (() => {
       c.lamps[2].color.setHex(on && blink ? 0xff3020 : 0x2a0806); c.lamps[3].color.setHex(on && !blink ? 0xff3020 : 0x2a0806);
     }
     for (const sg of signals) {
-      const near = Math.abs(sg.x - camPos.x) < 1800 && Math.abs(sg.z - camPos.z) < 1800; sg.root.visible = near; if (!near) continue;
+      const near = Math.abs(sg.x - camPos.x) < 1800 && Math.abs(sg.z - camPos.z) < 1800; sg.root.visible = near;   // state is computed for every signal (drivers read signals far ahead)
       let occ = 1e9;
       for (const tr of trains) { if (tr.dir !== sg.dir) continue; const beyond = (tr.s - sg.s) * (sg.dir ? 1 : -1); if (beyond > 4 && beyond < occ) occ = beyond; }
       const st = occ < 1500 ? 0 : occ < 3200 ? 1 : 2;
@@ -321,9 +321,21 @@ const TrackGeo = (() => {
     for (const ci of need) if (!chunks.has(ci) && !buildQueue.includes(ci)) buildQueue.push(ci);
     buildQueue.sort((a, b) => Math.abs(a * CH - camS) - Math.abs(b * CH - camS));
     const t0 = performance.now();
-    while (buildQueue.length && performance.now() - t0 < 6) { const ci = buildQueue.shift(); if (chunks.has(ci)) continue; const g = buildChunk(ci); if (g) { group.add(g); chunks.set(ci, g); } }
+    // build only once the fine terrain under the chunk has streamed in, so embankments meet the real ground
+    for (let qi = 0; qi < buildQueue.length && performance.now() - t0 < 6; ) {
+      const ci = buildQueue[qi]; if (chunks.has(ci)) { buildQueue.splice(qi, 1); continue; }
+      const bb = chunkBox(ci);
+      if (!Terrain.hasDetail(bb[0], bb[1], bb[2], bb[3])) { if (!ensured.has(ci)) { ensured.add(ci); Terrain.ensure(bb[0], bb[1], bb[2], bb[3], 2); } qi++; continue; }
+      buildQueue.splice(qi, 1); const g = buildChunk(ci); if (g) { group.add(g); chunks.set(ci, g); }
+    }
     for (const [ci, g] of chunks) if (!need.has(ci) && Math.abs(ci * CH - camS) > FAR) { group.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); }); chunks.delete(ci); }
     updateTies(camS, dist); updateFar(camPos, camS, dist);
+  }
+  const ensured = new Set();
+  function chunkBox(ci) {
+    let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; const P = {};
+    for (let s = ci * CH; s <= Math.min(Track.length, (ci + 1) * CH); s += 50) { Track.frame(s, P); x0 = Math.min(x0, P.x); x1 = Math.max(x1, P.x); z0 = Math.min(z0, P.z); z1 = Math.max(z1, P.z); }
+    return [x0 - 40, z0 - 40, x1 + 40, z1 + 40];
   }
   function prebuild(s, radius) { for (let ci = Math.floor((s - radius) / CH); ci <= Math.floor((s + radius) / CH); ci++) if (ci >= 0 && !chunks.has(ci)) { const g = buildChunk(ci); if (g) { group.add(g); chunks.set(ci, g); } } }
   return { init, update, updateDynamic, crossingsNear, nextSignal, prebuild, group, bedSpan };

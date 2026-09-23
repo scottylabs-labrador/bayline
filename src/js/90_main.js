@@ -22,7 +22,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.h(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), isWater: (x, z) => Terrain.isWater(x, z), keepOut,
       stationList: Stations.list.map(s => ({ id: s.id, name: s.name, x: s.x, z: s.z, s: s.s })) };
     if (typeof Towns !== 'undefined') { await step(0.64, 'Raising the towns…'); await safeA('towns', async () => { await Towns.init(ctx); Env.scene.add(Towns.group); }); }
-    if (typeof Landmarks !== 'undefined') { await step(0.8, 'Placing landmarks…'); World.landmarks = safe('landmarks', () => { const L = Landmarks.build(ctx); Env.scene.add(L.group); return L; }); }
+    if (typeof Landmarks !== 'undefined') { await step(0.8, 'Placing landmarks…'); World.landmarks = safe('landmarks', () => { const L = Landmarks.stream ? Landmarks.stream(ctx) : Landmarks.build(ctx); Env.scene.add(L.group); return L; }); }
     if (typeof Life !== 'undefined') {
       await step(0.88, 'Waking up the Bay…');
       World.air = safe('air', () => { const a = Life.createAirTraffic && Life.createAirTraffic(ctx); if (a) Env.scene.add(a.group); return a; });
@@ -43,6 +43,19 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (best) { Player.setFocus(best.key); Player.setMode('heli'); return; }
     const st = Stations.list[Track.byId.palo_alto.idx]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: 420 }); Player.orbit.pitch = 0.32;
   }
+  // title-screen cinematics: helicopter on a real train, a slow drone orbit of a landmark, a trackside pass
+  const HERO = ['Salesforce Tower', 'Golden Gate Bridge', 'Hoover Tower', "Levi's Stadium", 'Bay Bridge (West Span)', 'Oracle Park', 'Coit Tower', 'Apple Park', 'Transamerica Pyramid', 'Main Quad & Memorial Church'];
+  let cineT = 14, cineI = 0;
+  function nextShot() {
+    cineI = (cineI + 1) % 3;
+    if (cineI === 1 && World.landmarks) {
+      const L = World.landmarks.list.filter(l => HERO.includes(l.name)); const l = L[Math.floor(Math.random() * L.length)];
+      if (l) { Player.setMode('orbit', { target: { x: l.x, y: (l.y || Terrain.h(l.x, l.z)) + Math.min(120, (l.top || 60) * 0.45), z: l.z }, dist: Math.max(420, (l.radius || 150) * 3.2) }); Player.orbit.pitch = 0.22; Player.orbit.yaw = Math.random() * 6.28; return; }
+    }
+    if (cineI === 2) { const tr = Sim.running.filter(t => t.v > 8).sort((a, b) => a.dist - b.dist)[0]; if (tr) { Player.setFocus(tr.key); Player.setMode('trackside'); return; } }
+    pickCinematic();
+  }
+  function cinematics(dt) { cineT -= dt; if (cineT <= 0) { cineT = 17; nextShot(); } if (Player.mode === 'orbit') Player.orbit.yaw += dt * 0.035; }
   // first frame state so the title card has something beautiful behind it
   Sim.update(0.016, Env.camera.position);
   pickCinematic();
@@ -91,6 +104,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if ((c === 'Minus' || c === 'Equal' || c === 'Digit0') && !Sim.drive) {
       if (c === 'Digit0') { Env.goLive(); UI.toast('Live time'); return; }
       let i = scales.indexOf(Env.time.scale); if (i < 0) i = 0; i = U.clamp(i + (c === 'Equal' ? 1 : -1), 0, scales.length - 1); Env.time.scale = scales[i]; if (scales[i] !== 1) Env.time.live = false; UI.toast('Time ×' + scales[i]); return; }
+    if (c === 'KeyP') { document.body.classList.toggle('photo'); return; }
     if (c === 'KeyV' && typeof Sound !== 'undefined') { Sound.setMuted(!Sound.muted); UI.toast(Sound.muted ? 'Sound off' : 'Sound on'); return; }
   });
   Game.on((ev, d) => { if (ev === 'toast') UI.toast(d, 4); if (ev === 'score' && d.msg) UI.toast((d.pts > 0 ? '+' : '') + Math.round(d.pts) + '  ' + d.msg, 2.6); if (ev === 'result') UI.showResult(d); });
@@ -147,13 +161,27 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
 
   // ---------- main loop ----------
-  let last = performance.now(), fpsAcc = 0, fpsN = 0, dprLevel = 0; const dprs = [Math.min(devicePixelRatio, 2), 1.5, 1.25, 1];
+  let last = performance.now(), fpsAcc = 0, fpsN = 0, calm = 0;
+  const TIERS = [ { name: 'ultra', dpr: 2, lod: 4.8, post: 'high' }, { name: 'high', dpr: 1.5, lod: 4.2, post: 'high' }, { name: 'medium', dpr: 1.25, lod: 3.4, post: 'medium' }, { name: 'low', dpr: 1, lod: 2.6, post: 'low' } ];
+  let tier = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 3 : 1;
+  function applyTier() {
+    const T = TIERS[tier]; Env.renderer.setPixelRatio(Math.min(T.dpr, devicePixelRatio)); Terrain.lodFactor.value = T.lod;
+    if (typeof Post !== 'undefined' && Post.setQuality) safe('post', () => Post.setQuality(T.post));
+    window.dispatchEvent(new Event('resize'));
+  }
+  applyTier();
+  const sbar = document.getElementById('streambar');
+  let sLast = -1;
+  function streamUi() { const n = Stream.stats.active + Stream.stats.queued; if (n !== sLast) { sLast = n; sbar.style.opacity = n > 0 ? 1 : 0; sbar.style.width = Math.min(100, 12 + n * 1.5) + '%'; } }
   const envArg = { night: 0, time: 0, camPos: Env.camera.position };
   function frame(now) {
     requestAnimationFrame(frame);
     let dt = (now - last) / 1000; last = now; if (dt > 0.1) dt = 0.1; if (dt <= 0) return;
-    // adaptive resolution
-    fpsAcc += dt; fpsN++; if (fpsAcc > 3) { const avg = fpsAcc / fpsN; fpsAcc = 0; fpsN = 0; if (avg > 0.024 && dprLevel < dprs.length - 1) { dprLevel++; Env.renderer.setPixelRatio(Math.min(dprs[dprLevel], devicePixelRatio)); } else if (avg < 0.012 && dprLevel > 0) { dprLevel--; Env.renderer.setPixelRatio(Math.min(dprs[dprLevel], devicePixelRatio)); } }
+    // automatic quality tiers: resolution, terrain detail and post effects follow the frame time
+    fpsAcc += dt; fpsN++;
+    if (fpsAcc > 2.5) { const avg = fpsAcc / fpsN; fpsAcc = 0; fpsN = 0;
+      if (avg > 0.026 && tier < TIERS.length - 1) { tier++; applyTier(); } else if (avg < 0.0135 && tier > 0) { calm++; if (calm >= 4) { calm = 0; tier--; applyTier(); } } else calm = 0; }
+    streamUi();
     const camP = Env.camera.position;
     Env.update(dt, camP);
     Sim.update(dt, camP);
@@ -172,6 +200,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (T.tick <= 0) { T.tick = 1.2; if (alt < 1500 && Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650 && Towns.ready !== false) { T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500)); } }
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
     Avatars.update();
+    if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
     Env.renderer.render(Env.scene, Env.camera);
   }

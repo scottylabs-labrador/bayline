@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build Bayline into ONE self-contained HTML file.
 
-    python3 build.py            -> dist/bayline.html  (three.js, all code and all data inlined)
+    python3 build.py            -> dist/index.html  (three.js and all code inlined; data streams from ./data/v2/)
 
 The page = src/head.html with three placeholders replaced:
   <!--THREE-->  vendor/three.min.js
@@ -13,12 +13,14 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 def read(p): return open(os.path.join(ROOT, p), encoding='utf-8').read()
 head = read('src/head.html')
 three = read('vendor/three.min.js').replace('console.warn(\'Scripts "build/three.js" and "build/three.min.js" are deprecated', '(()=>{})(\'')
+# v2: data is streamed from DATA (./data/v2/), never embedded. BAYLINE_EMBED=1 restores the v1 single file.
 blobs = []
-for path in sorted(glob.glob(os.path.join(ROOT, 'data/baked/*'))):
-    name, ext = os.path.splitext(os.path.basename(path))
-    if ext not in ('.bin', '.json') or name in ('corridor',): continue
-    b = open(path, 'rb').read()
-    blobs.append(f'<script type="application/octet-stream" id="blob-{name}{".json" if ext == ".json" else ""}">{base64.b64encode(b).decode()}</script>')
+if os.environ.get('BAYLINE_EMBED'):
+    for path in sorted(glob.glob(os.path.join(ROOT, 'data/baked/*'))):
+        name, ext = os.path.splitext(os.path.basename(path))
+        if ext not in ('.bin', '.json') or name in ('corridor',): continue
+        b = open(path, 'rb').read()
+        blobs.append(f'<script type="application/octet-stream" id="blob-{name}{".json" if ext == ".json" else ""}">{base64.b64encode(b).decode()}</script>')
 parts = []
 skip = set(filter(None, os.environ.get('BAYLINE_SKIP', '').split(',')))   # e.g. BAYLINE_SKIP=50_landmarks.js for partial builds
 for f in sorted(glob.glob(os.path.join(ROOT, 'src/js/*.js'))):
@@ -31,5 +33,5 @@ html = (head.replace('<!--THREE-->', '<script>' + three + '</script>')
             .replace('<!--APP-->', '<script>' + app.replace('</script', '<\\/script') + '</script>')
             .replace('__BUILD__', stamp))
 os.makedirs(os.path.join(ROOT, 'dist'), exist_ok=True)
-out = os.path.join(ROOT, 'dist/bayline.html'); open(out, 'w', encoding='utf-8').write(html)
+out = os.path.join(ROOT, 'dist/index.html'); open(out, 'w', encoding='utf-8').write(html)
 print(f'{out}: {len(html)/1e6:.2f} MB ({len(blobs)} data blobs, {len(parts)} code files)')

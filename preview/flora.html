@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bayline · Flora preview</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc6e6; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 12px; top: 10px; font: 12px/1.45 ui-monospace, Menlo, monospace; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8); pointer-events: none; white-space: pre; }
+  #nav { position: fixed; right: 12px; top: 10px; font: 12px/1.6 system-ui, sans-serif; text-align: right; }
+  #nav a { color: #fff; margin-left: 10px; text-decoration: none; text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="nav">
+  <a href="#show=gallery">gallery</a><a href="#show=gallery&close=1">close-up</a><a href="#show=atlas">atlas</a><a href="#show=forest">forest</a>
+  <a href="#show=tile&real=1&view=street">Palo Alto street</a><a href="#show=tile&real=1&view=air">Palo Alto 300 m</a><a href="#show=tile&real=1&view=park">El Camino Park</a><a href="#show=tile&real=1&view=street&night=1">night</a>
+</div>
+<script>window.BAYLINE_DATA = '/data/v2/';</script>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/00_util.js"></script>
+<script src="../src/js/01_geo.js"></script>
+<script src="../src/js/03_stream.js"></script>
+<script src="../src/js/61_flora.js"></script>
+<script>
+(async () => {
+  // #show=gallery|atlas|forest|tile  &view=street|air|park  &night=1  &sun=elev,az (deg)  &q=high|medium|low
+  // &tx=49&ty=55&suffix=_test (tile mode)  &cam=x,y,z&look=x,y,z  &n=30000 (forest)
+  const P = {}; for (const kv of location.hash.slice(1).split('&')) if (kv) { const [k, v] = kv.split('='); P[k] = v === undefined ? '1' : decodeURIComponent(v); }
+  addEventListener('hashchange', () => location.reload());
+  const SHOW = P.show || 'gallery', NIGHT = +(P.night || 0);
+  const V3 = THREE.Vector3;
+  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = NIGHT ? 1.5 : 0.9;
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.05, 60000);
+  U.uNight.value = NIGHT; U.uWind.value = P.wind !== undefined ? +P.wind : 0.35;
+  // sky + IBL
+  const SKY = NIGHT ? { top: 0x0a1430, hor: 0x2a3552, bot: 0x080a0c, fog: 0x1a2238 } : { top: 0x3f86cf, hor: 0xd8e6ee, bot: 0x8a7d66, fog: 0xc6d8e4 };
+  function skyGeo(radius) { const g = new THREE.SphereGeometry(radius, 48, 24), p = g.attributes.position, col = new Float32Array(p.count * 3);
+    const top = new THREE.Color(SKY.top), hor = new THREE.Color(SKY.hor), bot = new THREE.Color(SKY.bot), c = new THREE.Color();
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i) / radius; if (y >= 0) c.copy(hor).lerp(top, Math.pow(y, 0.5)); else c.copy(hor).lerp(bot, Math.min(1, -y * 5)); col.set([c.r, c.g, c.b], i * 3); }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g; }
+  const sky = new THREE.Mesh(skyGeo(50000), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false })); sky.frustumCulled = false; scene.add(sky);
+  const [sunEl, sunAz] = (P.sun || (NIGHT ? '-20,230' : '38,215')).split(',').map(Number);
+  const SUN = new V3(Math.sin(sunAz * Math.PI / 180) * Math.cos(sunEl * Math.PI / 180), Math.sin(sunEl * Math.PI / 180), -Math.cos(sunAz * Math.PI / 180) * Math.cos(sunEl * Math.PI / 180)).normalize();
+  { const es = new THREE.Scene(); es.add(new THREE.Mesh(skyGeo(100), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02).texture; pm.dispose(); }
+  scene.fog = new THREE.FogExp2(SKY.fog, NIGHT ? 1 / 5000 : 1 / 12000);
+  const hemi = new THREE.HemisphereLight(NIGHT ? 0x3b4d78 : 0xd8e6f4, NIGHT ? 0x14110d : 0x6f6044, NIGHT ? 0.25 : 0.62);
+  const sun = new THREE.DirectionalLight(NIGHT ? 0x9bb2e0 : 0xfff0da, NIGHT ? 0.25 : 3.0);
+  sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05;
+  const S = sun.shadow.camera; S.left = S.bottom = -110; S.right = S.top = 110; S.near = 1; S.far = 1400; S.updateProjectionMatrix();
+  scene.add(hemi, sun, sun.target);
+  const H = document.getElementById('hud');
+
+  // ------------------------------------------------------------------ scenes
+  let focus = new V3(0, 0, 0);
+  const ground = (x, z, size, mat) => { const g = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat); g.rotation.x = -Math.PI / 2; g.position.set(x, -0.02, z); g.receiveShadow = true; scene.add(g); return g; };
+  const grassMat = new THREE.MeshStandardMaterial({ color: NIGHT ? 0x2a2a20 : 0x7e7650, roughness: 0.95 });
+  await Flora.init({ renderer, scene, quality: P.q || 'high', suffix: P.suffix !== undefined ? P.suffix : (SHOW === 'tile' && !P.real ? '_test' : ''),
+    index: SHOW === 'tile' ? (P.suffix === '' || P.real ? undefined : { levels: { '7': [[+(P.tx || 49), +(P.ty || 55)]] } }) : { levels: { '7': [] } } });
+
+  if (SHOW === 'atlas') {
+    const tex = Flora._atlas(); const m = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide }));
+    m.position.set(0, 10, 0); scene.add(m);
+    const it = Flora._imp(); if (it) { const m2 = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({ map: it, transparent: true, side: THREE.DoubleSide })); m2.position.set(22, 10, 0); scene.add(m2); }
+    scene.background = new THREE.Color(0x556070); ground(0, 0, 400, grassMat); camera.position.set(11, 10, 30); focus.set(11, 10, 0);
+  } else if (SHOW === 'gallery') {
+    ground(0, 0, 2000, grassMat);
+    // near models in a row, mid models behind, impostors further back (fed through the regular ring code)
+    const recs = []; const K = Flora.KINDS;
+    K.forEach((k, i) => { const x = (i - 4) * 16; recs.push([x, 0, k, 1]); recs.push([x, -200, k, 1]); recs.push([x * 3, -900, k, 1]); });
+    await feed(recs);
+    if (+P.close) { camera.position.set(-6, 1.7, 14); focus.set(-8, 7, 0); } else { camera.position.set(0, 12, 58); focus.set(0, 9, 0); }
+  } else if (SHOW === 'forest') {
+    ground(0, 0, 6000, grassMat);
+    const n = +(P.n || 30000); const recs = []; const r = U.rng(7); const K = Flora.KINDS; const w = [0.3, 0.06, 0.08, 0.03, 0.2, 0.03, 0.06, 0.22, 0.02];
+    for (let i = 0; i < n; i++) { const a = r() * Math.PI * 2, d = Math.sqrt(r()) * 1800; let u = r(), ki = 0; while (ki < w.length - 1 && u > w[ki]) { u -= w[ki]; ki++; } recs.push([Math.cos(a) * d, Math.sin(a) * d, K[ki], 0.8 + r() * 0.5]); }
+    await feed(recs);
+    camera.position.set(0, P.alt ? +P.alt : 1.7, 0); focus.set(60, P.alt ? 0 : 6, -120);
+  } else if (SHOW === 'tile') {
+    const tx = +(P.tx || 49), ty = +(P.ty || 55), T7 = 800, X0 = -45056, Z0 = -49152;
+    const x0 = X0 + tx * T7, z0 = Z0 + ty * T7;
+    ground(x0 + 400, z0 + 400, 12000, grassMat);
+    const real = P.suffix === '' || !!P.real; const R = real ? 1 : 0;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {   // NAIP ground photo under the trees (L8 tiles when real data exists)
+      const ttx = tx + dx, tty = ty + dy;
+      if (real) { for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) { const x8 = ttx * 2 + i, y8 = tty * 2 + j; Stream.image(`tiles/img/8/${x8}_${y8}.jpg`, 1).then(bmp => { const t = new THREE.Texture(bmp); t.flipY = true; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true;
+          const photo = new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }); if (NIGHT) photo.color.setScalar(0.35); const g = ground(X0 + x8 * 400 + 200, Z0 + y8 * 400 + 200, 400, photo); g.position.y = 0.01; }).catch(() => {}); } }
+      else Stream.image(`tiles/img/7/${ttx}_${tty}_test.jpg`, 1).then(bmp => { const t = new THREE.Texture(bmp); t.flipY = true; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true;
+        const photo = new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }); if (NIGHT) photo.color.setScalar(0.35); ground(x0 + 400, z0 + 400, 800, photo); }).catch(e => console.warn('no imagery', e));
+    }
+    const view = P.view || 'street';
+    if (view === 'street') { camera.position.set(x0 + 470, 1.7, z0 + 420); focus.set(x0 + 350, 4, z0 + 330); }      // downtown Palo Alto
+    else if (view === 'park') { camera.position.set(x0 + 120, 1.7, z0 + 700); focus.set(x0 + 60, 5, z0 + 600); }  // El Camino Park oaks
+    else { camera.position.set(x0 + 150, 300, z0 + 1150); focus.set(x0 + 420, 0, z0 + 420); }
+  }
+  if (P.cam) { const c = P.cam.split(',').map(Number); camera.position.set(c[0], c[1], c[2]); }
+  if (P.look) { const c = P.look.split(',').map(Number); focus.set(c[0], c[1], c[2]); }
+  camera.lookAt(focus);
+
+  // feed [x, z, kind, scale] records through a synthetic tile (same parser as streamed tiles)
+  async function feed(recs) {
+    const T7 = 800, X0 = -45056, Z0 = -49152; const byTile = new Map();
+    for (const [x, z, k, s] of recs) { const tx = Math.floor((x - X0) / T7), ty = Math.floor((z - Z0) / T7); const key = tx + '_' + ty; if (!byTile.has(key)) byTile.set(key, []); byTile.get(key).push([x, z, k, s]); }
+    for (const [key, list] of byTile) {
+      const [tx, ty] = key.split('_').map(Number); const u8 = new Uint8Array(4 + list.length * 8); const dv = new DataView(u8.buffer); dv.setUint32(0, list.length, true);
+      list.forEach(([x, z, k, s], i) => { const o = 4 + i * 8; const [Hm, Rm] = Flora.DIM[k];
+        dv.setUint16(o, Math.min(65535, Math.floor((x - (X0 + tx * T7)) / T7 * 65536)), true); dv.setUint16(o + 2, Math.min(65535, Math.floor((z - (Z0 + ty * T7)) / T7 * 65536)), true);
+        u8[o + 4] = Math.min(255, Math.round(Rm * s * 10)); u8[o + 5] = Math.min(255, Math.round(Hm * s * 4)); u8[o + 6] = Flora.KINDS.indexOf(k); u8[o + 7] = 128 + ((i * 37) % 100) - 50; });
+      await Flora.addTestTile(tx, ty, u8);
+    }
+  }
+
+  // ------------------------------------------------------------------ controls (drag = orbit/look, WASD = move, Q/E = down/up)
+  let drag = null; const keys = new Set();
+  addEventListener('mousedown', e => drag = { x: e.clientX, y: e.clientY }); addEventListener('mouseup', () => drag = null);
+  addEventListener('mousemove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
+    const d = camera.position.clone().sub(focus); const sph = new THREE.Spherical().setFromVector3(d); sph.theta -= dx * 0.005; sph.phi = Math.min(3.0, Math.max(0.05, sph.phi - dy * 0.005)); camera.position.copy(focus).add(new V3().setFromSpherical(sph)); camera.lookAt(focus); });
+  addEventListener('wheel', e => { const d = camera.position.clone().sub(focus); d.multiplyScalar(e.deltaY > 0 ? 1.12 : 0.89); camera.position.copy(focus).add(d); camera.lookAt(focus); });
+  addEventListener('keydown', e => keys.add(e.code)); addEventListener('keyup', e => keys.delete(e.code));
+  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+  let last = performance.now(), fpsA = 0, fpsN = 0, fps = 0, upd = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - last) / 1000); last = now; U.uTime.value += dt;
+    const sp = (keys.has('ShiftLeft') ? 60 : 12) * dt; const fw = focus.clone().sub(camera.position).setY(0).normalize(); const rt = new V3(-fw.z, 0, fw.x);
+    const mv = new V3(); if (keys.has('KeyW')) mv.add(fw); if (keys.has('KeyS')) mv.sub(fw); if (keys.has('KeyD')) mv.add(rt); if (keys.has('KeyA')) mv.sub(rt); if (keys.has('KeyE')) mv.y += 1; if (keys.has('KeyQ')) mv.y -= 1;
+    if (mv.lengthSq()) { mv.normalize().multiplyScalar(sp); camera.position.add(mv); focus.add(mv); camera.lookAt(focus); }
+    const t0 = performance.now(); Flora.update(camera.position, { night: NIGHT }); upd = upd * 0.9 + (performance.now() - t0) * 0.1;
+    sun.position.copy(camera.position).addScaledVector(SUN, 600); sun.target.position.copy(camera.position); sky.position.copy(camera.position);
+    renderer.render(scene, camera);
+    fpsA += dt; fpsN++; if (fpsA > 0.5) { fps = fpsN / fpsA; fpsA = 0; fpsN = 0; }
+    const i = renderer.info.render, s = Flora.stats;
+    H.textContent = `Flora preview · ${SHOW}${NIGHT ? ' · night' : ''} · quality ${Flora.quality}\n${fps.toFixed(0)} fps · ${i.calls} calls · ${(i.triangles / 1e6).toFixed(2)} M tris\n` +
+      `trees ${s.trees} · near ${s.near} · mid ${s.mid} · far ${s.far} · tiles ${s.tiles}\nrebuild ${s.rebuildMs} ms · update ${upd.toFixed(2)} ms · init ${s.initMs} ms`;
+    window.__flora = { calls: i.calls, tris: i.triangles, fps, stats: Object.assign({}, s), upd };
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

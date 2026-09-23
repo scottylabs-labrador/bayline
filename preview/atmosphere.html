@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bayline atmosphere preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0d10; color: #eee; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  canvas#gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #ui { position: fixed; left: 10px; top: 10px; background: rgba(12, 14, 18, .72); padding: 10px 12px; border-radius: 10px; display: grid; gap: 6px; min-width: 260px }
+  #ui label { display: flex; justify-content: space-between; gap: 8px; align-items: center }
+  #stats { font: 12px ui-monospace, monospace; color: #9fb }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="ui">
+  <label>Time <input id="t" type="range" min="0" max="1440" step="1" value="1130" style="width:170px"> <span id="tl"></span></label>
+  <label>Weather <select id="wx"><option>auto</option><option>clear</option><option>fog</option><option>cloudy</option><option>haze</option></select></label>
+  <label>View <select id="view"><option>sf</option><option>aerial</option><option>coast</option><option>hills</option><option>street</option><option>high</option></select></label>
+  <label>Quality <select id="q"><option>high</option><option>medium</option><option>low</option></select></label>
+  <label>Post <input id="post" type="checkbox" checked></label>
+  <div id="stats"></div>
+</div>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/00_util.js"></script>
+<script src="../src/js/01_geo.js"></script>
+<script>
+// Minimal stand-in for the game's Terrain: the real 64 m Bay terrain (data/baked/terrain.bin) with a
+// bilinear h(x, z), so the marine-layer reach map and the shadow frustum see real geography.
+const Terrain = (() => {
+  let N = 0, S = 64, X0 = 0, Z0 = 0, heights = null, mask = null;
+  async function load() {
+    const r = await fetch('../data/baked/terrain.bin'); const z = new Uint8Array(await r.arrayBuffer());
+    const u8 = new Uint8Array(await new Response(new Blob([z]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+    const dv = new DataView(u8.buffer); N = dv.getUint32(4, true); S = dv.getFloat32(8, true); X0 = dv.getFloat32(12, true); Z0 = dv.getFloat32(16, true);
+    const sc = dv.getFloat32(20, true), off = dv.getFloat32(24, true);
+    const lo = u8.subarray(28, 28 + N * N), hi = u8.subarray(28 + N * N, 28 + 2 * N * N); mask = u8.slice(28 + 2 * N * N, 28 + 2 * N * N + N * N * 4);
+    const q = new Int32Array(N * N); heights = new Float32Array(N * N);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const k = j * N + i; const zz = lo[k] | (hi[k] << 8); const rr = (zz >>> 1) ^ -(zz & 1); let a, b, c;
+      if (j === 0 && i === 0) { q[k] = rr; continue; }
+      if (j === 0) { a = q[k - 1]; b = a; c = a; } else if (i === 0) { b = q[k - N]; a = b; c = b; } else { a = q[k - 1]; b = q[k - N]; c = q[k - N - 1]; }
+      const mx = a > b ? a : b, mn = a < b ? a : b; q[k] = rr + (c >= mx ? mn : (c <= mn ? mx : a + b - c));
+    }
+    for (let k = 0; k < N * N; k++) heights[k] = q[k] * sc + off;
+  }
+  function h(x, z) {
+    if (!heights) return 0; let fx = (x - X0) / S, fz = (z - Z0) / S;
+    fx = Math.max(0, Math.min(N - 1.001, fx)); fz = Math.max(0, Math.min(N - 1.001, fz)); const i = fx | 0, j = fz | 0, tx = fx - i, tz = fz - j, k = j * N + i;
+    return heights[k] * (1 - tx) * (1 - tz) + heights[k + 1] * tx * (1 - tz) + heights[k + N] * (1 - tx) * tz + heights[k + N + 1] * tx * tz;
+  }
+  const maskAt = (x, z, ch) => { if (!mask) return 0; const i = Math.max(0, Math.min(N - 1, Math.round((x - X0) / S))), j = Math.max(0, Math.min(N - 1, Math.round((z - Z0) / S))); return mask[(j * N + i) * 4 + ch] / 255; };
+  return { load, h, maskAt, get info() { return { N, S, X0, Z0 }; } };
+})();
+</script>
+<script src="../src/js/10_env.js"></script>
+<script src="../src/js/11_sky.js"></script>
+<script src="../src/js/14_post.js"></script>
+<script>
+(async () => {
+  const hash = new URLSearchParams(location.hash.slice(1));
+  await Terrain.load();
+  const { scene, camera, renderer } = Env;
+  // ---- terrain mesh (downsampled, vertex colours from the land mask)
+  {
+    const info = Terrain.info, M = 400, step = (info.N - 1) * info.S / (M - 1);
+    const pos = new Float32Array(M * M * 3), col = new Float32Array(M * M * 3), idx = [];
+    const c = new THREE.Color();
+    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+      const x = info.X0 + i * step, z = info.Z0 + j * step, y = Terrain.h(x, z); const k = j * M + i;
+      pos[k * 3] = x - (-10000); pos[k * 3 + 1] = Math.max(y, -3); pos[k * 3 + 2] = z - (-20000);
+      const w = Terrain.maskAt(x, z, 0), u = Terrain.maskAt(x, z, 1), pond = Terrain.maskAt(x, z, 2), farm = Terrain.maskAt(x, z, 3);
+      const n = U.fbm2(x / 1800, z / 1800, 3) * 0.5 + 0.5;
+      // albedos like NAIP photography (urban ~0.2, dry grass ~0.25/0.2/0.12, oak/redwood ~0.06-0.09)
+      if (w > 0.5) c.setRGB(0.03, 0.06, 0.07); else if (pond > 0.4) c.setRGB(0.28, 0.17, 0.15); else if (u > 0.3) c.setRGB(0.19 + n * 0.05, 0.19 + n * 0.04, 0.18 + n * 0.04);
+      else if (farm > 0.1 && farm < 0.6) c.setRGB(0.14, 0.17, 0.08); else { const g = Math.min(1, Math.max(0, (y - 20) / 500)) * n; c.setRGB(0.27 - 0.2 * g, 0.21 - 0.12 * g, 0.12 - 0.07 * g); }
+      col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+    }
+    for (let j = 0; j < M - 1; j++) for (let i = 0; i < M - 1; i++) { const a = j * M + i, b = a + 1, d = a + M, e = d + 1; idx.push(a, d, b, b, d, e); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, envMapIntensity: 0.6 }));
+    m.position.set(-10000, 0, -20000); m.receiveShadow = true; scene.add(m);
+  }
+  // ---- water plane with sky reflections (how the terrain shader can use Sky.glsl)
+  {
+    const wm = new THREE.ShaderMaterial({
+      uniforms: Object.assign({ uCam: { value: new THREE.Vector3() } }, Sky.uniforms),
+      vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+      fragmentShader: Sky.glsl + `uniform vec3 uCam; varying vec3 vW;
+        float n2(vec2 p){ return sin(p.x) * sin(p.y); }
+        void main(){ vec3 v = normalize(vW - uCam); vec2 q = vW.xz * 0.07 + uSkyTime * vec2(0.4, 0.25);
+          vec3 N = normalize(vec3(0.05 * (n2(q) + 0.5 * n2(q * 2.3 + 1.7)), 1.0, 0.05 * (n2(q.yx * 1.3) + 0.5 * n2(q * 3.1))));
+          vec3 r = reflect(v, N); r.y = abs(r.y); float f = 0.02 + 0.98 * pow(1.0 - max(dot(-v, N), 0.0), 5.0);
+          vec3 sun = uSkySunColor * pow(max(dot(r, uSkySunDir), 0.0), 900.0) * 60.0;
+          vec3 col = mix(vec3(0.012, 0.035, 0.045), skyRadiance(r) + sun, f);
+          gl_FragColor = vec4(col, 1.0); }`,
+    });
+    const wp = new THREE.Mesh(new THREE.PlaneGeometry(110000, 110000), wm); wp.rotation.x = -Math.PI / 2; wp.position.set(5000, 0.3, 2000); scene.add(wp);
+    Env._water = wm;
+  }
+  // ---- a downtown of boxes with lit windows (SF-ish), and a street scene
+  {
+    const r = U.rng(5); const tex = U.canvasTexture(64, 128, (c2, w, h) => { c2.fillStyle = '#000'; c2.fillRect(0, 0, w, h); for (let y = 4; y < h; y += 8) for (let x = 3; x < w; x += 8) { const on = Math.random() < 0.45; c2.fillStyle = on ? `hsl(${35 + Math.random() * 15},80%,${55 + Math.random() * 20}%)` : '#050505'; c2.fillRect(x, y, 4, 5); } });
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
+    const mats = [0xa8a095, 0x8d959b, 0xbdb7aa, 0x77838c, 0x9c8d77].map(cc => new THREE.MeshStandardMaterial({ color: cc, roughness: 0.6, metalness: 0.1, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0 }));
+    Env._bmats = mats;
+    const place = (cx, cz, n, spread, hmax) => { for (let i = 0; i < n; i++) { const x = cx + (r() - 0.5) * spread, z = cz + (r() - 0.5) * spread; const w = 18 + r() * 40, d = 18 + r() * 40, hh = 12 + Math.pow(r(), 3) * hmax;
+      const m = new THREE.Mesh(box, mats[i % mats.length]); m.scale.set(w, hh, d); m.position.set(x, Terrain.h(x, z) - 1, z); m.castShadow = m.receiveShadow = true; scene.add(m); } };
+    place(-26400, -43600, 220, 2600, 230);     // downtown SF
+    place(-17400, -24800, 70, 1400, 30);       // San Mateo-ish
+    place(-5800, -4700, 90, 1600, 40);         // Palo Alto-ish
+  }
+  // ---- views
+  const views = {
+    sf: [[-31200, 330, -40200], [-26300, 60, -44000]],
+    aerial: [[-12000, 2600, -12000], [-31000, 0, -40000]],
+    coast: [[-43000, 700, -24000], [-26000, 150, -32000]],
+    hills: [[-26500, 640, -9000], [-2000, 0, -9000]],
+    street: [[-26420, 2.0, -43100], [-26420, 25, -44200]],
+    high: [[-20000, 9000, -8000], [-28000, 0, -36000]],
+  };
+  const $ = (id) => document.getElementById(id);
+  const setView = (v) => { const [p, t] = views[v] || views.sf; camera.position.set(...p); camera.lookAt(...t); camera.updateMatrixWorld(); };
+  const tval = hash.get('t'); if (tval) { const [hh, mm] = tval.split(':').map(Number); $('t').value = hh * 60 + (mm || 0); }
+  if (hash.get('wx')) $('wx').value = hash.get('wx'); if (hash.get('view')) $('view').value = hash.get('view'); if (hash.get('q')) $('q').value = hash.get('q');
+  if (hash.get('post') === '0') $('post').checked = false;
+  const apply = () => { Env.setClock(+$('t').value * 60); Env.time.scale = 0; Env.state.weather = $('wx').value; setView($('view').value); Post.setQuality($('q').value); Post.enabled = $('post').checked; $('tl').textContent = Env.clockText(); };
+  for (const id of ['t', 'wx', 'view', 'q', 'post']) $(id).addEventListener('input', apply);
+  apply();
+  if (hash.get('date')) Env.time.date = new Date(hash.get('date') + 'T12:00:00-07:00');
+  Sky.rebuildFogMap();
+  let last = performance.now(), fAcc = 0, fN = 0;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    Env.update(dt, camera.position);
+    const n = U.uNight.value; for (const m of Env._bmats) m.emissiveIntensity = 1.6 * n;
+    Env._water.uniforms.uCam.value.copy(camera.position);
+    Post.render(dt);
+    fAcc += dt; fN++; if (fAcc > 0.5) { $('stats').textContent = `${(1000 * fAcc / fN).toFixed(1)} ms · calls ${Post.stats.calls} · exp ${Env.state.exposure.toFixed(2)} · fog ${(Env.state.wx || {}).fog?.toFixed(2)} top ${Sky.uniforms.uFogTop.value.toFixed(0)} m adv ${(Sky.uniforms.uFogDist.value / 1000).toFixed(1)} km · clouds ${(Env.state.wx || {}).clouds?.toFixed(2)}`; fAcc = 0; fN = 0; }
+  }
+  window.__atm = { Env, Sky, Post, Terrain, apply, setView };
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

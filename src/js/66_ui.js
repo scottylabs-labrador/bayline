@@ -6,17 +6,34 @@ const UI = (() => {
   let boardStation = 0;
   let toastT = 0;
   function init() {
-    for (const id of ['hud', 'hclock', 'hwhere', 'hsub', 'hmode', 'hspeed', 'hdot', 'hnet', 'strip', 'stripc', 'toast', 'prompt', 'cab', 'cspeed', 'climit', 'cmeter', 'cnext', 'cdist', 'cdelta', 'csig', 'cpax', 'cscore',
+    for (const id of ['drivebar', 'cnotch', 'csbar', 'callow', 'clim', 'cguide', 'hud', 'hclock', 'hwhere', 'hsub', 'hmode', 'hspeed', 'hdot', 'hnet', 'strip', 'stripc', 'toast', 'prompt', 'cab', 'cspeed', 'climit', 'cmeter', 'cnext', 'cdist', 'cdelta', 'csig', 'cpax', 'cscore',
       'crosshair', 'board', 'bkicker', 'btitle', 'bbody', 'mapov', 'mapc', 'missions', 'mlist', 'result', 'rkicker', 'rtitle', 'rscore', 'rbody', 'help', 'keys']) el[id] = $(id);
     document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeAll()));
     document.querySelectorAll('.overlay').forEach(o => o.addEventListener('mousedown', (e) => { if (e.target === o) closeAll(); }));
     // keys list
     const K = [['1', 'Cab view'], ['2', 'Onboard: walk the train'], ['3', 'Chase camera'], ['4', 'Trackside camera'], ['5', 'Helicopter'], ['6', 'Walk on the ground'], ['7', 'Fly anywhere'], ['8', 'Orbit / overview'],
       ['WASD / arrows', 'Move · look with mouse'], ['Shift', 'Run / fly faster'], ['E', 'Board · step off · sit · stand'], ['Tab', 'Follow the next train'], ['B', 'Departure board (nearest station)'], ['M', 'Live map'], ['J', 'Missions'],
-      ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['Esc', 'Release mouse / close'],
-      ['Driving: W / S', 'Power / brake notches'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot']];
+      ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['P', 'Photo mode (hide the interface)'], ['Esc', 'Release mouse / close'],
+      ['Driving: W / S', 'Power / brake notches (W also closes the doors)'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Q', 'Reverser (when stopped)'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot']];
     el.keys.innerHTML = K.map(([k, v]) => `<div><span>${v}</span><kbd>${k}</kbd></div>`).join('');
     initMap();
+    // touch joystick: drives the same WASD keys the keyboard does (walk, fly, onboard)
+    const joy = $('joy'), knob = joy.firstElementChild; let jid = null;
+    const setKeys = (dx, dy) => { const K = Player.keys; const t = 0.35;
+      (dy < -t ? K.add('KeyW') : K.delete('KeyW')); (dy > t ? K.add('KeyS') : K.delete('KeyS')); (dx < -t ? K.add('KeyA') : K.delete('KeyA')); (dx > t ? K.add('KeyD') : K.delete('KeyD')); };
+    const move = (e) => { const r = joy.getBoundingClientRect(); let dx = (e.clientX - r.left - r.width / 2) / (r.width / 2), dy = (e.clientY - r.top - r.height / 2) / (r.height / 2); const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } knob.style.transform = `translate(${dx * 34}px,${dy * 34}px)`; setKeys(dx, dy); };
+    joy.addEventListener('pointerdown', (e) => { jid = e.pointerId; joy.setPointerCapture(jid); move(e); });
+    joy.addEventListener('pointermove', (e) => { if (e.pointerId === jid) move(e); });
+    const end = () => { jid = null; knob.style.transform = ''; setKeys(0, 0); };
+    joy.addEventListener('pointerup', end); joy.addEventListener('pointercancel', end);
+    el.joy = joy; el.touch = matchMedia('(pointer: coarse)').matches;
+    // on-screen driving controls (mouse / touch): taps send the same keys as the keyboard; hold buttons hold
+    el.drivebar.querySelectorAll('button').forEach(b => {
+      const k = b.dataset.k;
+      const down = (e) => { e.preventDefault(); if (b.dataset.hold) { Player.keys.add(k); b.classList.add('on'); } else Game.driveKeys(k); };
+      const up = () => { if (b.dataset.hold) { Player.keys.delete(k); b.classList.remove('on'); } };
+      b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up);
+    });
     el.strip.addEventListener('click', (e) => { const r = el.stripc.getBoundingClientRect(); const y = (e.clientY - r.top) / r.height; const s = U.clamp((y - 0.03) / 0.94, 0, 1) * Track.length; const st = Track.stationNear(s, 3000); if (st) openBoard(st.idx); });
   }
   function closeAll() { for (const id of ['board', 'mapov', 'missions', 'result', 'help']) el[id].hidden = true; }
@@ -159,11 +176,19 @@ const UI = (() => {
       drawStrip();
       // cab panel
       const D = Sim.drive; const showCab = !!D || Player.mode === 'onboard';   // riding in the cab: the desk displays say it all
-      el.cab.hidden = !showCab;
+      el.cab.hidden = !showCab; el.drivebar.hidden = !D; el.strip.hidden = !!D;
       if (showCab) {
         const trr = D ? Sim.trainByKey(D.plan.key) : tr; const v = D ? D.v : trr ? trr.v : 0; const s = D ? D.s : trr ? trr.s : 0;
         el.cspeed.textContent = Math.round(v / Sim.MPH); el.climit.textContent = 'limit ' + Math.round(Track.limit(s) / Sim.MPH);
         const lev = D ? D.lever : 0; el.cmeter.style.left = lev >= 0 ? '50%' : (50 + lev * 50) + '%'; el.cmeter.style.width = Math.abs(lev) * 50 + '%'; el.cmeter.style.background = lev >= 0 ? 'var(--green)' : 'var(--red)';
+        const dm = D && Game.dmi ? Game.dmi() : null;
+        el.cnotch.hidden = !dm; el.cguide.hidden = !dm;
+        if (dm) {
+          el.cnotch.textContent = dm.reverse ? 'R ' + dm.notch : dm.notch; el.cnotch.className = 'notch ' + (dm.notch === 'EB' ? 'eb' : dm.notch[0] === 'P' ? 'p' : dm.notch[0] === 'B' ? 'b' : '');
+          const top = 90 * Sim.MPH; el.csbar.style.width = Math.min(100, v / top * 100) + '%'; el.callow.style.left = Math.min(99, dm.vAllow / top * 100) + '%'; el.clim.style.left = Math.min(99, dm.lim / top * 100) + '%';
+          el.csbar.style.background = dm.ptc === 'enforce' ? '#ff5a4a' : dm.ptc === 'warn' ? '#ffc53d' : '#dfe6ee';
+          el.cguide.textContent = dm.guide; el.cguide.className = 'guide' + (dm.ptc === 'enforce' || dm.guide.startsWith('EMERG') || dm.guide.startsWith('BRAKE NOW') ? ' alarm' : dm.ptc === 'warn' || dm.guide.startsWith('Start braking') ? ' warn' : '');
+        }
         if (D && Game.run) {
           const inf = Game.stopInfo(); el.cnext.textContent = inf ? inf.name : '—';
           el.cdist.textContent = inf ? (inf.togo > 1000 ? (inf.togo / 1609.34).toFixed(1) + ' mi' : Math.round(inf.togo * 3.281) + ' ft') : '—';
@@ -183,6 +208,7 @@ const UI = (() => {
     // prompt
     const pr = Player.prompt; if (pr !== el.prompt._t) { el.prompt._t = pr; el.prompt.innerHTML = pr; el.prompt.hidden = !pr; }
     el.crosshair.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly');
+    if (el.touch) el.joy.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly') || anyOpen();
     if (!el.mapov.hidden) drawMap();
   }
   return { init, update, toast, openBoard, openMissions, openMap, showResult, closeAll, anyOpen, get boardStation() { return boardStation; } };

@@ -1,10 +1,12 @@
-// Renderer, scene, camera, sky, sun & moon, fog, image-based lighting, time of day.
+// Renderer, scene, camera, time of day, sun & moon, lights, adaptive shadows, image-based lighting.
+// The sky itself (physically based atmosphere, clouds, marine layer) lives in 11_sky.js and the render
+// pipeline (HDR, SSAO, aerial perspective, bloom, grading) in 14_post.js; both plug in at runtime.
 const Env = (() => {
   const canvas = document.getElementById('gl');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance', stencil: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;      // only used when Post is off (Post tone-maps itself)
   renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -43,38 +45,11 @@ const Env = (() => {
     return { el, az };
   }
   function dirFromElAz(v, el, az) { v.set(Math.sin(az) * Math.cos(el), Math.sin(el), -Math.cos(az) * Math.cos(el)); return v; }
+  // moon: lags the sun ~50 min per day of lunar age; illuminated fraction from the synodic phase
+  function moonAge(date) { const days = (date.getTime() - Date.UTC(2000, 0, 6, 18, 14)) / 864e5; const a = days % 29.530588; return a < 0 ? a + 29.530588 : a; }
 
-  // ---------- sky dome ----------
-  const skyU = {
-    sunDir: { value: sunDir }, moonDir: { value: moonDir }, zenith: { value: new THREE.Color() }, horizon: { value: new THREE.Color() },
-    sunGlow: { value: new THREE.Color() }, antiGlow: { value: new THREE.Color() }, night: U.uNight, time: U.uTime, sunDisk: { value: 1 }, ground: { value: new THREE.Color() }
-  };
-  const skyMat = new THREE.ShaderMaterial({
-    uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
-    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position = p.xyww; }`,
-    fragmentShader: `
-      uniform vec3 sunDir, moonDir, zenith, horizon, sunGlow, antiGlow, ground; uniform float night, time, sunDisk; varying vec3 vDir;
-      float h(vec3 p){ p = fract(p*0.3183099+.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
-      void main(){
-        vec3 d = normalize(vDir); float y = d.y;
-        float t = pow(clamp(1.0 - max(y,0.0), 0.0, 1.0), 3.2);
-        vec3 col = mix(zenith, horizon, t);
-        float mu = dot(d, sunDir);
-        col += sunGlow * (pow(max(mu,0.0), 6.0)*0.55 + pow(max(mu,0.0), 48.0)*0.9) * (0.35 + 0.65*t);
-        col += antiGlow * pow(max(-mu,0.0), 3.0) * t * 0.6;                    // belt of Venus
-        col += sunGlow * sunDisk * smoothstep(0.9995, 0.99975, mu) * 18.0;         // sun disk
-        float mm = dot(d, moonDir); col += vec3(0.85,0.88,0.95) * smoothstep(0.99955, 0.9997, mm) * 2.0 * night;
-        if (night > 0.02 && y > 0.0) {                                              // stars
-          vec3 g = floor(d * 420.0); float s = h(g); float tw = 0.75 + 0.25*sin(time*3.0 + s*80.0);
-          col += vec3(0.9,0.93,1.0) * smoothstep(0.9965, 1.0, s) * night * tw * smoothstep(0.0, 0.25, y) * 1.4;
-        }
-        if (y < 0.0) col = mix(horizon, ground, clamp(-y*6.0,0.0,1.0));
-        gl_FragColor = vec4(col, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }`
-  });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), skyMat);
+  // ---------- sky dome (material supplied by Sky) ----------
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24), new THREE.MeshBasicMaterial({ color: 0x86a9d4, side: THREE.BackSide, depthWrite: false, fog: false }));
   sky.scale.setScalar(120000); sky.frustumCulled = false; sky.renderOrder = -1000;
   scene.add(sky);
 
@@ -83,49 +58,54 @@ const Env = (() => {
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
   const SC = sun.shadow.camera; SC.left = -90; SC.right = 90; SC.top = 90; SC.bottom = -90; SC.near = 1; SC.far = 1200;
   scene.add(sun, sun.target);
-  const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x6a5a3a, 0.6); scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x6a5a3a, 0.45); scene.add(hemi);
   const moon = new THREE.DirectionalLight(0x9fb4ff, 0.0); scene.add(moon, moon.target);
-  scene.fog = new THREE.FogExp2(0xbcd7ee, 1 / 60000);
+  scene.fog = null;       // aerial perspective + marine layer are done in post from depth (14_post.js)
 
   // ---------- image-based lighting (PMREM of the sky) ----------
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-  const envSky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), skyMat); envSky.scale.setScalar(100); envScene.add(envSky);
+  const fallbackEnv = new THREE.Scene(); fallbackEnv.add(new THREE.Mesh(new THREE.SphereGeometry(100, 16, 8), new THREE.MeshBasicMaterial({ color: 0x8fb0d8, side: THREE.BackSide })));
   let envRT = null, lastEnvKey = '';
   function refreshEnv(force) {
-    const key = (Math.round(state.sunEl * 90 / Math.PI) + '/' + Math.round(state.sunAz * 18 / Math.PI) + '/' + Math.round(state.night * 12));
+    const wx = state.wx || {};
+    const key = Math.round(state.sunEl * 90 / Math.PI) + '/' + Math.round(state.sunAz * 18 / Math.PI) + '/' + Math.round(state.night * 12) + '/' + Math.round((wx.haze || 2) * 2) + '/' + Math.round((wx.clouds || 0) * 5);
     if (!force && key === lastEnvKey) return; lastEnvKey = key;
-    skyU.sunDisk.value = 0.0;
-    const rt = pmrem.fromScene(envScene, 0, 0.1, 200);
-    skyU.sunDisk.value = 1.0;
+    const es = (typeof Sky !== 'undefined' && Sky.envScene) ? Sky.envScene : fallbackEnv;
+    const rt = pmrem.fromScene(es, 0, 0.1, 200);
     if (envRT) envRT.dispose(); envRT = rt; scene.environment = rt.texture;
   }
 
-  // ---------- palette over the day ----------
-  const C = (h) => new THREE.Color(h);
-  const keys = [ // sun elevation (deg) -> colors
-    { e: -18, zen: C(0x05070d), hor: C(0x0b1220), glow: C(0x000000), anti: C(0x000000), sun: C(0x000000), ground: C(0x05060a) },
-    { e: -8, zen: C(0x0b1428), hor: C(0x1d2a48), glow: C(0x3a2440), anti: C(0x10162a), sun: C(0x000000), ground: C(0x0b0d14) },
-    { e: -2, zen: C(0x1d3566), hor: C(0x7a6a7a), glow: C(0xd06a3a), anti: C(0x4a4870), sun: C(0x000000), ground: C(0x1a1a22) },
-    { e: 2, zen: C(0x2f5aa0), hor: C(0xe0a878), glow: C(0xff8a3c), anti: C(0x8a7ea0), sun: C(0xff9a50), ground: C(0x4a4038) },
-    { e: 8, zen: C(0x3c70bd), hor: C(0xe9cfae), glow: C(0xffb870), anti: C(0x9aa6c4), sun: C(0xffc98f), ground: C(0x6a5d48) },
-    { e: 20, zen: C(0x3d7cc9), hor: C(0xbfd6ea), glow: C(0xffe2b0), anti: C(0x9fb8d8), sun: C(0xfff1dc), ground: C(0x7a6c52) },
-    { e: 60, zen: C(0x2f73c8), hor: C(0xb4d2ec), glow: C(0xfff0d0), anti: C(0x9fbadc), sun: C(0xffffff), ground: C(0x7d6f55) },
-  ];
-  const tmpC = new THREE.Color();
-  function pal(field, eDeg, out) {
-    let i = 0; while (i < keys.length - 2 && eDeg > keys[i + 1].e) i++;
-    const a = keys[i], b = keys[i + 1]; const t = U.clamp((eDeg - a.e) / (b.e - a.e), 0, 1);
-    return out.copy(a[field]).lerp(b[field], t);
-  }
-
-  const state = { sunEl: 0.5, sunAz: 2, night: 0, weather: 'clear', fogDensity: 1 / 60000, lightLevel: 1 };
-  const focus = new THREE.Vector3();
+  const state = { sunEl: 0.5, sunAz: 2, night: 0, weather: 'auto', fogDensity: 0, lightLevel: 1, exposure: 1, moonDir, moonPhase: 0.5, wx: null, shadowSize: 90 };
+  const focus = new THREE.Vector3(), camDir = new THREE.Vector3(), lx = new THREE.Vector3(), ly = new THREE.Vector3(), UPV = new THREE.Vector3(0, 1, 0);
   function resize() {
     const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
   }
   window.addEventListener('resize', resize); resize();
+
+  // shadow frustum follows the camera: ±90 m at street level, growing with altitude to ±2.2 km for aerial views,
+  // pushed ahead of the view direction, quantised in size and snapped to shadow texels in light space (no swimming)
+  function updateShadows(camPos) {
+    let ground = 0; try { if (typeof Terrain !== 'undefined' && Terrain.h) ground = Terrain.h(camPos.x, camPos.z) || 0; } catch (e) {}
+    const alt = Math.max(0, camPos.y - ground);
+    let size = U.clamp(90 + alt * 1.35, 90, 2200);
+    size = Math.min(2200, 90 * Math.pow(1.35, Math.round(Math.log(size / 90) / Math.log(1.35))));
+    state.shadowSize = size;
+    camera.getWorldDirection(camDir); const fl = Math.hypot(camDir.x, camDir.z) || 1;
+    const push = size * U.clamp(0.25 + alt / 900, 0.25, 0.6);
+    focus.set(camPos.x + camDir.x / fl * push, ground, camPos.z + camDir.z / fl * push);
+    // light basis exactly as three's lookAt builds it for the shadow camera
+    lx.crossVectors(UPV, sunDir); if (lx.lengthSq() < 1e-6) lx.set(1, 0, 0); lx.normalize(); ly.crossVectors(sunDir, lx).normalize();
+    const texel = (2 * size) / sun.shadow.mapSize.x;
+    const u = focus.dot(lx), v = focus.dot(ly);
+    focus.addScaledVector(lx, Math.round(u / texel) * texel - u).addScaledVector(ly, Math.round(v / texel) * texel - v);
+    const back = size * 1.6 + 700;
+    SC.left = -size; SC.right = size; SC.top = size; SC.bottom = -size; SC.near = 1; SC.far = back + size * 1.6 + 900;
+    SC.updateProjectionMatrix();
+    sun.position.copy(focus).addScaledVector(sunDir, back); sun.target.position.copy(focus);
+    sun.shadow.normalBias = texel * 1.15;
+    sun.shadow.bias = -(0.015 + texel * 0.25) / (SC.far - SC.near);
+  }
 
   function update(dt, camPos) {
     // advance time
@@ -137,30 +117,34 @@ const Env = (() => {
     }
     const s = solar(time.sec, time.date); state.sunEl = s.el; state.sunAz = s.az;
     dirFromElAz(sunDir, s.el, s.az);
-    const m = solar((time.sec + 12.4 * 3600) % 86400, time.date); dirFromElAz(moonDir, Math.max(m.el, 0.35), m.az);
+    const age = moonAge(time.date); state.moonPhase = (1 - Math.cos(age / 29.530588 * U.TAU)) / 2;
+    const m = solar(((time.sec - age * 3000) % 86400 + 86400) % 86400, time.date); dirFromElAz(moonDir, m.el, m.az);
     const eDeg = s.el / U.DEG;
     state.night = U.smooth(4, -9, eDeg);
     U.uNight.value = state.night;
-    pal('zen', eDeg, skyU.zenith.value); pal('hor', eDeg, skyU.horizon.value); pal('glow', eDeg, skyU.sunGlow.value);
-    pal('anti', eDeg, skyU.antiGlow.value); pal('ground', eDeg, skyU.ground.value);
-    // haze from weather
-    const fogCol = pal('hor', eDeg, tmpC).clone();
-    scene.fog.color.copy(fogCol);
-    scene.fog.density = state.fogDensity * (1 + state.night * 0.4);
-    // lights
     const sunUp = U.smooth(-2, 6, eDeg);
-    sun.intensity = (2.3 + 0.9 * (1 - U.smooth(15, 55, eDeg))) * sunUp;   // softer at midday so bright albedos don't clip pal('sun', eDeg, sun.color);
-    focus.copy(camPos);
-    sun.position.copy(focus).addScaledVector(sunDir, 600); sun.target.position.copy(focus);
-    // stabilise shadow texels to reduce shimmering
-    const texel = (SC.right - SC.left) / sun.shadow.mapSize.x;
-    sun.position.x = Math.round(sun.position.x / texel) * texel; sun.position.z = Math.round(sun.position.z / texel) * texel;
-    sun.target.position.x = Math.round(sun.target.position.x / texel) * texel; sun.target.position.z = Math.round(sun.target.position.z / texel) * texel;
+    if (typeof Sky !== 'undefined') {
+      Sky.update(dt, camPos);
+      sun.color.copy(Sky.sunLight.color); sun.intensity = Sky.sunLight.intensity;
+      const a = Sky.ambient, al = Math.max(1e-4, 0.2126 * a.r + 0.7152 * a.g + 0.0722 * a.b);
+      hemi.color.setRGB(a.r / al, a.g / al, a.b / al).multiplyScalar(0.55).addScalar(0.45);
+      hemi.groundColor.setRGB(0.54, 0.45, 0.32).multiplyScalar(0.35 + 0.65 * sunUp);
+    } else {
+      sun.color.setRGB(1, 0.96, 0.9); sun.intensity = 3.0 * sunUp;
+      hemi.color.set(0xd8e4f2); hemi.groundColor.set(0x6a5a3a);
+    }
     sun.castShadow = sunUp > 0.05;
-    hemi.intensity = 0.2 + 0.3 * sunUp + 0.12 * state.night;
-    hemi.color.copy(skyU.zenith.value).lerp(tmpC.set(0xfff4e6), 0.62); hemi.groundColor.copy(skyU.ground.value).lerp(tmpC.set(0x8a7250), 0.3);
-    moon.intensity = 0.35 * state.night; moon.position.copy(focus).addScaledVector(moonDir, 600); moon.target.position.copy(focus);
-    renderer.toneMappingExposure = 0.86 + state.night * 0.62 + (1 - U.smooth(8, 40, eDeg)) * 0.08 * (1 - state.night);
+    hemi.intensity = 0.16 + 0.3 * sunUp + 0.12 * state.night;
+    const moonUp = U.smooth(-0.03, 0.2, moonDir.y);
+    moon.intensity = 0.3 * state.night * moonUp * (0.25 + 0.75 * state.moonPhase);
+    moon.position.copy(camPos).addScaledVector(moonDir, 600); moon.target.position.copy(camPos);
+    // exposure: no clipped whites at noon, a touch brighter at golden hour, lights pop at night
+    // (calibrated so a sunlit 18% grey reads mid-grey at noon; aerial photography albedos are ~0.1-0.25)
+    const eDay = U.lerp(0.84, 0.66, U.smooth(6, 35, eDeg));
+    const eTw = U.lerp(eDay, 1.2, U.smooth(3, -5, eDeg));
+    state.exposure = U.lerp(eTw, 1.85, U.smooth(-5, -12, eDeg));
+    renderer.toneMappingExposure = state.exposure * 0.93;
+    if (sun.castShadow) updateShadows(camPos);
     sky.position.copy(camPos);
     U.uTime.value += dt;
     refreshEnv(false);
@@ -172,5 +156,5 @@ const Env = (() => {
     return { kind: (wd === 0 || wd === 6) ? 'wkend' : 'wkday', ymd: `${p.y}${String(p.m).padStart(2, '0')}${String(p.d).padStart(2, '0')}` };
   }
   function clockText(sec = time.sec) { const h = Math.floor(sec / 3600) % 24, m = Math.floor(sec / 60) % 60; const ap = h < 12 ? 'AM' : 'PM'; return `${(h % 12) || 12}:${String(m).padStart(2, '0')} ${ap}`; }
-  return { renderer, scene, camera, canvas, sky, sun, hemi, time, state, sunDir, update, setClock, goLive, serviceDay, clockText, nowPacificSeconds, refreshEnv, shadowCam: SC };
+  return { renderer, scene, camera, canvas, sky, sun, hemi, moon, time, state, sunDir, moonDir, update, setClock, goLive, serviceDay, clockText, nowPacificSeconds, refreshEnv, shadowCam: SC };
 })();

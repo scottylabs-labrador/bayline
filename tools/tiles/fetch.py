@@ -1,0 +1,86 @@
+"""Cached, polite, parallel downloads for the tile bake: NAIP (USGS NAIPPlus ImageServer), USGS imagery
+basemap tiles, AWS terrarium elevation tiles. Everything lands under data/raw/ and is reused on re-runs."""
+import os, random, threading, time
+import requests
+from .common import RAW, log
+
+UA = 'Bayline-rail-sim/2.0 (ScottyLabs student project; tile bake; contact via github.com/scottylabs-labrador/bayline)'
+NAIP = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage'
+USGS_TILE = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'
+TERRARIUM = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'
+
+_local = threading.local()
+STOP = threading.Event()
+_stats = {'get': 0, 'bytes': 0, 'fail': 0}
+_lock = threading.Lock()
+
+
+def _session():
+    s = getattr(_local, 's', None)
+    if s is None:
+        s = requests.Session()
+        s.headers['User-Agent'] = UA
+        _local.s = s
+    return s
+
+
+def get_cached(url, dest, min_bytes=100, tries=6, timeout=180, validate=None):
+    """Download url to dest unless it already exists (atomic). Returns bytes. Raises after retries."""
+    if os.path.exists(dest) and os.path.getsize(dest) >= min_bytes:
+        with open(dest, 'rb') as f:
+            return f.read()
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    delay = 2.0
+    last = None
+    for attempt in range(tries):
+        if STOP.is_set():
+            raise KeyboardInterrupt
+        try:
+            r = _session().get(url, timeout=timeout)
+            if r.status_code == 200 and len(r.content) >= min_bytes and (validate is None or validate(r)):
+                tmp = dest + f'.part{threading.get_ident()}'
+                with open(tmp, 'wb') as f:
+                    f.write(r.content)
+                os.replace(tmp, dest)
+                with _lock:
+                    _stats['get'] += 1
+                    _stats['bytes'] += len(r.content)
+                return r.content
+            last = f'HTTP {r.status_code} len {len(r.content)} ct {r.headers.get("content-type")}'
+            if r.status_code == 404:
+                break
+        except requests.RequestException as e:
+            last = repr(e)
+        time.sleep(delay + random.random() * delay)
+        delay = min(delay * 2, 60)
+    with _lock:
+        _stats['fail'] += 1
+    raise IOError(f'download failed: {url} ({last})')
+
+
+def stats():
+    with _lock:
+        return dict(_stats)
+
+
+def naip(bbox, px, bands='rgb', quality=92):
+    """NAIP export for a lon/lat bbox (w,s,e,n) at px*px. bands: 'rgb' or 'nir'. Returns JPEG bytes."""
+    w, s, e, n = bbox
+    extra = '&bandIds=3' if bands == 'nir' else ''
+    url = (f'{NAIP}?bbox={w:.9f},{s:.9f},{e:.9f},{n:.9f}&bboxSR=4326&imageSR=4326&size={px},{px}'
+           f'&format=jpg&compressionQuality={quality}&interpolation=RSP_BilinearInterpolation&adjustAspectRatio=false&f=image{extra}')
+    # adjustAspectRatio=false: without it the server widens the lat extent to keep square pixels (tiles are square in
+    # metres, not in degrees), which misregisters every tile by up to ~50 m. Cache dir 'naip_aar0' so old fetches are never reused.
+    key = f'{w:.7f}_{s:.7f}_{e:.7f}_{n:.7f}_{px}_{bands}'
+    dest = os.path.join(RAW, 'naip_aar0', bands, str(px), key.replace('-', 'm') + '.jpg')
+    return get_cached(url, dest, min_bytes=500, validate=lambda r: r.headers.get('content-type', '').startswith('image/'))
+
+
+def terrarium(z, x, y):
+    dest = os.path.join(RAW, 'terrarium', str(z), str(x), f'{y}.png')
+    return get_cached(TERRARIUM.format(z=z, x=x, y=y), dest, min_bytes=100, timeout=60)
+
+
+def usgs_tile(z, x, y):
+    dest = os.path.join(RAW, 'usgs', str(z), str(x), f'{y}.jpg')
+    return get_cached(USGS_TILE.format(z=z, x=x, y=y), dest, min_bytes=300, timeout=60)

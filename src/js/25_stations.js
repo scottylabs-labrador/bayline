@@ -179,6 +179,20 @@ const Stations = (() => {
       const m = new THREE.Mesh(U.mergeGeometries(sg), sm); root.add(m);
       for (const [x, y, z, yaw] of signs) { const f = U.place(new THREE.BoxGeometry(2.5, 0.5, 0.04), x, y, z, 0, yaw + Math.PI / 2); const mm = new THREE.Mesh(f, M.steel); root.add(mm); mm.position.y -= 0.0; mm.scale.set(1, 1, 1); mm.translateZ(0); }
     }
+    // stop-mark boards: where the head of the train must stop, facing the arriving driver
+    if (!M.stopTex) M.stopTex = U.canvasTexture(128, 160, (c, w, h) => { c.fillStyle = '#f2c230'; c.fillRect(0, 0, w, h); c.strokeStyle = '#111'; c.lineWidth = 8; c.strokeRect(4, 4, w - 8, h - 8);
+      c.fillStyle = '#111'; c.font = '800 40px Barlow Condensed, sans-serif'; c.textAlign = 'center'; c.fillText('STOP', w / 2, 58); c.fillRect(22, 78, w - 44, 26); c.fillStyle = '#f2c230'; c.fillRect(30, 84, 18, 12); c.fillRect(56, 84, 18, 12); c.fillRect(82, 84, 18, 12);
+      c.fillStyle = '#111'; c.font = '700 30px Barlow Condensed, sans-serif'; c.fillText('7 CAR', w / 2, 140); });
+    for (const dir of [0, 1]) {
+      const p = st.platFor[dir]; if (!p) continue; const sS = st.stop[dir]; Track.frame(sS, F);
+      const lat = Track.lane(sS, dir) + st.door[dir] * (EDGE + 0.45);
+      const g = new THREE.Group(); g.position.set(F.x + F.rx * lat - ox, F.y + PH, F.z + F.rz * lat - oz);
+      g.rotation.y = Math.atan2(F.dx, F.dz) + (dir ? Math.PI : 0);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.9, 0.07), M.steel); post.position.y = 0.95; g.add(post);
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.58), new THREE.MeshStandardMaterial({ map: M.stopTex, roughness: 0.5, emissive: 0xffffff, emissiveMap: M.stopTex, emissiveIntensity: 0.05 }));
+      board.position.set(0, 1.75, 0.04); g.add(board); const back = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.58), M.steel); back.position.set(0, 1.75, 0.035); back.rotation.y = Math.PI; g.add(back);
+      root.add(g);
+    }
     // departure boards (one per platform, near the middle)
     st.boards = [];
     for (const p of st.plats) {
@@ -285,20 +299,25 @@ const Stations = (() => {
     people.count = k; people.update && people.update(dt);
   }
 
-  function nearest(pos, maxD) { let best = null, bd = maxD; for (const st of list) { if (!st.obj) continue; const d = Math.hypot(st.x - pos.x, st.z - pos.z); if (d < bd) { bd = d; best = st; } } return best; }
+  function nearest(pos, maxD) { let best = null, bd = maxD; for (const st of list) { const d = Math.hypot(st.x - pos.x, st.z - pos.z); if (d < bd) { bd = d; best = st; } } return best; }
 
   function init() {
     mats(); Env.scene.add(group);
     for (const st of Track.stations) {
       const o = st; layout(o); Track.frame(o.s, F); o.x = F.x; o.z = F.z; o.y = F.y; list.push(o);
     }
-    for (const st of list) buildStation(st);
+    // geometry waits for the fine terrain around each station (layout/stop marks above are available immediately)
+    for (const st of list) {
+      const r = Math.max(260, (st.sMax - st.sMin) / 2 + 120);
+      Terrain.ensure(st.x - r, st.z - r, st.x + r, st.z + r, 1).then(() => { try { buildStation(st); } catch (e) { console.error('station', st.id, e); } });
+    }
     setupCrowd();
   }
   let boardT = 0;
   function update(dt, camPos, trains) {
     const night = U.uNight.value;
     for (const st of list) {
+      if (!st.obj) continue;
       const d = Math.hypot(st.x - camPos.x, st.z - camPos.z) - Math.max(0, camPos.y - st.y) * 0.3;
       st.obj.visible = d < 5000 || camPos.y - st.y > 1500 && d < 12000;
       if (!st.obj.visible) continue;
@@ -306,7 +325,7 @@ const Stations = (() => {
     }
     M.lampOn.emissiveIntensity = 0.1 + 2.4 * night; M.pool.opacity = 0.32 * night;
     boardT -= dt;
-    if (boardT <= 0) { boardT = 2; const now = Env.time.sec; for (const st of list) { if (!st.obj.visible) continue; if (Math.hypot(st.x - camPos.x, st.z - camPos.z) > 900) continue; for (const b of st.boards) drawBoard(b, st, now); } }
+    if (boardT <= 0) { boardT = 2; const now = Env.time.sec; for (const st of list) { if (!st.obj || !st.obj.visible) continue; if (Math.hypot(st.x - camPos.x, st.z - camPos.z) > 900) continue; for (const b of st.boards) drawBoard(b, st, now); } }
     updateCrowd(dt, camPos, trains);
   }
   // world position on a platform for spawning the player: station st, direction dir

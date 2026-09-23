@@ -1,21 +1,34 @@
-// Terrain: 64 m heightmap (1600², baked from AWS Terrain Tiles, carved along the railway) + land masks,
-// rendered as ONE instanced draw: a camera-centred quadtree of 32×32-quad chunks with skirts.
+// Terrain v2: streamed, chunked-LOD photoreal ground. A camera-driven quadtree over the SPEC_v2 tile grid
+// (L0 102.4 km … L8 400 m) draws one mesh per node; each node uses the finest data loaded at or above it:
+// NAIP imagery (L0–8), 129² heights (L0–7) and 128² masks (L0–7), with the v1 64 m field as the ultimate
+// fallback, so the view sharpens progressively like a globe viewer and never shows holes.
+// API (SPEC_v2): load, h, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt,
+//                update(camera), setTownFade (no-op in v2), group/mesh, info, lodFactor, stats.
 const Terrain = (() => {
-  let N = 0, S = 64, X0 = 0, Z0 = 0, heights = null, mask = null;
-  const G = 32;                       // quads per chunk side
-  const ROOT = 131072;                // quadtree root size (m)
-  const LEAF = 256;                   // smallest chunk (8 m vertex spacing)
-  const MAXI = 1400;
-  let mesh = null, texH = null, texM = null, material = null;
-  const uniforms = {
-    tH: { value: null }, tM: { value: null }, terr: { value: new THREE.Vector4() }, camXZ: { value: new THREE.Vector2() },
-    townFade: { value: new THREE.Vector4(0, 0, 0, 0) }, night: U.uNight, time: U.uTime,
-  };
+  // ---------- v1 fallback field (64 m heights + masks, whole world) ----------
+  let N = 0, S = 64, FX0 = 0, FZ0 = 0, heights = null, mask = null, texFH = null, texFM = null;
+  const X0 = -45056, Z0 = -49152, SIZE = 102400, LMAX = 8, LH = 7;
+  const HS = 129, MS = 128;             // samples per height tile / mask tile
+  const G = 64;                          // quads per node side
+  const lodFactor = { value: 4.2 };
+  const stats = { nodes: 0, img: 0, hgt: 0, msk: 0, loading: 0, evicted: 0 };
+  const group = new THREE.Group(); group.name = 'terrain';
+  let index = null;                      // level -> Set(key) of existing tiles (levels 6–8); 0–5 complete
+  let ready = false;
 
+  const tileSize = (L) => SIZE / (1 << L);
+  const K = (L, x, y) => (L * 512 + y) * 512 + x;
+  function exists(L, x, y) {
+    const n = 1 << L; if (x < 0 || y < 0 || x >= n || y >= n) return false;
+    if (L <= 5) return !!index || L <= 5;          // 0–5 always exist (if tiles are published at all)
+    return !!(index && index[L] && index[L].has(K(L, x, y)));
+  }
+
+  // ---------- loading the fallback + index ----------
   async function load(onProgress) {
     const u8 = await Data.bin('terrain');
     const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
-    N = dv.getUint32(4, true); S = dv.getFloat32(8, true); X0 = dv.getFloat32(12, true); Z0 = dv.getFloat32(16, true);
+    N = dv.getUint32(4, true); S = dv.getFloat32(8, true); FX0 = dv.getFloat32(12, true); FZ0 = dv.getFloat32(16, true);
     const sc = dv.getFloat32(20, true), off = dv.getFloat32(24, true);
     const lo = u8.subarray(28, 28 + N * N), hi = u8.subarray(28 + N * N, 28 + 2 * N * N);
     mask = u8.slice(28 + 2 * N * N, 28 + 2 * N * N + N * N * 4);
@@ -25,220 +38,341 @@ const Terrain = (() => {
         const k = j * N + i; const zz = lo[k] | (hi[k] << 8); const r = (zz >>> 1) ^ -(zz & 1);
         let a, b, c;
         if (j === 0 && i === 0) { q[k] = r; continue; }
-        if (j === 0) { a = q[k - 1]; b = a; c = a; }
-        else if (i === 0) { b = q[k - N]; a = b; c = b; }
-        else { a = q[k - 1]; b = q[k - N]; c = q[k - N - 1]; }
-        const mx = a > b ? a : b, mn = a < b ? a : b;
-        q[k] = r + (c >= mx ? mn : (c <= mn ? mx : a + b - c));
+        if (j === 0) { a = q[k - 1]; b = a; c = a; } else if (i === 0) { b = q[k - N]; a = b; c = b; } else { a = q[k - 1]; b = q[k - N]; c = q[k - N - 1]; }
+        const mx = a > b ? a : b, mn = a < b ? a : b; q[k] = r + (c >= mx ? mn : (c <= mn ? mx : a + b - c));
       }
-      if ((j & 127) === 0 && onProgress) onProgress(j / N);
+      if ((j & 127) === 0 && onProgress) onProgress(j / N * 0.6);
     }
     for (let k = 0; k < N * N; k++) heights[k] = q[k] * sc + off;
-    build();
-  }
-
-  // bilinear height at world (x,z)
-  function h(x, z) {
-    if (!heights) return 0;
-    let fx = (x - X0) / S, fz = (z - Z0) / S;
-    fx = fx < 0 ? 0 : fx > N - 1.001 ? N - 1.001 : fx; fz = fz < 0 ? 0 : fz > N - 1.001 ? N - 1.001 : fz;
-    const i = fx | 0, j = fz | 0, tx = fx - i, tz = fz - j, k = j * N + i;
-    return heights[k] * (1 - tx) * (1 - tz) + heights[k + 1] * tx * (1 - tz) + heights[k + N] * (1 - tx) * tz + heights[k + N + 1] * tx * tz;
-  }
-  function maskAt(x, z, ch) { // 0..1 nearest
-    if (!mask) return 0; const i = U.clamp(Math.round((x - X0) / S), 0, N - 1), j = U.clamp(Math.round((z - Z0) / S), 0, N - 1);
-    return mask[(j * N + i) * 4 + ch] / 255;
-  }
-  const isWater = (x, z) => maskAt(x, z, 0) > 0.5;
-  const urbanAt = (x, z) => maskAt(x, z, 1);
-
-  function build() {
-    // height texture (half float, linear filtered everywhere)
     const hf = new Uint16Array(N * N); for (let k = 0; k < N * N; k++) hf[k] = THREE.DataUtils.toHalfFloat(heights[k]);
-    texH = new THREE.DataTexture(hf, N, N, THREE.RedFormat, THREE.HalfFloatType);
-    texH.minFilter = texH.magFilter = THREE.LinearFilter; texH.wrapS = texH.wrapT = THREE.ClampToEdgeWrapping; texH.needsUpdate = true;
-    texM = new THREE.DataTexture(mask, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
-    texM.minFilter = texM.magFilter = THREE.LinearFilter; texM.needsUpdate = true;
-    uniforms.tH.value = texH; uniforms.tM.value = texM; uniforms.terr.value.set(X0, Z0, (N - 1) * S, N);
+    texFH = new THREE.DataTexture(hf, N, N, THREE.RedFormat, THREE.HalfFloatType); texFH.minFilter = texFH.magFilter = THREE.LinearFilter; texFH.needsUpdate = true;
+    texFM = new THREE.DataTexture(mask, N, N, THREE.RGBAFormat, THREE.UnsignedByteType); texFM.minFilter = texFM.magFilter = THREE.LinearFilter; texFM.needsUpdate = true;
+    // tile index (optional: without it the world renders from the fallback field)
+    try {
+      const idx = await Stream.json('tiles/index.json', 0);
+      index = {};
+      for (const L of [6, 7, 8]) { const s = new Set(); for (const [x, y] of (idx.levels && idx.levels[L]) || []) s.add(K(L, x, y)); index[L] = s; }
+      index.meta = idx;
+    } catch (e) { console.warn('terrain: no tile index, fallback field only', e && e.message); index = null; }
+    buildShared();
+    if (index) { // warm the top of the pyramid so there is always a photo underneath
+      const warm = [];
+      for (let L = 0; L <= 2; L++) for (let y = 0; y < (1 << L); y++) for (let x = 0; x < (1 << L); x++) { warm.push(needImg(L, x, y, 0), needHgt(L, x, y, 0)); }
+      let done = 0; await Promise.all(warm.map(p => p.then(() => { done++; if (onProgress) onProgress(0.6 + 0.4 * done / warm.length); }, () => {})));
+    }
+    Env.scene.add(group); ready = true;
+  }
 
-    // chunk geometry: (G+1)² grid in [-0.5,0.5] plus a skirt ring (position.y = 1 flags skirt)
+  // ---------- tile records ----------
+  const hrec = new Map(), mrec = new Map(), irec = new Map();   // key -> { L, x, y, state, ... }
+  let frameNo = 0;
+  function decodeHeights(u8) {   // MED-predicted zigzag residuals (uint16) -> Float32 heights
+    const n = HS * HS; const res = new Uint16Array(u8.buffer, u8.byteOffset, n); const q = new Int32Array(n); const h = new Float32Array(n);
+    for (let j = 0; j < HS; j++) for (let i = 0; i < HS; i++) {
+      const k = j * HS + i; const zz = res[k]; const r = (zz >>> 1) ^ -(zz & 1); let a, b, c;
+      if (j === 0 && i === 0) { q[k] = r; continue; }
+      if (j === 0) { a = q[k - 1]; b = a; c = a; } else if (i === 0) { b = q[k - HS]; a = b; c = b; } else { a = q[k - 1]; b = q[k - HS]; c = q[k - HS - 1]; }
+      const mx = a > b ? a : b, mn = a < b ? a : b; q[k] = r + (c >= mx ? mn : (c <= mn ? mx : a + b - c));
+    }
+    let mn = 1e9, mx = -1e9; for (let k = 0; k < n; k++) { const v = q[k] / 16 - 200; h[k] = v; if (v < mn) mn = v; if (v > mx) mx = v; }
+    return { h, mn, mx };
+  }
+  function needHgt(L, x, y, prio) {
+    L = Math.min(L, LH); const k = K(L, x, y); let r = hrec.get(k);
+    if (r) { r.used = frameNo; return r.p; }
+    r = { L, x, y, state: 1, used: frameNo, h: null, tex: null, mn: 0, mx: 0, refs: 0 }; hrec.set(k, r);
+    r.path = `tiles/h/${L}/${x}_${y}.bin`;
+    r.p = Stream.bin(r.path, prio).then((u8) => {
+      if (u8.length < HS * HS * 2) throw new Error('short height tile');
+      const d = decodeHeights(u8); r.h = d.h; r.mn = d.mn; r.mx = d.mx; r.base = d.mn;
+      const hf = new Uint16Array(HS * HS); for (let i = 0; i < hf.length; i++) hf[i] = THREE.DataUtils.toHalfFloat(d.h[i] - r.base);
+      const t = new THREE.DataTexture(hf, HS, HS, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+      r.tex = t; r.state = 2; stats.hgt++; return r;
+    }, (e) => { r.state = 3; return r; });
+    return r.p;
+  }
+  function needMsk(L, x, y, prio) {
+    L = Math.min(L, LH); const k = K(L, x, y); let r = mrec.get(k);
+    if (r) { r.used = frameNo; return r.p; }
+    r = { L, x, y, state: 1, used: frameNo, m: null, tex: null }; mrec.set(k, r);
+    r.path = `tiles/m/${L}/${x}_${y}.bin`;
+    r.p = Stream.bin(r.path, prio + 1).then((u8) => {
+      if (u8.length < MS * MS * 4) throw new Error('short mask tile');
+      r.m = u8; const t = new THREE.DataTexture(u8, MS, MS, THREE.RGBAFormat, THREE.UnsignedByteType); t.minFilter = t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
+      r.tex = t; r.state = 2; stats.msk++; return r;
+    }, () => { r.state = 3; return r; });
+    return r.p;
+  }
+  let maxAniso = 8;
+  function needImg(L, x, y, prio) {
+    const k = K(L, x, y); let r = irec.get(k);
+    if (r) { r.used = frameNo; return r.p; }
+    r = { L, x, y, state: 1, used: frameNo, tex: null, refs: 0 }; irec.set(k, r);
+    r.path = `tiles/img/${L}/${x}_${y}.jpg`;
+    r.p = Stream.image(r.path, prio).then((bmp) => {
+      const t = new THREE.Texture(bmp); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true;
+      t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = maxAniso; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+      r.tex = t; r.bmp = bmp; r.state = 2; stats.img++; return r;
+    }, () => { r.state = 3; return r; });
+    return r.p;
+  }
+  // finest ready record at or above (L,x,y) in a map; returns [rec, scale, offX, offY] mapping node uv -> data uv
+  function finest(map, L, x, y, maxL) {
+    let l = Math.min(L, maxL), xx = x >> (L - l), yy = y >> (L - l);
+    for (; l >= 0; l--, xx >>= 1, yy >>= 1) {
+      const r = map.get(K(l, xx, yy)); if (r && r.state === 2) { const d = L - l, s = 1 / (1 << d); return [r, s, (x - (xx << d)) * s, (y - (yy << d)) * s]; }
+    }
+    return null;
+  }
+
+  // ---------- shared geometry & material ----------
+  let geo = null; const matPool = []; const nodes = [];
+  function buildShared() {
     const pos = [], idx = []; const V = G + 1;
     for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) pos.push(i / G - 0.5, 0, j / G - 0.5);
     for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const a = j * V + i, b = a + 1, c = a + V, d = c + 1; idx.push(a, c, b, b, c, d); }
     const ring = []; for (let i = 0; i < G; i++) ring.push(i); for (let j = 0; j < G; j++) ring.push(j * V + G);
     for (let i = G; i > 0; i--) ring.push(G * V + i); for (let j = G; j > 0; j--) ring.push(j * V);
-    const base = pos.length / 3;
-    for (const r of ring) pos.push(pos[r * 3], 1, pos[r * 3 + 2]);
+    const base = pos.length / 3; for (const r of ring) pos.push(pos[r * 3], 1, pos[r * 3 + 2]);
     for (let k = 0; k < ring.length; k++) { const a = ring[k], b = ring[(k + 1) % ring.length], a2 = base + k, b2 = base + (k + 1) % ring.length; idx.push(a, b, a2, b, b2, a2); }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx);
+    geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx);
     geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9);
-
-    material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.0, envMapIntensity: 0.55 });
-    material.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, uniforms);
+    try { maxAniso = Math.min(12, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+  }
+  const SKY_GLSL = () => (typeof Sky !== 'undefined' && Sky.glsl) ? Sky.glsl : '';
+  function makeMaterial() {
+    const u = {
+      hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
+      iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 },
+      mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
+      skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime,
+    };
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
+    m.userData.u = u;
+    m.customProgramCacheKey = () => 'bayline-terrain-v2';
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', `#include <common>
-          uniform sampler2D tH; uniform vec4 terr; varying vec3 vW; varying vec2 vUV;
-          vec2 tuv(vec2 w){ return (w - terr.xy) / terr.z * ((terr.w - 1.0) / terr.w) + 0.5 / terr.w; }`)
+          uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo; uniform float skirt;
+          varying vec3 vW; varying vec2 vUV;`)
         .replace('#include <beginnormal_vertex>', `
-          vec4 wq = instanceMatrix * vec4(position.x, 0.0, position.z, 1.0);
-          vec2 uvq = tuv(wq.xz); float hq = texture2D(tH, uvq).r;
-          float sclq = length(instanceMatrix[0].xyz);
+          vec2 uvn = position.xz + 0.5;
+          float hq = texture2D(hTex, (hUV.xy + uvn * hUV.zw) * hTC.x + hTC.y).r + hInfo.x;
           vec3 objectNormal = vec3(0.0, 1.0, 0.0);`)
         .replace('#include <begin_vertex>', `
-          vec3 transformed = vec3(position.x, (hq - position.y * (4.0 + sclq * 0.012)) / sclq, position.z);
-          vW = vec3(wq.x, hq, wq.z); vUV = uvq;`);
+          vec3 transformed = vec3(position.x, hq - position.y * skirt, position.z);
+          vUV = uvn;`)
+        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+          vW = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
-          uniform sampler2D tH; uniform sampler2D tM; uniform vec4 terr; uniform vec2 camXZ; uniform vec4 townFade; uniform float night; uniform float time;
+          uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo;
+          uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas;
+          uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
+          uniform float night; uniform float time;
           varying vec3 vW; varying vec2 vUV;
-          float hsh(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-          float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
-            return mix(mix(hsh(i), hsh(i+vec2(1,0)), f.x), mix(hsh(i+vec2(0,1)), hsh(i+vec2(1,1)), f.x), f.y); }
-          float fbm(vec2 p){ float a = 0.0, m = 0.5; for (int i = 0; i < 4; i++){ a += m * vn(p); p = p * 2.03 + 17.1; m *= 0.5; } return a; }
-          vec3 terrN(vec2 uv){ float e = 1.0 / terr.w; float s2 = terr.z / (terr.w - 1.0) * 2.0;
-            float l = texture2D(tH, uv - vec2(e,0)).r, r = texture2D(tH, uv + vec2(e,0)).r, d = texture2D(tH, uv - vec2(0,e)).r, u = texture2D(tH, uv + vec2(0,e)).r;
-            return normalize(vec3(l - r, s2, d - u)); }
-          vec3 gTerrN; float gWater; float gRough; vec3 gEmis;`)
+          float th(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+          float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+            return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }
+          vec3 gN; float gRough; vec3 gEmis;`)
         .replace('#include <color_fragment>', `#include <color_fragment>
           {
-            vec4 m = texture2D(tM, vUV);
-            vec3 nW = terrN(vUV);
-            vec2 p = vW.xz; float hgt = vW.y;
-            float dcam = length(p - camXZ);
-            // micro relief for close-up hills (bump only in shading)
-            float det = smoothstep(2500.0, 300.0, dcam) * (1.0 - m.g) * (1.0 - m.r);
-            if (det > 0.0) { float e = 3.0; float a = fbm(p * 0.06), b = fbm((p + vec2(e, 0.0)) * 0.06), c = fbm((p + vec2(0.0, e)) * 0.06);
-              nW = normalize(nW + vec3(a - b, 0.0, a - c) * 2.2 * det); }
-            float slope = 1.0 - nW.y;
-            float n1 = fbm(p * 0.0011), n2 = vn(p * 0.013), n3 = vn(p * 0.09), n4 = hsh(floor(p * 0.5));
-            // --- wild land: golden grass, oak woodland, chaparral, redwoods ---
-            vec3 grassA = vec3(0.58, 0.44, 0.21), grassB = vec3(0.66, 0.52, 0.28), grassC = vec3(0.47, 0.42, 0.23);
-            vec3 col = mix(grassA, grassB, smoothstep(0.3, 0.8, n1));
-            col = mix(col, grassC, smoothstep(0.55, 0.9, n2) * 0.5);
-            float northF = clamp(-nW.z * 2.2 + 0.25, 0.0, 1.0);
-            float wood = smoothstep(0.46, 0.68, n1 * 0.55 + northF * 0.45 + slope * 0.9 + n2 * 0.25 - 0.15);
-            vec3 oak = mix(vec3(0.20, 0.25, 0.12), vec3(0.30, 0.33, 0.16), n3);
-            float speck = smoothstep(0.62, 0.9, vn(p * 0.35)) * smoothstep(0.35, 0.75, n1 + northF * 0.3);
-            col = mix(col, oak, max(wood, speck * 0.8));
-            float redw = smoothstep(180.0, 420.0, hgt) * smoothstep(-8000.0, -22000.0, p.x + p.y * 0.35) * smoothstep(0.35, 0.6, n1 + northF * 0.4);
-            col = mix(col, mix(vec3(0.11, 0.17, 0.10), vec3(0.16, 0.22, 0.12), n3), redw);
-            float chap = smoothstep(0.18, 0.35, slope) * (1.0 - northF) * 0.6;
-            col = mix(col, vec3(0.42, 0.40, 0.25), chap);
-            col = mix(col, vec3(0.56, 0.50, 0.42), smoothstep(0.55, 0.85, slope));   // rock on cliffs
-            // --- farmland (South County) ---
-            float farm = clamp(m.a * 2.0, 0.0, 1.0) * step(m.a, 0.51);
-            if (farm > 0.01) {
-              float ang = 0.62; mat2 R = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)); vec2 fp = R * p;
-              vec2 fc = floor(fp / vec2(260.0, 170.0)); float fh = hsh(fc);
-              vec3 fcol = fh < 0.3 ? vec3(0.42, 0.52, 0.22) : fh < 0.55 ? vec3(0.62, 0.58, 0.34) : fh < 0.75 ? vec3(0.50, 0.40, 0.26) : vec3(0.33, 0.45, 0.20);
-              float rows = 0.9 + 0.1 * sin(fp.x * (1.0 + fh * 2.0));
-              vec2 ff = fract(fp / vec2(260.0, 170.0)); float edge = smoothstep(0.0, 0.02, ff.x) * smoothstep(0.0, 0.03, ff.y);
-              col = mix(col, fcol * rows * mix(0.8, 1.0, edge), farm);
+            // ---- normal from the height data (per pixel) ----
+            vec2 tc = (hUV.xy + vUV * hUV.zw) * hTC.x + hTC.y; float e = hInfo.z;
+            float hl = texture2D(hTex, tc - vec2(e, 0.0)).r, hr = texture2D(hTex, tc + vec2(e, 0.0)).r;
+            float hd = texture2D(hTex, tc - vec2(0.0, e)).r, hu = texture2D(hTex, tc + vec2(0.0, e)).r;
+            vec3 nW = normalize(vec3(hl - hr, 2.0 * hInfo.y, hd - hu));
+            vec4 mk = texture2D(mTex, (mUV.xy + vUV * mUV.zw) * mTC.x + mTC.y);
+            float water = smoothstep(0.45, 0.6, mk.r);
+            float dcam = distance(vW, cameraPosition);
+            // ---- albedo: the photograph (or a quiet fallback before it streams in) ----
+            vec3 col;
+            if (iHas > 0.5) {
+              col = texture2D(iTex, iUV.xy + vUV * iUV.zw).rgb;
+            } else {
+              float n1 = tn(vW.xz * 0.0015);
+              col = mix(vec3(0.46, 0.39, 0.24), vec3(0.34, 0.36, 0.22), smoothstep(0.3, 0.7, n1));
+              col = mix(col, vec3(0.36, 0.35, 0.33), smoothstep(0.1, 0.5, mk.g));
+              col = mix(col, vec3(0.08, 0.16, 0.2), water);
             }
-            // --- urban fabric (far view; near the camera the real streets/buildings take over) ---
-            float urb = m.g;
-            float nearTown = smoothstep(townFade.y, townFade.x, dcam) * townFade.z;
-            vec3 lights = vec3(0.0);
-            if (urb > 0.02) {
-              float ang = floor(vn(p * 0.00025) * 4.0) * 0.39; mat2 R = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
-              vec2 cp = R * p; vec2 cell = cp / vec2(118.0, 86.0); vec2 cf = fract(cell); vec2 ci = floor(cell);
-              float st = 1.0 - smoothstep(0.035, 0.06, min(min(cf.x, 1.0 - cf.x), min(cf.y, 1.0 - cf.y)) );
-              float lot = hsh(ci); vec2 lc = cell * vec2(4.0, 2.0); vec2 sub = fract(lc); float lh = hsh(floor(lc));
-              float bld = step(0.16 + lh * 0.12, sub.x) * step(0.18 + lh * 0.1, sub.y) * step(0.14, 1.0 - sub.x) * step(0.16, 1.0 - sub.y);
-              vec3 roof = lh < 0.28 ? vec3(0.60, 0.36, 0.27) : lh < 0.5 ? vec3(0.56, 0.55, 0.53) : lh < 0.7 ? vec3(0.72, 0.66, 0.56) : lh < 0.85 ? vec3(0.80, 0.79, 0.76) : vec3(0.38, 0.36, 0.35);
-              roof *= 0.9 + 0.15 * hsh(floor(lc) + 3.1);
-              vec3 yard = mix(vec3(0.30, 0.37, 0.19), vec3(0.42, 0.43, 0.27), n3);
-              vec3 city = mix(yard, roof, bld * (0.55 + 0.4 * urb));
-              city = mix(city, vec3(0.27, 0.27, 0.28), st);
-              float tree = smoothstep(0.5, 0.78, vn(p * 0.07) * 0.8 + vn(p * 0.23) * 0.3) * 0.85; city = mix(city, mix(vec3(0.15, 0.22, 0.11), vec3(0.22, 0.28, 0.14), n3), tree * (1.0 - st * 0.8) * (1.0 - bld * 0.5));
-              float farU = smoothstep(2200.0, 7000.0, dcam);   // average out sub-pixel lots in the distance (no shimmer)
-              vec3 avgCity = mix(vec3(0.40, 0.40, 0.33), vec3(0.47, 0.44, 0.38), n1) * (0.92 + 0.12 * vn(p * 0.002));
-              city = mix(city, avgCity, farU);
-              // under the streamed towns: natural suburban ground (lawns, dry grass, canopy) so gaps between houses read well
-              vec3 near = mix(vec3(0.34, 0.40, 0.21), vec3(0.52, 0.45, 0.27), smoothstep(0.35, 0.75, n2));
-              near = mix(near, vec3(0.17, 0.24, 0.12), smoothstep(0.55, 0.8, vn(p * 0.05) * 0.7 + n3 * 0.4) * 0.8);
-              city = mix(city, near, nearTown);
-              col = mix(col, city, smoothstep(0.1, 0.45, urb));
-              // night lights along streets
-              float lp = smoothstep(0.93, 1.0, hsh(floor(cp / 22.0))) * st * (1.0 - nearTown);
-              float glow = st * 0.07 * (1.0 - nearTown);
-              lights = vec3(1.0, 0.72, 0.38) * (lp * 2.2 + glow) * night * smoothstep(0.2, 0.6, urb) * (0.7 + 0.3 * sin(time * 0.7 + lot * 30.0));
+            // ---- near-camera detail so the photo never looks like a blurry decal ----
+            float det = smoothstep(420.0, 25.0, dcam) * (1.0 - water);
+            if (det > 0.0) {
+              float d1 = tn(vW.xz * 1.7), d2 = tn(vW.xz * 0.43), d3 = th(floor(vW.xz * 6.0));
+              col *= 1.0 + ((d1 - 0.5) * 0.22 + (d2 - 0.5) * 0.14 + (d3 - 0.5) * 0.08) * det;
+              float a = tn(vW.xz * 2.1), b = tn((vW.xz + vec2(0.3, 0.0)) * 2.1), c = tn((vW.xz + vec2(0.0, 0.3)) * 2.1);
+              nW = normalize(nW + vec3(a - b, 0.0, a - c) * 0.35 * det);
             }
-            // --- baylands: marsh, salt ponds, beaches ---
-            float marsh = step(0.7, m.a);
-            col = mix(col, mix(vec3(0.34, 0.40, 0.22), vec3(0.45, 0.43, 0.28), n2), marsh * 0.9);
-            float pond = m.b;
-            vec3 pcol = vec3(0.0);
-            if (pond > 0.01) {
-              float ph = hsh(floor(p / 900.0));
-              pcol = ph < 0.25 ? vec3(0.60, 0.40, 0.36) : ph < 0.45 ? vec3(0.66, 0.56, 0.38) : ph < 0.65 ? vec3(0.42, 0.52, 0.42) : ph < 0.8 ? vec3(0.54, 0.38, 0.33) : vec3(0.38, 0.47, 0.49);
-              pcol *= 0.9 + 0.12 * vn(p * 0.01);
-              col = mix(col, pcol, smoothstep(0.3, 0.7, pond));
+            // ---- water: keep the photo's tint (South Bay silt, Pacific blue), add waves and a glossy surface ----
+            gRough = mix(0.93, 0.07, water);
+            if (water > 0.0) {
+              float depth = clamp(-(hInfo.x + texture2D(hTex, tc).r), 0.0, 30.0);
+              vec3 deep = vec3(0.035, 0.085, 0.11), shallow = col * 0.55;
+              col = mix(col, mix(shallow, deep, smoothstep(0.0, 12.0, depth)), water * 0.8);
+              float wf = smoothstep(6000.0, 300.0, dcam);
+              vec2 wp = vW.xz * 0.11 + vec2(time * 0.31, time * 0.19); vec2 wq = vW.xz * 0.023 - vec2(time * 0.07, -time * 0.05);
+              float wa = tn(wp), wb = tn(wp + vec2(0.37, 0.0)), wc = tn(wp + vec2(0.0, 0.37));
+              float xa = tn(wq), xb = tn(wq + vec2(0.41, 0.0)), xc = tn(wq + vec2(0.0, 0.41));
+              vec3 wn = normalize(vec3((wa - wb) * 0.55 * wf + (xa - xb) * 0.4, 1.0, (wa - wc) * 0.55 * wf + (xa - xc) * 0.4));
+              nW = normalize(mix(nW, wn, water));
             }
-            float shore = smoothstep(0.08, 0.3, m.r) * (1.0 - smoothstep(0.35, 0.55, m.r)) * step(hgt, 4.0);
-            col = mix(col, vec3(0.78, 0.72, 0.58), shore * 0.7);
-            // --- water ---
-            gWater = smoothstep(0.42, 0.58, m.r);
-            float depth = clamp(-hgt, 0.0, 12.0);
-            vec3 wcol = mix(vec3(0.20, 0.36, 0.38), vec3(0.08, 0.20, 0.27), smoothstep(0.0, 8.0, depth));
-            wcol = mix(wcol, vec3(0.30, 0.34, 0.26), smoothstep(0.55, 0.45, m.r) * 0.5);
-            col = mix(col, wcol, gWater);
+            // ---- night: the photo goes dark, streets and towns glow (mask G) ----
+            float gl = mk.g;
+            float spark = smoothstep(0.55, 0.95, th(floor(vW.xz / 18.0))) * smoothstep(0.15, 0.6, gl);
+            gEmis = vec3(1.0, 0.72, 0.42) * (pow(gl, 1.6) * 0.9 + spark * 1.6) * night * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
             diffuseColor.rgb = col;
-            gRough = mix(0.96, 0.06, gWater);
-            // water wave normal
-            if (gWater > 0.0) {
-              vec2 wp = p * 0.08 + vec2(time * 0.35, time * 0.21);
-              float wa = vn(wp), wb = vn(wp + vec2(0.35, 0.0)), wc = vn(wp + vec2(0.0, 0.35));
-              vec2 wp2 = p * 0.021 - vec2(time * 0.12, -time * 0.08);
-              float xa = vn(wp2), xb = vn(wp2 + vec2(0.4, 0.0)), xc = vn(wp2 + vec2(0.0, 0.4));
-              float wf = smoothstep(4500.0, 600.0, dcam);
-              vec3 wn = normalize(vec3(((wa - wb) * 0.5 * wf + (xa - xb) * 0.35 * (0.3 + 0.7 * wf)), 1.0, ((wa - wc) * 0.5 * wf + (xa - xc) * 0.35 * (0.3 + 0.7 * wf))));
-              nW = normalize(mix(nW, wn, gWater));
-            }
-            gTerrN = nW; gEmis = lights;
+            gN = nW;
           }`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = gRough;`)
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-          normal = normalize((viewMatrix * vec4(gTerrN, 0.0)).xyz);`)
+          normal = normalize((viewMatrix * vec4(gN, 0.0)).xyz);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
           totalEmissiveRadiance += gEmis;`);
     };
-    mesh = new THREE.InstancedMesh(geo, material, MAXI);
-    mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.count = 0;
-    mesh.name = 'terrain';
-    Env.scene.add(mesh);
+    return m;
+  }
+  function getNode(i) {
+    let n = nodes[i];
+    if (!n) { const mat = makeMaterial(); const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.matrixAutoUpdate = false; group.add(mesh); n = nodes[i] = { mesh, mat, u: mat.userData.u }; }
+    return n;
   }
 
-  // ---------- quadtree selection ----------
-  const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), box = new THREE.Box3(), mtx = new THREE.Matrix4();
-  const lodFactor = { value: 2.3 };
-  let lastKey = '';
+  // ---------- per-frame quadtree ----------
+  const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), box = new THREE.Box3(), cp = new THREE.Vector3();
+  const sel = [];
+  function hRange(L, x, y) { // conservative min/max of a node from the finest loaded height data
+    const f = finest(hrec, L, x, y, LH); if (f) return [f[0].mn - 2, f[0].mx + 2];
+    return [-120, 1500];
+  }
+  function nodeWanted(L, x, y) {         // is there any data finer than L-1 here (so splitting helps)?
+    if (!index) return L <= 5;
+    return exists(L, x, y);
+  }
   function update(cam) {
-    if (!mesh) return;
-    uniforms.camXZ.value.set(cam.position.x, cam.position.z);
+    if (!ready) return; frameNo++;
+    cp.copy(cam.position);
     pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
-    const cx = X0 + (N - 1) * S / 2, cz = Z0 + (N - 1) * S / 2;
-    const cp = cam.position; let n = 0;
-    const alt = Math.max(0, cp.y - h(cp.x, cp.z));
-    const stack = [[cx, cz, ROOT]];
+    const k = lodFactor.value; sel.length = 0;
+    const stack = [[0, 0, 0]];
     while (stack.length) {
-      const [x, z, size] = stack.pop();
-      const half = size / 2;
-      box.min.set(x - half, -40, z - half); box.max.set(x + half, 1400, z + half);
+      const [L, x, y] = stack.pop(); const T = tileSize(L); const x0 = X0 + x * T, z0 = Z0 + y * T;
+      const [mn, mx] = hRange(L, x, y);
+      box.min.set(x0, mn - 30, z0); box.max.set(x0 + T, mx + 5, z0 + T);
       if (!frustum.intersectsBox(box)) continue;
-      const dx = Math.max(Math.abs(cp.x - x) - half, 0), dz = Math.max(Math.abs(cp.z - z) - half, 0);
-      const d = Math.sqrt(dx * dx + dz * dz + alt * alt * 0.6);
-      if (size > LEAF && d < size * lodFactor.value) {
-        const q = size / 4; stack.push([x - q, z - q, size / 2], [x + q, z - q, size / 2], [x - q, z + q, size / 2], [x + q, z + q, size / 2]);
-      } else if (n < MAXI) {
-        mtx.makeScale(size, size, size); mtx.setPosition(x, 0, z); mesh.setMatrixAt(n++, mtx);
+      const dx = Math.max(x0 - cp.x, 0, cp.x - (x0 + T)), dz = Math.max(z0 - cp.z, 0, cp.z - (z0 + T)), dy = Math.max(mn - cp.y, 0, cp.y - mx);
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 1;
+      let split = L < LMAX && T / d > k;
+      if (split) {
+        const kids = [[L + 1, 2 * x, 2 * y], [L + 1, 2 * x + 1, 2 * y], [L + 1, 2 * x, 2 * y + 1], [L + 1, 2 * x + 1, 2 * y + 1]];
+        const any = kids.some(c => nodeWanted(c[0], c[1], c[2]));
+        if (any) { for (const c of kids) { if (nodeWanted(c[0], c[1], c[2])) stack.push(c); else sel.push([c[0], c[1], c[2], d]); } continue; }
+      }
+      sel.push([L, x, y, d]);
+    }
+    // assign nodes, request data
+    const cap = Math.min(sel.length, 900); stats.nodes = cap;
+    for (let i = 0; i < cap; i++) {
+      const [L, x, y, d] = sel[i]; const n = getNode(i); const T = tileSize(L); const u = n.u;
+      n.mesh.visible = true;
+      n.mesh.matrix.makeScale(T, 1, T); n.mesh.matrix.setPosition(X0 + (x + 0.5) * T, 0, Z0 + (y + 0.5) * T); n.mesh.matrixWorldNeedsUpdate = true;
+      const prio = 2 + Math.min(40, d / 800) + (L < 3 ? -2 : 0);
+      if (index) { // request this node's own data (the quadtree only visits nodes that exist)
+        if (exists(L, x, y)) { needImg(L, x, y, prio); if (L <= LH) { needHgt(L, x, y, prio + 0.5); needMsk(L, x, y, prio + 1); } else { const p = L - LH; needHgt(LH, x >> p, y >> p, prio + 0.5); needMsk(LH, x >> p, y >> p, prio + 1); } }
+      }
+      // heights
+      const fh = index ? finest(hrec, L, x, y, LH) : null;
+      if (fh) { const [r, s, ox, oy] = fh; r.used = frameNo; u.hTex.value = r.tex; u.hUV.value.set(ox, oy, s, s); u.hTC.value.set(128 / 129, 0.5 / 129); u.hInfo.value.set(r.base, tileSize(r.L) / 128, 1 / 129); }
+      else { const n2 = 1 << L; const sc = SIZE / ((N - 1) * S); u.hTex.value = texFH; u.hUV.value.set(x / n2 * sc, y / n2 * sc, sc / n2, sc / n2); u.hTC.value.set((N - 1) / N, 0.5 / N); u.hInfo.value.set(0, S, 1 / N); }
+      // masks
+      const fm = index ? finest(mrec, L, x, y, LH) : null;
+      if (fm) { const [r, s, ox, oy] = fm; r.used = frameNo; u.mTex.value = r.tex; u.mUV.value.set(ox, oy, s, s); u.mTC.value.set(1, 0); }
+      else { const n2 = 1 << L; const sc = SIZE / ((N - 1) * S); u.mTex.value = texFM; u.mUV.value.set(x / n2 * sc, y / n2 * sc, sc / n2, sc / n2); u.mTC.value.set((N - 1) / N, 0.5 / N); }
+      // imagery
+      const fi = index ? finest(irec, L, x, y, LMAX) : null;
+      if (fi) { const [r, s, ox, oy] = fi; u.iTex.value = r.tex; u.iUV.value.set(ox, oy, s, s); u.iHas.value = 1; r.used = frameNo; }
+      else { u.iHas.value = 0; u.iTex.value = null; }
+      u.skirt.value = Math.max(2, T / 64 * 0.8); u.nodeSize.value = T;
+    }
+    for (let i = cap; i < nodes.length; i++) if (nodes[i]) nodes[i].mesh.visible = false;
+    if ((frameNo & 31) === 0) evict();
+  }
+  // ---------- LRU eviction ----------
+  const CAP = { img: 300, hgt: 700, msk: 500 };
+  function evictMap(map, cap, dispose) {
+    if (map.size <= cap) return;
+    const arr = [...map.values()].filter(r => r.state !== 1 && r.L > 2 && !(r.refs > 0) && r.used < frameNo - 30).sort((a, b) => a.used - b.used);
+    for (let i = 0; i < arr.length && map.size > cap; i++) { const r = arr[i]; if (r.state === 1) continue; dispose(r); map.delete(K(r.L, r.x, r.y)); stats.evicted++; }
+  }
+  function evict() {
+    evictMap(irec, CAP.img, r => { if (r.tex) r.tex.dispose(); if (r.bmp && r.bmp.close) r.bmp.close(); });
+    evictMap(hrec, CAP.hgt, r => { if (r.tex) r.tex.dispose(); });
+    evictMap(mrec, CAP.msk, r => { if (r.tex) r.tex.dispose(); });
+    // drop queued requests nobody wants any more
+    for (const map of [irec, hrec, mrec]) for (const r of map.values()) if (r.state === 1 && r.used < frameNo - 90 && r.L > 2) { Stream.cancel(r.path); }
+  }
+
+  // ---------- queries ----------
+  function fallbackH(x, z) {
+    if (!heights) return 0;
+    let fx = (x - FX0) / S, fz = (z - FZ0) / S;
+    fx = fx < 0 ? 0 : fx > N - 1.001 ? N - 1.001 : fx; fz = fz < 0 ? 0 : fz > N - 1.001 ? N - 1.001 : fz;
+    const i = fx | 0, j = fz | 0, tx = fx - i, tz = fz - j, k = j * N + i;
+    return heights[k] * (1 - tx) * (1 - tz) + heights[k + 1] * tx * (1 - tz) + heights[k + N] * (1 - tx) * tz + heights[k + N + 1] * tx * tz;
+  }
+  function h(x, z) {
+    if (index) {
+      const T7 = tileSize(LH); let tx = Math.floor((x - X0) / T7), ty = Math.floor((z - Z0) / T7);
+      for (let L = LH; L >= 0; L--, tx >>= 1, ty >>= 1) {
+        const r = hrec.get(K(L, tx, ty)); if (!r || r.state !== 2) continue;
+        const T = tileSize(L); let fx = (x - X0 - tx * T) / T * 128, fz = (z - Z0 - ty * T) / T * 128;
+        fx = fx < 0 ? 0 : fx > 127.999 ? 127.999 : fx; fz = fz < 0 ? 0 : fz > 127.999 ? 127.999 : fz;
+        const i = fx | 0, j = fz | 0, u = fx - i, v = fz - j, k = j * HS + i, H = r.h;
+        return H[k] * (1 - u) * (1 - v) + H[k + 1] * u * (1 - v) + H[k + HS] * (1 - u) * v + H[k + HS + 1] * u * v;
       }
     }
-    mesh.count = n; mesh.instanceMatrix.needsUpdate = true;
+    return fallbackH(x, z);
   }
-  function setTownFade(nearRadius, farRadius, strength) { uniforms.townFade.value.set(nearRadius, farRadius, strength, 0); }
-  return { load, h, isWater, urbanAt, maskAt, update, setTownFade, get mesh() { return mesh; }, get info() { return { N, S, X0, Z0 }; }, lodFactor };
+  // L7 tiles (or the finest existing level) needed for a rectangle
+  function detailTiles(x0, z0, x1, z1) {
+    const out = []; if (!index) return out; const T7 = tileSize(LH);
+    const a = Math.floor((Math.min(x0, x1) - X0) / T7), b = Math.floor((Math.max(x0, x1) - X0) / T7), c = Math.floor((Math.min(z0, z1) - Z0) / T7), d = Math.floor((Math.max(z0, z1) - Z0) / T7);
+    const seen = new Set();
+    for (let ty = c; ty <= d; ty++) for (let tx = a; tx <= b; tx++) {
+      let L = LH, x = tx, y = ty; while (L > 5 && !exists(L, x, y)) { L--; x >>= 1; y >>= 1; }
+      if (x < 0 || y < 0 || x >= (1 << L) || y >= (1 << L)) continue;
+      const k = K(L, x, y); if (!seen.has(k)) { seen.add(k); out.push([L, x, y]); }
+    }
+    return out;
+  }
+  function hasDetail(x0, z0, x1, z1) { if (!index) return true; for (const [L, x, y] of detailTiles(x0, z0, x1, z1)) { const r = hrec.get(K(L, x, y)); if (!r || (r.state !== 2 && r.state !== 3)) return false; } return true; }
+  function ensure(x0, z0, x1, z1, prio = 3) {
+    if (!index) return Promise.resolve();
+    return Promise.all(detailTiles(x0, z0, x1, z1).map(([L, x, y]) => needHgt(L, x, y, prio))).then(() => {});
+  }
+  function imagery(x, z) {
+    if (!index) return null; const T8 = tileSize(LMAX); let tx = Math.floor((x - X0) / T8), ty = Math.floor((z - Z0) / T8);
+    for (let L = LMAX; L >= 0; L--, tx >>= 1, ty >>= 1) { const r = irec.get(K(L, tx, ty)); if (r && r.state === 2) { const T = tileSize(L); return { tex: r.tex, x0: X0 + tx * T, z0: Z0 + ty * T, size: T, L }; } }
+    return null;
+  }
+  function retain(tex) { for (const r of irec.values()) if (r.tex === tex) { r.refs = (r.refs || 0) + 1; return; } }
+  function release(tex) { for (const r of irec.values()) if (r.tex === tex) { r.refs = Math.max(0, (r.refs || 0) - 1); return; } }
+  function maskAt(x, z, ch) {
+    if (index) {
+      const T7 = tileSize(LH); let tx = Math.floor((x - X0) / T7), ty = Math.floor((z - Z0) / T7);
+      for (let L = LH; L >= 0; L--, tx >>= 1, ty >>= 1) {
+        const r = mrec.get(K(L, tx, ty)); if (!r || r.state !== 2) continue;
+        const T = tileSize(L); const i = U.clamp(Math.floor((x - X0 - tx * T) / T * MS), 0, MS - 1), j = U.clamp(Math.floor((z - Z0 - ty * T) / T * MS), 0, MS - 1);
+        return r.m[(j * MS + i) * 4 + ch] / 255;
+      }
+    }
+    if (!mask) return 0; const i = U.clamp(Math.round((x - FX0) / S), 0, N - 1), j = U.clamp(Math.round((z - FZ0) / S), 0, N - 1);
+    return mask[(j * N + i) * 4 + ch] / 255;
+  }
+  const isWater = (x, z) => maskAt(x, z, 0) > 0.5;
+  const urbanAt = (x, z) => { const v = maskAt(x, z, 1); return v; };
+  function setTownFade() {}
+  return { load, h, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, update, setTownFade, lodFactor, stats, group,
+    get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH } };
 })();

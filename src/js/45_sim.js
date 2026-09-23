@@ -154,7 +154,7 @@ const Sim = (() => {
   let farMesh = null, dots = null; const FARMAX = 400;
   function initFar() {
     const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0);
-    farMesh = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: 0xcfd4d8, metalness: 0.5, roughness: 0.4 }), FARMAX);
+    farMesh = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: 0xcfd4d8, metalness: 0.5, roughness: 0.4, emissive: 0xffc98a, emissiveIntensity: 0 }), FARMAX);
     farMesh.frustumCulled = false; farMesh.castShadow = false; farMesh.count = 0; Env.scene.add(farMesh);
     const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(90 * 3), 3)); pg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(90 * 3), 3));
     dots = new THREE.Points(pg, new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, vertexColors: true, depthWrite: false, transparent: true, opacity: 0.95, fog: false }));
@@ -179,6 +179,7 @@ const Sim = (() => {
     const doorsClosed = D.doors < 0.01;
     // demanded tractive / braking acceleration from the master controller
     let tDem = (D.lever > 0 && !D.emergency && !D.penalty && doorsClosed) ? Math.min(P.amax, P.pw / Math.max(v, 1)) * D.lever : 0;
+    if (D.reverse && v > 2.2) tDem = 0;                                // reverser: shunting speed only
     let bDem = D.lever < 0 ? -D.lever * P.bmax : 0;
     if (D.penalty) bDem = Math.max(bDem, P.bmax);
     if (!doorsClosed && v < 0.5) bDem = Math.max(bDem, 0.4);          // holding brake while doors are open
@@ -186,14 +187,14 @@ const Sim = (() => {
     const step = (cur, dem, r) => cur + U.clamp(dem - cur, -r * dt, r * dt);
     D.tract = step(D.tract || 0, tDem, 0.8);
     D.brk = D.emergency ? step(D.brk || 0, P.em, 4.0) : step(D.brk || 0, bDem, 1.1);
-    Track.frame(D.s, F); const grade = F.grade * (D.dir ? 1 : -1);
+    Track.frame(D.s, F); const grade = F.grade * (D.dir ? 1 : -1) * (D.reverse ? -1 : 1);
     const res = 0.006 + 0.00011 * v + 0.000042 * v * v;
     let vn = v + (D.tract - 9.81 * grade * 0.9 - res) * dt;
     vn -= D.brk * dt;
     if (vn < 0) vn = 0;
     const acc = (vn - v) / dt; const sm = D.accS === undefined ? acc : U.lerp(D.accS, acc, Math.min(1, dt * 5));
     D.jerk = Math.abs(sm - (D.accS === undefined ? sm : D.accS)) / dt; D.accS = sm; D.acc = sm;
-    const ds = (v + vn) / 2 * dt; D.s += (D.dir ? 1 : -1) * ds; D.odometer += ds; D.v = vn;
+    const ds = (v + vn) / 2 * dt; D.s += (D.dir ? 1 : -1) * (D.reverse ? -1 : 1) * ds; D.odometer += ds; D.v = vn;
     D.s = U.clamp(D.s, D.dir ? maxLen : 2, D.dir ? Track.length - 2 : Track.length - maxLen);
     const dt2 = dt / 2.8; D.doors = U.clamp(D.doors + (D.doorsTarget > D.doors ? dt2 : -dt2), 0, 1);
   }
@@ -257,7 +258,7 @@ const Sim = (() => {
     }
     // hide unused consists
     for (const k in pool) for (const e of pool[k]) if (!e.busy) for (const car of e.consist.cars) car.group.visible = false;
-    farMesh.count = farN; farMesh.instanceMatrix.needsUpdate = true;
+    farMesh.count = farN; farMesh.instanceMatrix.needsUpdate = true; farMesh.material.emissiveIntensity = 0.55 * night;   // lit windows at night, seen from afar
     dots.geometry.setDrawRange(0, dotN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
     const alt = camPos.y - Terrain.h(camPos.x, camPos.z); dots.visible = alt > 350; dots.material.opacity = U.smooth(350, 1200, alt);
     for (let i = running.length - 1; i >= 0; i--) if (running[i].hidden) running.splice(i, 1);

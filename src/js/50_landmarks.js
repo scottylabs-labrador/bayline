@@ -1861,6 +1861,40 @@ const Landmarks = (() => {
       },
     };
   }
-  return { build, Depots, setNight, names: () => LM.map(l => l.name) };
+  // stream(ctx): the catalog (names, positions, radii) is available at once; each landmark is built
+  // lazily, nearest first, after the fine terrain under it has loaded (Terrain.ensure), so it sits exactly
+  // on the high-resolution ground.
+  function stream(ctx) {
+    const root = new THREE.Group(); root.name = 'landmarks';
+    const list = LM.map(L => { const p = ctx.ll2w(L.lat, L.lon); return { name: L.name, lat: L.lat, lon: L.lon, x: p.x, z: p.z, y: 0, top: 0, blurb: L.blurb, radius: L.radius || 150, _L: L, _state: 0 }; });
+    const entries = [], box = new THREE.Box3(); let busy = false;
+    function make(it) {
+      let grp; try { grp = it._L.build(ctx); } catch (e) { console.warn('[landmarks] build failed:', it.name, e); it._state = 3; return; }
+      grp.name = 'lm:' + it.name; const y = ctx.groundY(it.x, it.z); box.setFromObject(grp);
+      const top = box.max.y, size = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+      const vis = U.clamp(800 + 130 * Math.max(0, top - y) + 5 * size, 2500, 50000);
+      root.add(grp); it.y = y; it.top = top; it._state = 2;
+      entries.push({ grp, x: (box.min.x + box.max.x) / 2, z: (box.min.z + box.max.z) / 2, vis2: vis * vis });
+    }
+    return {
+      group: root, list,
+      update(dt, env) {
+        const n = env && typeof env.night === 'number' ? env.night : U.uNight.value;
+        setNight(n, dt || 0);
+        if (!env || !env.camPos) return;
+        const cx = env.camPos.x, cz = env.camPos.z;
+        if (!busy) {
+          let best = null, bd = 60000; for (const it of list) if (it._state === 0) { const d = Math.hypot(it.x - cx, it.z - cz); if (d < bd) { bd = d; best = it; } }
+          if (best) {
+            busy = true; best._state = 1; const r = Math.max(350, best.radius * 1.6);
+            const go = () => { try { make(best); } finally { busy = false; } };
+            if (typeof Terrain !== 'undefined' && Terrain.ensure) Terrain.ensure(best.x - r, best.z - r, best.x + r, best.z + r, 4).then(go, go); else go();
+          }
+        }
+        for (const e of entries) { const dx = e.x - cx, dz = e.z - cz; e.grp.visible = dx * dx + dz * dz < e.vis2; }
+      },
+    };
+  }
+  return { build, stream, Depots, setNight, names: () => LM.map(l => l.name) };
 })();
 const Depots = Landmarks.Depots;
