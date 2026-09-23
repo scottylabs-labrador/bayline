@@ -1529,6 +1529,22 @@ const Towns = (() => {
       if (T) fn(T); else requestDecode(tx, ty);
     }
   }
+  // OSM areas of one kind (3 = parking) near a point, as world-space rings [x0, z0, x1, z1, ...]
+  function areasNear(x, z, r, kind) {
+    const out = [];
+    if (!ready) return out;
+    forTilesIn(x, z, r, T => {
+      for (const a of T.a || []) {
+        if (kind !== undefined && a.kind !== kind) continue;
+        const P = a.pts, n = P.length / 2; let hit = false;
+        for (let i = 0; i < n; i++) if (Math.abs(T.ox + P[i * 2] - x) < r && Math.abs(T.oz + P[i * 2 + 1] - z) < r) { hit = true; break; }
+        if (!hit) continue;
+        const w = new Float32Array(P.length); for (let i = 0; i < n; i++) { w[i * 2] = T.ox + P[i * 2]; w[i * 2 + 1] = T.oz + P[i * 2 + 1]; }
+        out.push({ kind: a.kind, pts: w, ox: T.ox, oz: T.oz });
+      }
+    });
+    return out;
+  }
   function roadsNear(x, z, r) {
     const out = [];
     if (!ready) return out;
@@ -1576,6 +1592,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, buildingsAt, stats, idle, dispose, regionOf, setQuality,
+  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

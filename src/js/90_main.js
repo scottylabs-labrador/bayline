@@ -228,7 +228,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (T.tick <= 0) { T.tick = 1.2;
         // re-stream when the camera moved, and keep retrying while empty (street tiles stream in after boot)
         const moved = Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650, empty = !T.lanes || !T.lanes.length;
-        if (alt < 1500 && (moved || (empty && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500), { x: cp.x, z: cp.z }); } }
+        if (alt < 1500 && (moved || (empty && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500), { x: cp.x, z: cp.z }, Towns.areasNear ? Towns.areasNear(cp.x, cp.z, 500, 3) : []); } }
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
     if (typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
     if (typeof GroundCover !== 'undefined') safeFrame('groundcover', () => GroundCover.update(cp));

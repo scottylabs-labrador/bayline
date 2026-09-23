@@ -1700,7 +1700,7 @@ const Life = (() => {
     if (!roadMat) roadMat = vehicleMaterial(0);
     const r = U.rng((opts.seed || 7) * 1013);
     const laneW = opts.laneWidth || 3.5, maxCars = opts.maxCars || 600, density = opts.density || 11;
-    const maxParked = opts.maxParked !== undefined ? opts.maxParked : 1400, cap = maxCars + maxParked;   // curbside parking near the camera
+    const maxParked = opts.maxParked !== undefined ? opts.maxParked : 2400, cap = maxCars + maxParked;   // curbside + parking-lot cars near the camera (nearest kept)
     const typeW = Object.assign({ sedan: 46, suv: 30, pickup: 8, van: 7, bus: 3, truck: 6 }, opts.typeWeights || {});
     const group = new THREE.Group(); group.name = 'traffic';
     // one instanced mesh per vehicle type; each can hold every car so re-streaming roads never reallocates
@@ -1737,7 +1737,7 @@ const Life = (() => {
     }
     let lanes = [], cars = [], parked = [];
     const PARK_W = VEH_TYPES.map(t => ({ sedan: 50, suv: 32, pickup: 8, van: 8, bus: 0, truck: 1 })[t] || 0);
-    function setRoads(list, center) {
+    function setRoads(list, center, lots) {
       const R = (list || []).map(rd => (rd && rd.pts ? { ...rd, pts: toPts(rd.pts) } : { pts: toPts(rd) })).filter(rd => rd.pts.length >= 6);
       let sx = 0, sy = 0, sz = 0, sn = 0;
       for (const rd of R) for (let i = 0; i < rd.pts.length; i += 3) { sx += rd.pts[i]; sy += rd.pts[i + 1]; sz += rd.pts[i + 2]; sn++; }
@@ -1781,7 +1781,6 @@ const Life = (() => {
       parked = [];
       const pcx = center ? center.x : ax, pcz = center ? center.z : az, PR = 450;
       for (const rd of R) {
-        if (parked.length >= maxParked) break;
         const cls = rd.cls !== undefined ? rd.cls : 10; if (cls < 6 || cls > 11 || rd.bridge) continue;
         const P = rd.pts, n = P.length / 3; let near = false;
         for (let i = 0; i < n; i++) if (Math.abs(P[i * 3] - pcx) < PR + 60 && Math.abs(P[i * 3 + 2] - pcz) < PR + 60) { near = true; break; }
@@ -1789,11 +1788,11 @@ const Life = (() => {
         const half = (rd.width || Math.max(1, rd.lanes || 2) * 3.4) / 2; if (half < 3.2) continue;
         let total = 0; for (let i = 0; i + 1 < n; i++) total += Math.hypot(P[i * 3 + 3] - P[i * 3], P[i * 3 + 5] - P[i * 3 + 2]);
         let acc = 0, next = 11 + r() * 6;
-        for (let i = 0; i + 1 < n && parked.length < maxParked; i++) {
+        for (let i = 0; i + 1 < n; i++) {
           const x0 = P[i * 3], y0 = P[i * 3 + 1], z0 = P[i * 3 + 2], x1 = P[i * 3 + 3], y1 = P[i * 3 + 4], z1 = P[i * 3 + 5];
           const L = Math.hypot(x1 - x0, z1 - z0); if (L < 1e-3) continue;
           const ux = (x1 - x0) / L, uz = (z1 - z0) / L;
-          while (next < acc + L && parked.length < maxParked) {
+          while (next < acc + L) {
             const t = (next - acc) / L, px = x0 + (x1 - x0) * t, pz = z0 + (z1 - z0) * t, py = y0 + (y1 - y0) * t;
             if (next < total - 11 && Math.hypot(px - pcx, pz - pcz) < PR) for (const side of [-1, 1]) {
               if (r() > 0.56) continue;
@@ -1808,6 +1807,43 @@ const Life = (() => {
           }
           acc += L;
         }
+      }
+      // parking lots: cars nose-in in the painted stalls (the towns shader draws rows of 2.75 m stalls, 5.2 m deep,
+      // every 12 m along the lot's short axis, in coordinates aligned with the lot's long axis)
+      const hour = (typeof Env !== 'undefined' ? Env.time.sec : 43200) / 3600, busyLot = hour > 7 && hour < 18.5 ? 0.72 : hour > 6 && hour < 22 ? 0.45 : 0.18;
+      for (const lot of lots || []) {
+        const W = lot.pts, n = W.length / 2; if (n < 3) continue;
+        let cxL = 0, czL = 0; for (let i = 0; i < n; i++) { cxL += W[i * 2]; czL += W[i * 2 + 1]; } cxL /= n; czL /= n;
+        if (Math.hypot(cxL - pcx, czL - pcz) > PR) continue;
+        // the lot's long axis, as in the towns shader (oriented box over tile-local coordinates)
+        let best = null;
+        for (let i = 0; i < n; i++) { const j = (i + 1) % n; let ux = W[j * 2] - W[i * 2], uz = W[j * 2 + 1] - W[i * 2 + 1]; const L = Math.hypot(ux, uz); if (L < 1e-3) continue; ux /= L; uz /= L;
+          let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9; for (let k = 0; k < n; k++) { const x = W[k * 2] - lot.ox, z = W[k * 2 + 1] - lot.oz, s1 = x * ux + z * uz, t1 = -x * uz + z * ux; a0 = Math.min(a0, s1); a1 = Math.max(a1, s1); b0 = Math.min(b0, t1); b1 = Math.max(b1, t1); }
+          const ar = (a1 - a0) * (b1 - b0); if (!best || ar < best.ar) best = { ar, ux, uz, a0, a1, b0, b1 }; }
+        if (!best || best.ar < 150) continue;
+        const swap = (best.b1 - best.b0) > (best.a1 - best.a0);
+        // (u, v) = shader coordinates; u runs along the long axis
+        const toW = (u, v) => { const s1 = swap ? v : u, t1 = swap ? u : v; return [s1 * best.ux - t1 * best.uz + lot.ox, s1 * best.uz + t1 * best.ux + lot.oz]; };
+        const u0 = swap ? best.b0 : best.a0, u1 = swap ? best.b1 : best.a1, v0 = swap ? best.a0 : best.b0, v1 = swap ? best.a1 : best.b1;
+        const vDir = swap ? [best.ux, best.uz] : [-best.uz, best.ux];
+        const inside = (x, z) => { let c = false; for (let i = 0, j = n - 1; i < n; j = i++) { const xi = W[i * 2], zi = W[i * 2 + 1], xj = W[j * 2], zj = W[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; };
+        for (let rv = Math.ceil((v0 - 6) / 12) * 12 + 6; rv < v1; rv += 12) {
+          for (let su = Math.ceil(u0 / 2.75) * 2.75; su < u1; su += 2.75) {
+            if (r() > busyLot) continue;
+            const [x, z] = toW(su, rv), [xa, za] = toW(su, rv - 2.4), [xb, zb] = toW(su, rv + 2.4);
+            if (!inside(x, z) || !inside(xa, za) || !inside(xb, zb)) continue;
+            const type = VEH_TYPES[wpick(r, PARK_W)], paint = CAR_PAINT[wpick(r, CAR_PAINT.map(c => c[1]))][0];
+            const gy = typeof Terrain !== 'undefined' && Terrain.h ? Terrain.h(x, z) + 0.14 : ay;
+            const yaw = Math.atan2(-vDir[1], vDir[0]) + (r() < 0.5 ? Math.PI : 0) + (r() - 0.5) * 0.06;
+            _e.set(0, yaw, 0, 'YZX'); _q.setFromEuler(_e); _s.set(1, 1, 1);
+            _m.compose(_v.set(x - ax + (r() - 0.5) * 0.25 * vDir[0], gy - ay, z - az + (r() - 0.5) * 0.25 * vDir[1]), _q, _s);
+            parked.push({ type, paint, phase: r() * 10, m: Float32Array.from(_m.elements), x: x - ax, z: z - az });
+          }
+        }
+      }
+      if (parked.length > maxParked) {                                   // keep the nearest
+        const qx = pcx - ax, qz = pcz - az; for (const p of parked) p.d = (p.x - qx) ** 2 + (p.z - qz) ** 2;
+        parked.sort((a, b) => a.d - b.d); parked.length = maxParked;
       }
       const sphere = box3.isEmpty() ? new THREE.Sphere(new V3(), 1) : box3.getBoundingSphere(new THREE.Sphere());
       sphere.radius += 12;
