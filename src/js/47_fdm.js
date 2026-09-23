@@ -72,7 +72,9 @@ const FDM = (() => {
 
     function place(o) {
       st.pos.set(o.x, o.y, o.z); attitude(st.q, o.hdg, o.pitch !== undefined ? o.pitch : (o.onGround ? S.restPitch : 0), o.roll || 0);
-      st.vel.set(1, 0, 0).applyQuaternion(st.q).multiplyScalar(o.speed || 0);
+      if (o.fpa !== undefined) st.vel.set(Math.sin(o.hdg) * Math.cos(o.fpa), Math.sin(o.fpa), -Math.cos(o.hdg) * Math.cos(o.fpa)).multiplyScalar(o.speed || 0);   // along a flight path
+      else st.vel.set(1, 0, 0).applyQuaternion(st.q).multiplyScalar(o.speed || 0);
+      st.out.agl = o.onGround ? 0 : 999; st.out.onGround = !!o.onGround;
       st.omega.set(0, 0, 0); st.omegaDot.set(0, 0, 0); st.out.crashed = ''; st.out.touch = null; st.out.tailStrike = false;
       st.gearPos = o.onGround || o.gear ? 1 : 0; st.ctl.gear = st.gearPos;
       st.flapPos = o.flaps || 0; st.ctl.flaps = o.flaps || 0; st.spoilerPos = 0; st.ctl.spoiler = 0;

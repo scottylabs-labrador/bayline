@@ -22,6 +22,7 @@ const FCS = (() => {
       gammaHold: 0, phiHold: 0, thetaHold: null, air: 0, flare: false, law: 'ground',
       ap: { on: false, hdg: null, alt: null, vs: null, spd: null, athr: false, appr: false, rwy: null, mode: '', thrI: 0.5, gs: false, loc: false, flare: false, retard: false },
       autoSpoilers: true, autoBrake: 0, events: [],
+      airStart(gamma) { f.air = 5; f.law = 'flight'; f.gammaHold = gamma; f.phiHold = 0; f.srs = false; f.wasGround = false; f.wasAir = true; },
       pre, info: { phiCmd: 0, gamCmd: 0, qCmd: 0 },
     };
     function flightPath() { const gs = Math.hypot(ac.vel.x, ac.vel.z); return Math.atan2(ac.vel.y, Math.max(gs, 1)); }

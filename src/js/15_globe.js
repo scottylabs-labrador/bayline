@@ -57,6 +57,8 @@ const Globe = (() => {
   const URL_USGS = (z, x, y) => `https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/${z}/${y}/${x}`;
   const URL_EOX = (z, x, y) => `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2025_3857/default/g/${z}/${y}/${x}.jpg`;
   const URL_DEM = (z, x, y) => `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`;
+  // city lights at night: NASA GIBS VIIRS Black Marble (public domain), to z8
+  const URL_NIGHT = (z, x, y) => `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/${z}/${y}/${x}.png`;
 
   // ------------------------------------------------------------------ fetch scheduler (its own lanes: other hosts)
   const Q = []; let active = 0; const MAXA = 12;
@@ -172,6 +174,21 @@ const Globe = (() => {
     } });
     return r;
   }
+  // night lights (only fetched once the sun is down)
+  const nrec = new Map();
+  function needN(z, x, y, prio) {
+    const k = key(z, x, y); let r = nrec.get(k);
+    if (r) { r.used = frameNo; return r; }
+    r = { z, x, y, state: 1, used: frameNo, tex: null }; nrec.set(k, r);
+    r.job = schedule({ prio: prio + 2, run: async () => {
+      try { const bmp = await createImageBitmap(await fetchBlob(URL_NIGHT(z, x, y)));
+        const t = new THREE.Texture(bmp); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+        t.onUpdate = () => { if (bmp.close) bmp.close(); t.onUpdate = null; }; t.needsUpdate = true; r.tex = t; r.state = 2;
+      } catch (e) { r.state = 3; }
+    } });
+    return r;
+  }
+  function bestN(z, x, y) { let zz = z, xx = x, yy = y; for (; zz >= 0; zz--, xx >>= 1, yy >>= 1) { const r = nrec.get(key(zz, xx, yy)); if (r && r.state === 2) { r.used = frameNo; return r; } } return null; }
   function bestI(z, x, y) {
     let zz = z, xx = x, yy = y;
     for (; zz >= 0; zz--, xx >>= 1, yy >>= 1) { const r = irec.get(key(zz, xx, yy)); if (r && r.state === 2) { r.used = frameNo; return r; } }
@@ -197,9 +214,10 @@ const Globe = (() => {
   function makeMaterial() {
     if (!shared.uWaveN.value && Terrain.waveTexture) shared.uWaveN.value = Terrain.waveTexture();
     if (!shared.uGround.value && Terrain.groundDetail) shared.uGround.value = Terrain.groundDetail();
-    const u = Object.assign({ iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 10 }, iEox: { value: 1 } }, shared);
+    const u = Object.assign({ iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 10 }, iEox: { value: 1 },
+      nTex: { value: null }, nUV: { value: new THREE.Vector4(0, 0, 1, 1) }, nHas: { value: 0 } }, shared);
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0, envMapIntensity: 0.5 });
-    m.userData.u = u; m.customProgramCacheKey = () => 'bayline-globe-v2';
+    m.userData.u = u; m.customProgramCacheKey = () => 'bayline-globe-v3';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
@@ -209,7 +227,7 @@ const Globe = (() => {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform vec4 uExcl; uniform float uExclOn; uniform float night; uniform float uDebug;
-          uniform sampler2D uGround; uniform float iTexel; uniform float iEox;
+          uniform sampler2D uGround; uniform float iTexel; uniform float iEox; uniform sampler2D nTex; uniform vec4 nUV; uniform float nHas;
           float gh1(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
           float gn1(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(gh1(i), gh1(i+vec2(1,0)), f.x), mix(gh1(i+vec2(0,1)), gh1(i+vec2(1,1)), f.x), f.y); }
           varying vec3 vGW; varying vec2 vGUv; varying float vGH; varying vec3 vGN; vec3 gGN; float gGRough; float gGWater;
@@ -246,6 +264,20 @@ const Globe = (() => {
             #endif
             diffuseColor.rgb = col;
             if (uDebug > 0.5) diffuseColor.rgb = uDebug < 1.5 ? vec3(gGWater, clamp(vGH / 50.0, 0.0, 1.0), clamp(-vGH / 50.0, 0.0, 1.0)) : vec3(iUV.z < 0.99 ? 1.0 : 0.0, iHas, 0.0);
+          }`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+          if (nHas > 0.5 && night > 0.02) {
+            // city lights from VIIRS (~500 m pixels): a smooth glow from altitude, resolved into a jittered grid of
+            // street lamps as the ground gets close
+            vec3 nl = texture2D(nTex, nUV.xy + vGUv * nUV.zw).rgb;
+            float lum = dot(nl, vec3(0.3, 0.55, 0.15)), L = clamp((lum - 0.05) / 0.85, 0.0, 1.0);   // above the dark land and blue snow
+            float fwq2 = fwidth(vGW.x) + fwidth(vGW.z), fp = fwq2 / 34.0;
+            vec2 cp = vGW.xz / 34.0, cell = floor(cp); vec2 f = fract(cp) - 0.5 - (vec2(gh1(cell), gh1(cell + 7.1)) - 0.5) * 0.7;
+            float s0 = 0.045, sg = max(s0, fp * 0.45);                                  // energy-conserving lamp footprint
+            float lamp = exp(-dot(f, f) / (2.0 * sg * sg)) * (s0 * s0) / (sg * sg) * step(1.0 - L * 0.85, gh1(cell + 3.3));
+            vec3 warm = mix(vec3(1.0, 0.6, 0.28), vec3(1.0, 0.84, 0.62), gh1(cell + 1.7));
+            vec3 glow = warm * pow(L, 1.4) * 0.075, pts = warm * (lamp * (0.6 + L) * 2.4 + L * 0.01);
+            totalEmissiveRadiance += mix(pts, glow, smoothstep(0.35, 0.9, fp)) * night * (1.0 - gGWater);
           }`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = gGRough;')
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
@@ -377,6 +409,10 @@ const Globe = (() => {
       const ir = bestI(L.z, L.x, L.y); const u = n.mesh.material.userData.u;
       if (ir) { const dd = L.z - ir.z, s = 1 / (1 << dd); u.iTex.value = ir.tex; u.iUV.value.set((L.x - (ir.x << dd)) * s, (L.y - (ir.y << dd)) * s, s, s); u.iHas.value = 1; u.iTexel.value = L.size / 256 / s; u.iEox.value = ir.src === 'eox' ? 1 : 0; }
       else u.iHas.value = 0;
+      // night lights once the sun is down
+      if (U.uNight.value > 0.05) { const nz = Math.min(L.z, 8), nd = L.z - nz; needN(nz, L.x >> nd, L.y >> nd, prio);
+        const nr = bestN(L.z, L.x, L.y); if (nr) { const dd = L.z - nr.z, s = 1 / (1 << dd); u.nTex.value = nr.tex; u.nUV.value.set((L.x - (nr.x << dd)) * s, (L.y - (nr.y << dd)) * s, s, s); u.nHas.value = 1; } else u.nHas.value = 0; }
+      else u.nHas.value = 0;
       n.mesh.visible = true; drawn.push(n);
     }
     lastLeaves = drawn; stats.drawn = drawn.length; stats.nodes = nodes.size;
@@ -392,6 +428,7 @@ const Globe = (() => {
     old(nodes, 900, dispose);
     old(irec, 420, r => { if (r.tex) r.tex.dispose(); });
     old(hrec, 240, () => {});
+    old(nrec, 120, r => { if (r.tex) r.tex.dispose(); });
     // queued requests for tiles nobody wants any more
     for (const [k2, r] of irec) if (r.state === 1 && r.used < frameNo - 120 && r.job) { r.job.cancelled = true; irec.delete(k2); }
     for (const [k2, r] of hrec) if (r.state === 1 && r.used < frameNo - 120 && r.job) { r.job.cancelled = true; hrec.delete(k2); }

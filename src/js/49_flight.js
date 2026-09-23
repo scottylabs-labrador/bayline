@@ -80,16 +80,16 @@ const Flight = (() => {
       } else if (pos === 'final') {
         const d = (c.dist || 8) * NM, aimX = e.x + ux * 300, aimZ = e.z + uz * 300;
         const x = aimX - ux * d, z = aimZ - uz * d, h = e.elev + Math.tan(3 * D) * d + T.fdm.cgHeight;
-        ac.place({ x, y: h, z, hdg, pitch: 2 * D, speed: vapp * KT, gear: 1, flaps: nF, thr: 0.45 });
-        fcs.air = 5; fcs.law = 'flight'; fcs.gammaHold = -3 * D; fcs.wasAir = true;
+        ac.place({ x, y: h, z, hdg, pitch: 1.5 * D, fpa: -3 * D, speed: vapp * KT, gear: 1, flaps: nF, thr: 0.45 });
+        fcs.airStart(-3 * D);
         if (fcs.assist !== 'direct') { fcs.ap.athr = true; fcs.ap.spd = Math.round(vapp); fcs.ap.thrI = 0.45; }
         if (T.id === 'f16') ac.ctl.flaps = 1;
       } else {
         const d = (c.dist || 12) * 1000, agl = (T.fdm.retract ? 3000 : 2000) * FT;
         const x = e.x - ux * d, z = e.z - uz * d, h = Math.max(e.elev, groundFn(x, z).h) + agl;
         const spd = T.fdm.retract ? (T.id === 'f16' ? 300 : 220) : 100;
-        ac.place({ x, y: h, z, hdg, speed: spd * KT, gear: 0, flaps: 0, thr: 0.6 });
-        fcs.air = 5; fcs.law = 'flight'; fcs.gammaHold = 0; fcs.wasAir = true;
+        ac.place({ x, y: h, z, hdg, pitch: 2 * D, fpa: 0, speed: spd * KT, gear: 0, flaps: 0, thr: 0.6 });
+        fcs.airStart(0);
         if (fcs.assist !== 'direct') { fcs.ap.athr = true; fcs.ap.spd = spd; fcs.ap.thrI = 0.55; }
       }
       model = ACModel.build(T); Env.scene.add(model.root);
