@@ -800,7 +800,7 @@ const Life = (() => {
     out.computeBoundingSphere(); out.computeBoundingBox();
     return out;
   }
-  const PEOPLE_FAR_D = 40;         // metres: beyond this a person is drawn with the clustered body
+  const PEOPLE_FAR_D = 32;         // metres: beyond this a person is drawn with the clustered body (and casts no shadow)
   // LOD crowd (opts.lod): the canonical per-person data lives in the standard (never drawn) mesh; every update() packs
   // the people within PEOPLE_FAR_D of the camera into a full-detail mesh and the rest into a clustered-body mesh, so
   // a distant crowd costs a fraction of the vertices. Same API; mesh is a Group holding both.
@@ -818,6 +818,7 @@ const Life = (() => {
       return { m, at };
     };
     const near = mkR(personGeo, 'people'), far = mkR(personGeoFar, 'people-far');
+    far.m.castShadow = false;                                           // a 1-2 px shadow is not worth a second pass
     const group = new THREE.Group(); group.name = 'people-lod'; group.add(near.m, far.m);
     const srcAt = { aAnim: C.aAnim, aBody: C.aBody, aStyle: C.aStyle, aStyle2: C.aStyle2, aCol0: C.aCol0, aCol1: C.aCol1 };
     const hidden = new Uint8Array(max), inv = new THREE.Matrix4(), cam = new V3();
