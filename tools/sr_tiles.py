@@ -139,8 +139,26 @@ def track_points():
     return np.stack([X, Z], 1).astype(np.float64), np.stack([X[idx], Z[idx]], 1).astype(np.float64)
 
 
+# areas of interest that also get L9 (lat_s, lon_w, lat_n, lon_e): San Francisco's northeast quarter (downtown, SoMa,
+# the Embarcadero, North Beach, the Wharf, the Marina, Crissy Field), where people fly low over the city
+AOI9 = [
+    (37.7650, -122.4760, 37.8120, -122.3850),
+]
+
+
+def aoi_L9():
+    out = set(); T9 = C.T(9); n = 1 << 9
+    for (la0, lo0, la1, lo1) in AOI9:
+        xa, za = C.ll2w(la1, lo0); xb, zb = C.ll2w(la0, lo1)
+        for ty in range(int((za - C.Z0) // T9), int((zb - C.Z0) // T9) + 1):
+            for tx in range(int((xa - C.X0) // T9), int((xb - C.X0) // T9) + 1):
+                if 0 <= tx < n and 0 <= ty < n and C.exists(7, tx >> 2, ty >> 2):
+                    out.add((tx, ty))
+    return out
+
+
 def wanted_L9(band, station_r):
-    """Set of (tx, ty) L9 tiles whose centre is within `band` m of the track or `station_r` m of a station."""
+    """Set of (tx, ty) L9 tiles whose centre is within `band` m of the track or `station_r` m of a station, plus AOI9."""
     from scipy.spatial import cKDTree
     P, S = track_points()
     tree, stree = cKDTree(P), cKDTree(S)
@@ -227,7 +245,7 @@ def main():
         Image.fromarray((side * 255).astype(np.uint8)).save('/tmp/sr_test_side.png')
         print(f'SR {small.shape[0]}² -> {big.shape[0]}² in {dt:.2f}s; comparison /tmp/sr_test_side.png (left bicubic, right SR)')
         return
-    want = wanted_L9(a.band, a.station)
+    want = wanted_L9(a.band, a.station) | aoi_L9()
     L7s = sorted({(x >> 2, y >> 2) for (x, y) in want})
     print(f'{len(want)} L9 tiles wanted in {len(L7s)} L7 tiles', flush=True)
     t0 = time.time(); done = 0; made = 0
