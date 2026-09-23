@@ -148,76 +148,274 @@ const Life = (() => {
   // ==========================================================================================
   // PEOPLE
   // ==========================================================================================
-  const PART = { PELVIS: 0, TORSO: 1, HEAD: 2, LTHIGH: 3, LSHIN: 4, RTHIGH: 5, RSHIN: 6, LUARM: 7, LFARM: 8, RUARM: 9, RFARM: 10, ROOT: 11 };
-  const SLOT = { SKIN: 0, TOP: 1, BOTTOM: 2, SHOES: 3, HAIR: 4, ACC: 5, HAT: 6, SHIN: 7, DARK: 8, SCREEN: 9, FOREARM: 10, METAL: 11, WHITE: 12, LIPS: 13, THIGH: 14, KNEE: 15 };
-  // lathe around +Y with a (radius, y) profile, squashed front-to-back by sx
-  function latheY(profile, seg, sx) { const g = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), seg); g.scale(sx, 1, 1); return g; }
+  // One InstancedMesh; every person is the same "super geometry" (all hair styles, hats, garments and
+  // carried things), posed and dressed in the vertex shader from per-instance attributes. The anatomy is
+  // lofted from superelliptic cross-sections (scale 1 = a 1.72 m adult, ~7.5 heads tall) with smooth
+  // normals and baked crease occlusion. Eyes, brows, lips, beards, glasses, soles, socks, belts, buttons,
+  // pockets, open jacket fronts and short sleeves are painted per fragment from the unposed model
+  // position, so they stay crisp up close and cost no triangles.
+  // Joints (model space, +X forward, +Y up, +Z right): hip (0, .9, 0), knee (0, .47, 0), ankle (0, .085, ±.093),
+  // shoulder (0, 1.4, ±.195), elbow (0, 1.12, ±.205), neck (0, 1.47, 0), torso pivot (0, .95, 0).
+  const PART = { PELVIS: 0, TORSO: 1, HEAD: 2, LTHIGH: 3, LSHIN: 4, RTHIGH: 5, RSHIN: 6, LUARM: 7, LFARM: 8, RUARM: 9, RFARM: 10, ROOT: 11, LFOOT: 12, RFOOT: 13 };
+  const SLOT = { SKIN: 0, TOP: 1, BOTTOM: 2, SHOES: 3, HAIR: 4, ACC: 5, HAT: 6, SHIN: 7, DARK: 8, SCREEN: 9, FOREARM: 10, METAL: 11,
+    WHITE: 12, THIGH: 14, OUTER: 17, SLEEVE: 18, COLLAR: 19, STRAP: 20 };
+
+  // ---- loft helpers ----
+  // superellipse ring point at angle th (0 = +X front): front / back half-depths, half-width, exponent p (2 = ellipse)
+  function sep(th, rxF, rxB, rz, p) {
+    const c = Math.cos(th), s = Math.sin(th), e = 2 / p;
+    return [Math.sign(c) * Math.pow(Math.abs(c), e) * (c >= 0 ? rxF : rxB), Math.sign(s) * Math.pow(Math.abs(s), e) * rz];
+  }
+  // linear interpolation of a ring table [[y, ...params]] at y
+  function tableAt(T, y) {
+    if (y <= T[0][0]) return T[0].slice(1);
+    for (let i = 1; i < T.length; i++) if (y <= T[i][0]) {
+      const a = T[i - 1], b = T[i], t = (y - a[0]) / (b[0] - a[0]);
+      return a.slice(1).map((v, k) => (v || 0) + ((b[k + 1] || 0) - (v || 0)) * t);
+    }
+    return T[T.length - 1].slice(1);
+  }
+  // indexed tube through rings of points (equal counts) with optional pole caps; turned outward by signed volume
+  function loftPts(rings, capStart, capEnd) {
+    const n = rings[0].length, pos = [], idx = [];
+    for (const r of rings) for (const p of r) pos.push(p[0], p[1], p[2]);
+    for (let r = 0; r < rings.length - 1; r++) for (let i = 0; i < n; i++) {
+      const a = r * n + i, b = r * n + (i + 1) % n; idx.push(a, a + n, b, b, a + n, b + n);
+    }
+    if (capStart) { const ci = pos.length / 3; pos.push(capStart[0], capStart[1], capStart[2]); for (let i = 0; i < n; i++) idx.push(ci, i, (i + 1) % n); }
+    if (capEnd) { const ci = pos.length / 3, b0 = (rings.length - 1) * n; pos.push(capEnd[0], capEnd[1], capEnd[2]); for (let i = 0; i < n; i++) idx.push(ci, b0 + (i + 1) % n, b0 + i); }
+    let cx = 0, cy = 0, cz = 0; const nv = pos.length / 3;
+    for (let i = 0; i < nv; i++) { cx += pos[i * 3]; cy += pos[i * 3 + 1]; cz += pos[i * 3 + 2]; }
+    cx /= nv; cy /= nv; cz /= nv;
+    let vol = 0;
+    for (let t = 0; t < idx.length; t += 3) {
+      const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+      const ax = pos[a] - cx, ay = pos[a + 1] - cy, az = pos[a + 2] - cz, bx = pos[b] - cx, by = pos[b + 1] - cy, bz = pos[b + 2] - cz;
+      const qx = pos[c] - cx, qy = pos[c + 1] - cy, qz = pos[c + 2] - cz;
+      vol += ax * (by * qz - bz * qy) - ay * (bx * qz - bz * qx) + az * (bx * qy - by * qx);
+    }
+    if (vol < 0) for (let t = 0; t < idx.length; t += 3) { const s = idx[t + 1]; idx[t + 1] = idx[t + 2]; idx[t + 2] = s; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  }
+  // loft along +Y from a ring table [y, cx, rxF, rxB, rz, p, cz]; zc shifts the part sideways, zs signs cz; caps are pole offsets
+  function loftY(T, n, capLo, capHi, zc = 0, zs = 1) {
+    const rings = T.map(([y, cx, rxF, rxB, rz, p, cz]) => {
+      const r = []; for (let i = 0; i < n; i++) { const [x, z] = sep(i / n * TAU, rxF, rxB, rz, p || 2); r.push([cx + x, y, zc + (cz || 0) * zs + z]); } return r;
+    });
+    const lo = T[0], hi = T[T.length - 1], lz = zc + (lo[6] || 0) * zs, hz = zc + (hi[6] || 0) * zs;
+    return loftPts(rings, capLo ? [lo[1], lo[0] - capLo, lz] : null, capHi ? [hi[1], hi[0] + capHi, hz] : null);
+  }
+  // loft along +X (shoes, cap brim): rings [x, cy, ryUp, ryDown, rz, p] in the YZ plane
+  function loftX(T, n, zc, capLo, capHi) {
+    const rings = T.map(([x, cy, ryU, ryD, rz, p]) => {
+      const r = []; for (let i = 0; i < n; i++) {
+        const th = i / n * TAU, c = Math.cos(th), s = Math.sin(th), e = 2 / (p || 2);
+        r.push([x, cy + Math.sign(c) * Math.pow(Math.abs(c), e) * (c >= 0 ? ryU : ryD), zc + Math.sign(s) * Math.pow(Math.abs(s), e) * rz]);
+      } return r;
+    });
+    const a = T[0], b = T[T.length - 1];
+    return loftPts(rings, capLo ? [a[0] - capLo, a[1], zc] : null, capHi ? [b[0] + capHi, b[1], zc] : null);
+  }
+  // round tube along a polyline (ponytail, hood roll, straps, thumbs, drawstrings)
+  function tubePath(pts, radii, n) {
+    const rings = [];
+    for (let k = 0; k < pts.length; k++) {
+      const p = new V3(...pts[k]), a = new V3(...pts[Math.max(0, k - 1)]), b = new V3(...pts[Math.min(pts.length - 1, k + 1)]);
+      const t = b.sub(a).normalize(), up = Math.abs(t.y) < 0.9 ? new V3(0, 1, 0) : new V3(1, 0, 0);
+      const s1 = new V3().crossVectors(t, up).normalize(), s2 = new V3().crossVectors(s1, t).normalize();
+      const r = []; for (let i = 0; i < n; i++) { const th = i / n * TAU; const q = p.clone().addScaledVector(s1, Math.cos(th) * radii[k]).addScaledVector(s2, Math.sin(th) * radii[k]); r.push([q.x, q.y, q.z]); }
+      rings.push(r);
+    }
+    return loftPts(rings, pts[0], pts[pts.length - 1]);
+  }
+  // closed cross-section profile [[r, y]] swept around +Y (x radii scaled by sx), e.g. a hat brim
+  function revolve(profile, n, sx = 1, cx = 0) {
+    const rings = profile.map(([r, y]) => { const q = []; for (let i = 0; i < n; i++) { const th = i / n * TAU; q.push([cx + Math.cos(th) * r * sx, y, Math.sin(th) * r]); } return q; });
+    rings.push(rings[0]);
+    return loftPts(rings, null, null);
+  }
+
+  // ---- anatomy (scale 1 = 1.72 m adult) ----
+  const HEAD_T = [ // y, cx, rxF, rxB, rz, p  (chin .. crown; the face looks +X)
+    [1.494, 0.030, 0.014, 0.012, 0.014, 2.0], [1.502, 0.027, 0.046, 0.030, 0.034, 2.0], [1.516, 0.018, 0.072, 0.047, 0.050, 2.1],
+    [1.538, 0.008, 0.087, 0.064, 0.062, 2.2], [1.562, 0.002, 0.093, 0.080, 0.070, 2.3], [1.588, 0.000, 0.095, 0.092, 0.076, 2.35],
+    [1.614, -0.002, 0.094, 0.099, 0.078, 2.35], [1.640, -0.004, 0.093, 0.101, 0.078, 2.3], [1.664, -0.005, 0.086, 0.097, 0.074, 2.2],
+    [1.688, -0.006, 0.068, 0.081, 0.063, 2.1], [1.705, -0.006, 0.040, 0.050, 0.040, 2.0],
+  ];
+  const HEAD_TOP = 1.717, HEAD_C = [-0.002, 1.605, 0];
+  function headPt(th, y, off = 0) {
+    const [cx, rxF, rxB, rz, p] = tableAt(HEAD_T, y);
+    let [x, z] = sep(th, rxF, rxB, rz, p);
+    if (off === 0) { // eye sockets and the plane under the cheekbones
+      const az = Math.abs(z), front = clamp((Math.cos(th) - 0.55) / 0.3, 0, 1);
+      x -= front * 0.0045 * Math.exp(-(((y - 1.614) / 0.011) ** 2)) * Math.exp(-(((az - 0.033) / 0.018) ** 2));
+      x -= front * 0.002 * Math.exp(-(((y - 1.578) / 0.012) ** 2)) * Math.exp(-(((az - 0.047) / 0.015) ** 2));
+    }
+    x += cx;
+    if (off) { const dx = x - HEAD_C[0], dy = y - HEAD_C[1], dz = z - HEAD_C[2], L = Math.hypot(dx, dy, dz) || 1; return [x + dx / L * off, y + dy / L * off, z + dz / L * off]; }
+    return [x, y, z];
+  }
+  // hair / hat shell over the skull: rings from the crown down to the boundary line(th); thickness off(th, t), t 0 crown .. 1 edge
+  function skullShell(line, off, n = 16, nr = 6) {
+    const rings = [];
+    for (let k = 1; k <= nr; k++) {
+      const t = k / nr, r = [];
+      for (let i = 0; i < n; i++) { const th = i / n * TAU; r.push(headPt(th, lerp(HEAD_TOP - 0.004, line(th), Math.pow(t, 0.85)), off(th, t))); }
+      rings.push(r);
+    }
+    return loftPts(rings, [-0.006, HEAD_TOP + off(0, 0), 0], null);
+  }
+  const backness = th => Math.abs(Math.atan2(Math.sin(th), Math.cos(th))) / Math.PI;   // 0 front .. 1 back
+  function piece(K, a) { for (let i = 1; i < K.length; i++) if (a <= K[i][0]) { const t = (a - K[i - 1][0]) / (K[i][0] - K[i - 1][0]); return K[i - 1][1] + (K[i][1] - K[i - 1][1]) * t; } return K[K.length - 1][1]; }
+  const HAIRLINE = [[0, 1.678], [0.12, 1.672], [0.24, 1.652], [0.36, 1.624], [0.44, 1.604], [0.5, 1.63], [0.62, 1.594], [0.78, 1.552], [1.0, 1.532]];
+  const hairline = th => piece(HAIRLINE, backness(th));
+  const TORSO_T = [ // y, cx, rxF, rxB, rz, p   (the top hangs over the waistband unless tucked in by the shader)
+    [0.930, 0.000, 0.114, 0.130, 0.176, 2.2], [1.000, 0.002, 0.106, 0.116, 0.162, 2.2], [1.080, 0.006, 0.098, 0.096, 0.146, 2.25],
+    [1.255, 0.013, 0.120, 0.104, 0.164, 2.5], [1.330, 0.010, 0.118, 0.104, 0.172, 2.7],
+    [1.390, 0.002, 0.103, 0.098, 0.178, 3.0], [1.425, -0.006, 0.084, 0.086, 0.162, 3.2], [1.450, -0.010, 0.063, 0.068, 0.118, 2.6],
+    [1.468, -0.012, 0.050, 0.054, 0.070, 2.0],
+  ];
+  function torsoPt(th, y, off = 0) {
+    const [cx, rxF, rxB, rz, p] = tableAt(TORSO_T, y); const [x, z] = sep(th, rxF, rxB, rz, p);
+    const L = Math.hypot(x, z) || 1; return [cx + x + x / L * off, y, z + z / L * off];
+  }
+  const PELVIS_T = [
+    [0.795, -0.010, 0.030, 0.055, 0.050, 2.2], [0.840, -0.006, 0.060, 0.092, 0.120, 2.4], [0.900, -0.002, 0.088, 0.114, 0.162, 2.4],
+    [0.950, 0.000, 0.100, 0.118, 0.162, 2.3], [1.012, 0.002, 0.101, 0.108, 0.154, 2.2],
+  ];
+  const NECK_T = [[1.430, -0.012, 0.050, 0.052, 0.053, 2.0], [1.500, -0.006, 0.046, 0.050, 0.048, 2.0], [1.560, 0.000, 0.049, 0.057, 0.051, 2.0]];
+  const THIGH_T = [ // y, cx, rxF, rxB, rz, p, cz (cz: toward the midline); the knee is the bottom of the thigh
+    [0.440, 0.012, 0.050, 0.046, 0.048, 2.0, 0.006], [0.490, 0.014, 0.057, 0.050, 0.054, 2.1, 0.006],
+    [0.700, 0.002, 0.068, 0.072, 0.066, 2.0, 0.002], [0.820, 0.001, 0.086, 0.092, 0.079, 2.0, 0.0], [0.935, -0.002, 0.092, 0.098, 0.083, 2.0, -0.004],
+  ];
+  const SHIN_T = [
+    [0.068, 0.000, 0.030, 0.034, 0.030, 2.0, 0.0], [0.130, 0.000, 0.032, 0.037, 0.033, 2.0, 0.0], [0.250, 0.004, 0.040, 0.055, 0.046, 2.0, 0.002],
+    [0.350, 0.006, 0.046, 0.060, 0.051, 2.0, 0.003], [0.475, 0.010, 0.051, 0.048, 0.050, 2.0, 0.006],
+  ];
+  const SHOE_T = [ // x, cy, ryUp, ryDown, rz, p   heel .. toe (toe spring at the front)
+    [-0.066, 0.046, 0.030, 0.040, 0.028, 2.2], [-0.048, 0.052, 0.044, 0.047, 0.038, 2.4], [-0.010, 0.054, 0.050, 0.049, 0.041, 2.6],
+    [0.040, 0.044, 0.036, 0.040, 0.043, 2.6], [0.105, 0.033, 0.025, 0.029, 0.043, 2.6],
+    [0.190, 0.029, 0.012, 0.016, 0.025, 2.0],
+  ];
+  const UARM_T = [ // around z = ±0.19, slanting out toward the elbow; the dome at the top is the deltoid
+    [1.100, 0.000, 0.036, 0.038, 0.035, 2.0, 0.012], [1.200, 0.002, 0.042, 0.046, 0.042, 2.0, 0.008], [1.300, 0.004, 0.046, 0.048, 0.046, 2.0, 0.003],
+    [1.365, 0.004, 0.045, 0.045, 0.045, 2.1, -0.002],
+  ];
+  const FARM_T = [ // wrist .. elbow; the wrist is wider front-to-back (palms face the thighs)
+    [0.858, 0.004, 0.027, 0.027, 0.021, 2.0, 0.0], [0.960, 0.004, 0.034, 0.033, 0.028, 2.0, 0.0], [1.060, 0.002, 0.040, 0.042, 0.037, 2.0, -0.002],
+    [1.135, 0.000, 0.041, 0.044, 0.040, 2.0, -0.004],
+  ];
+  const HAND_T = [ // fingertips .. wrist, flat across the palm
+    [0.712, 0.013, 0.018, 0.016, 0.009, 2.0, -0.013], [0.752, 0.009, 0.033, 0.030, 0.013, 2.4, -0.007], [0.803, 0.006, 0.036, 0.032, 0.016, 2.5, -0.001],
+    [0.865, 0.004, 0.028, 0.027, 0.019, 2.0, 0.0],
+  ];
+
+  // baked occlusion: creases (crotch, armpits, under the chin), a little darker toward the feet
+  function occlusion(g, part) {
+    const p = g.attributes.position, n = p.count, ao = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i); let a = 0.88 + 0.12 * sstep(0.0, 0.8, y);
+      if (part !== PART.ROOT) {
+        a -= 0.18 * Math.exp(-((x * x + (y - 0.79) ** 2 + z * z) / 0.0022));
+        for (const sd of [-1, 1]) a -= 0.26 * Math.exp(-((x * x + (y - 1.33) ** 2 + (z - sd * 0.17) ** 2) / 0.0036));
+        a -= 0.3 * Math.exp(-(((x - 0.02) ** 2 + (y - 1.49) ** 2 + z * z) / 0.0018));
+        if (part === PART.LFOOT || part === PART.RFOOT) a *= 0.82 + 0.18 * sstep(0.0, 0.05, y);
+      }
+      ao[i] = clamp(a, 0.4, 1);
+    }
+    return ao;
+  }
+
   let personGeo = null;
   function buildPersonGeometry() {
     const parts = [];
-    const add = (g, part, slot, flag = 0) => { g = prep(g, true); constAttr(g, 'aMeta', [part, slot, flag]); parts.push(g); };
-    for (const sd of [-1, 1]) {
-      const left = sd < 0, z = sd * 0.093;
-      const thigh = left ? PART.LTHIGH : PART.RTHIGH, shin = left ? PART.LSHIN : PART.RSHIN;
-      const uarm = left ? PART.LUARM : PART.RUARM, farm = left ? PART.LFARM : PART.RFARM;
-      add(box(0.25, 0.075, 0.098, 0.052, 0.0375, z), shin, SLOT.SHOES);
-      add(box(0.24, 0.02, 0.1, 0.05, 0.008, z), shin, SLOT.DARK);                        // sole
-      add(cylY(0.043, 0.056, 0.065, 0.48, 6, 0, z), shin, SLOT.SHIN);
-      add(sph(0.057, 6, 4, 0, 0.47, z), thigh, SLOT.KNEE);                                // knee
-      add(cylY(0.056, 0.083, 0.46, 0.91, 7, 0, z), thigh, SLOT.THIGH);
-      add(cylY(0.046, 0.053, 1.10, 1.40, 6, 0, sd * 0.203), uarm, SLOT.TOP);
-      add(sph(0.045, 6, 4, 0, 1.12, sd * 0.205), uarm, SLOT.TOP);                         // elbow
-      add(cylY(0.034, 0.043, 0.855, 1.13, 6, 0, sd * 0.208), farm, SLOT.FOREARM);
-      add(sph(0.05, 5, 4, 0.006, 0.8, sd * 0.211, 0.52, 1.0, 0.36), farm, SLOT.SKIN);    // hand
-      add(sph(0.058, 6, 4, 0, 1.36, sd * 0.174, 1, 0.95, 1.05), PART.TORSO, SLOT.TOP);  // shoulder
-      add(quadX(0.026, 0.015, 0.1015, 1.614, sd * 0.035), PART.HEAD, SLOT.WHITE);      // eye white
-      add(quadX(0.012, 0.015, 0.1025, 1.614, sd * 0.034), PART.HEAD, SLOT.DARK);       // iris
-      add(quadX(0.034, 0.008, 0.0995, 1.638, sd * 0.037), PART.HEAD, SLOT.HAIR);       // brow
-      add(box(0.012, 0.035, 0.022, 0.012, 1.595, sd * 0.081), PART.HEAD, SLOT.SKIN);    // ear
+    // lod 1: small details drawn only near the camera (not beyond ~26 m, not in the shadow pass)
+    const add = (g, part, slot, flag = 0, lod = 0) => {
+      g = prep(g, true); const ao = occlusion(g, part), n = g.attributes.position.count, m = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) { m[i * 4] = part; m[i * 4 + 1] = slot; m[i * 4 + 2] = flag; m[i * 4 + 3] = ao[i] + 2 * lod; }
+      g.setAttribute('aMeta', new THREE.BufferAttribute(m, 4)); parts.push(g);
+    };
+    // ---- body ----
+    add(loftY(PELVIS_T, 10, 0.015, 0), PART.PELVIS, SLOT.BOTTOM);
+    add(loftY([[0.938, 0.0, 0.1, 0.114, 0.154, 2.2], ...TORSO_T], 12, -0.004, 0.006), PART.TORSO, SLOT.TOP);   // the hem turns inward so it meets the hips cleanly
+    add(loftY(NECK_T, 10, 0, 0), PART.TORSO, SLOT.SKIN);
+    { // head: skull and jaw, nose, ears
+      const ys = [1.494, 1.516, 1.538, 1.562, 1.586, 1.606, 1.620, 1.640, 1.664, 1.688, 1.705];
+      const rings = ys.map(y => { const r = []; for (let i = 0; i < 14; i++) r.push(headPt(i / 14 * TAU, y)); return r; });
+      add(loftPts(rings, [0.03, 1.489, 0], [-0.006, HEAD_TOP, 0]), PART.HEAD, SLOT.SKIN);
+      const NOSE_T = [[1.564, 0.090, 0.016, 0.012, 0.015, 2.0], [1.576, 0.089, 0.027, 0.012, 0.017, 2.0], [1.600, 0.087, 0.019, 0.009, 0.011, 2.0],
+        [1.630, 0.080, 0.007, 0.004, 0.006, 2.0]];
+      add(loftY(NOSE_T, 6, 0.004, 0.005), PART.HEAD, SLOT.SKIN, 0, 1);
+      for (const sd of [-1, 1]) { const e = sph(1, 5, 3, 0, 0, 0, 0.016, 0.029, 0.009); e.rotateZ(0.12); e.translate(-0.008, 1.598, sd * 0.08); add(e, PART.HEAD, SLOT.SKIN, 0, 1); }
     }
-    add(latheY([[0.001, 0.8], [0.13, 0.81], [0.158, 0.85], [0.165, 0.9], [0.158, 0.96], [0.146, 1.0]], 10, 0.72), PART.PELVIS, SLOT.BOTTOM);
-    add(latheY([[0.22, 0.54], [0.2, 0.7], [0.18, 0.84], [0.168, 0.97]], 10, 0.82), PART.PELVIS, SLOT.BOTTOM, 42);   // skirt
-    add(latheY([[0.142, 0.95], [0.15, 1.06], [0.168, 1.17], [0.184, 1.28], [0.18, 1.35], [0.152, 1.405], [0.1, 1.432], [0.05, 1.445]], 10, 0.64), PART.TORSO, SLOT.TOP);
-    add(cylY(0.046, 0.05, 1.4, 1.52, 7, 0.008, 0), PART.TORSO, SLOT.SKIN);                    // neck
-    add(sph(0.1, 10, 8, 0.012, 1.595, 0, 1.0, 1.13, 0.8), PART.HEAD, SLOT.SKIN);
-    add(quadX(0.036, 0.007, 0.1062, 1.554, 0), PART.HEAD, SLOT.LIPS);                          // mouth
-    add(box(0.022, 0.032, 0.02, 0.111, 1.585, 0, 0.35), PART.HEAD, SLOT.SKIN);                // nose
-    // hair: 1 short, 2 long, 3 bun, 4 curly, 5 ponytail. Flag 16 = the shared cap (styles 1,2,3,5); the cap is
-    // tilted back so the hairline sits on the forehead
-    add(sph(0.106, 10, 5, 0, 1.598, 0, 1.03, 1.12, 0.86, Math.PI * 0.56, 0.6), PART.HEAD, SLOT.HAIR, 16);
-    add(box(0.05, 0.3, 0.17, -0.07, 1.46, 0), PART.HEAD, SLOT.HAIR, 12);
-    add(sph(0.048, 6, 4, -0.078, 1.695, 0), PART.HEAD, SLOT.HAIR, 13);
-    add(sph(0.13, 10, 6, -0.035, 1.655, 0, 1.0, 0.95, 1.05), PART.HEAD, SLOT.HAIR, 14);
-    add(seg3(v3(-0.095, 1.625, 0), v3(-0.14, 1.42, 0), 0.032, 0.02, 5), PART.HEAD, SLOT.HAIR, 15);
-    // headwear: 1 cap, 2 beanie, 3 cycling helmet, 4 sun hat. Flag 25 = the shared crown (styles 1 and 4)
-    add(sph(0.113, 10, 4, 0.002, 1.612, 0, 1.03, 0.94, 0.9, Math.PI * 0.5, 0.22), PART.HEAD, SLOT.HAT, 25);
-    add(box(0.12, 0.012, 0.15, 0.118, 1.646, 0, -0.12), PART.HEAD, SLOT.HAT, 21);
-    add(sph(0.115, 10, 5, 0, 1.604, 0, 1.03, 1.22, 0.9, Math.PI * 0.55, 0.45), PART.HEAD, SLOT.HAT, 22);
-    add(sph(0.128, 10, 4, -0.014, 1.618, 0, 1.24, 0.9, 1.0, Math.PI * 0.5, 0.15), PART.HEAD, SLOT.HAT, 23);
-    add(cylY(0.19, 0.19, 1.646, 1.656, 12, 0.004, 0, 1, 1, true), PART.HEAD, SLOT.HAT, 24);
-    { const d = new THREE.CircleGeometry(0.19, 12); d.rotateX(-Math.PI / 2); d.translate(0.004, 1.656, 0); add(d, PART.HEAD, SLOT.HAT, 24);
-      const u = new THREE.CircleGeometry(0.19, 12); u.rotateX(Math.PI / 2); u.translate(0.004, 1.646, 0); add(u, PART.HEAD, SLOT.HAT, 24); }
-    // carried things (flag 31..36)
-    add(box(0.15, 0.4, 0.27, -0.168, 1.17, 0), PART.TORSO, SLOT.ACC, 31);                     // backpack
-    add(box(0.05, 0.16, 0.2, -0.26, 1.08, 0), PART.TORSO, SLOT.ACC, 31);
-    add(box(0.02, 0.28, 0.035, -0.08, 1.24, -0.1), PART.TORSO, SLOT.ACC, 31);                // straps
-    add(box(0.02, 0.28, 0.035, -0.08, 1.24, 0.1), PART.TORSO, SLOT.ACC, 31);
-    { const g = new THREE.BoxGeometry(0.22, 0.52, 0.36); g.rotateZ(-0.35); g.translate(-0.42, 0.33, 0.3); add(g, PART.ROOT, SLOT.ACC, 32); }   // luggage
-    add(seg3(v3(-0.35, 0.58, 0.3), v3(-0.02, 0.79, 0.27), 0.012, 0.012, 5), PART.ROOT, SLOT.METAL, 32);
-    add(box(0.06, 0.06, 0.32, -0.36, 0.035, 0.3), PART.ROOT, SLOT.DARK, 32);
-    add(box(0.1, 0.3, 0.3, 0.02, 0.97, -0.235), PART.PELVIS, SLOT.ACC, 33);                   // tote
-    add(seg3(v3(0.0, 1.12, -0.225), v3(0.0, 1.4, -0.15), 0.01, 0.01, 4), PART.TORSO, SLOT.ACC, 33);
-    add(box(0.012, 0.14, 0.07, 0.03, 0.79, 0.213), PART.RFARM, SLOT.DARK, 34);                // phone
-    add(box(0.004, 0.126, 0.06, 0.0375, 0.79, 0.213), PART.RFARM, SLOT.SCREEN, 34);
-    add(box(0.09, 0.3, 0.4, 0.0, 0.6, -0.26), PART.LFARM, SLOT.ACC, 35);                      // briefcase
-    add(box(0.03, 0.03, 0.1, 0.0, 0.765, -0.24), PART.LFARM, SLOT.DARK, 35);
+    for (const sd of [-1, 1]) {
+      const left = sd < 0, lz = sd * 0.093;
+      const thigh = left ? PART.LTHIGH : PART.RTHIGH, shin = left ? PART.LSHIN : PART.RSHIN, foot = left ? PART.LFOOT : PART.RFOOT;
+      const uarm = left ? PART.LUARM : PART.RUARM, farm = left ? PART.LFARM : PART.RFARM;
+      add(loftY(THIGH_T, 10, 0.026, 0.012, lz, -sd), thigh, SLOT.THIGH);
+      add(loftY(SHIN_T, 10, 0.01, 0.02, lz, -sd), shin, SLOT.SHIN);
+      add(loftX(SHOE_T, 8, lz, 0.004, 0.006), foot, SLOT.SHOES);
+      add(loftY(UARM_T, 8, 0.006, 0.034, sd * 0.19, sd), uarm, SLOT.SLEEVE);
+      add(loftY(FARM_T, 8, 0.004, 0.018, sd * 0.208, sd), farm, SLOT.FOREARM);
+      add(loftY(HAND_T, 8, 0.011, 0, sd * 0.211, sd), farm, SLOT.SKIN);
+      add(tubePath([[0.022, 0.848, sd * 0.206], [0.044, 0.808, sd * 0.202], [0.054, 0.774, sd * 0.2]], [0.012, 0.0095, 0.0075], 5), farm, SLOT.SKIN, 0, 1);   // thumb
+    }
+    // ---- garments (group 5 = top style, group 4 = bottom) ----
+    { // hoodie: the hood bunched behind the neck, drawstrings down the chest
+      const path = []; for (let k = 0; k <= 8; k++) { const th = lerp(0.5, TAU - 0.5, k / 8); path.push([-0.014 + Math.cos(th) * 0.096, 1.458 + 0.014 * Math.cos(th), Math.sin(th) * 0.096]); }
+      add(tubePath(path, path.map((_, k) => 0.02 + 0.016 * Math.sin(Math.PI * k / 8)), 5), PART.TORSO, SLOT.OUTER, 52);
+      for (const sd of [-1, 1]) add(tubePath([1.446, 1.395, 1.335].map(y => torsoPt(sd * 0.2, y, 0.011)), [0.0032, 0.0032, 0.0032], 3), PART.TORSO, SLOT.WHITE, 52, 1);
+    }
+    { // shirt collar (button-downs, blazers, vests): a band standing around the neck base, open at the throat
+      const n = 9, ring = (y, r, off) => { const q = []; for (let i = 0; i < n; i++) { const th = lerp(0.38, TAU - 0.38, i / (n - 1)); q.push([-0.01 + Math.cos(th) * (r + off) * 1.05, y, Math.sin(th) * (r + off)]); } return q; };
+      const rings = [[1.44, 0.07], [1.466, 0.063], [1.492, 0.058]].map(([y, r]) => ring(y, r, 0.003).concat(ring(y, r, 0).reverse()));
+      rings.push(ring(1.494, 0.0595, 0).concat(ring(1.494, 0.0595, 0).reverse()));
+      add(loftPts(rings, null, null), PART.TORSO, SLOT.COLLAR, 53, 1);
+    }
+    // skirt / dress (flag 42): A-line from the waist to just above the knee; swings with the thighs in the shader
+    add(loftY([[0.52, 0.012, 0.16, 0.16, 0.2, 2.0], [0.7, 0.008, 0.146, 0.152, 0.185, 2.1],
+      [0.9, 0.0, 0.112, 0.13, 0.17, 2.2], [0.94, 0.0, 0.1, 0.112, 0.158, 2.2], [1.0, 0.002, 0.096, 0.104, 0.15, 2.2]], 12, 0, 0), PART.PELVIS, SLOT.BOTTOM, 42);
+    // ---- hair (group 1): 1 short, 2 long, 3 bun, 4 curly, 5 ponytail; flag 16 = the cap shared by all (curly puffs it out in the shader) ----
+    add(skullShell(hairline, (th, t) => 0.0022 + (0.006 + 0.007 * (1 - t) * (1 - 0.5 * backness(th))) * (1 - sstep(0.75, 1.0, t)), 14, 5), PART.HEAD, SLOT.HAIR, 16);
+    { // long: a curtain around the back of the head, to the shoulders at the sides and further down the back
+      const n = 7, K = 4, rings = [];
+      const pts = (k, off) => { const q = []; for (let i = 0; i < n; i++) {
+        const th = lerp(0.54 * Math.PI, 1.46 * Math.PI, i / (n - 1)), b = backness(th);
+        const y = lerp(1.625, lerp(1.47, 1.35, sstep(0.55, 0.95, b)), k / K), kk = clamp((1.585 - y) / 0.2, 0, 1);
+        const P = headPt(th, Math.max(y, 1.585), 0.013 - off);
+        q.push([P[0] - 0.012 * kk, y, P[2] * (1 + 0.1 * kk)]);
+      } return q; };
+      for (let k = 0; k <= K; k++) rings.push(pts(k, 0).concat(pts(k, 0.013).reverse()));
+      const last = pts(K, 0.0065).map(p => [p[0], p[1] - 0.004, p[2]]); rings.push(last.concat(last.slice().reverse()));
+      add(loftPts(rings, null, null), PART.HEAD, SLOT.HAIR, 12);
+    }
+    add(sph(0.04, 7, 5, -0.078, 1.69, 0, 1.0, 0.85, 1.05), PART.HEAD, SLOT.HAIR, 13);   // bun
+    add(tubePath([[-0.096, 1.648, 0], [-0.124, 1.604, 0], [-0.136, 1.54, 0], [-0.13, 1.47, 0], [-0.118, 1.43, 0]], [0.022, 0.026, 0.021, 0.013, 0.005], 6), PART.HEAD, SLOT.HAIR, 15);   // ponytail
+    // ---- headwear (group 2): 1 cap, 2 beanie, 3 cycling helmet, 4 sun hat; flag 25 = the shell shared by all four (shaped per type in the shader) ----
+    add(skullShell(th => lerp(1.646, 1.585, backness(th)), () => 0.016, 14, 4), PART.HEAD, SLOT.HAT, 25);
+    add(loftX([[0.07, 1.656, 0.004, 0.004, 0.092, 6], [0.115, 1.648, 0.004, 0.004, 0.088, 6], [0.15, 1.64, 0.004, 0.004, 0.076, 6], [0.172, 1.632, 0.004, 0.004, 0.052, 6]], 10, 0, 0, 0.004), PART.HEAD, SLOT.HAT, 21);
+    add(revolve([[0.118, 1.652], [0.2, 1.64], [0.212, 1.634], [0.2, 1.63], [0.118, 1.644]], 12, 1.14, -0.006), PART.HEAD, SLOT.HAT, 24);
+    // ---- carried things (group 3): 1 backpack, 2 luggage, 3 shopping bag, 4 phone, 5 briefcase, 6 bike ----
+    add(loftY([[1.02, -0.158, 0.05, 0.062, 0.128, 4], [1.08, -0.155, 0.058, 0.07, 0.138, 4], [1.26, -0.15, 0.06, 0.074, 0.142, 4], [1.38, -0.146, 0.054, 0.066, 0.13, 4]], 10, 0.018, 0.035), PART.TORSO, SLOT.ACC, 31);
+    add(loftY([[1.06, -0.222, 0.012, 0.024, 0.1, 4], [1.2, -0.224, 0.012, 0.026, 0.108, 4]], 8, 0.008, 0.008), PART.TORSO, SLOT.STRAP, 31, 1);
+    for (const sd of [-1, 1]) add(tubePath([[-0.1, 1.36, sd * 0.085], [-0.045, 1.474, sd * 0.098], [0.035, 1.466, sd * 0.108], [0.132, 1.33, sd * 0.1], [0.098, 1.13, sd * 0.112]], [0.011, 0.011, 0.011, 0.011, 0.011], 4), PART.TORSO, SLOT.STRAP, 31, 1);
+    { const g = loftY([[0.1, 0, 0.1, 0.1, 0.16, 5], [0.62, 0, 0.1, 0.1, 0.16, 5]], 8, 0.012, 0.012); g.rotateZ(-0.35); g.translate(-0.42, 0.0, 0.3); add(g, PART.ROOT, SLOT.ACC, 32); }   // luggage
+    add(seg3(v3(-0.235, 0.6, 0.3), v3(-0.03, 0.8, 0.262), 0.009, 0.009, 5), PART.ROOT, SLOT.METAL, 32);
+    add(box(0.06, 0.06, 0.3, -0.37, 0.034, 0.3), PART.ROOT, SLOT.DARK, 32);
+    add(loftY([[0.42, 0.0, 0.16, 0.16, 0.05, 3], [0.7, 0.0, 0.145, 0.145, 0.038, 3]], 8, 0.004, 0.002, -0.228), PART.LFARM, SLOT.ACC, 33);   // shopping bag
+    for (const dx of [-0.07, 0.07]) add(tubePath([[dx, 0.7, -0.228], [dx * 0.4, 0.78, -0.222], [0.0, 0.8, -0.215]], [0.005, 0.005, 0.005], 4), PART.LFARM, SLOT.STRAP, 33, 1);
+    add(box(0.009, 0.14, 0.068, 0.061, 0.775, 0.203), PART.RFARM, SLOT.DARK, 34);                 // phone
+    add(box(0.003, 0.128, 0.06, 0.0665, 0.775, 0.203), PART.RFARM, SLOT.SCREEN, 34);
+    add(loftY([[0.44, 0.0, 0.2, 0.2, 0.045, 6], [0.72, 0.0, 0.2, 0.2, 0.045, 6]], 8, 0.004, 0.004, -0.222), PART.LFARM, SLOT.ACC, 35);   // briefcase
+    add(box(0.1, 0.03, 0.03, 0.0, 0.745, -0.217), PART.LFARM, SLOT.DARK, 35);
     { // bicycle walked on the right-hand side
       const zb = 0.52;
-      for (const x of [-0.42, 0.62]) { const t = new THREE.TorusGeometry(0.33, 0.022, 3, 12); t.translate(x, 0.35, zb); add(t, PART.ROOT, SLOT.DARK, 36); }
+      for (const x of [-0.42, 0.62]) { const t = new THREE.TorusGeometry(0.33, 0.022, 3, 10); t.translate(x, 0.35, zb); add(t, PART.ROOT, SLOT.DARK, 36); }
       const bb = v3(0.08, 0.3, zb), head = v3(0.5, 0.74, zb), seat = v3(-0.06, 0.82, zb), rear = v3(-0.42, 0.35, zb), front = v3(0.62, 0.35, zb);
       for (const [a, b] of [[bb, head], [seat, v3(0.5, 0.8, zb)], [bb, seat], [bb, rear], [v3(-0.04, 0.77, zb), rear], [head, front], [head, v3(0.47, 0.97, zb)]])
-        add(seg3(a, b, 0.018, 0.018, 4, true), PART.ROOT, SLOT.ACC, 36);
-      add(seg3(v3(0.47, 0.97, zb - 0.22), v3(0.47, 0.97, zb + 0.22), 0.013, 0.013, 4), PART.ROOT, SLOT.METAL, 36);
+        add(seg3(a, b, 0.018, 0.018, 3, true), PART.ROOT, SLOT.ACC, 36);
+      add(seg3(v3(0.47, 0.97, zb - 0.22), v3(0.47, 0.97, zb + 0.22), 0.013, 0.013, 5), PART.ROOT, SLOT.METAL, 36);
       add(box(0.2, 0.04, 0.09, -0.08, 0.86, zb), PART.ROOT, SLOT.DARK, 36);
     }
     const g = U.mergeGeometries(parts);
@@ -226,180 +424,345 @@ const Life = (() => {
   }
 
   const PEOPLE_VHEAD = `
-    attribute vec3 aMeta;
+    attribute vec4 aMeta;   // part, slot, style flag, baked occlusion
     attribute vec4 aAnim;   // walk weight, sit weight, gait phase offset, gait frequency (Hz)
-    attribute vec4 aBody;   // girth, head scale, idle seed, short sleeves (1)
-    attribute vec4 aStyle;  // hair, headwear, carry, bottom
+    attribute vec4 aBody;   // girth, head scale, idle seed, short sleeves + 2 * beard (0-2) + 8 * glasses (0 none, 1 clear, 2 sun)
+    attribute vec4 aStyle;  // hair, headwear, carry, bottom (0 trousers, 1 shorts, 2 skirt, 3 dress)
+    attribute vec4 aStyle2; // top (0 tee 1 open jacket 2 hoodie 3 button-down 4 sweater 5 blazer 6 vest), outer colour, figure 0..1, socks (0 none 1 ankle 2 crew)
     attribute vec4 aCol0;   // skin, top, bottom, shoes (packed sRGB)
     attribute vec4 aCol1;   // hair, accessory, hat, tights
     varying vec3 vLifeCol;
-    varying vec3 vLifeGlow;
+    varying vec3 vLifeCol2;
+    varying vec4 vLifeLoc;   // unposed model position, part
+    varying vec4 vLifeMat;   // slot, roughness, metalness, occlusion
+    varying vec4 vLifeTag;   // alternate-colour band y0..y1, top style, beard + 3 * glasses + 9 * headwear
+    float lifeSq(float x) { return x * x; }
+    vec3 lifeTube(vec3 q, vec3 axis, float want, inout vec3 n) {   // push a limb cross-section out to a fabric tube
+      vec2 d = vec2(q.x - axis.x, q.z - axis.z); float r = length(d);
+      if (r > 1e-4 && r < want) { vec2 nd = d / r; q.x = axis.x + nd.x * want; q.z = axis.z + nd.y * want; n = normalize(vec3(nd.x, n.y * 0.3, nd.y)); }
+      return q;
+    }
     void lifePose(inout vec3 p, inout vec3 n) {
       float part = aMeta.x, slot = aMeta.y, flag = aMeta.z;
-      float show = 1.0;
+      float topS = aStyle2.x, botS = aStyle.w, sit = aAnim.y;
+      // small details (nose, ears, thumbs, straps, drawstrings, collar) only near the camera, never in the shadow pass
+      float lodC = floor(aMeta.w * 0.5 + 0.01), ao = aMeta.w - 2.0 * lodC;
+      if (lodC > 0.5) {
+        #if defined( DEPTH_PACKING )
+          bool near = false;
+        #elif defined( USE_INSTANCING )
+          bool near = -(modelViewMatrix * (instanceMatrix * vec4(0.0, 1.0, 0.0, 1.0))).z < 26.0;
+        #else
+          bool near = -(modelViewMatrix * vec4(0.0, 1.0, 0.0, 1.0)).z < 26.0;
+        #endif
+        if (!near) { p = vec3(0.0); return; }
+      }
+      // visibility first: hidden variants (and things set down when seated) collapse before any posing work
       if (flag > 9.5) {
-        float grp = floor(flag / 10.0 + 0.01); float val = flag - grp * 10.0;
-        float want = grp < 1.5 ? aStyle.x : grp < 2.5 ? aStyle.y : grp < 3.5 ? aStyle.z : aStyle.w;
-        show = abs(want - val) < 0.5 ? 1.0 : 0.0;
-        if (abs(flag - 16.0) < 0.5) show = (want > 0.5 && abs(want - 4.0) > 0.5) ? 1.0 : 0.0;       // shared hair cap
-        if (abs(flag - 25.0) < 0.5) show = (abs(want - 1.0) < 0.5 || abs(want - 4.0) < 0.5) ? 1.0 : 0.0;  // shared hat crown
+        float grp = floor(flag / 10.0 + 0.01), val = flag - grp * 10.0;
+        float want = grp < 1.5 ? aStyle.x : grp < 2.5 ? aStyle.y : grp < 3.5 ? aStyle.z : grp < 4.5 ? botS : topS;
+        bool show = abs(want - val) < 0.5;
+        if (abs(flag - 16.0) < 0.5 || abs(flag - 25.0) < 0.5) show = want > 0.5;                 // hair cap (all but bald), hat shell (any hat)
+        else if (abs(flag - 42.0) < 0.5) show = want > 1.5;                                      // skirt, dress
+        else if (abs(flag - 53.0) < 0.5) show = abs(want - 3.0) < 0.5 || want > 4.5;             // collar: button-down, blazer, vest
+        if (sit > 0.5 && flag > 30.5 && flag < 36.5 && abs(flag - 34.0) > 0.5) show = false;   // bags, luggage and bikes are stowed when seated (phones stay out)
+        if (!show) { p = vec3(0.0); return; }
       }
-      float t = uLifeTime;
-      float walk = aAnim.x, sit = aAnim.y;
-      float stand = clamp(1.0 - walk - sit, 0.0, 1.0);
-      float ph = t * 6.2831853 * aAnim.w + aAnim.z;
-      float sL = sin(ph), cL = cos(ph);
-      float carry = aStyle.z;
-      float seed = aBody.z;
-      // legs: hip flexion swings the thigh forward, the knee flexes during the swing phase
-      float sway = stand * 0.035 * sin(t * 0.43 + seed * 40.0);
-      float hipL = 0.40 * sL * walk + sway, hipR = -0.40 * sL * walk - sway;
-      float kneeL = walk * (0.08 + 0.9 * pow(max(0.0, cL), 1.6)) + 0.05 + stand * max(0.0, sway) * 2.0;
-      float kneeR = walk * (0.08 + 0.9 * pow(max(0.0, -cL), 1.6)) + 0.05 + stand * max(0.0, -sway) * 2.0;
-      hipL = mix(hipL, 1.5, sit); hipR = mix(hipR, 1.5, sit);
-      kneeL = mix(kneeL, 1.5, sit); kneeR = mix(kneeR, 1.5, sit);
-      // arms swing opposite to the legs
-      float shL = -0.34 * sL * walk + 0.03, shR = 0.34 * sL * walk + 0.03;
-      float elL = 0.16 + 0.24 * walk + 0.1 * walk * max(0.0, sL), elR = 0.16 + 0.24 * walk + 0.1 * walk * max(0.0, -sL);
-      shL = mix(shL, 0.32, sit); shR = mix(shR, 0.32, sit);
-      elL = mix(elL, 1.12, sit); elR = mix(elR, 1.12, sit);
-      float headPitch = 0.04 * sit;
-      float inL = 0.45 * sit, inR = 0.45 * sit;   // forearm turned in toward the lap / chest
-      if (carry > 3.5 && carry < 4.5) { shR = mix(0.3, 0.22, sit); elR = 1.72; inR = 0.35; headPitch = 0.42; }  // phone
-      else if (carry > 1.5 && carry < 2.5) { shR = -0.1 * (1.0 - sit); elR = 0.07 + sit; }                // pulling luggage
-      else if (carry > 4.5 && carry < 5.5) { shL *= 0.3; elL = 0.05 + sit; }                              // briefcase
-      else if (carry > 5.5) { shR = mix(0.55, 0.32, sit); elR = mix(0.42, 1.12, sit); inR = mix(-0.25, 0.45, sit); }  // bike handlebar
-      float look = sin(t * 0.21 + seed * 17.0);
-      float headYaw = 0.55 * sin(t * 0.37 + seed * 31.0) * smoothstep(0.25, 0.9, look) * (1.0 - 0.75 * walk);
-      float lean = walk * 0.07 - sit * 0.05;
+      #ifndef DEPTH_PACKING
+        vLifeLoc = vec4(p, part);
+      #endif
+      float t = uLifeTime, walk = aAnim.x, stand = clamp(1.0 - walk - sit, 0.0, 1.0);
+      float ph = t * 6.2831853 * aAnim.w + aAnim.z, sL = sin(ph);
+      float seed = aBody.z, g = aBody.x, fig = aStyle2.z, carry = aStyle.z;
+      float ws = stand * 0.024 * sin(t * 0.23 + seed * 40.0);   // idle: the weight shifts slowly from leg to leg
       float twist = walk * 0.1 * sL;
-      float bob = walk * 0.022 * cos(2.0 * ph) + stand * 0.004 * sin(t * 1.7 + seed * 9.0);
-      float drop = -0.44 * sit;
-      float g = aBody.x;
+      bool jacket = abs(topS - 1.0) < 0.5 || abs(topS - 2.0) < 0.5 || abs(topS - 5.0) < 0.5;
+      float bits = aBody.w, glasses = floor(bits / 8.0 + 0.01); bits -= glasses * 8.0;
+      float beard = floor(bits / 2.0 + 0.01);
+      bool shortS = bits - beard * 2.0 > 0.5 && !jacket;
       vec3 q = p;
-      if (part < 1.5) { q.x *= g; q.z *= g; }
-      if (flag > 30.5 && flag < 31.5) q.x -= (g - 1.0) * 0.1;
-      if (abs(flag - 16.0) < 0.5 && aStyle.y > 0.5) { vec3 hc = vec3(0.0, 1.6, 0.0); q = hc + (q - hc) * vec3(0.96, 0.88, 0.96); }  // hair tucked under headwear
-      if (flag > 41.5 && flag < 42.5) {   // skirt: the front follows the leading thigh, the back the trailing one
-        vec3 hipJ = vec3(0.0, 0.9, 0.0);
-        float a = smoothstep(-0.02, 0.12, q.x) * max(hipL, hipR) * 0.85 + smoothstep(0.02, -0.12, q.x) * min(hipL, hipR) * 0.6;
-        mat3 Rs = lifeRotZ(a); q = Rs * (q - hipJ) + hipJ; n = Rs * n;
-      }
-      if (part > 2.5 && part < 6.5) {
-        float sd = part < 4.5 ? -1.0 : 1.0;
-        bool shin = (part > 3.5 && part < 4.5) || part > 5.5;
-        float ha = sd < 0.0 ? hipL : hipR, ka = sd < 0.0 ? kneeL : kneeR;
-        float gs = shin ? 1.0 + (g - 1.0) * 0.35 : 1.0 + (g - 1.0) * 0.8, lz = sd * 0.093;
-        q.x *= gs; q.z = lz + (q.z - lz) * gs + sd * (g - 1.0) * 0.07;
-        vec3 hipJ = vec3(0.0, 0.9, 0.0), kneeJ = vec3(0.0, 0.47, 0.0);
+      if (part < 1.5) {   // torso, pelvis and skirt: girth, figure (waist, hips, bust), belly, breathing
+        float wy = exp(-lifeSq((q.y - 1.08) / 0.08)), hy = exp(-lifeSq((q.y - 0.9) / 0.09)), by = exp(-lifeSq((q.y - 1.265) / 0.06));
+        q.x *= g * (1.0 - 0.05 * fig * wy + 0.05 * fig * hy); q.z *= g * (1.0 - 0.07 * fig * wy + 0.08 * fig * hy);
+        if (part > 0.5 && slot > 0.5) {
+          q.x += fig * 0.02 * by * smoothstep(-0.02, 0.06, q.x) * (1.0 - smoothstep(0.07, 0.13, abs(q.z)));
+          q.x *= mix(1.0, 1.0 + 0.014 * sin(t * 1.5 + seed * 11.0) * (1.0 - 0.5 * walk), clamp(by + 0.4 * wy, 0.0, 1.0));   // breathing
+          if (slot < 1.5 && abs(topS - 3.0) < 0.5 && p.y < 1.02) { q.x *= 0.84; q.z *= 0.84; }   // button-down tucked in
+          if (jacket) { q.x *= 1.03; q.z *= 1.03; }                                            // outer layer
+        }
+        q.x += max(0.0, g - 1.0) * 0.25 * exp(-lifeSq((p.y - 1.07) / 0.09)) * smoothstep(0.0, 0.08, q.x);   // belly
+        if (abs(flag - 42.0) < 0.5) {   // skirt: the front follows the leading thigh, the back the trailing one
+          float hA = mix(0.42 * abs(sL) * walk, 1.5, sit), hB = mix(-0.42 * abs(sL) * walk, 1.5, sit);
+          float a = smoothstep(-0.02, 0.12, q.x) * hA * 0.85 + smoothstep(0.02, -0.12, q.x) * hB * 0.6;
+          vec3 hipJ = vec3(0.0, 0.9, 0.0); mat3 Rs = lifeRotZ(a); q = Rs * (q - hipJ) + hipJ; n = Rs * n;
+        }
+      } else if (part < 2.5) {   // head (kids have bigger heads); hair tucks under headwear
+        vec3 hc = vec3(-0.004, 1.6, 0.0);
+        if (abs(flag - 16.0) < 0.5) {
+          if (abs(aStyle.x - 4.0) < 0.5) q += normalize(q - hc) * (0.016 + 0.006 * sin(q.x * 70.0 + 1.3) * sin(q.y * 60.0) * sin(q.z * 75.0));   // curly: a springy volume
+          if (aStyle.y > 0.5) q = hc + (q - hc) * mix(vec3(1.0), vec3(0.93, 0.88, 0.93), smoothstep(1.585, 1.64, p.y));                     // tucked under headwear
+        } else if (abs(flag - 25.0) < 0.5) {   // hat shell: cap and sun hat as built; a beanie sits a little looser; a helmet is thick and long at the back
+          float bk = 0.5 - 0.5 * normalize((q - hc).xz + vec2(1e-4, 0.0)).x;
+          if (abs(aStyle.y - 2.0) < 0.5) q += normalize(q - hc) * 0.004;
+          else if (abs(aStyle.y - 3.0) < 0.5) q += normalize(q - hc) * (0.012 + 0.014 * bk) + vec3(-0.012 * bk, 0.0, 0.0);
+        }
+        float headPitch = carry > 3.5 && carry < 4.5 ? 0.4 : 0.05 * sit + 0.03 * stand * sin(t * 0.17 + seed * 3.0);
+        float headYaw = 0.55 * sin(t * 0.37 + seed * 31.0) * smoothstep(0.25, 0.9, sin(t * 0.21 + seed * 17.0)) * (1.0 - 0.75 * walk);
+        vec3 neck = vec3(0.0, 1.47, 0.0);
+        q = neck + (q - neck) * aBody.y;
+        mat3 Hd = lifeRotY(headYaw - twist * 0.7) * lifeRotZ(-headPitch) * lifeRotX(0.05 * stand * sin(t * 0.11 + seed * 13.0));
+        q = Hd * (q - neck) + neck; n = Hd * n;
+      } else if (part < 6.5 || part > 11.5) {   // legs: hip flexion swings the thigh, the knee folds in swing, the stance foot stays flat
+        float sd = (part < 4.5 || abs(part - 12.0) < 0.5) ? -1.0 : 1.0;
+        bool foot = part > 11.5, shin = abs(part - 4.0) < 0.5 || abs(part - 6.0) < 0.5 || foot;
+        float cL = cos(ph);
+        float ha = -sd * 0.42 * sL * walk;
+        float ka = walk * (0.1 + 0.95 * pow(max(0.0, -sd * cL), 1.6)) + 0.04 + 5.0 * max(0.0, -sd * ws);
+        #ifdef USE_INSTANCING
+          float sc = length(instanceMatrix[0].xyz);
+        #else
+          float sc = 1.0;
+        #endif
+        // seated: thighs level, shins reach for the floor (the seat is 0.46 m high whatever the person's size)
+        ha = mix(ha, 1.5, sit); ka = mix(ka, 1.5 - acos(clamp((0.46 / sc - 0.0754) / 0.385, 0.0, 1.0)), sit);
+        float aa = -(ha - ka) - 0.4 * walk * max(0.0, ka - 0.14);
+        float lz = sd * 0.093, gs = shin ? 1.0 + (g - 1.0) * 0.35 : 1.0 + (g - 1.0) * 0.8;
+        if (!foot) {
+          q.x *= gs; q.z = lz + (q.z - lz) * gs;
+          if (botS < 0.5) q = lifeTube(q, vec3(shin ? 0.006 : 0.008, 0.0, lz), (shin ? mix(0.055, 0.058, smoothstep(0.1, 0.45, p.y)) : 0.062) * gs, n);   // trouser legs
+        }
+        q.z += sd * ((g - 1.0) * 0.07 + fig * 0.006);
+        vec3 hipJ = vec3(0.0, 0.9, 0.0), kneeJ = vec3(0.0, 0.47, 0.0), ankJ = vec3(0.0, 0.085, 0.0);
+        if (foot) { mat3 A = lifeRotZ(aa); q = A * (q - ankJ) + ankJ; n = A * n; }
         if (shin) { mat3 K = lifeRotZ(-ka); q = K * (q - kneeJ) + kneeJ; n = K * n; }
-        mat3 H = lifeRotZ(ha); q = H * (q - hipJ) + hipJ; n = H * n;
-      }
-      if (part > 6.5 && part < 10.5) {
+        mat3 H = lifeRotX(ws / 0.815) * lifeRotZ(ha); q = H * (q - hipJ) + hipJ; n = H * n;
+      } else if (part < 10.5) {   // arms swing opposite to the legs; the forward arm bends a little more
         float sd = part < 8.5 ? -1.0 : 1.0;
-        bool fore = (part > 7.5 && part < 8.5) || part > 9.5;
-        float sa = sd < 0.0 ? shL : shR, ea = sd < 0.0 ? elL : elR;
-        float wide = (g - 1.0) * 0.17, ga = 1.0 + (g - 1.0) * 0.5, az = sd * 0.205;
+        bool fore = abs(part - 8.0) < 0.5 || abs(part - 10.0) < 0.5;
+        float sa = mix(sd * 0.34 * sL * walk + 0.03 * stand, 0.3, sit);
+        float ea = mix(0.14 + 0.1 * fract(seed * 7.13) + 0.26 * walk + 0.14 * walk * max(0.0, sd * sL), 1.15, sit);
+        float ia = 0.5 * sit, pa = mix(0.2, 0.9, sit);   // forearms turn in toward the lap; palms turn back, or down onto the lap
+        if (sd > 0.0) {
+          if (carry > 3.5 && carry < 4.5) { sa = mix(0.3, 0.22, sit); ea = 1.72; ia = 0.35; pa = 0.0; }             // phone
+          else if (carry > 1.5 && carry < 2.5) { sa = -0.1 * (1.0 - sit); ea = 0.07 + sit; pa = mix(0.4, 0.9, sit); }  // pulling luggage
+          else if (carry > 5.5) { sa = mix(0.55, 0.32, sit); ea = mix(0.42, 1.12, sit); ia = mix(-0.25, 0.45, sit); pa = 1.0; }   // bike
+        } else if ((carry > 2.5 && carry < 3.5) || (carry > 4.5 && carry < 5.5)) { sa *= 0.3; ea = 0.05 + sit; pa = 0.9 * sit; }   // bag, briefcase
+        float wide = (g - 1.0) * 0.17, ga = 1.0 + (g - 1.0) * 0.5, az = sd * 0.2;
+        if (jacket && slot > 9.5) ga *= 1.08;   // sleeves of an outer layer
+        if (fore && slot > 9.5 && !shortS) q = lifeTube(q, vec3(0.004, 0.0, sd * 0.208), 0.033, n);   // a sleeve ends in a cuff
         q.x *= ga; q.z = az + (q.z - az) * ga + sd * wide;
         vec3 shJ = vec3(0.0, 1.4, sd * (0.195 + wide)), elJ = vec3(0.0, 1.12, sd * (0.205 + wide));
-        if (fore) { mat3 E = lifeRotY(sd * (sd < 0.0 ? inL : inR)) * lifeRotZ(ea); q = E * (q - elJ) + elJ; n = E * n; }
+        if (fore) { mat3 E = lifeRotY(sd * ia) * lifeRotZ(ea) * lifeRotY(sd * pa * 1.5708); q = E * (q - elJ) + elJ; n = E * n; }
         mat3 S = lifeRotZ(sa) * lifeRotX(-sd * (0.07 + (g - 1.0) * 0.3 - 0.05 * sit));
         q = S * (q - shJ) + shJ; n = S * n;
       }
-      if (part > 1.5 && part < 2.5) {
-        vec3 neck = vec3(0.0, 1.47, 0.0);
-        q = neck + (q - neck) * aBody.y;
-        mat3 Hd = lifeRotY(headYaw) * lifeRotZ(-headPitch);
-        q = Hd * (q - neck) + neck; n = Hd * n;
-      }
-      if ((part > 0.5 && part < 2.5) || (part > 6.5 && part < 10.5)) {
+      if (part > 0.5 && part < 10.5 && (part < 2.5 || part > 6.5)) {   // torso, head, arms: lean, twist, sway
         vec3 P0 = vec3(0.0, 0.95, 0.0);
-        mat3 T = lifeRotY(twist) * lifeRotZ(-lean);
+        mat3 T = lifeRotY(twist) * lifeRotZ(0.06 * (sit - walk)) * lifeRotX(walk * 0.025 * sL + ws * 1.4);
         q = T * (q - P0) + P0; n = T * n;
-      }
-      if (part < 0.5) { mat3 T0 = lifeRotY(-twist * 0.6); q = T0 * q; n = T0 * n; }
-      if (part < 10.5) q.y += bob + drop;
-      else if (flag > 35.5 && sit > 0.5) show = 0.0;
-      if ((flag > 30.5 && flag < 31.5 || flag > 34.5 && flag < 35.5) && sit > 0.5) show = 0.0;   // backpack, briefcase set down when seated
-      if (show < 0.5) q = vec3(0.0);
+      } else if (part < 0.5) { mat3 T0 = lifeRotY(-twist * 0.6) * lifeRotX(-ws * 1.2); vec3 P1 = vec3(0.0, 0.9, 0.0); q = T0 * (q - P1) + P1; n = T0 * n; }
+      // the pelvis dips at each heel strike, drops onto the seat when sitting
+      if (abs(part - 11.0) > 0.5) { q.y += -0.045 * walk * sL * sL + stand * 0.003 * sin(t * 1.7 + seed * 9.0) - 0.4 * sit; q.z += ws; }
       p = q;
-      // colors
-      vec3 skin = lifeUnpack(aCol0.x), top = lifeUnpack(aCol0.y), bottom = lifeUnpack(aCol0.z), shoes = lifeUnpack(aCol0.w);
-      vec3 c;
-      if (slot < 0.5) c = skin;
-      else if (slot < 1.5) c = top;
-      else if (slot < 2.5) c = bottom;
-      else if (slot < 3.5) c = shoes;
-      else if (slot < 4.5) c = lifeUnpack(aCol1.x);
-      else if (slot < 5.5) c = lifeUnpack(aCol1.y);
-      else if (slot < 6.5) c = lifeUnpack(aCol1.z);
-      else if (slot < 7.5) c = aStyle.w < 0.5 ? bottom : (aStyle.w < 1.5 ? skin : lifeUnpack(aCol1.w));
-      else if (slot < 8.5) c = vec3(0.018);
-      else if (slot < 9.5) c = vec3(0.06, 0.08, 0.12);
-      else if (slot < 10.5) c = aBody.w > 0.5 ? skin : top;
-      else if (slot < 11.5) c = vec3(0.5, 0.52, 0.55);
-      else if (slot < 12.5) c = vec3(0.62, 0.6, 0.57);
-      else if (slot < 13.5) c = skin * vec3(0.62, 0.42, 0.4);
-      else if (slot < 14.5) c = aStyle.w > 1.5 ? lifeUnpack(aCol1.w) : bottom;
-      else c = aStyle.w < 0.5 ? bottom : (aStyle.w < 1.5 ? skin : lifeUnpack(aCol1.w));
-      c *= 0.8 + 0.2 * smoothstep(0.0, 0.7, position.y);
-      vLifeCol = c;
-      vLifeGlow = (slot > 8.5 && slot < 9.5) ? vec3(0.45, 0.62, 1.0) * (0.2 + 1.6 * uLifeNight) : vec3(0.0);
+      #ifndef DEPTH_PACKING
+        // dressing: colour per slot, plus an alternate colour inside a height band (sole, socks, belt, short sleeves, shorts)
+        bool skirt = botS > 1.5, shorts = abs(botS - 1.0) < 0.5;
+        vec3 c = vec3(1.0), c2 = vec3(0.0); float y0 = -1.0, y1 = -1.0, rough = 0.86, metal = 0.0;
+        if (slot < 0.5) { c = lifeUnpack(aCol0.x); c2 = lifeUnpack(aCol1.x); rough = 0.52; }                              // skin; brows and beard from the hair
+        else if (slot < 1.5) {
+          c2 = lifeUnpack(botS > 2.5 ? aCol0.z : aCol0.y);                                                              // shirt (a dress is all one colour)
+          c = (jacket || abs(topS - 6.0) < 0.5) ? lifeUnpack(aStyle2.y) : c2;
+          rough = abs(topS - 1.0) < 0.5 ? 0.6 : abs(topS - 5.0) < 0.5 ? 0.78 : 0.9;
+        }
+        else if (slot < 2.5) { c = lifeUnpack(aCol0.z); if (!skirt) { c2 = mix(lifeUnpack(aCol1.y), vec3(0.05, 0.035, 0.03), 0.7); y0 = 0.986; y1 = 1.013; } }
+        else if (slot < 3.5) { c = lifeUnpack(aCol0.w); c2 = dot(c, vec3(0.33)) < 0.03 ? vec3(0.03) : vec3(0.78, 0.77, 0.74); y1 = 0.02; rough = 0.5; }
+        else if (slot < 4.5) { c = lifeUnpack(aCol1.x); rough = 0.45; }
+        else if (slot < 5.5) { c = lifeUnpack(aCol1.y); rough = abs(flag - 32.0) < 0.5 ? 0.32 : 0.68; }
+        else if (slot < 6.5) { c = lifeUnpack(aCol1.z); rough = abs(flag - 23.0) < 0.5 ? 0.3 : 0.82; }
+        else if (slot < 7.5 || (slot > 13.5 && slot < 14.5)) {   // shins and thighs: trousers, bare legs or tights
+          bool bare = abs(aCol1.w - aCol0.x) < 0.5;
+          c = shorts ? lifeUnpack(aCol0.x) : lifeUnpack(skirt ? aCol1.w : aCol0.z);
+          rough = skirt ? (bare ? 0.52 : 0.42) : 0.88;
+          if (slot > 7.5) { if (shorts) { c = lifeUnpack(aCol0.z); c2 = lifeUnpack(aCol0.x); y1 = 0.585; } }
+          else { if (shorts) rough = 0.52; if (aStyle2.w > 0.5 && (shorts || (skirt && bare))) { c2 = aStyle2.w < 1.5 ? vec3(0.8, 0.79, 0.76) : vec3(0.03); y1 = aStyle2.w < 1.5 ? 0.112 : 0.2; } }
+        }
+        else if (slot < 8.5) { c = vec3(0.02); rough = 0.45; }
+        else if (slot < 9.5) { c = vec3(0.04, 0.06, 0.09); rough = 0.15; }
+        else if (slot < 10.5 || (slot > 17.5 && slot < 18.5)) {   // forearms and upper arms: sleeves or skin
+          c = jacket ? lifeUnpack(aStyle2.y) : lifeUnpack(botS > 2.5 ? aCol0.z : aCol0.y);
+          rough = abs(topS - 1.0) < 0.5 ? 0.6 : 0.88;
+          if (shortS) { if (slot < 10.5) { c = lifeUnpack(aCol0.x); rough = 0.52; } else { c2 = lifeUnpack(aCol0.x); y1 = 1.285; } }
+        }
+        else if (slot < 11.5) { c = vec3(0.5, 0.52, 0.55); rough = 0.3; metal = 1.0; }
+        else if (slot < 12.5) { c = vec3(0.72, 0.71, 0.68); }
+        else if (slot < 17.5) { c = lifeUnpack(aStyle2.y); rough = 0.88; }
+        else if (slot < 19.5) { c = lifeUnpack(botS > 2.5 ? aCol0.z : aCol0.y); }
+        else { c = lifeUnpack(aCol1.y) * 0.55; rough = 0.62; }
+        vLifeCol = c; vLifeCol2 = c2;
+        vLifeTag = vec4(y0, y1, topS, beard + 3.0 * glasses + 9.0 * aStyle.y);
+        vLifeMat = vec4(slot, rough, metal, ao);
+      #endif
     }
   `;
-  const PEOPLE_INJ = { vHead: PEOPLE_VHEAD, call: 'lifePose(lifeP, objectNormal);',
-    fHead: 'varying vec3 vLifeCol; varying vec3 vLifeGlow;',
-    fColor: 'diffuseColor.rgb *= vLifeCol;', fEmissive: 'totalEmissiveRadiance += vLifeGlow;' };
+  const PEOPLE_FHEAD = `
+    uniform float uLifeNight;
+    varying vec3 vLifeCol;
+    varying vec3 vLifeCol2;
+    varying vec4 vLifeLoc;
+    varying vec4 vLifeMat;
+    varying vec4 vLifeTag;
+    float lifeSq(float x) { return x * x; }
+    // the face, painted on the unposed head (adult scale, looking +X): beard, eyes, lids, brows, lips, glasses
+    vec3 lifeFace(vec3 c, vec3 L, vec3 hairC, float bits) {
+      float front = smoothstep(0.045, 0.075, L.x), az = abs(L.z);
+      bits -= 9.0 * floor(bits / 9.0 + 0.01);
+      float glasses = floor(bits / 3.0 + 0.01), beard = bits - glasses * 3.0;
+      if (beard > 0.5) {
+        float zone = smoothstep(1.585, 1.568, L.y) * smoothstep(-0.045, -0.012, L.x) * (1.0 - (1.0 - smoothstep(0.02, 0.032, az)) * smoothstep(1.553, 1.563, L.y));
+        zone *= 1.0 - (1.0 - smoothstep(0.016, 0.024, az)) * (1.0 - smoothstep(0.003, 0.007, abs(L.y - 1.543)));   // not over the lips
+        c = mix(c, hairC * 0.9, zone * (beard > 1.5 ? 0.88 : 0.32));
+      }
+      if (front > 0.0 && L.y > 1.53 && L.y < 1.65) {
+        vec2 e = vec2((az - 0.032) / 0.0132, (L.y - 1.6145) / 0.0056);
+        vec2 ir = vec2((az - 0.0315) / 0.0058, (L.y - 1.6146) / 0.0058);
+        float eye = 1.0 - smoothstep(0.6, 1.0, dot(e, e)), iris = 1.0 - smoothstep(0.5, 1.0, dot(ir, ir));
+        c = mix(c, mix(vec3(0.42, 0.4, 0.38), vec3(0.035, 0.022, 0.015), iris), eye * front);
+        float lid = (1.0 - smoothstep(0.0012, 0.0026, abs(L.y - 1.6192))) * (1.0 - smoothstep(0.85, 1.2, abs(e.x)));
+        float brow = (1.0 - smoothstep(0.0022, 0.004, abs(L.y - 1.639 - 0.0035 * (1.0 - lifeSq((az - 0.035) / 0.02))))) * (1.0 - smoothstep(0.016, 0.022, abs(az - 0.035)));
+        float mouth = (1.0 - smoothstep(0.0, 0.0012, abs(L.y - 1.543))) * (1.0 - smoothstep(0.019, 0.025, az));
+        float lips = 1.0 - smoothstep(0.5, 1.0, lifeSq(az / 0.024) + lifeSq((L.y - 1.5432) / 0.0082));
+        c *= mix(vec3(1.0), vec3(0.87, 0.69, 0.66), lips * front);
+        c = mix(c, c * 0.3, max(lid, mouth * 0.8) * front);
+        c = mix(c, hairC * 0.85, brow * front * 0.85);
+        if (glasses > 0.5) {
+          vec2 gq = abs(vec2((az - 0.032) / 0.025, (L.y - 1.6135) / 0.0175));
+          float d = max(gq.x, gq.y) * 0.75 + 0.25 * length(gq);
+          if (glasses > 1.5) c = mix(c, vec3(0.012, 0.014, 0.018), (1.0 - smoothstep(0.92, 1.0, d)) * front);   // sunglasses
+          float rim = max(1.0 - smoothstep(0.07, 0.14, abs(d - 1.0)), (1.0 - smoothstep(0.0015, 0.0028, abs(L.y - 1.6195))) * step(az, 0.009));
+          c = mix(c, vec3(0.02), rim * front);
+        }
+      }
+      if (glasses > 0.5) c = mix(c, vec3(0.02), (1.0 - smoothstep(0.0012, 0.0024, abs(L.y - 1.622))) * step(0.06, az) * step(-0.004, L.x) * step(L.x, 0.07));   // temple arms
+      return c;
+    }
+  `;
+  const PEOPLE_FCOLOR = `
+    vec3 lc = vLifeCol;
+    vec3 L = vLifeLoc.xyz; float lpart = vLifeLoc.w, lslot = vLifeMat.x;
+    float bw = fwidth(L.y);   // model metres per pixel: details are painted only where they can resolve
+    lc = mix(lc, vLifeCol2, smoothstep(vLifeTag.x - bw, vLifeTag.x + bw, L.y) * (1.0 - smoothstep(vLifeTag.y - bw, vLifeTag.y + bw, L.y)));
+    float ts = vLifeTag.z;
+    if (lslot > 0.5 && lslot < 1.5 && L.x > 0.0 && (abs(ts - 1.0) < 0.5 || ts > 4.5)) {   // open jacket / blazer / vest fronts show the shirt
+      float hw = abs(ts - 1.0) < 0.5 ? mix(0.03, 0.055, smoothstep(1.0, 1.42, L.y)) : (L.y > 1.07 ? mix(0.003, 0.068, smoothstep(1.07, 1.43, L.y)) : (1.07 - L.y) * 0.35);
+      float d = abs(L.z) - hw, m = 1.0 - smoothstep(-0.0012, 0.0012, d);
+      lc = mix(lc, vLifeCol2 * (1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.012, -d))), m);   // the shirt, shadowed under the edge
+      lc *= 1.0 - 0.28 * (1.0 - smoothstep(0.0, 0.0045, abs(d))) * (1.0 - m);           // lapel lip
+      if (ts > 4.5) lc = mix(lc, vec3(0.03), 1.0 - smoothstep(0.004, 0.0055, length(vec2(L.z, L.y - 1.06))));   // blazer button
+      if (bw < 0.006 && abs(ts - 1.0) > 0.5 && d < 0.0 && L.x > 0.05) {                   // shirt placket and buttons under a blazer or vest
+        lc = mix(lc, lc * 0.84, (1.0 - smoothstep(0.0025, 0.004, abs(L.z))) * 0.6);
+        lc = mix(lc, vec3(0.8, 0.78, 0.74), 1.0 - smoothstep(0.0026, 0.004, length(vec2(L.z, mod(L.y + 0.02, 0.09) - 0.045))));
+      }
+    } else if (bw < 0.01) {
+      if (lslot < 0.5) {
+        if (lpart > 1.5 && lpart < 2.5) lc = lifeFace(lc, L, vLifeCol2, vLifeTag.w);
+        else if ((abs(lpart - 8.0) < 0.5 || abs(lpart - 10.0) < 0.5) && L.y < 0.785) {   // fingers
+          float fx = fract((L.x + 0.012) / 0.02);
+          lc *= 1.0 - 0.28 * (1.0 - smoothstep(0.0, 0.14, min(fx, 1.0 - fx))) * step(-0.026, L.x) * step(L.x, 0.036) * smoothstep(0.785, 0.77, L.y);
+        }
+      } else if (lslot > 3.5 && lslot < 4.5) {   // hair: strands flowing from the crown
+        float a = L.z / (abs(L.x + 0.004) + abs(L.z) + 1e-4) * 110.0 + sin(L.y * 60.0) * 1.5;
+        lc *= 1.0 + 0.12 * sin(a) * (1.0 - smoothstep(0.6, 1.4, fwidth(a)));
+      } else if (lslot > 5.5 && lslot < 6.5) {   // headwear: knit ribs and a folded cuff on a beanie, vents on a helmet
+        float hat = floor(vLifeTag.w / 9.0 + 0.01);
+        if (abs(hat - 2.0) < 0.5) { lc *= 0.93 + 0.07 * sin((L.z + 0.3 * L.x) * 380.0); lc *= L.y < 1.62 - 0.03 * smoothstep(0.05, -0.08, L.x) ? 0.86 : 1.0; }
+        else if (abs(hat - 3.0) < 0.5 && L.y > 1.64) lc = mix(lc, vec3(0.02), (1.0 - smoothstep(0.35, 0.55, abs(sin(L.z * 55.0)))) * smoothstep(-0.07, -0.02, L.x) * (1.0 - smoothstep(0.04, 0.07, L.x)));
+      } else if (lslot > 0.5 && lslot < 1.5) {   // tops: button-down placket, hoodie pocket, ribbed necklines and hems
+        if (abs(ts - 3.0) < 0.5 && L.x > 0.05 && L.y > 0.99 && bw < 0.006) {
+          lc = mix(lc, lc * 0.84, (1.0 - smoothstep(0.0025, 0.004, abs(L.z))) * 0.6);
+          lc = mix(lc, vec3(0.8, 0.78, 0.74), 1.0 - smoothstep(0.0026, 0.004, length(vec2(L.z, mod(L.y + 0.02, 0.09) - 0.045))));
+        }
+        if (abs(ts - 2.0) < 0.5 && L.x > 0.04) {
+          float e = max(abs(L.z) - (0.095 - (L.y - 0.975) * 0.25), max(0.975 - L.y, L.y - 1.13));
+          lc *= 1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.003, abs(e)));
+        }
+        if ((ts < 0.5 || abs(ts - 4.0) < 0.5 || abs(ts - 2.0) < 0.5) && L.y > 1.452) lc *= 0.86;
+        if (abs(ts - 4.0) < 0.5 && L.y < 1.0) lc *= 0.9 + 0.1 * step(0.5, fract((L.z + L.x) * 70.0));
+      } else if (lslot > 1.5 && lslot < 2.5 && L.x < -0.04 && vLifeTag.y > 0.0) {   // back pockets on trousers and shorts
+        float e = max(max(0.035 - abs(L.z), abs(L.z) - 0.115), max(0.875 - L.y, L.y - 0.955));
+        lc *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 0.0025, abs(e)));
+      }
+    }
+    diffuseColor.rgb *= lc * mix(1.0, vLifeMat.w, 0.45);
+  `;
+  const PEOPLE_INJ = { vHead: PEOPLE_VHEAD, call: 'lifePose(lifeP, objectNormal);', fHead: PEOPLE_FHEAD, fColor: PEOPLE_FCOLOR,
+    fEmissive: 'if (abs(vLifeMat.x - 9.0) < 0.5) totalEmissiveRadiance += vec3(0.45, 0.62, 1.0) * (0.2 + 1.6 * uLifeNight);',
+    fAfter: [['#include <roughnessmap_fragment>', 'roughnessFactor = vLifeMat.y;'], ['#include <metalnessmap_fragment>', 'metalnessFactor = vLifeMat.z;'],
+      ['#include <aomap_fragment>', 'reflectedLight.indirectDiffuse *= vLifeMat.w; reflectedLight.indirectSpecular *= vLifeMat.w;']] };
   let peopleMat = null, peopleDepth = null;
 
-  // Appearance palettes (sRGB hex). The corridor is diverse; so are the crowds.
-  const SKINS = [0xf3d2b8, 0xeac0a0, 0xe0b18e, 0xcf9d78, 0xba845e, 0x9f6a47, 0x875638, 0x6b422b, 0x52321f];
-  const HAIRS = [0x1a1512, 0x241b16, 0x33251b, 0x46301f, 0x5e4128, 0x7a4526, 0x9f7746, 0xc8a466, 0x2a2826];
-  const GREYS = [0x8e8a84, 0xb3aea6, 0xd8d3ca, 0x6d6964];
-  const TOPS = {
-    commuter: [0x1e2a44, 0x3a3f46, 0x15171a, 0xe9e6df, 0x3f5f8a, 0x4a5a3a, 0x6b2a33, 0x8a8f96, 0x2e5e6b, 0x7a5c3e, 0xb58a45],
-    office: [0xf1f1ee, 0xcfdcea, 0x9aa4ae, 0x2b3242, 0x39404a, 0xe3d9c6, 0x5a6e8c, 0x1f1f22],
-    student: [0x8c1515, 0x1f2a4a, 0x5f6368, 0x2f4a3a, 0x6a2c70, 0xdcd8cf, 0x1d1d1f, 0xb34a2a, 0x3b6ea8],
-    tourist: [0xf2c84b, 0x3fb3b0, 0xe8735a, 0xffffff, 0x7fb4e0, 0xd4467a, 0x8bc34a, 0xf0e4c8],
-    cyclist: [0xf07a1d, 0xc6e03c, 0x2b7de9, 0xe23b3b, 0x1b1b1d, 0x14a38b, 0xf5f5f5],
-    kid: [0xe53935, 0xfdd835, 0x1e88e5, 0x43a047, 0xab47bc, 0xff7043, 0x26c6da],
-    senior: [0xc9b89a, 0x8fa9c9, 0xa99ac2, 0x7d8b6f, 0xd9cfc0, 0x5c6f8a, 0x9e6b5a],
+  // Appearance palettes (sRGB hex): what people actually wear on the Peninsula, muted, with a few accents.
+  const SKINS = [0xf1d2bd, 0xe8c1a4, 0xdcae8f, 0xcb9b78, 0xb98761, 0xa0704d, 0x8a5c3d, 0x6e4631, 0x563524, 0x3f271b];
+  const HAIRS = [0x16110e, 0x1f1712, 0x2b1f17, 0x3b2a1e, 0x4d3524, 0x654630, 0x8a6a45, 0xb38f5e, 0xcfb487, 0x2a2624];
+  const GREYS = [0x8e8a84, 0xafaaa3, 0xd3cec5, 0x6f6b66, 0xe4e0d8];
+  const SHIRTS = {
+    tee: [0xefede7, 0x1c1d20, 0x9a9da2, 0x243049, 0x4d5a3a, 0x6e2a33, 0xd8cdb8, 0x3a3d42, 0x2f4a3a, 0xb58b3c, 0x7da0c2, 0xc98f86, 0x8c3a26],
+    shirt: [0xf4f2ec, 0xcfdcea, 0xe9e4d8, 0xb9c8da, 0x9aa7b8, 0xe6d7d7, 0xdfe8dd, 0x5f7896],
+    sweater: [0x3b3f45, 0x6c5a47, 0x2a3348, 0x8d8a82, 0xcfc4ad, 0x5a2d2d, 0x3f4d3a, 0xa38a6a],
   };
-  const BOTTOMS = [0x2f3f5c, 0x24314a, 0x3b4f6b, 0x1d1f23, 0x55595f, 0xb49d74, 0x6b5a45, 0x3a4a3a, 0x8a8479, 0x1b2233];
-  const SKIRTS = [0x1f2433, 0x7a2b3a, 0x3a4f7a, 0xc9b28c, 0x2f2f2f, 0x5b6e57, 0xd7a3a0];
-  const SHOES = [0xe9e6df, 0x1b1b1b, 0x5a3b26, 0x3b3f46, 0xd9d3c7, 0x8a2c2c, 0x2d4a73, 0xf2f2f2];
-  const ACCS = [0x1d1f22, 0x2b3a55, 0x4a4f55, 0x7a2626, 0x3e4d34, 0x6b5238, 0x1f5d64, 0xa0a4a8, 0xc46a2c, 0x2a2a2d];
-  const HATS = [0x1d2b44, 0x7a1f1f, 0x2d2d2d, 0xc9b27c, 0x3b5b3b, 0xe0ddd5, 0x8c1515, 0xd8c7a0];
+  const OUTERS = [0x1b1c1e, 0x1f2a40, 0x4f5638, 0xa8895c, 0x7e8084, 0x333538, 0xa37d52, 0x4d6a8c, 0x2c3f33, 0x55222a, 0xd9d2c3, 0x2b2e33, 0x6b6f55];
+  const BOTTOMS = [0x28354d, 0x2f4260, 0x3e5577, 0x6a84a6, 0x1a1b1e, 0x35373b, 0xa89272, 0x5a5c42, 0x252f45, 0x5e6166, 0xd6ccb8, 0x6b5a45];
+  const SKIRTS = [0x1a1b1e, 0x1f2433, 0x5b2330, 0x3f4d3a, 0xa7855a, 0xc79a9a, 0x2f3d58, 0x6a5a7a, 0xe3dccd];
+  const SHOES = [0xeceae6, 0x19191b, 0x5a3a24, 0x8b8f96, 0x2b3548, 0xa27c56, 0xd9d5cc, 0x3a3a3c, 0x7a2a2a];
+  const ACCS = [0x1d1f22, 0x2b3a55, 0x4a4f55, 0x6b2a26, 0x3e4d34, 0x6b5238, 0x1f5d64, 0xa0a4a8, 0xb86a2c, 0x2a2a2d, 0xc9b99a];
+  const HATS = [0x1d2b44, 0x6b1f1f, 0x2d2d2d, 0xc9b27c, 0x3b5b3b, 0xe0ddd5, 0x8c1515, 0xd8c7a0, 0x4a4f55];
+  const BRIGHT = [0xf2c84b, 0x3fb3b0, 0xe8735a, 0xf6f6f2, 0x7fb4e0, 0xd4467a, 0x8bc34a, 0xf07a1d, 0x2b7de9, 0xe23b3b];
   const KINDS = ['commuter', 'office', 'student', 'tourist', 'cyclist', 'kid', 'senior'];
   const KIND_W = [30, 18, 16, 12, 8, 8, 8];
-  const CARRY_W = {  // none, backpack, luggage, tote, phone, briefcase, bike
-    commuter: [14, 44, 0, 10, 26, 6, 0], office: [14, 22, 0, 10, 30, 24, 0], student: [8, 68, 0, 2, 22, 0, 0],
+  const CARRY_W = {  // none, backpack, luggage, shopping bag, phone, briefcase, bike
+    commuter: [14, 44, 0, 8, 28, 6, 0], office: [14, 22, 0, 8, 30, 26, 0], student: [8, 68, 0, 2, 22, 0, 0],
     tourist: [8, 30, 45, 5, 10, 2, 0], cyclist: [4, 14, 0, 0, 2, 0, 80], kid: [55, 40, 0, 0, 5, 0, 0], senior: [55, 5, 5, 30, 5, 0, 0] };
+  const TOP_W = {    // tee, open jacket, hoodie, button-down, sweater, blazer, vest
+    commuter: [22, 30, 16, 10, 14, 2, 6], office: [4, 12, 2, 36, 14, 18, 14], student: [30, 12, 40, 3, 12, 0, 3],
+    tourist: [52, 24, 14, 5, 5, 0, 0], cyclist: [62, 30, 8, 0, 0, 0, 0], kid: [55, 15, 25, 0, 5, 0, 0], senior: [10, 32, 3, 20, 30, 4, 1] };
 
   function makeLook(seed, kind) {
     const r = U.rng(seed);
     if (!kind || !CARRY_W[kind]) kind = KINDS[wpick(r, KIND_W)];
-    const kid = kind === 'kid', senior = kind === 'senior';
-    let hair = wpick(r, senior ? [18, 45, 12, 14, 5, 6] : kid ? [2, 40, 26, 8, 12, 12] : [4, 34, 28, 9, 13, 12]);
+    const kid = kind === 'kid', senior = kind === 'senior', fem = r() < 0.5;
+    // hair: 0 bald/buzz, 1 short, 2 long, 3 bun, 4 curly, 5 ponytail
+    let hair = fem ? wpick(r, [1, 14, 38, 12, 11, 24]) : wpick(r, senior ? [26, 62, 1, 6, 3, 2] : kid ? [2, 66, 6, 4, 14, 8] : [9, 64, 4, 3, 14, 6]);
     const hr = r(); let hat = 0;
     if (kind === 'cyclist') hat = hr < 0.75 ? 3 : 0;
-    else if (kind === 'tourist') hat = hr < 0.25 ? 1 : hr < 0.42 ? 4 : 0;
-    else if (senior) hat = hr < 0.16 ? 4 : hr < 0.24 ? 1 : 0;
+    else if (kind === 'tourist') hat = hr < 0.25 ? 1 : hr < 0.4 ? 4 : 0;
+    else if (senior) hat = hr < 0.14 ? 4 : hr < 0.22 ? 1 : 0;
     else hat = hr < 0.08 ? 1 : hr < 0.14 ? 2 : 0;
     if (hat && hair === 4) hair = 1;
+    if (hat && hair === 3) hair = 5;
     const carry = wpick(r, CARRY_W[kind]);
-    const bottom = wpick(r, kind === 'tourist' || kind === 'cyclist' ? [45, 42, 13] : kid ? [45, 35, 20] : [70, 8, 22]);
+    const topStyle = wpick(r, TOP_W[kind]);
+    let bottom = fem ? wpick(r, kind === 'tourist' ? [40, 34, 14, 12] : kid ? [45, 25, 20, 10] : senior ? [62, 4, 20, 14] : [54, 8, 22, 16])
+      : wpick(r, kind === 'tourist' || kind === 'cyclist' ? [45, 55, 0, 0] : kid ? [55, 45, 0, 0] : [86, 14, 0, 0]);
+    if (bottom === 3 && (topStyle === 2 || topStyle === 3)) bottom = 2;
     const hairCol = senior ? pick(r, GREYS) : (r() < 0.04 ? pick(r, [0x7a2a4a, 0x3a5a8a, 0xb8563a]) : pick(r, HAIRS));
-    const skin = pick(r, SKINS), tights = r() < 0.45 ? pick(r, [0x1c1c20, 0x262833, 0x4a3d3a]) : skin;
+    const skin = pick(r, SKINS), tights = bottom >= 2 && r() < 0.45 ? pick(r, [0x1c1c20, 0x262833, 0x4a3d3a]) : skin;
+    const bright = kind === 'tourist' || kind === 'kid' || kind === 'cyclist';
+    const shirtPal = topStyle === 3 || topStyle >= 5 ? SHIRTS.shirt : topStyle === 4 ? SHIRTS.sweater : SHIRTS.tee;
+    const top = bright && r() < 0.5 ? pick(r, BRIGHT) : pick(r, shirtPal);
+    const outer = bright && r() < 0.35 ? pick(r, BRIGHT) : pick(r, OUTERS);
+    const sleeves = topStyle === 0 ? (bright ? r() < 0.8 : r() < 0.55) : (bottom === 3 && r() < 0.5);
+    const socks = (bottom === 1 || (bottom >= 2 && tights === skin)) ? (r() < 0.6 ? 1 : r() < 0.5 ? 2 : 0) : 0;
+    const beard = !fem && !kid && r() < (senior ? 0.3 : 0.22) ? (r() < 0.45 ? 2 : 1) : 0;
+    const glasses = kid ? (r() < 0.08 ? 1 : 0) : r() < (senior ? 0.55 : 0.28) ? (r() < 0.12 ? 2 : 1) : 0;
     return {
-      kind,
-      height: kid ? lerp(0.56, 0.78, r()) : lerp(0.92, 1.07, (r() + r()) / 2),
-      girth: kid ? lerp(0.86, 1.0, r()) : lerp(0.88, 1.24, r() * r() * 0.8 + r() * 0.2),
+      kind, fem,
+      height: kid ? lerp(0.56, 0.78, r()) : (fem ? lerp(0.9, 1.0, (r() + r()) / 2) : lerp(0.96, 1.08, (r() + r()) / 2)),
+      girth: kid ? lerp(0.86, 1.0, r()) : lerp(0.88, 1.22, r() * r() * 0.8 + r() * 0.2),
       head: kid ? lerp(1.18, 1.3, r()) : 1.0,
-      sleeves: (kind === 'tourist' || kind === 'cyclist' || kid) ? (r() < 0.65 ? 1 : 0) : (r() < 0.28 ? 1 : 0),
+      sleeves: sleeves ? 1 : 0, beard, glasses,
       style: [hair, hat, carry, bottom],
-      skin, top: pick(r, TOPS[kind]), bottom: bottom === 2 ? pick(r, SKIRTS) : pick(r, BOTTOMS),
-      shoes: pick(r, SHOES), hair: hairCol, acc: pick(r, ACCS), hat: pick(r, HATS), tights,
+      style2: [topStyle, fem && !kid ? lerp(0.6, 1.0, r()) : lerp(0.0, 0.15, r()), socks],
+      skin, top, bottom: bottom >= 2 ? pick(r, SKIRTS) : pick(r, BOTTOMS),
+      shoes: pick(r, SHOES), hair: hairCol, acc: pick(r, ACCS), hat: pick(r, HATS), tights, outer,
       idle: r(),
     };
   }
@@ -407,16 +770,16 @@ const Life = (() => {
   function createPeople(max = 256, opts = {}) {
     if (!personGeo) personGeo = buildPersonGeometry();
     if (!peopleMat) {
-      peopleMat = lifeMaterial('people', new THREE.MeshStandardMaterial({ roughness: 0.82, metalness: 0.0 }), PEOPLE_INJ);
-      peopleDepth = depthMaterial('people', PEOPLE_INJ);
+      peopleMat = lifeMaterial('people2', new THREE.MeshStandardMaterial({ roughness: 0.82, metalness: 0.0 }), PEOPLE_INJ);
+      peopleDepth = depthMaterial('people2', PEOPLE_INJ);
     }
     const geo = new THREE.BufferGeometry();
     for (const k of ['position', 'normal', 'aMeta']) geo.setAttribute(k, personGeo.attributes[k]);
     geo.setIndex(personGeo.index);
     geo.boundingSphere = personGeo.boundingSphere.clone(); geo.boundingBox = personGeo.boundingBox.clone();
     const mk = (n, dyn) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(max * n), n); if (dyn) a.setUsage(THREE.DynamicDrawUsage); return a; };
-    const aAnim = mk(4, true), aBody = mk(4), aStyle = mk(4), aCol0 = mk(4), aCol1 = mk(4);
-    geo.setAttribute('aAnim', aAnim); geo.setAttribute('aBody', aBody); geo.setAttribute('aStyle', aStyle);
+    const aAnim = mk(4, true), aBody = mk(4), aStyle = mk(4), aStyle2 = mk(4), aCol0 = mk(4), aCol1 = mk(4);
+    geo.setAttribute('aAnim', aAnim); geo.setAttribute('aBody', aBody); geo.setAttribute('aStyle', aStyle); geo.setAttribute('aStyle2', aStyle2);
     geo.setAttribute('aCol0', aCol0); geo.setAttribute('aCol1', aCol1);
     const mesh = new THREE.InstancedMesh(geo, peopleMat, max);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -431,13 +794,14 @@ const Life = (() => {
       const L = makeLook(spec.seed !== undefined ? spec.seed : baseSeed + i * 131, spec.kind);
       Object.assign(L, spec.override || {});
       scale[i] = L.height;
-      aBody.setXYZW(i, L.girth, L.head, L.idle, L.sleeves);
+      aBody.setXYZW(i, L.girth, L.head, L.idle, (L.sleeves ? 1 : 0) + 2 * (L.beard | 0) + 8 * (L.glasses | 0));
       aStyle.setXYZW(i, L.style[0], L.style[1], L.style[2], L.style[3]);
+      aStyle2.setXYZW(i, L.style2[0], L.outer, L.style2[1], L.style2[2]);
       aCol0.setXYZW(i, L.skin, L.top, L.bottom, L.shoes);
       aCol1.setXYZW(i, L.hair, L.acc, L.hat, L.tights);
       aAnim.setZ(i, L.idle * TAU * 7.0);
       aAnim.setW(i, 0.95 / Math.sqrt(L.height));
-      aBody.needsUpdate = aStyle.needsUpdate = aCol0.needsUpdate = aCol1.needsUpdate = true; animDirty = true;
+      aBody.needsUpdate = aStyle.needsUpdate = aStyle2.needsUpdate = aCol0.needsUpdate = aCol1.needsUpdate = true; animDirty = true;
       return L;
     }
     for (let i = 0; i < max; i++) look(i);
@@ -462,8 +826,8 @@ const Life = (() => {
         if (i >= mesh.count) mesh.count = i + 1;
         dirty = true; animDirty = true;
       },
-      // Seat person i given the eye position of a seated passenger (e.g. TrainKit car.seats[k]):
-      // the hips land on a seat surface 0.46 m above the implied floor whatever the person's height.
+      // Seat person i given the eye position of a seated passenger (e.g. TrainKit car.seats[k]): the hips land
+      // on a seat surface 0.46 m above the implied floor whatever the person's height (the cushion gives a little).
       sitAtEye(i, ex, ey, ez, yaw = 0) {
         const s = scale[i]; const fx = Math.cos(yaw), fz = -Math.sin(yaw);
         this.set(i, ex - fx * 0.066 * s, ey - 0.718 - 0.46 * s, ez - fz * 0.066 * s, yaw, 2);
@@ -1665,5 +2029,5 @@ const Life = (() => {
   }
 
   return { createPeople, createTraffic, createAirTraffic, createTrees, createBirds, makeLook, RUNWAYS, stats,
-    TREE_KINDS: Object.keys(TREE_BUILDERS), PERSON: { standEye: 1.61, sitEye: 1.18, seatHeight: 0.46, height: 1.72 } };
+    TREE_KINDS: Object.keys(TREE_BUILDERS), PERSON: { standEye: 1.61, sitEye: 1.22, seatHeight: 0.46, height: 1.72 } };
 })();

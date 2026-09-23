@@ -8,6 +8,7 @@ This module fills the world with people, road traffic, SFO/SJC air traffic, tree
 |---|---|
 | `#show=people` | Platform crowd |
 | `#show=people&close=1` | Seated passengers seen from about 1 m |
+| `#show=people&lineup=1` | A row of people facing the camera, for close-ups. Extra keys: `n`, `mode=0\|1\|2` (stand, walk in place, sit), `kinds=commuter,office,…`, `seed=` or `seeds=77,79`, `yaw=` (1.5708 faces the camera), `sp=` (spacing, m). Aim with `cam=-1.5708,0.02,2.4&target=0,1.95,0` for 2.4 m, or `…,1.3&target=-0.5,2.4,0` for faces. |
 | `#show=traffic` | Road traffic |
 | `#show=air` | Planespotting at Coyote Point. It auto-seeks to the moment an arrival passes. |
 | `#show=air&follow=N` | Chase aircraft N |
@@ -52,24 +53,36 @@ Draws one InstancedMesh (plus its shadow pass), with one skinned-looking pose pe
   - `speed`: walking speed in m/s (default about 1.35). It sets the gait frequency, so feet do not skate.
   - `phase`: optional gait phase offset.
   - `count` grows automatically to cover `i`.
-- **`people.sitAtEye(i, ex, ey, ez, yaw)`**: seats person i from a seated-eye position, such as `car.seats[k]`. The hips land on a 0.46 m seat over the implied floor, whatever the person's height.
+- **`people.sitAtEye(i, ex, ey, ez, yaw)`**: seats person i from a seated-eye position, such as `car.seats[k]`. The seat is 0.46 m over the implied floor, whatever the person's height; the hip joint sits 4 cm above it (the cushion gives) and the shins angle forward until the feet reach the floor (short people and kids dangle).
 - **`people.look(i, { kind, seed, override })`**: re-rolls one person's appearance.
   - Kinds: `commuter`, `office`, `student`, `tourist`, `cyclist`, `kid`, `senior`.
   - Each person is seeded by default.
   - The variety comes from:
-    - skin tones;
-    - five hair styles and four headwear types;
-    - carry items: backpack, rolling luggage, tote, phone (its screen glows at night), briefcase, bike being walked;
-    - pants, shorts or skirts (with tights or bare legs);
-    - girth, height, kids' head proportions and short sleeves.
+    - ten skin tones, beards (stubble or full), glasses or sunglasses;
+    - hair: buzz, short, shoulder-length, bun, curly, ponytail; greys for seniors;
+    - headwear: ball cap, beanie (knit ribs, folded cuff), cycling helmet (vents), sun hat;
+    - tops: tee, open jacket, hoodie (hood, drawstrings, pocket), tucked button-down (collar, placket, buttons), sweater (ribbed hem), blazer or vest (V front over a shirt);
+    - bottoms: straight-leg trousers (belt, back pockets), shorts, A-line skirts and dresses (tights or bare legs, ankle or crew socks);
+    - carry items: backpack, rolling luggage, shopping bag, phone (its screen glows at night), briefcase, bike being walked;
+    - height, girth (with a belly), figure (waist, hips, bust), kids' head proportions and short sleeves.
 - **Other members:**
   - `people.hide(i)`
   - `people.count` (get and set)
   - `people.heightOf(i)`
   - `people.max`
 - **`people.update(dt)`**: call it every frame. It blends mode changes and refits the culling sphere after moves.
-- **Seated hands:** seated people rest their forearms on their laps. Backpacks and briefcases are hidden while seated; rolling luggage stays beside them.
-- **Constants:** `Life.PERSON = { standEye 1.61, sitEye 1.18, seatHeight 0.46, height 1.72 }`. `Life.makeLook(seed, kind)` is exported.
+- **Seated hands:** seated people rest their forearms on their laps, palms down. Bags, luggage and bikes are stowed while seated; phones stay out.
+- **Constants:** `Life.PERSON = { standEye 1.61, sitEye 1.22, seatHeight 0.46, height 1.72 }`. `Life.makeLook(seed, kind)` is exported; a look also carries `fem`, `beard`, `glasses`, `outer` and `style2 = [top style, figure, socks]`, and any of them can be forced through `look(i, { override })`.
+
+#### How the people are built (v2)
+
+- **One super geometry, one draw call (plus the shadow pass).** Every person is the same indexed mesh holding all variants; the vertex shader poses it and collapses hidden variants to a point before doing any posing work. Hair and headwear each share one skull shell that the shader reshapes: curly hair puffs the hair cap out, a helmet thickens and lengthens the hat shell, a beanie loosens it.
+- **Anatomy:** lofted from superelliptic cross-section tables (`HEAD_T`, `TORSO_T`, `PELVIS_T`, `THIGH_T`, `SHIN_T`, `SHOE_T`, `UARM_T`, `FARM_T`, `HAND_T` at the top of the PEOPLE section, scale 1 = 1.72 m), about 7.5 heads tall, with smooth normals: a jaw and chin, brow and eye sockets, a nose, ears, a deltoid, calves, knee caps, tapered forearms, curled hands with thumbs, shoes with a heel, toe spring and a sole line. The skeleton is unchanged: hip (0, .9, 0), knee (0, .47, 0), ankle (0, .085, ±.093), shoulder (0, 1.4, ±.195), elbow (0, 1.12, ±.205), neck (0, 1.47, 0).
+- **Attributes:** `aMeta` is (part, slot, style flag, occlusion + 2 × lod). Per instance: `aAnim`, `aBody` (girth, head scale, idle seed, short sleeves + 2 × beard + 8 × glasses), `aStyle` (hair, headwear, carry, bottom), `aStyle2` (top style, outer colour, figure, socks), `aCol0`, `aCol1`.
+- **Painting instead of triangles:** eyes (white, iris, lid line), brows, lips, beards, glasses, sole bands, socks, belts, short sleeves, shorts hems, open jacket and blazer fronts with the shirt showing, plackets and buttons, hoodie pocket seams, knit ribs, back pockets, helmet vents and fingers are painted per fragment from the unposed model position. Details are skipped where a pixel is wider than about 1 cm, so small people cost little.
+- **Shading:** `MeshStandardMaterial` with per-slot roughness (skin 0.52, hair 0.45, fabrics 0.6–0.9, hard-shell luggage and helmets 0.3, metal) and baked crease occlusion that darkens indirect light at the crotch, armpits and under the chin.
+- **Motion:** the walk keeps the stance foot flat and on the ground (the pelvis dips at each heel strike), the swing foot toes down after push-off, the forward arm bends more; standing people shift their weight slowly from leg to leg (the free knee relaxes, the pelvis tilts), breathe, look around and tilt their heads; seated people rest their hands palms down; phone users look down at a lit screen.
+- **Level of detail:** tiny details (nose, ears, thumbs, drawstrings, shirt collar, backpack straps and pocket, bag handles) are drawn only within about 26 m and never in the shadow pass. A full coarse-body LOD was built and measured, then removed: with one InstancedMesh, hidden geometry costs about as much as visible geometry, so the extra body made crowds slower, not faster.
 
 ### Trees
 
@@ -177,7 +190,7 @@ Measured in `preview/life.html#show=all&n=600&density=20` with the real GPU on a
 
 | Model | Triangles |
 |---|---|
-| Person (all variants packed) | 1,986. About 1,000 body, about 1,100–1,250 visible per person; hidden variants collapse to degenerate triangles. |
+| Person (all variants packed) | 3,384 (2,101 vertices). Body 1,786; visible per person about 2,050–2,370 (tee, short hair and backpack 2,104; blazer and briefcase 2,064; hoodie, long hair and backpack 2,370). Hidden variants collapse to degenerate triangles. v1 was 1,986 packed, about 1,100–1,250 visible. |
 | Oak (near / far) | 672 / 28 |
 | Redwood | 777 / 45 |
 | Eucalyptus | 932 / 28 |
@@ -235,7 +248,10 @@ Measured in `preview/life.html#show=all&n=600&density=20` with the real GPU on a
   - Vehicles scale in and out at dead-end polylines.
 - **Aircraft:** they appear by scaling up at the runway hold point and vanish on the taxiway or about 25 km out. There are no ground ops at the gates.
 - **People:**
-  - The triangle count reported by `renderer.info` includes hidden variant geometry (about 2k per instance).
+  - The triangle count reported by `renderer.info` includes hidden variant geometry (3,384 per instance).
+  - **Cost of the v2 people:** 200 people on the preview platform at 1920×1080 on the M2 cost about 3.5–4.8 ms of GPU per frame against 1.7–2.4 ms for v1, so roughly 2 ms more (the best of interleaved runs; the GPU was shared with other build agents, so single runs varied by ±50%). At 480×270 it was 3.6 vs 1.9 ms, so most of the cost is per vertex and per submitted triangle, not per pixel. `preview/life.html#show=people&n=200` is the benchmark scene.
+  - Rigid limbs meet at the elbows, knees and the shirt hem, so up close (under about 1.5 m) you can see small jagged seams where two parts cross.
+  - In `onboard` mode the camera can sit about 20 cm from a neighbour's head, where the low-poly ear and hair shells show.
   - People do not avoid each other; pathing is the engine's job.
   - A change of `speed` shifts the gait phase slightly.
 - **Birds:** they do not cast shadows or avoid anything.
