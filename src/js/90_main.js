@@ -83,6 +83,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => start(b.dataset.go)));
   if (hash.has('auto')) { start('explore'); } else title.hidden = false;
+  if (['auto', 'clear', 'fog', 'cloudy', 'haze'].includes(hash.get('w')) && Env.state) { Env.state.weather = hash.get('w'); wxc.forEach(c => c.classList.toggle('on', c.dataset.w === hash.get('w'))); }   // #w=fog etc.
   if (hash.get('at')) { const st = Track.byId[hash.get('at')]; if (st) Player.teleportToStation(Stations.list[st.idx], +(hash.get('dir') || 1)); }
   if (hash.get('cam')) { const m = hash.get('cam'); const atSt = Track.byId[hash.get('at')]; if (m === 'orbit' && atSt) { const st = Stations.list[atSt.idx]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: +(hash.get('dist') || 300) }); } else Player.setMode(m); }
   if (hash.get('s')) { const f = {}; Track.frame(+hash.get('s'), f); Player.setMode('orbit', { target: { x: f.x, y: f.y, z: f.z }, dist: +(hash.get('dist') || 120) }); if (hash.get('yaw')) Player.orbit.yaw = +hash.get('yaw'); if (hash.get('pitch')) Player.orbit.pitch = +hash.get('pitch'); }
