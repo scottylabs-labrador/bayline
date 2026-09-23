@@ -69,8 +69,12 @@ in parallel, on demand, around the camera, from `/data/v2/` on the same host.
 - **Life on the Bay:** sailboats off Crissy Field and Coyote Point, ferries from the Ferry Building, container
   ships under the Golden Gate, and planes landing at SFO and SJC, all derived from the clock like the trains.
 - **People and traffic:** passengers with modelled faces, clothes, hair and luggage, walking, waiting and
-  sitting; cars with lofted bodies near the camera and light models beyond (quality tiers also shrink the
-  building radius on slower GPUs).
+  sitting; platform crowds sized by each station's typical weekday boardings (4th & King fills up at the
+  peaks), drawn with a clustered far body beyond 40 m; cars with lofted bodies near the camera and light
+  models beyond, curbside parking on neighbourhood streets, and per-instance view culling (quality tiers also
+  shrink the building radius on slower GPUs).
+- **Sky:** the summer evening fog pours through the Golden Gate as a low river the bridge towers stand out
+  of; the moon is a 0.52 deg sphere lit by the real sun direction, so its phase matches the date.
 - **Railway:** the real timetable, PTC braking-curve supervision, signals driven by train occupancy,
   and working crossing gates.
 
