@@ -768,6 +768,112 @@ const Life = (() => {
     };
   }
 
+  // Far LOD body: the full person geometry vertex-clustered on a coarse grid, separately for every (part, slot,
+  // variant) so the animation and garment logic in the shader stay intact; the near-only details are dropped.
+  let personGeoFar = null;
+  function clusterPerson(g, cell) {
+    const P = g.attributes.position, N = g.attributes.normal, M = g.attributes.aMeta, I = g.index.array;
+    const map = new Map(), pos = [], nor = [], meta = [], cnt = [], remap = new Int32Array(P.count).fill(-1);
+    for (let i = 0; i < P.count; i++) {
+      if (M.getW(i) >= 1.5) continue;                                     // w = ao + 2 * lod
+      const x = P.getX(i), y = P.getY(i), z = P.getZ(i);
+      const key = Math.floor(x / cell) + ',' + Math.floor(y / cell) + ',' + Math.floor(z / cell) + ',' + M.getX(i) + ',' + M.getY(i) + ',' + M.getZ(i);
+      let c = map.get(key);
+      if (c === undefined) { c = cnt.length; map.set(key, c); pos.push(0, 0, 0); nor.push(0, 0, 0); meta.push(M.getX(i), M.getY(i), M.getZ(i), 0); cnt.push(0); }
+      pos[c * 3] += x; pos[c * 3 + 1] += y; pos[c * 3 + 2] += z; nor[c * 3] += N.getX(i); nor[c * 3 + 1] += N.getY(i); nor[c * 3 + 2] += N.getZ(i);
+      meta[c * 4 + 3] += M.getW(i); cnt[c]++; remap[i] = c;
+    }
+    for (let c = 0; c < cnt.length; c++) {
+      pos[c * 3] /= cnt[c]; pos[c * 3 + 1] /= cnt[c]; pos[c * 3 + 2] /= cnt[c]; meta[c * 4 + 3] /= cnt[c];
+      const l = Math.hypot(nor[c * 3], nor[c * 3 + 1], nor[c * 3 + 2]) || 1; nor[c * 3] /= l; nor[c * 3 + 1] /= l; nor[c * 3 + 2] /= l;
+    }
+    const idx = [], seen = new Set();
+    for (let t = 0; t < I.length; t += 3) {
+      const a = remap[I[t]], b = remap[I[t + 1]], c = remap[I[t + 2]];
+      if (a < 0 || b < 0 || c < 0 || a === b || b === c || a === c) continue;
+      const k = a < b ? (a < c ? a + ',' + (b < c ? b + ',' + c : c + ',' + b) : c + ',' + a + ',' + b) : (b < c ? b + ',' + (a < c ? a + ',' + c : c + ',' + a) : c + ',' + b + ',' + a);
+      if (seen.has(k)) continue; seen.add(k); idx.push(a, b, c);
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    out.setAttribute('aMeta', new THREE.Float32BufferAttribute(meta, 4)); out.setIndex(idx);
+    out.computeBoundingSphere(); out.computeBoundingBox();
+    return out;
+  }
+  const PEOPLE_FAR_D = 40;         // metres: beyond this a person is drawn with the clustered body
+  // LOD crowd (opts.lod): the canonical per-person data lives in the standard (never drawn) mesh; every update() packs
+  // the people within PEOPLE_FAR_D of the camera into a full-detail mesh and the rest into a clustered-body mesh, so
+  // a distant crowd costs a fraction of the vertices. Same API; mesh is a Group holding both.
+  function peopleLod(max, opts, C) {
+    if (!personGeoFar) personGeoFar = clusterPerson(personGeo, 0.06);
+    const src = C.mesh; let count = 0;
+    const NAMES = ['aAnim', 'aBody', 'aStyle', 'aStyle2', 'aCol0', 'aCol1'];
+    const mkR = (g0, name) => {
+      const geo = new THREE.BufferGeometry();
+      for (const k of ['position', 'normal', 'aMeta']) geo.setAttribute(k, g0.attributes[k]);
+      geo.setIndex(g0.index); geo.boundingSphere = g0.boundingSphere.clone(); geo.boundingBox = g0.boundingBox.clone();
+      const at = {}; for (const n of NAMES) { at[n] = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4); at[n].setUsage(THREE.DynamicDrawUsage); geo.setAttribute(n, at[n]); }
+      const m = new THREE.InstancedMesh(geo, peopleMat, max); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.customDepthMaterial = peopleDepth; m.castShadow = true; m.receiveShadow = true; m.count = 0; m.name = name;
+      return { m, at };
+    };
+    const near = mkR(personGeo, 'people'), far = mkR(personGeoFar, 'people-far');
+    const group = new THREE.Group(); group.name = 'people-lod'; group.add(near.m, far.m);
+    const srcAt = { aAnim: C.aAnim, aBody: C.aBody, aStyle: C.aStyle, aStyle2: C.aStyle2, aCol0: C.aCol0, aCol1: C.aCol1 };
+    const hidden = new Uint8Array(max), inv = new THREE.Matrix4(), cam = new V3();
+    function pack() {
+      let cx = 1e9, cz = 1e9, cy = 0;
+      if (typeof Env !== 'undefined' && Env.camera) { group.updateMatrixWorld(); inv.copy(group.matrixWorld).invert(); cam.copy(Env.camera.position).applyMatrix4(inv); cx = cam.x; cy = cam.y; cz = cam.z; }
+      const S = src.instanceMatrix.array; let nn = 0, nf = 0; const fd2 = PEOPLE_FAR_D * PEOPLE_FAR_D;
+      for (let i = 0; i < count; i++) {
+        if (hidden[i]) continue;
+        const x = S[i * 16 + 12], y = S[i * 16 + 13], z = S[i * 16 + 14];
+        const R = (x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2 > fd2 ? far : near, k = R === far ? nf++ : nn++;
+        R.m.instanceMatrix.array.set(S.subarray(i * 16, i * 16 + 16), k * 16);
+        for (const n of NAMES) R.at[n].array.set(srcAt[n].array.subarray(i * 4, i * 4 + 4), k * 4);
+      }
+      for (const [R, c] of [[near, nn], [far, nf]]) {
+        R.m.count = c; R.m.instanceMatrix.needsUpdate = true; for (const n of NAMES) R.at[n].needsUpdate = true;
+        if (c) { R.m.computeBoundingSphere(); R.m.boundingSphere.radius += 1.5; }
+      }
+    }
+    const people = {
+      mesh: group, max,
+      get count() { return count; },
+      set count(n) { count = clamp(n | 0, 0, max); src.count = count; },
+      set(i, x, y, z, yaw = 0, mode = 0, phase, speed) {
+        if (i < 0 || i >= max) return;
+        const s = C.scale[i];
+        _q.setFromAxisAngle(_up, yaw); _s.set(s, s, s); _v.set(x, y, z); _m.compose(_v, _q, _s); src.setMatrixAt(i, _m);
+        const w = mode === 1 ? 1 : 0, st = mode === 2 ? 1 : 0;
+        C.target[i * 2] = w; C.target[i * 2 + 1] = st;
+        if (!C.known[i]) { C.cur[i * 2] = w; C.cur[i * 2 + 1] = st; C.aAnim.setX(i, w); C.aAnim.setY(i, st); C.known[i] = 1; }
+        if (phase !== undefined && phase !== null) C.aAnim.setZ(i, phase);
+        if (speed !== undefined && speed !== null) C.aAnim.setW(i, 0.95 * clamp(speed / 1.35, 0.3, 2.2) / Math.sqrt(s));
+        hidden[i] = 0; if (i >= count) this.count = i + 1;
+      },
+      sitAtEye(i, ex, ey, ez, yaw = 0) {
+        const s = C.scale[i]; const fx = Math.cos(yaw), fz = -Math.sin(yaw);
+        this.set(i, ex - fx * 0.066 * s, ey - 0.718 - 0.46 * s, ez - fz * 0.066 * s, yaw, 2);
+      },
+      heightOf(i) { return C.scale[i]; },
+      look: C.look,
+      hide(i) { if (i >= 0 && i < max) { hidden[i] = 1; pack(); } },
+      update(dt = 1 / 60) {
+        const k = Math.min(1, dt * 4);
+        for (let i = 0; i < count; i++) {
+          const a = C.cur[i * 2], b = C.cur[i * 2 + 1], ta = C.target[i * 2], tb = C.target[i * 2 + 1];
+          if (a !== ta || b !== tb) {
+            let na = a + (ta - a) * k, nb = b + (tb - b) * k;
+            if (Math.abs(na - ta) < 0.01) na = ta; if (Math.abs(nb - tb) < 0.01) nb = tb;
+            C.cur[i * 2] = na; C.cur[i * 2 + 1] = nb; C.aAnim.setX(i, na); C.aAnim.setY(i, nb);
+          }
+        }
+        pack();
+      },
+    };
+    return people;
+  }
   function createPeople(max = 256, opts = {}) {
     if (!personGeo) personGeo = buildPersonGeometry();
     if (!peopleMat) {
@@ -807,6 +913,7 @@ const Life = (() => {
     }
     for (let i = 0; i < max; i++) look(i);
 
+    if (opts.lod) return peopleLod(max, opts, { mesh, aAnim, aBody, aStyle, aStyle2, aCol0, aCol1, scale, target, cur, known, look });
     const people = {
       mesh, max,
       get count() { return mesh.count; },

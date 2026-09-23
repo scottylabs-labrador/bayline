@@ -802,7 +802,7 @@ const Stations = (() => {
     san_mateo: 0.27, hayward_park: 0.04, hillsdale: 0.22, belmont: 0.08, san_carlos: 0.13, redwood_city: 0.31, menlo_park: 0.13, palo_alto: 0.6, stanford: 0.01,
     california_ave: 0.1, san_antonio: 0.085, mountain_view: 0.38, sunnyvale: 0.29, lawrence: 0.08, santa_clara: 0.13, college_park: 0.01, sj_diridon: 0.34,
     tamien: 0.05, capitol: 0.01, blossom_hill: 0.012, morgan_hill: 0.015, san_martin: 0.004, gilroy: 0.015 };
-  function setupCrowd() { if (typeof Life === 'undefined' || !Life.createPeople) return; try { people = Life.createPeople(220); Env.scene.add(people.mesh); people.count = 0; } catch (e) { console.warn('people', e); people = null; } }
+  function setupCrowd() { if (typeof Life === 'undefined' || !Life.createPeople) return; try { people = Life.createPeople(220, { lod: true }); Env.scene.add(people.mesh); people.count = 0; } catch (e) { console.warn('people', e); people = null; } }
   function blocked(p, s, lat) {
     const [li, lo] = platLat(p, s); const sg = Math.sign(lo - li) || 1; const ed = (lat - li) * sg;
     if (p.hole && s > p.hole.s0 - 0.8 && s < p.hole.s1 + 0.8 && ed > p.hole.ed0 - 0.6 && ed < p.hole.ed1 + 0.6) return true;
