@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bayline · Net preview</title>
+<style>
+  :root { color-scheme: dark; --bg: #0f1418; --panel: #182127; --ink: #e8eef2; --dim: #8fa1ad; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 12px 16px; background: var(--panel); display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  #st { font-weight: 600; } #me { color: var(--dim); } canvas { display: block; width: 100vw; height: calc(100vh - 48px); }
+</style>
+</head>
+<body>
+<header><span id="st">…</span><span id="me"></span><span id="list" style="color:var(--dim)"></span></header>
+<canvas id="c"></canvas>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/00_util.js"></script>
+<script src="../src/js/01_geo.js"></script>
+<script src="../src/js/80_net.js"></script>
+<script>
+// Preview: connects to a relay, optionally drives a "bot" train down the corridor, and draws everyone.
+//   net.html?ws=ws://127.0.0.1:8765/ws&bot=1&seed=3
+const q = new URLSearchParams(location.search);
+const STN = [['4th & King', 37.7764, -122.3949], ['Millbrae', 37.5999, -122.3868], ['San Mateo', 37.5682, -122.3239],
+  ['Redwood City', 37.4859, -122.2315], ['Palo Alto', 37.4432, -122.1643], ['Mountain View', 37.3951, -122.0772],
+  ['Sunnyvale', 37.3789, -122.0315], ['San Jose Diridon', 37.3297, -121.9032], ['Tamien', 37.3127, -121.8847],
+  ['Morgan Hill', 37.1296, -121.6506], ['Gilroy', 37.0045, -121.5667]].map(([n, la, lo]) => ({ n, ...Geo.ll2w(la, lo) }));
+const seg = []; let total = 0;
+for (let i = 0; i < STN.length - 1; i++) { const a = STN[i], b = STN[i + 1], L = Math.hypot(b.x - a.x, b.z - a.z); seg.push({ a, b, L, s0: total }); total += L; }
+function at(s) { s = ((s % total) + total) % total; const g = seg.find(g => s <= g.s0 + g.L) || seg[seg.length - 1];
+  const t = (s - g.s0) / g.L; return { x: g.a.x + (g.b.x - g.a.x) * t, z: g.a.z + (g.b.z - g.a.z) * t, yaw: Math.atan2(g.b.x - g.a.x, g.b.z - g.a.z) }; }
+const cvs = document.getElementById('c'), ctx = cvs.getContext('2d');
+let W, H; function size() { W = cvs.width = innerWidth * devicePixelRatio; H = cvs.height = (innerHeight - 48) * devicePixelRatio; } size(); onresize = size;
+const minX = -32000, maxX = 52000, minZ = -46000, maxZ = 48000;
+const P = (x, z) => { const k = Math.min(W / (maxX - minX), H / (maxZ - minZ)) * 0.92; return [W / 2 + (x - (minX + maxX) / 2) * k, H / 2 + (z - (minZ + maxZ) / 2) * k]; };
+
+const bot = q.get('bot') === '1', seed = +(q.get('seed') || 1);
+let s = (seed * 21737) % total, speed = 28 + (seed % 5) * 3;
+Net.onStatus(st => { document.getElementById('st').textContent = st.text + (st.ping ? ` · ${st.ping} ms` : ''); });
+Net.connect(q.get('ws') || undefined);
+window.__netTest = { status: () => ({ ...Net.status }), others: () => Net.others().map(o => ({ id: o.id, name: o.name, mode: o.modeName, s: Math.round(o.s) })) };
+
+let last = performance.now();
+function frame(t) {
+  const dt = Math.min(0.1, (t - last) / 1000); last = t;
+  if (bot) { s += speed * dt * 20; const p = at(s); Net.setState({ mode: 'drive', trip: '', s, car: 0, x: p.x, y: 10, z: p.z, yaw: p.yaw, speed }); }
+  ctx.fillStyle = '#0f1418'; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#3a4a55'; ctx.lineWidth = 4 * devicePixelRatio; ctx.beginPath();
+  STN.forEach((p, i) => { const [x, y] = P(p.x, p.z); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+  ctx.fillStyle = '#8fa1ad'; ctx.font = `${12 * devicePixelRatio}px sans-serif`;
+  STN.forEach(p => { const [x, y] = P(p.x, p.z); ctx.fillRect(x - 3, y - 3, 6, 6); ctx.fillText(p.n, x + 8 * devicePixelRatio, y + 4); });
+  const dot = (x, z, color, label) => { const [px, py] = P(x, z); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px, py, 7 * devicePixelRatio, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8eef2'; ctx.font = `600 ${13 * devicePixelRatio}px sans-serif`; ctx.fillText(label, px + 10 * devicePixelRatio, py - 8 * devicePixelRatio); };
+  for (const o of Net.others()) dot(o.x, o.z, o.color, o.name);
+  if (bot && Net.status.id) { const p = at(s); dot(p.x, p.z, Net.status.color, Net.status.name + ' (you)'); }
+  document.getElementById('me').textContent = Net.status.id ? `You: ${Net.status.name}` : '';
+  document.getElementById('list').textContent = Net.others().length ? `Also here: ${Net.others().map(o => o.name).join(', ')}` : '';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bayline · Life preview</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc6e6; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 12px; top: 10px; font: 12px/1.45 ui-monospace, Menlo, monospace; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7); pointer-events: none; white-space: pre; }
+  #nav { position: fixed; right: 12px; top: 10px; font: 12px/1.4 system-ui, sans-serif; }
+  #nav a { color: #fff; margin-left: 10px; text-decoration: none; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+  #nav a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<div id="nav">
+  <a href="#show=people">people</a><a href="#show=people&close=1">seats</a><a href="#show=traffic">traffic</a><a href="#show=air">air</a>
+  <a href="#show=air&follow=0">follow plane</a><a href="#show=trees">trees</a><a href="#show=birds">birds</a><a href="#show=all">all</a>
+  <a href="#show=all&night=1">night</a>
+</div>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/00_util.js"></script>
+<script src="../src/js/01_geo.js"></script>
+<script src="../src/js/60_life.js"></script>
+<script>
+(() => {
+  // ---------------------------------------------------------------- parameters (#show=people|traffic|air|trees|birds|all&night=1&t=61200&speed=1)
+  const P = {};
+  for (const kv of location.hash.slice(1).split('&')) if (kv) { const [k, v] = kv.split('='); P[k] = v === undefined ? '1' : decodeURIComponent(v); }
+  addEventListener('hashchange', () => location.reload());
+  const SHOW = P.show || 'all', NIGHT = +(P.night || 0), SPEED = +(P.speed || 1), CLOSE = SHOW === 'people' && !!+P.close;
+  const has = k => SHOW === 'all' || SHOW.split(',').includes(k);
+  let simT = P.t !== undefined ? +P.t : (NIGHT ? 21.4 * 3600 : 17.2 * 3600);
+  const V3 = THREE.Vector3;
+
+  // ---------------------------------------------------------------- renderer (same settings as the engine)
+  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = NIGHT ? 1.35 : 0.92;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(CLOSE ? 62 : 50, innerWidth / innerHeight, 0.05, 120000);
+  U.uNight.value = NIGHT; U.uWind.value = P.wind !== undefined ? +P.wind : 0.35;
+
+  // ---------------------------------------------------------------- sky, environment, fog, lights
+  const SKY = NIGHT ? { top: 0x08122a, hor: 0x2b3656, bot: 0x07080a, fog: 0x1b2440 } : { top: 0x3f86cf, hor: 0xdbe8f0, bot: 0x8a7d66, fog: 0xc8dae6 };
+  function skyGeo(radius) {
+    const g = new THREE.SphereGeometry(radius, 48, 24), p = g.attributes.position, col = new Float32Array(p.count * 3);
+    const top = new THREE.Color(SKY.top), hor = new THREE.Color(SKY.hor), bot = new THREE.Color(SKY.bot), c = new THREE.Color();
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i) / radius;
+      if (y >= 0) c.copy(hor).lerp(top, Math.pow(y, 0.5)); else c.copy(hor).lerp(bot, Math.min(1, -y * 5)); col.set([c.r, c.g, c.b], i * 3); }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3)); return g;
+  }
+  const sky = new THREE.Mesh(skyGeo(90000), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false, toneMapped: false }));
+  sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
+  const SUN_DIR = new V3(-0.62, 0.5, 0.6).normalize();       // late-afternoon sun from the south-west
+  {
+    const es = new THREE.Scene(); es.add(new THREE.Mesh(skyGeo(100), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    if (!NIGHT) { const s = new THREE.Mesh(new THREE.SphereGeometry(6, 16, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 0.9, 0.75).multiplyScalar(25) })); s.position.copy(SUN_DIR).multiplyScalar(80); es.add(s); }
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02).texture; pm.dispose();
+  }
+  scene.fog = new THREE.Fog(SKY.fog, NIGHT ? 900 : 2500, NIGHT ? 22000 : 60000);
+  const hemi = new THREE.HemisphereLight(NIGHT ? 0x3b4d78 : 0xd8e6f4, NIGHT ? 0x14110d : 0x7c6a48, NIGHT ? 0.3 : 1.05);
+  const sun = new THREE.DirectionalLight(NIGHT ? 0x9bb2e0 : 0xffe2bd, NIGHT ? 0.28 : 3.4);
+  sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.04;
+  scene.add(hemi, sun, sun.target);
+  const setShadowBox = r => { const S = sun.shadow.camera; S.left = S.bottom = -r; S.right = S.top = r; S.near = 1; S.far = r * 8; S.updateProjectionMatrix(); };
+  setShadowBox(CLOSE ? 8 : 45);
+
+  // ---------------------------------------------------------------- local frame: the demo world sits at Millbrae station (real world coords)
+  const O = Geo.ll2w(37.5999, -122.38675);
+  const ORIGIN = new V3(Math.round(O.x), 0, Math.round(O.z));
+  const local = new THREE.Group(); local.position.copy(ORIGIN); scene.add(local);
+  const W = (x, y, z) => new V3(ORIGIN.x + x, y, ORIGIN.z + z);   // local -> world
+
+  // ---------------------------------------------------------------- procedural textures
+  function speckle(base, n, cols, w = 256, h = 256, extra) {
+    return U.canvasTexture(w, h, (ctx) => {
+      ctx.fillStyle = base; ctx.fillRect(0, 0, w, h); const r = U.rng(n);
+      for (let i = 0; i < n; i++) { ctx.fillStyle = cols[i % cols.length]; ctx.globalAlpha = 0.25 + 0.5 * r(); const s = 1 + r() * 2.5; ctx.fillRect(r() * w, r() * h, s, s); }
+      ctx.globalAlpha = 1; if (extra) extra(ctx, w, h);
+    }, { repeat: true });
+  }
+  const T = {
+    grass: speckle('#8e8a4c', 5000, ['#7a7a3e', '#a39a58', '#6f7438', '#b5a765']),
+    gold: speckle('#c2a25e', 5000, ['#b09050', '#d0b270', '#a58a4c']),
+    concrete: speckle('#b9b4aa', 3000, ['#a8a399', '#c6c1b7', '#9d988e'], 256, 256, (ctx, w, h) => { ctx.strokeStyle = 'rgba(70,65,60,0.35)'; ctx.lineWidth = 2; for (const t of [0, 128]) { ctx.beginPath(); ctx.moveTo(t, 0); ctx.lineTo(t, h); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, t); ctx.lineTo(w, t); ctx.stroke(); } }),
+    gravel: speckle('#7c756b', 7000, ['#5f5a53', '#948c80', '#6e675e', '#a39b90']),
+    asphalt: speckle('#3b3c3f', 6000, ['#303134', '#47484b', '#2a2b2d']),
+  };
+  T.grass.repeat.set(1, 1);
+  const mat = (o) => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.9, metalness: 0 }, o));
+  function plane(w, d, m, x, y, z, rep) { const g = new THREE.PlaneGeometry(w, d); g.rotateX(-Math.PI / 2); if (rep) { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w / rep, uv.getY(i) * d / rep); }
+    const me = new THREE.Mesh(g, m); me.position.set(x, y, z); me.receiveShadow = true; return me; }
+  function boxm(w, h, d, m, x, y, z, cast = true) { const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); me.position.set(x, y, z); me.castShadow = cast; me.receiveShadow = true; return me; }
+
+  // ---------------------------------------------------------------- land, water, runways (context only; the real terrain is the engine's)
+  {
+    const shore = [[37.720, -122.392], [37.690, -122.388], [37.664, -122.380], [37.648, -122.388], [37.636, -122.384], [37.630, -122.358], [37.618, -122.350],
+      [37.606, -122.352], [37.602, -122.366], [37.596, -122.352], [37.592, -122.336], [37.588, -122.318], [37.578, -122.307], [37.566, -122.290],
+      [37.556, -122.270], [37.546, -122.254], [37.530, -122.244], [37.515, -122.232], [37.500, -122.215]];
+    const pts = shore.map(([la, lo]) => { const w = Geo.ll2w(la, lo); return [w.x - ORIGIN.x, w.z - ORIGIN.z]; });
+    const shape = new THREE.Shape(); const west = -9000;
+    shape.moveTo(west, pts[0][1]); for (const [x, z] of pts) shape.lineTo(x, z); shape.lineTo(west, pts[pts.length - 1][1]); shape.lineTo(west, pts[0][1]);
+    const g = new THREE.ShapeGeometry(shape); g.rotateX(Math.PI / 2);   // shape y -> world z
+    const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 9, uv.getY(i) / 9);
+    const land = new THREE.Mesh(g, mat({ map: T.grass, color: 0xffffff })); land.position.y = 0.0; land.receiveShadow = true;
+    // flip faces up (rotateX(+90) makes them face down)
+    g.index ? g.index.array.reverse() : null; g.computeVertexNormals();
+    local.add(land);
+    const water = plane(60000, 60000, mat({ color: NIGHT ? 0x16293a : 0x3d6f86, roughness: 0.22, metalness: 0.05 }), 0, -0.35, 0);
+    water.receiveShadow = false; local.add(water);
+    // SFO / SJC runways as dark strips
+    const rwTex = U.canvasTexture(64, 512, (ctx, w, h) => { ctx.fillStyle = '#4a4b4e'; ctx.fillRect(0, 0, w, h); ctx.fillStyle = '#e8e8e4';
+      for (let y = 0; y < h; y += 64) ctx.fillRect(w / 2 - 1.5, y, 3, 36); ctx.fillRect(3, 0, 2, h); ctx.fillRect(w - 5, 0, 2, h); }, { repeat: true });
+    for (const [id, r] of Object.entries(Life.RUNWAYS)) {
+      const a = Geo.ll2w(r.start[0], r.start[1]), b = Geo.ll2w(r.end[0], r.end[1]); const L = Math.hypot(b.x - a.x, b.z - a.z), wdt = id.startsWith('sjc') ? 46 : id.startsWith('sfo') ? 61 : 22;
+      const t = rwTex.clone(); t.needsUpdate = true; t.repeat.set(1, L / 400);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(wdt, L), mat({ map: t, roughness: 0.85 })); m.rotation.x = -Math.PI / 2;
+      m.rotation.order = 'YXZ'; m.rotation.y = Math.atan2(-(b.x - a.x), -(b.z - a.z));
+      m.position.set((a.x + b.x) / 2 - ORIGIN.x, r.elev + 0.05, (a.z + b.z) / 2 - ORIGIN.z); m.receiveShadow = true; local.add(m);
+      // airport apron / infield under the runway
+      const ap = new THREE.Mesh(new THREE.PlaneGeometry(wdt + 260, L + 300), mat({ color: 0x9d9a82, roughness: 1 })); ap.rotation.copy(m.rotation); ap.position.copy(m.position); ap.position.y = r.elev - 0.2; local.add(ap);
+    }
+  }
+
+  // ---------------------------------------------------------------- station platform (people view)
+  const LAMPS = [];
+  const PLAT_Y = 0.95, FLOOR_Y = 1.2;   // platform top / train floor above the surrounding ground
+  function buildPlatform() {
+    const g = new THREE.Group(); g.position.y = PLAT_Y; local.add(g);
+    const conc = mat({ map: T.concrete, roughness: 0.85 }); T.concrete.repeat.set(45, 4);
+    g.add(boxm(92, 1.0, 8, conc, 0, -0.5, 0, false));
+    g.add(boxm(92, 0.012, 0.6, mat({ color: 0xe0b52c, roughness: 0.7 }), 0, 0.006, -3.62, false));      // tactile edge
+    g.add(boxm(92, 0.013, 0.1, mat({ color: 0xf2f0ea, roughness: 0.6 }), 0, 0.007, -3.97, false));
+    const gravel = plane(120, 9, mat({ map: T.gravel }), 0, -0.86, -8.6, 3); g.add(gravel);
+    const steel = mat({ color: 0x8b9098, roughness: 0.35, metalness: 0.8 });
+    for (const z of [-5.7 - 0.7175, -5.7 + 0.7175]) g.add(boxm(120, 0.16, 0.075, steel, 0, -0.72, z));
+    const tieG = new THREE.BoxGeometry(0.24, 0.16, 2.6); const ties = new THREE.InstancedMesh(tieG, mat({ color: 0x6f6a63 }), 200);
+    for (let i = 0; i < 200; i++) { const m4 = new THREE.Matrix4().makeTranslation(-60 + i * 0.6, -0.8, -5.7); ties.setMatrixAt(i, m4); } ties.receiveShadow = true; g.add(ties);
+    // canopy with lamps
+    const dark = mat({ color: 0x33383f, roughness: 0.5, metalness: 0.6 }), roof = mat({ color: 0xd9d6cf, roughness: 0.7 });
+    for (let x = -40; x <= 40; x += 10) { g.add(boxm(0.18, 3.6, 0.18, dark, x, 1.8, 1.6)); }
+    g.add(boxm(84, 0.18, 5.6, roof, 0, 3.7, 0.4)); g.add(boxm(84, 0.35, 0.12, dark, 0, 3.55, -2.4));
+    const lampM = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0xffe0b0, emissiveIntensity: NIGHT ? 3 : 0.2 });
+    for (let x = -35; x <= 35; x += 10) { g.add(boxm(1.2, 0.06, 0.3, lampM, x, 3.58, -0.6, false)); LAMPS.push(new V3(x, 3.4, -0.6)); }
+    // benches
+    const wood = mat({ color: 0x8a5a36, roughness: 0.7 });
+    for (const x of [-25, -8, 9, 26]) { g.add(boxm(2.4, 0.06, 0.45, wood, x, 0.45, 3.0)); g.add(boxm(2.4, 0.45, 0.06, wood, x, 0.72, 3.25)); g.add(boxm(0.06, 0.45, 0.4, dark, x - 1.1, 0.22, 3.0)); g.add(boxm(0.06, 0.45, 0.4, dark, x + 1.1, 0.22, 3.0)); }
+    // behind the platform: the far side fence
+    g.add(boxm(92, 1.1, 0.05, mat({ color: 0x5b6168, roughness: 0.5, metalness: 0.5 }), 0, 0.55, 4.0));
+    if (NIGHT) for (const p of LAMPS) { const l = new THREE.PointLight(0xffd9a8, 40, 22, 2); l.position.copy(p); g.add(l); }
+    return g;
+  }
+  function buildSeats() {  // a pretend train interior for the 1 m test
+    const g = new THREE.Group(); g.position.y = FLOOR_Y; local.add(g);
+    const floor = mat({ color: 0x5a5f66, roughness: 0.8 }), fabric = mat({ color: 0x2f4a78, roughness: 0.95 }), wall = mat({ color: 0xe6e4df, roughness: 0.6 }), steel = mat({ color: 0xb8bcc2, roughness: 0.3, metalness: 0.9 });
+    g.add(boxm(14, 0.1, 3.0, floor, 0, -0.05, 0, false));
+    g.add(boxm(14, 2.3, 0.08, wall, 0, 1.15, -1.5, false)); g.add(boxm(14, 2.3, 0.08, wall, 0, 1.15, 1.5, false)); g.add(boxm(14, 0.08, 3.0, wall, 0, 2.3, 0, false));
+    const win = new THREE.MeshStandardMaterial({ color: 0x9cc6e6, emissive: 0x9cc6e6, emissiveIntensity: NIGHT ? 0.05 : 0.6, roughness: 0.1 });
+    for (let x = -6; x <= 6; x += 2) { g.add(boxm(1.6, 0.8, 0.02, win, x, 1.35, -1.45, false)); g.add(boxm(1.6, 0.8, 0.02, win, x, 1.35, 1.45, false)); }
+    // two bays of facing seat pairs on the left side (z -1.35..-0.35) and right side (z 0.35..1.35); seat yaw 0 faces +X
+    const seats = [];
+    for (const bx of [-2.2, 2.2]) for (const dir of [1, -1]) for (const z of [-1.1, -0.6, 0.6, 1.1]) {
+      const x = bx - dir * 0.8;   // pairs face each other across bx
+      g.add(boxm(0.46, 0.1, 0.46, fabric, x, 0.43, z)); g.add(boxm(0.1, 0.7, 0.46, fabric, x - dir * 0.26, 0.8, z));
+      seats.push({ x: x + dir * 0.08, y: 1.17, z, yaw: dir > 0 ? 0 : Math.PI });
+    }
+    g.add(boxm(0.05, 2.3, 0.05, steel, 0, 1.15, 0));
+    return { g, seats };
+  }
+
+  // ---------------------------------------------------------------- roads for the traffic demo
+  const ROADS = [];
+  function roadTexture(total, oneway) {
+    return U.canvasTexture(128, 512, (ctx, w, h) => {
+      ctx.fillStyle = '#3a3b3e'; ctx.fillRect(0, 0, w, h); const r = U.rng(total * 7 + 1);
+      for (let i = 0; i < 2500; i++) { ctx.fillStyle = ['#303134', '#46474a', '#2b2c2e'][i % 3]; ctx.globalAlpha = 0.5; ctx.fillRect(r() * w, r() * h, 1.5, 1.5); } ctx.globalAlpha = 1;
+      const Wd = total * 3.5 + 1.2; const px = m => (m / Wd) * w;
+      ctx.fillStyle = '#e9e7e0'; ctx.fillRect(px(0.45), 0, 2, h); ctx.fillRect(w - px(0.45) - 2, 0, 2, h);
+      for (let i = 1; i < total; i++) { const x = px(0.6 + i * 3.5);
+        if (!oneway && i === total / 2) { ctx.fillStyle = '#e2b53a'; ctx.fillRect(x - 3, 0, 2, h); ctx.fillRect(x + 1, 0, 2, h); }
+        else { ctx.fillStyle = '#e9e7e0'; for (let y = 0; y < h; y += 128) ctx.fillRect(x - 1, y, 2, 36); } }
+    }, { repeat: true });
+  }
+  function roadRibbon(pts2, total, oneway) {   // pts2: [[x,z]] local
+    const width = total * 3.5 + 1.2, pos = [], uv = [], idx = []; let acc = 0;
+    for (let i = 0; i < pts2.length; i++) {
+      const [x, z] = pts2[i], a = pts2[Math.max(0, i - 1)], b = pts2[Math.min(pts2.length - 1, i + 1)];
+      let dx = b[0] - a[0], dz = b[1] - a[1]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+      if (i) acc += Math.hypot(x - pts2[i - 1][0], z - pts2[i - 1][1]);
+      pos.push(x + dz * width / 2, 0.03, z - dx * width / 2, x - dz * width / 2, 0.03, z + dx * width / 2);
+      uv.push(0, acc / 12, 1, acc / 12);
+      if (i) { const k = i * 2; idx.push(k - 2, k - 1, k, k - 1, k + 1, k); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, mat({ map: roadTexture(total, oneway), roughness: 0.92 })); m.receiveShadow = true; local.add(m);
+    // sidewalks on both sides
+    return m;
+  }
+  function addRoad(pts2, lanes, speed, oneway) {
+    roadRibbon(pts2, lanes, oneway);
+    const f = new Float32Array(pts2.length * 3); pts2.forEach(([x, z], i) => { f[i * 3] = ORIGIN.x + x; f[i * 3 + 1] = 0.03; f[i * 3 + 2] = ORIGIN.z + z; });
+    ROADS.push({ pts: f, lanes, speed, oneway });
+  }
+  function buildRoads() {
+    const line = (x0, z0, x1, z1, n) => Array.from({ length: n + 1 }, (_, i) => [x0 + (x1 - x0) * i / n, z0 + (z1 - z0) * i / n]);
+    addRoad(line(-900, 34, 900, 34, 40), 4, 15.6);                                                           // El Camino-like arterial
+    addRoad(Array.from({ length: 121 }, (_, i) => { const x = -2400 + i * 40; return [x, -150 - 70 * Math.sin(x / 700)]; }), 8, 29);  // freeway
+    addRoad(Array.from({ length: 41 }, (_, i) => { const a = i / 40 * 1.5; return [-120 + Math.cos(a) * 260 - 260, 34 + 12 + Math.sin(a) * 260]; }), 2, 11);    // curving residential street
+    addRoad(line(60, 44, 60, 700, 30), 2, 11.2);                                                             // cross street (south)
+    // sidewalks along the arterial
+    const sw = mat({ map: T.concrete, roughness: 0.85 });
+    for (const z of [34 - 8.9, 34 + 8.9]) local.add(boxm(1800, 0.15, 2.4, sw, 0, 0.075, z, false));
+  }
+
+  // ---------------------------------------------------------------- build what was asked for
+  let people = null, traffic = null, air = null, birds = null; const treeSets = [];
+  const crowd = [];     // walkers: { i, x, z, dir, speed }
+  let seatInfo = null;
+  if (has('people')) {
+    if (CLOSE) {
+      seatInfo = buildSeats();
+      people = Life.createPeople(24, { seed: 11 });
+      people.mesh.position.set(ORIGIN.x, FLOOR_Y, ORIGIN.z); scene.add(people.mesh);
+      const kinds = ['office', 'student', 'commuter', 'tourist', 'senior', 'commuter', 'office', 'student', 'kid', 'commuter', 'student', 'office', 'tourist', 'commuter', 'senior', 'cyclist'];
+      seatInfo.seats.forEach((s, k) => { if (k === 1) return; people.look(k, { kind: kinds[k % kinds.length], seed: 500 + k * 7 }); people.sitAtEye(k, s.x, s.y, s.z, s.yaw); });
+      people.look(20, { kind: 'commuter', seed: 77 }); people.set(20, -0.35, 0, 0.3, Math.PI * 0.5, 0);
+      people.look(21, { kind: 'student', seed: 79 }); people.set(21, 4.5, 0, -0.1, Math.PI, 1, 0, 1.2); crowd.push({ i: 21, x: 4.5, z: -0.1, dir: -1, speed: 0.9, lo: -6, hi: 6 });
+      people.count = 22; people.hide(1);
+    } else {
+      if (SHOW === 'people' || SHOW === 'all') buildPlatform();
+      const N = +(P.n || 150);
+      people = Life.createPeople(N + 20, { seed: 3 });
+      people.mesh.position.set(ORIGIN.x, PLAT_Y, ORIGIN.z); scene.add(people.mesh);
+      const r = U.rng(99); let i = 0;
+      // waiting passengers near the edge, facing the track (-Z is yaw +90deg), some in chatting pairs
+      for (; i < Math.floor(N * 0.45); i++) {
+        const x = -38 + r() * 76, z = -3.1 + r() * 3.3;
+        if (r() < 0.25 && i + 1 < N) { const yaw = r() * Math.PI * 2; people.set(i, x, 0, z, yaw, 0); i++; people.set(i, x + Math.cos(yaw) * 0.9, 0, z - Math.sin(yaw) * 0.9, yaw + Math.PI + (r() - 0.5) * 0.4, 0); continue; }
+        people.set(i, x, 0, z, Math.PI / 2 + (r() - 0.5) * 0.9, 0);
+      }
+      // bench sitters
+      for (const bx of [-25, -8, 9, 26]) for (const dx of [-0.75, 0, 0.75]) { if (r() < 0.25) continue; people.set(i, bx + dx, 0, 2.95, Math.PI / 2, 2); i++; }
+      // walkers up and down the platform
+      for (; i < N; i++) {
+        const dir = r() < 0.5 ? 1 : -1, speed = 1.05 + r() * 0.55, x = -44 + r() * 88, z = 0.3 + r() * 1.9;
+        crowd.push({ i, x, z, dir, speed, lo: -46, hi: 46 });
+        if (r() < 0.1) people.look(i, { kind: 'cyclist', seed: 900 + i });
+      }
+      people.count = N;
+    }
+  }
+  if (has('traffic')) {
+    buildRoads();
+    traffic = Life.createTraffic(ROADS, { seed: 5, density: +(P.density || 14), maxCars: 500 });
+    scene.add(traffic.group);
+    if (SHOW === 'traffic' && has('trees') === false) {   // street trees along the arterial
+      const st = Life.createTrees('street', 200); for (let x = -880; x <= 880; x += 14) for (const z of [34 - 11.5, 34 + 11.5]) st.add(ORIGIN.x + x + (Math.random() - 0.5) * 2, 0, ORIGIN.z + z, 0.85 + Math.random() * 0.3);
+      st.commit(); scene.add(st.mesh); treeSets.push(st);
+    }
+  }
+  if (has('air')) {
+    air = Life.createAirTraffic({ ll2w: Geo.ll2w });
+    scene.add(air.group);
+  }
+  if (has('trees')) {
+    const r = U.rng(7);
+    if (SHOW === 'trees') {
+      // a gallery: one row per species, then an oak savanna behind for the far LOD
+      const kinds = ['oak', 'redwood', 'eucalyptus', 'palm', 'fanpalm', 'sycamore', 'cypress', 'pine', 'street'];
+      kinds.forEach((k, col) => { const s = Life.createTrees(k, 64); for (let j = 0; j < 2; j++) s.add(ORIGIN.x - 116 + col * 29 + j * 9, 0, ORIGIN.z - 50 - j * 30, 1.0 - j * 0.1); s.commit(); scene.add(s.mesh); treeSets.push(s); });
+      const sav = Life.createTrees('oak', 3000); for (let j = 0; j < 3000; j++) { const a = r() * Math.PI * 2, d = 300 + r() * 2200; sav.add(ORIGIN.x + Math.cos(a) * d, 0, ORIGIN.z - 200 - Math.abs(Math.sin(a) * d), 0.7 + r() * 0.6); }
+      sav.commit(); scene.add(sav.mesh); treeSets.push(sav);
+      const rw = Life.createTrees('redwood', 400); for (let j = 0; j < 400; j++) rw.add(ORIGIN.x + 400 + r() * 500, 0, ORIGIN.z - 700 - r() * 500, 0.7 + r() * 0.5); rw.commit(); scene.add(rw.mesh); treeSets.push(rw);
+    } else {
+      // around the station: palms at the plaza, sycamores and street trees on the arterial, oaks and eucalyptus beyond
+      const plan = [['palm', [[-30, 12], [-18, 12], [-6, 12], [6, 12], [18, 12], [30, 12]]], ['fanpalm', [[-46, 8], [46, 8], [-52, 14], [52, 16]]]];
+      for (const [k, list] of plan) { const s = Life.createTrees(k, 32); for (const [x, z] of list) s.add(ORIGIN.x + x, 0, ORIGIN.z + z, 0.9 + r() * 0.2); s.commit(); scene.add(s.mesh); treeSets.push(s); }
+      const syc = Life.createTrees('sycamore', 200); for (let x = -880; x <= 880; x += 16) for (const z of [34 - 11.8, 34 + 11.8]) syc.add(ORIGIN.x + x + (r() - 0.5) * 3, 0, ORIGIN.z + z, 0.75 + r() * 0.35); syc.commit(); scene.add(syc.mesh); treeSets.push(syc);
+      const mix = { oak: 900, eucalyptus: 260, cypress: 60, pine: 120, redwood: 80, street: 300 };
+      for (const [k, n] of Object.entries(mix)) { const s = Life.createTrees(k, n);
+        for (let j = 0; j < n; j++) { let x, z; do { x = (r() - 0.5) * 2600; z = 60 + r() * 1400; } while (Math.abs(z - 34) < 16 || Math.abs(x - 60) < 12 && z > 40); s.add(ORIGIN.x + x, 0, ORIGIN.z + z, 0.7 + r() * 0.6); }
+        s.commit(); scene.add(s.mesh); treeSets.push(s); }
+      const euc = Life.createTrees('eucalyptus', 60); for (let j = 0; j < 60; j++) euc.add(ORIGIN.x - 200 + j * 7 + (r() - 0.5) * 3, 0, ORIGIN.z - 24 + (r() - 0.5) * 4, 0.8 + r() * 0.3); euc.commit(); scene.add(euc.mesh); treeSets.push(euc);
+    }
+  }
+  if (has('birds')) {
+    const spots = SHOW === 'birds'
+      ? [{ kind: 'gull', x: ORIGIN.x + 10, y: 0, z: ORIGIN.z - 40, count: 18, radius: 35, height: 14 },
+         { kind: 'gull', x: ORIGIN.x - 60, y: 0, z: ORIGIN.z - 120, count: 12, radius: 60, height: 30 },
+         { kind: 'pelican', x: ORIGIN.x - 160, y: 0, z: ORIGIN.z - 25, count: 7, length: 400, height: 2.5, heading: 0.1 },
+         { kind: 'crow', x: ORIGIN.x + 30, y: 0, z: ORIGIN.z + 10, count: 5, radius: 20, height: 16 },
+         { kind: 'pigeon', x: ORIGIN.x + 2, y: 0.05, z: ORIGIN.z + 6, count: 16, radius: 2.2 }]
+      : [{ kind: 'gull', x: ORIGIN.x + 40, y: 0, z: ORIGIN.z - 60, count: 14, radius: 50, height: 22 },
+         { kind: 'pigeon', x: ORIGIN.x + 4, y: PLAT_Y, z: ORIGIN.z + 1.5, count: 10, radius: 2 },
+         { kind: 'crow', x: ORIGIN.x - 30, y: 0, z: ORIGIN.z + 40, count: 5, radius: 25, height: 18 }];
+    birds = Life.createBirds({ ll2w: Geo.ll2w, groundY: () => 0, spots: P.realbirds ? undefined : spots });
+    scene.add(birds.group);
+    if (SHOW === 'birds') { local.add(boxm(40, 0.4, 20, mat({ map: T.concrete }), 0, -0.15, 8, false)); }
+  }
+
+  // ---------------------------------------------------------------- camera: orbit controls + presets
+  const cam = { target: new V3(), dist: 20, az: 1.2, el: 0.2 };
+  const presets = {
+    people: [[0, 1.3, -0.8], 15, -1.2, 0.07], traffic: [[0, 1, 34], 48, 0.95, 0.32], trees: [[0, 15, -60], 155, 1.5708, 0.05],
+    birds: [[0, 9, -20], 36, 1.35, 0.12], all: [[0, 6, 10], 95, 1.05, 0.2],
+  };
+  let follow = P.follow !== undefined ? +P.follow : -1;
+  if (SHOW === 'air') {
+    const r = Life.RUNWAYS.sfo28L, a = Geo.ll2w(r.start[0], r.start[1]), b = Geo.ll2w(r.end[0], r.end[1]);
+    const L = Math.hypot(b.x - a.x, b.z - a.z), dx = (b.x - a.x) / L, dz = (b.z - a.z) / L;
+    const d = 3200; cam.target.set(a.x - dx * d, 15 + d * Math.tan(3 * Math.PI / 180) - 40, a.z - dz * d);
+    cam.dist = 2300; cam.az = 1.62; cam.el = 0.05;
+  } else {
+    const pr = presets[SHOW] || presets.all; const [t, dist, az, el] = pr;
+    cam.target.copy(W(t[0], t[1], t[2])); cam.dist = dist; cam.az = az; cam.el = el;
+  }
+  if (P.cam) { const [az, el, dist] = P.cam.split(',').map(Number); cam.az = az; cam.el = el; if (dist) cam.dist = dist; }
+  if (P.target) { const [x, y, z] = P.target.split(',').map(Number); cam.target.copy(W(x, y, z)); }
+  function applyCam() {
+    if (CLOSE && seatInfo) {   // seated eye position in the second bay, looking at the passenger opposite
+      const s = seatInfo.seats[1]; camera.position.copy(W(s.x, s.y + FLOOR_Y, s.z));
+      const look = W(s.x + 1.6 * Math.cos(s.yaw) * (P.lookback ? -1 : 1), FLOOR_Y + 0.95, s.z + (P.side ? 1.4 : 0)); camera.lookAt(look); return;
+    }
+    const c = Math.cos(cam.el);
+    camera.position.set(cam.target.x + cam.dist * c * Math.cos(cam.az), cam.target.y + cam.dist * Math.sin(cam.el), cam.target.z + cam.dist * c * Math.sin(cam.az));
+    camera.lookAt(cam.target);
+  }
+  let drag = null;
+  addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, b: e.button }; });
+  addEventListener('pointerup', () => { drag = null; });
+  addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.b === 2 || e.shiftKey) { const f = cam.dist * 0.0015; const fw = new V3(-Math.cos(cam.az), 0, -Math.sin(cam.az)), rt = new V3(-fw.z, 0, fw.x); cam.target.addScaledVector(rt, -dx * f).addScaledVector(fw, dy * f); }
+    else { cam.az += dx * 0.005; cam.el = Math.max(-0.2, Math.min(1.5, cam.el + dy * 0.004)); } });
+  addEventListener('contextmenu', e => e.preventDefault());
+  addEventListener('wheel', e => { cam.dist = Math.max(1.5, Math.min(40000, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: true });
+  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+  // ---------------------------------------------------------------- loop
+  const hud = document.getElementById('hud');
+  const clock = new THREE.Clock(); let frames = 0, acc = 0, fps = 0, cpuMs = 0, cpuAcc = 0;
+  const env = { night: NIGHT, time: simT, camPos: camera.position };
+  function frame() {
+    const dt = Math.min(0.1, clock.getDelta()); const t0 = performance.now();
+    simT += dt * SPEED; U.uTime.value += dt;
+    env.time = simT;
+    for (const w of crowd) {
+      w.x += w.dir * w.speed * dt; if (w.x > w.hi) w.x = w.lo; if (w.x < w.lo) w.x = w.hi;
+      people.set(w.i, w.x, 0, w.z, w.dir > 0 ? 0 : Math.PI, 1, undefined, w.speed);
+    }
+    if (people) people.update(dt);
+    if (traffic) traffic.update(dt, env);
+    if (air) air.update(dt, env);
+    if (birds) birds.update(dt, env);
+    if (follow >= 0 && air) {
+      const list = air.positions().filter(p => p.scale > 0.9 && p.type !== 'cessna');
+      if (list.length) { const p = list[follow % list.length]; cam.target.set(p.x, p.y, p.z); if (!P.cam) { cam.dist = p.type === 'wide' ? 110 : 75; cam.az = -p.heading + 2.2; cam.el = 0.12; } }
+    }
+    applyCam();
+    for (const s of treeSets) s.update(camera.position);
+    sky.position.copy(camera.position);
+    // shadows follow the focus point
+    const fo = CLOSE ? W(0, 1, 0) : cam.target; sun.target.position.copy(fo); sun.position.copy(fo).addScaledVector(SUN_DIR, 150); sun.target.updateMatrixWorld();
+    cpuAcc += performance.now() - t0;
+    renderer.render(scene, camera);
+    frames++; acc += dt;
+    if (acc > 0.5) { fps = frames / acc; cpuMs = cpuAcc / frames; frames = 0; acc = 0; cpuAcc = 0;
+      const i = renderer.info.render, hh = Math.floor(simT / 3600) % 24, mm = Math.floor(simT / 60) % 60;
+      hud.textContent = `Bayline life preview  ·  ${SHOW}${NIGHT ? ' · night' : ''}  ·  sim ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}\n` +
+        `${fps.toFixed(0)} fps  ·  update ${cpuMs.toFixed(2)} ms  ·  ${i.calls} draws  ·  ${(i.triangles / 1000).toFixed(0)}k tris\n` +
+        (people ? `people ${people.count}  ` : '') + (traffic ? `cars ${traffic.count}  ` : '') + (air ? `aircraft ${air.positions().length}  ` : '') + (birds ? `birds ${birds.count}  ` : '') +
+        (treeSets.length ? `trees ${treeSets.reduce((a, s) => a + s.count, 0)}` : '');
+    }
+    requestAnimationFrame(frame);
+  }
+  window.preview = { renderer, scene, camera, cam, get people() { return people; }, traffic, air, birds, treeSets, Life,
+    stats: () => ({ fps: +fps.toFixed(1), updateMs: +cpuMs.toFixed(3), calls: renderer.info.render.calls, tris: renderer.info.render.triangles, simT, geo: Life.stats() }),
+    setTime: t => { simT = t; }, setFollow: n => { follow = n; } };
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

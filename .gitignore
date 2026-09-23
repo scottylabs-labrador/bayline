@@ -1,0 +1,9 @@
+# downloads (DEM tiles, OSM extracts, GTFS zip): re-fetch with tools/*
+data/raw/
+dist/
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+.env
+.env.*

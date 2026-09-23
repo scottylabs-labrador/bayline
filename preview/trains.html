@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bayline Trains Preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #9cc6e6; overflow: hidden; font: 13px/1.4 "Helvetica Neue", Arial, sans-serif; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 12px; top: 10px; color: #fff; background: rgba(20, 26, 32, 0.62); padding: 8px 10px; border-radius: 8px; max-width: 520px; }
+  #hud a { color: #ffd27a; margin-right: 8px; text-decoration: none; }
+  #stats { opacity: 0.8; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="hud"><b>Bayline rolling stock</b> · drag to orbit, wheel to zoom<br>
+  <span id="links"></span><div id="stats"></div></div>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/00_util.js"></script>
+<script src="../src/js/40_trainkit.js"></script>
+<script>
+(() => {
+  const VIEWS = ['exterior', 'nose', 'side', 'doors', 'interior-lower', 'interior-upper', 'gangway', 'bike', 'wc', 'cab', 'roof',
+    'diesel', 'diesel-rear', 'diesel-interior', 'diesel-cab', 'night-exterior', 'night-interior', 'night-diesel', 'lod'];
+  const hp = new URLSearchParams(location.hash.slice(1));
+  const view = hp.get('view') || 'exterior', showMeta = hp.get('meta') === '1';
+  document.getElementById('links').innerHTML = VIEWS.map(v => `<a href="#view=${v}" onclick="setTimeout(()=>location.reload())">${v}</a>`).join('');
+  const night = view.startsWith('night');
+  const kind = view.startsWith('diesel') || view === 'night-diesel' ? 'diesel' : 'emu';
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = night ? 1.0 : 0.95;
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(view.includes('interior') || view === 'cab' || view === 'gangway' || view === 'bike' || view === 'wc' || view === 'diesel-cab' ? 70 : 42, innerWidth / innerHeight, 0.05, 120000);
+
+  // sky dome + PMREM environment from it
+  const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: {
+      top: { value: new THREE.Color(night ? 0x060a16 : 0x5d9ad0) }, hor: { value: new THREE.Color(night ? 0x1d2c48 : 0xcfe3f0) },
+      gnd: { value: new THREE.Color(night ? 0x0b0d10 : 0x8f8466) }, sun: { value: new THREE.Vector3(0.55, 0.42, 0.35).normalize() }, night: { value: night ? 1 : 0 } },
+    vertexShader: 'varying vec3 vd; void main(){ vd = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform vec3 top, hor, gnd, sun; uniform float night; varying vec3 vd;
+      void main(){ float h = vd.y; vec3 c = h > 0.0 ? mix(hor, top, pow(h, 0.55)) : mix(hor, gnd, pow(-h, 0.4));
+        float s = max(dot(vd, sun), 0.0); c += (night > 0.5 ? vec3(0.5,0.55,0.7) * pow(s, 900.0) : vec3(1.0,0.9,0.7) * (pow(s, 400.0) * 8.0 + pow(s, 8.0) * 0.25));
+        gl_FragColor = vec4(c, 1.0); }` });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(5000, 32, 16), skyMat); scene.add(sky);
+  const envScene = new THREE.Scene(); envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
+  const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(envScene, 0.02).texture;
+  const hemi = new THREE.HemisphereLight(night ? 0x2a3a5a : 0xcfe4ff, night ? 0x1a1a14 : 0x8a7a55, night ? 0.25 : 1.1); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(night ? 0x8090b0 : 0xfff1dc, night ? 0.25 : 2.6); sun.position.set(60, 45, 38); scene.add(sun);
+  if (night) scene.environmentIntensity = 0.2;
+
+  // ground, ballast, sleepers, rails, platform
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshLambertMaterial({ color: night ? 0x1b1a16 : 0xb8a36a }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = -0.35; scene.add(ground);
+  const ballast = new THREE.Mesh(new THREE.BoxGeometry(600, 0.3, 4.2), new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 1 })); ballast.position.y = -0.33; scene.add(ballast);
+  const slp = new THREE.InstancedMesh(new THREE.BoxGeometry(0.26, 0.16, 2.6), new THREE.MeshStandardMaterial({ color: 0x77716a, roughness: 0.9 }), 900);
+  const m4 = new THREE.Matrix4(); for (let i = 0; i < 900; i++) { m4.makeTranslation(-270 + i * 0.6, -0.26, 0); slp.setMatrixAt(i, m4); } scene.add(slp);
+  const railMat = new THREE.MeshStandardMaterial({ color: 0x8c8f93, metalness: 0.9, roughness: 0.35 });
+  for (const z of [-0.7525, 0.7525]) { const r = new THREE.Mesh(new THREE.BoxGeometry(600, 0.17, 0.07), railMat); r.position.set(0, -0.085, z); scene.add(r); }
+  const plat = new THREE.Mesh(new THREE.BoxGeometry(200, 0.6, 5), new THREE.MeshStandardMaterial({ color: night ? 0x6d6a66 : 0xc9c3b6, roughness: 0.85 }));
+  plat.position.set(-10, 0.25 - 0.3, 1.67 + 0.05 + 2.5); scene.add(plat);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(200, 0.012, 0.6), new THREE.MeshStandardMaterial({ color: 0xe8c33a, roughness: 0.6 }));
+  edge.position.set(-10, 0.256, 1.72 + 0.3); scene.add(edge);
+  if (night) for (let i = 0; i < 6; i++) { const l = new THREE.PointLight(0xffd9a0, 18, 22, 1.6); l.position.set(-80 + i * 30, 5, 5); scene.add(l);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffe2b0 })); b.position.copy(l.position); scene.add(b); }
+
+  // train
+  const c = TrainKit.createConsist(kind, { seed: 3, name: 'preview' });
+  const front = c.length / 2;
+  for (const car of c.cars) { car.group.position.set(front - car.offset, 0, 0); scene.add(car.group); }
+  const X = i => front - c.cars[i].offset;
+  c.setDestination(kind === 'emu' ? 'LOCAL  SAN FRANCISCO' : 'GILROY');
+  c.setDisplay({ route: kind === 'emu' ? 'Local' : 'South County', nextStop: kind === 'emu' ? 'Palo Alto' : 'Morgan Hill', destination: kind === 'emu' ? 'San Francisco' : 'Gilroy', clock: '6:42 PM' });
+  c.setCab({ speedMph: 62, limitMph: 79, throttle: 0.45, brake: 0, signal: 'Clear', nextStop: 'Palo Alto', distFt: 8450, clock: '18:42:10', ptc: 'active' });
+  c.setPantograph(1);
+  c.setNight(night ? 1 : 0);
+  c.setLights({ head: 1, tail: 1, interior: 1, cab: 1, lead: 'front' });
+  const inside = view.includes('interior') || ['gangway', 'bike', 'wc', 'cab', 'diesel-cab'].includes(view);
+  if (inside || view === 'doors' || view === 'night-exterior') c.setInteriorVisible(true);
+  if (view === 'nose' || view === 'exterior') c.cars[0].setInteriorVisible(true);
+  if (view === 'doors' || view === 'night-exterior') c.setDoors('right', 1);
+  if (view === 'lod') { c.cars.forEach((car, i) => car.setLOD(i < 2 ? 0 : i < 4 ? 1 : 2)); }
+
+  // walking metadata overlay (#meta=1)
+  if (showMeta) for (const car of c.cars) {
+    const g = new THREE.Group(); g.position.copy(car.group.position); scene.add(g);
+    const col = new THREE.Color().setHSL((car.index * 0.17) % 1, 0.8, 0.5);
+    for (const r of car.floorRegions) { const m = new THREE.Mesh(new THREE.BoxGeometry(r.x1 - r.x0, 0.02, r.z1 - r.z0), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.35, depthWrite: false }));
+      m.position.set((r.x0 + r.x1) / 2, r.y + 0.03, (r.z0 + r.z1) / 2); g.add(m); }
+    for (const r of car.ramps) { const len = Math.hypot(r.x1 - r.x0, r.y1 - r.y0), m = new THREE.Mesh(new THREE.BoxGeometry(len, 0.02, r.z1 - r.z0), new THREE.MeshBasicMaterial({ color: 0xff00ff, transparent: true, opacity: 0.45, depthWrite: false }));
+      m.position.set((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2 + 0.03, (r.z0 + r.z1) / 2); m.rotation.z = Math.atan2(r.y1 - r.y0, r.x1 - r.x0); g.add(m); }
+    for (const s of car.seats) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 4), new THREE.MeshBasicMaterial({ color: 0x00ffaa })); m.position.set(s.x, s.y, s.z); g.add(m); }
+    for (const d of car.doors) { const m = new THREE.Mesh(new THREE.BoxGeometry(d.width, 0.04, 0.3), new THREE.MeshBasicMaterial({ color: 0xffff00 })); m.position.set(d.x, d.sillY, d.side * 1.5); g.add(m); }
+    if (car.cabEye) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff0000 })); m.position.set(...car.cabEye); g.add(m); }
+  }
+
+  // camera presets (world = car-local + X(i) along x)
+  const target = new THREE.Vector3();
+  const set = (px, py, pz, tx, ty, tz) => { camera.position.set(px, py, pz); target.set(tx, ty, tz); camera.lookAt(target); };
+  const L0 = c.cars[0].length, x0 = X(0);
+  switch (view) {
+    case 'nose': set(x0 + L0 / 2 + 5.2, 2.5, 4.6, x0 + L0 / 2 - 1.2, 2.2, 0); break;
+    case 'side': set(X(2) + 2, 2.6, 17, X(2) - 1, 2.3, 0); break;
+    case 'doors': set(X(2) - 3.5, 1.9, 6.5, X(2) - 6.8, 1.4, 0.8); break;
+    case 'interior-lower': set(X(2) + 2.6, 0.62 + 1.6, -0.05, X(2) - 4, 1.8, 0.05); break;
+    case 'interior-upper': set(X(2) + 3.2, 2.62 + 1.55, -0.1, X(2) - 5, 3.8, 0.1); break;
+    case 'gangway': set(X(2) + 9.2, 1.32 + 1.6, 0.25, X(2) + 20, 2.7, 0); break;
+    case 'bike': set(X(1) + 2.9, 0.62 + 1.6, 0.15, X(1) - 3, 1.2, 0.3); break;
+    case 'wc': set(X(3) - 1.2, 0.62 + 1.6, 0.6, X(3) + 3, 1.6, -0.2); break;
+    case 'cab': { const e = c.cars[0].cabEye; set(x0 + e[0], e[1], e[2], x0 + e[0] + 10, e[1] - 0.9, e[2]); break; }
+    case 'roof': set(X(1) + 6, 8.5, 9, X(1) + 8, 4.6, 0); break;
+    case 'diesel': set(x0 + L0 / 2 + 11, 3.4, 12, x0 - 6, 2.2, 0); break;
+    case 'diesel-rear': { const n = c.cars.length - 1, xl = X(n) - c.cars[n].length / 2; set(xl - 10, 3.2, 10, xl + 6, 2.4, 0); break; }
+    case 'diesel-interior': set(X(2) + 5, 2.5 + 1.55, -0.1, X(2) - 5, 3.7, 0.1); break;
+    case 'diesel-cab': { const e = c.cars[0].cabEye; set(x0 + e[0], e[1], e[2], x0 + e[0] + 10, e[1] - 1.0, e[2]); break; }
+    case 'night-exterior': set(X(1) + 18, 2.8, 13, X(1) - 4, 2.2, 0); break;
+    case 'night-interior': set(X(2) + 2.6, 0.62 + 1.6, -0.05, X(2) - 4, 1.8, 0.05); break;
+    case 'night-diesel': set(x0 + L0 / 2 + 14, 3, 12, x0 - 8, 2.2, 0); break;
+    case 'lod': set(x0 + 30, 22, 70, x0 - 60, 2, 0); break;
+    default: set(x0 + L0 / 2 + 15, 3.6, 12.5, x0 - 10, 2.0, 0);
+  }
+  // orbit controls
+  let drag = null; const sph = new THREE.Spherical().setFromVector3(camera.position.clone().sub(target));
+  addEventListener('pointerdown', e => drag = { x: e.clientX, y: e.clientY });
+  addEventListener('pointerup', () => drag = null);
+  addEventListener('pointermove', e => { if (!drag) return; sph.theta -= (e.clientX - drag.x) * 0.005; sph.phi = THREE.MathUtils.clamp(sph.phi - (e.clientY - drag.y) * 0.005, 0.05, 3.1); drag = { x: e.clientX, y: e.clientY };
+    camera.position.copy(target).add(new THREE.Vector3().setFromSpherical(sph)); camera.lookAt(target); });
+  addEventListener('wheel', e => { sph.radius = Math.max(0.3, sph.radius * (1 + e.deltaY * 0.001)); camera.position.copy(target).add(new THREE.Vector3().setFromSpherical(sph)); camera.lookAt(target); });
+  addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+  let last = performance.now(), frames = 0;
+  c.speed = view === 'cab' || view === 'diesel-cab' ? 0 : 0;
+  function loop(t) {
+    const dt = Math.min(0.05, (t - last) / 1000); last = t; U.uTime.value += dt;
+    c.update(dt); renderer.render(scene, camera);
+    if (++frames === 30) {
+      const i = renderer.info.render, st = { view, calls: i.calls, tris: i.triangles, cars: c.cars.length, length: +c.length.toFixed(2) };
+      document.getElementById('stats').textContent = JSON.stringify(st); console.log('STATS ' + JSON.stringify(st));
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  window.__c = c; window.__scene = scene; window.__renderer = renderer; window.__camera = camera;
+})();
+</script>
+</body>
+</html>

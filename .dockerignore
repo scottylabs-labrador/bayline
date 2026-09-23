@@ -1,0 +1,7 @@
+.git
+data/raw
+dist
+**/__pycache__
+**/.DS_Store
+preview
+notes

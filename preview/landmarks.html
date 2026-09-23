@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bayline landmarks preview</title>
+<style>
+  :root { --ink: #f4efe4; --panel: rgba(16, 20, 26, 0.72); --accent: #e8b25a; }
+  html, body { margin: 0; height: 100%; background: #9cc6e6; overflow: hidden; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud { position: fixed; left: 12px; top: 12px; padding: 10px 12px; background: var(--panel); border-radius: 8px; white-space: pre; pointer-events: none; max-width: calc(100vw - 48px); }
+  #hud b { color: var(--accent); font-weight: 600; }
+  #pick { position: fixed; right: 12px; top: 12px; background: var(--panel); color: var(--ink); border: 0; border-radius: 6px; padding: 6px; font: inherit; max-width: 46vw; }
+  #help { position: fixed; right: 12px; bottom: 12px; padding: 8px 10px; background: var(--panel); border-radius: 8px; white-space: pre; opacity: 0.85; }
+  .hide #hud, .hide #help, .hide #pick { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">loading…</div>
+<select id="pick" aria-label="Landmark or depot"></select>
+<div id="help">drag orbit · shift/right-drag pan · wheel zoom
+N night · H hide HUD
+#lm=Name  #depot=style  #night=1  #az= #el= #dist=  #hud=0</div>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/00_util.js"></script>
+<script src="../src/js/01_geo.js"></script>
+<script src="../src/js/50_landmarks.js"></script>
+<script>
+(() => {
+  const H = new URLSearchParams(location.hash.slice(1));
+  const hud = document.getElementById('hud');
+  if (H.get('hud') === '0') document.body.classList.add('hide');
+  // ---- flat ground with the few hills landmarks sit on (gaussian bumps at real summits)
+  const HILLS = [[37.8024, -122.4058, 80, 170], [37.7552, -122.4529, 254, 520], [37.7544, -122.4476, 270, 420], [37.3419, -121.6430, 1283, 1600], [37.3430, -121.6371, 1270, 900],
+    [37.1604, -121.8989, 1063, 1200], [37.6640, -122.4199, 174, 330], [37.4086, -122.1794, 150, 700], [37.8112, -122.3671, 98, 420], [37.8267, -122.4228, 37, 110],
+    [37.3309, -122.0075, 8, 60]];
+  const hills = HILLS.map(([la, lo, h, s]) => { const p = Geo.ll2w(la, lo); return { x: p.x, z: p.z, h, s2: 2 * s * s }; });
+  const groundY = (x, z) => { let y = 0; for (const q of hills) { const dx = x - q.x, dz = z - q.z, d2 = dx * dx + dz * dz; if (d2 < q.s2 * 9) y = Math.max(y, q.h * Math.exp(-d2 / q.s2)); } return y; };
+  const ctx = { ll2w: Geo.ll2w, groundY, rng: U.rng(1) };
+
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight, false);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.05, 120000);
+
+  // sky environment (reflections for glass/metal), sun + hemisphere
+  const skyScene = new THREE.Scene();
+  const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, uniforms: { top: { value: new THREE.Color(0x6fa3d6) }, hor: { value: new THREE.Color(0xdfe9ef) }, bot: { value: new THREE.Color(0x8a8270) } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: 'uniform vec3 top, hor, bot; varying vec3 vP; void main(){ float y = vP.y; vec3 c = y > 0.0 ? mix(hor, top, pow(y, 0.6)) : mix(hor, bot, pow(-y, 0.4)); gl_FragColor = vec4(c, 1.0); }' });
+  skyScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), skyMat));
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const hemi = new THREE.HemisphereLight(0xcfe3f5, 0x8f7e5c, 0.9); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff1dc, 2.6); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.6;
+  scene.add(sun); scene.add(sun.target);
+
+  let night = H.get('night') === '1' ? 1 : 0;
+  function applyNight() {
+    U.uNight.value = night;
+    const day = 1 - night;
+    skyMat.uniforms.top.value.set(night ? 0x060a18 : 0x6fa3d6); skyMat.uniforms.hor.value.set(night ? 0x1b2336 : 0xdfe9ef); skyMat.uniforms.bot.value.set(night ? 0x0b0d12 : 0x8a8270);
+    scene.environment = pmrem.fromScene(skyScene, 0.02).texture;
+    scene.background = new THREE.Color(night ? 0x0c1224 : 0x9cc6e6);
+    scene.fog = new THREE.Fog(night ? 0x10172a : 0xbcd3e3, 1, 1);
+    hemi.intensity = 0.9 * day + 0.12 * night; sun.intensity = 2.6 * day + 0.12 * night; sun.color.set(night ? 0x8fa6d6 : 0xfff1dc);
+    renderer.toneMappingExposure = night ? 1.1 : 1.0;
+  }
+  applyNight();
+
+  // ---- what to show
+  const depotStyle = H.get('depot');
+  const want = H.get('lm') || (depotStyle ? null : 'Salesforce Tower');
+  const t0 = performance.now();
+  let lm = null, focus = { x: 0, y: 0, z: 0, r: 60, top: 20 }, water = false;
+  const names = Landmarks.names();
+  const pick = document.getElementById('pick');
+  for (const n of names) pick.add(new Option(n, 'lm=' + n));
+  for (const s of Depots.styles) pick.add(new Option('depot: ' + s, 'depot=' + s));
+  pick.value = depotStyle ? 'depot=' + depotStyle : 'lm=' + want;
+  pick.onchange = () => { location.hash = pick.value + (night ? '&night=1' : ''); location.reload(); };
+
+  if (depotStyle) {
+    const styles = depotStyle === 'all' ? Depots.styles : [depotStyle];
+    let x = 0; const g = new THREE.Group();
+    for (const s of styles) {
+      const d = Depots.build(s, {}); const b = new THREE.Box3().setFromObject(d); const w = b.max.x - b.min.x;
+      d.position.x = x + w / 2 - (b.min.x + b.max.x) / 2 * 0; x += w + 30; g.add(d);
+      console.log('[depot]', s, 'tris', d.userData.tris);
+    }
+    const b = new THREE.Box3().setFromObject(g); const cx = (b.min.x + b.max.x) / 2;
+    g.position.x -= cx; scene.add(g);
+    // platform + track on the -Z side for context
+    const plat = new THREE.Mesh(new THREE.BoxGeometry(b.max.x - b.min.x + 60, 0.9, 6), new THREE.MeshStandardMaterial({ color: 0xbdb8ad, roughness: 0.9 }));
+    plat.position.set(0, 0.45, b.min.z - 3.5); plat.receiveShadow = true; scene.add(plat);
+    for (const dz of [-8.2, -9.6]) { const r = new THREE.Mesh(new THREE.BoxGeometry(b.max.x - b.min.x + 80, 0.18, 0.08), new THREE.MeshStandardMaterial({ color: 0x8a8f94, metalness: 0.8, roughness: 0.4 })); r.position.set(0, 0.2, b.min.z + dz); scene.add(r); }
+    focus = { x: 0, y: 0, z: 0, r: Math.max(20, (b.max.x - b.min.x) * 0.55), top: b.max.y };
+    hud.innerHTML = `<b>Depot</b> ${depotStyle}\n` + styles.map(s => s).join(' ');
+  } else {
+    const only = want === 'all' ? null : [want];
+    lm = Landmarks.build(ctx, only ? { only } : {});
+    scene.add(lm.group);
+    const L = lm.list.find(l => l.name === want) || lm.list[0];
+    const b = new THREE.Box3().setFromObject(want === 'all' ? lm.list.length ? lm.group.getObjectByName('lm:' + L.name) : lm.group : lm.group);
+    focus = { x: (b.min.x + b.max.x) / 2, y: L ? L.y : 0, z: (b.min.z + b.max.z) / 2, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, top: b.max.y };
+    water = /Bridge|Alcatraz|Bay Lights/.test(want) || H.get('water') === '1';
+    const rows = lm.list.map(l => `${l.name.padEnd(30)} ${String(l.tris | 0).padStart(7)} tris`);
+    console.log('[landmarks] built', lm.list.length, 'in', (performance.now() - t0).toFixed(0), 'ms; total tris', lm.group.userData.tris | 0);
+    for (const r of rows) console.log('[lm]', r);
+    hud.innerHTML = `<b>${L ? L.name : ''}</b>  ${L ? (L.tris | 0) + ' tris' : ''}\n${L ? L.blurb : ''}\n` + (want === 'all' ? rows.join('\n') : '');
+  }
+
+  // ---- contact sheet (#sheet=1): every landmark in its own tile, for quick visual review
+  if (H.get('sheet') === '1' && lm) {
+    const cols = +(H.get('cols') || 7), tiles = [], list = lm.list.filter(l => !H.get('filter') || new RegExp(H.get('filter'), 'i').test(l.name));
+    const rows = Math.ceil(list.length / cols), tw = innerWidth / cols, th = innerHeight / rows;
+    for (const L of list) {
+      const obj = lm.group.getObjectByName('lm:' + L.name), b = new THREE.Box3().setFromObject(obj);
+      const f = { x: (b.min.x + b.max.x) / 2, y: L.y, z: (b.min.z + b.max.z) / 2, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, top: b.max.y };
+      const wet = /Bridge|Alcatraz/.test(L.name), R = Math.min(20000, Math.max(800, f.r * 3)), N = 90, geo = new THREE.PlaneGeometry(2 * R, 2 * R, N, N); geo.rotateX(-Math.PI / 2);
+      const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), cL = new THREE.Color(0xb7a57a), cG = new THREE.Color(0x8f9a5c), cW = new THREE.Color(0x3d6f86);
+      for (let i = 0; i < pos.count; i++) { const x = pos.getX(i) + f.x, z = pos.getZ(i) + f.z, y = groundY(x, z); pos.setY(i, y - (wet && y < 0.5 ? 0.6 : 0.03));
+        const c = wet && y < 0.5 ? cW : (y > 40 ? cL : cG.clone().lerp(cL, y / 40)); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
+      const gm = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: wet ? 0.35 : 0.95 })); gm.position.set(f.x, 0, f.z); gm.receiveShadow = true; scene.add(gm);
+      const h = Math.max(1, f.top - f.y), tall = h > f.r * 0.8;
+      tiles.push({ L, f, dist: tall ? h * 1.7 + f.r : f.r * 2.1 + h, el: (tall ? 12 : 28) * Math.PI / 180, ty: f.y + h * (tall ? 0.45 : 0.2) });
+    }
+    const labels = document.createElement('div'); labels.style.cssText = 'position:fixed;inset:0;pointer-events:none;font:11px/1.2 ui-monospace,Menlo,monospace;color:#fff;text-shadow:0 1px 2px #000';
+    tiles.forEach((t, i) => { const d = document.createElement('div'); d.textContent = t.L.name + ' · ' + (t.L.tris | 0); d.style.cssText = `position:absolute;left:${(i % cols) * tw + 4}px;top:${Math.floor(i / cols) * th + 3}px`; labels.appendChild(d); });
+    document.body.appendChild(labels); hud.style.display = 'none';
+    camera.aspect = tw / th; camera.updateProjectionMatrix(); renderer.setScissorTest(true);
+    const az = +(H.get('az') ?? 35) * Math.PI / 180; let lastS = performance.now();
+    const loop = (now) => {
+      const dt = Math.min(0.1, (now - lastS) / 1000); lastS = now; U.uTime.value += dt; lm.update(dt, { night, time: 0, camPos: null });
+      tiles.forEach((t, i) => {
+        const x = (i % cols) * tw, y = innerHeight - (Math.floor(i / cols) + 1) * th, c = Math.cos(t.el);
+        camera.position.set(t.f.x + t.dist * c * Math.sin(az), t.ty + t.dist * Math.sin(t.el), t.f.z + t.dist * c * Math.cos(az)); camera.lookAt(t.f.x, t.ty, t.f.z);
+        scene.fog.near = t.dist * 3; scene.fog.far = t.dist * 40 + 20000;
+        const sd = Math.min(t.dist * 1.2 + t.f.r, 4000); sun.position.set(t.f.x - 1.35 * sd, t.ty + sd * 2.2, t.f.z + 1.8 * sd); sun.target.position.set(t.f.x, t.ty, t.f.z);
+        const sc = sun.shadow.camera; sc.left = -sd; sc.right = sd; sc.top = sd; sc.bottom = -sd; sc.near = 1; sc.far = sd * 8; sc.updateProjectionMatrix();
+        renderer.setViewport(x, y, tw, th); renderer.setScissor(x, y, tw, th); renderer.render(scene, camera);
+      });
+      requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+    return;
+  }
+
+  // ---- ground (terrain bumps coloured by height) around the focus
+  {
+    const R = Math.min(60000, Math.max(3000, focus.r * 8)), N = 220, geo = new THREE.PlaneGeometry(2 * R, 2 * R, N, N); geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), cL = new THREE.Color(0xb7a57a), cG = new THREE.Color(0x8f9a5c), cW = new THREE.Color(0x3d6f86);
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i) + focus.x, z = pos.getZ(i) + focus.z, y = groundY(x, z); pos.setY(i, y - (water && y < 0.5 ? 0.6 : 0.02));
+      const c = water && y < 0.5 ? cW : (y > 40 ? cL : cG.clone().lerp(cL, y / 40)); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
+    const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: water ? 0.35 : 0.95, metalness: water ? 0.15 : 0 }));
+    ground.position.set(focus.x, 0, focus.z); ground.receiveShadow = true; scene.add(ground);
+  }
+
+  // ---- orbit camera
+  const fh = Math.max(1, focus.top - focus.y), tall = fh > focus.r * 0.8;
+  const az0 = +(H.get('az') ?? 35), el0 = +(H.get('el') ?? (tall ? 10 : 24));
+  const cam = { az: az0 * Math.PI / 180, el: el0 * Math.PI / 180, dist: +(H.get('dist') || Math.max(30, tall ? fh * 1.55 + focus.r : focus.r * 2.2 + fh)),
+    tx: focus.x, ty: focus.y + fh * (tall ? 0.45 : 0.25), tz: focus.z };
+  if (H.get('ty')) cam.ty = focus.y + +H.get('ty');
+  function placeCamera() {
+    const c = Math.cos(cam.el);
+    camera.position.set(cam.tx + cam.dist * c * Math.sin(cam.az), cam.ty + cam.dist * Math.sin(cam.el), cam.tz + cam.dist * c * Math.cos(cam.az));
+    camera.lookAt(cam.tx, cam.ty, cam.tz);
+    scene.fog.near = cam.dist * 3; scene.fog.far = cam.dist * 40 + 20000;
+    const sd = Math.min(cam.dist * 1.2 + focus.r, 4000);
+    sun.position.set(cam.tx - 0.45 * sd * 3, cam.ty + sd * 2.2, cam.tz + 0.6 * sd * 3); sun.target.position.set(cam.tx, cam.ty, cam.tz);
+    const sc = sun.shadow.camera; sc.left = -sd; sc.right = sd; sc.top = sd; sc.bottom = -sd; sc.near = 1; sc.far = sd * 8; sc.updateProjectionMatrix();
+  }
+  let drag = null;
+  canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 2 }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerup', () => drag = null);
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.pan) { const s = cam.dist * 0.0015; cam.tx -= (Math.cos(cam.az) * dx) * s; cam.tz -= (-Math.sin(cam.az) * dx) * s; cam.ty += dy * s; }
+    else { cam.az -= dx * 0.005; cam.el = U.clamp(cam.el + dy * 0.004, -0.2, 1.5); } });
+  canvas.addEventListener('wheel', e => { cam.dist *= Math.exp(e.deltaY * 0.001); e.preventDefault(); }, { passive: false });
+  addEventListener('keydown', e => { if (e.key === 'n' || e.key === 'N') { night = 1 - night; applyNight(); } if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('hide'); });
+  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+  const env = { night, time: 0, camPos: camera.position };
+  let last = performance.now(), frames = 0;
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now; U.uTime.value += dt;
+    placeCamera(); env.night = night; env.time += dt;
+    if (lm) lm.update(dt, env); else Landmarks.setNight(night, dt);
+    renderer.render(scene, camera);
+    if (++frames === 20) console.log('[render] calls', renderer.info.render.calls, 'triangles', renderer.info.render.triangles);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

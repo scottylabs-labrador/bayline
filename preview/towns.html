@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bayline towns preview</title>
+<style>
+  :root { --ink: #f4efe4; --panel: rgba(16, 20, 26, 0.72); --accent: #e8b25a; }
+  html, body { margin: 0; height: 100%; background: #9cc6e6; overflow: hidden; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud { position: fixed; left: 12px; top: 12px; padding: 10px 12px; background: var(--panel); border-radius: 8px; white-space: pre; pointer-events: none; max-width: calc(100vw - 48px); }
+  #hud b { color: var(--accent); font-weight: 600; }
+  #help { position: fixed; right: 12px; bottom: 12px; padding: 8px 10px; background: var(--panel); border-radius: 8px; white-space: pre; opacity: 0.85; }
+  #stations { position: fixed; right: 12px; top: 12px; background: var(--panel); color: var(--ink); border: 0; border-radius: 6px; padding: 6px; font: inherit; }
+  .hide #hud, .hide #help, .hide #stations { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">loading…</div>
+<select id="stations" aria-label="Jump to station"></select>
+<div id="help">drag orbit · right-drag / shift-drag pan · wheel zoom
+WASD move · Q/E turn · R/F tilt · V walk mode
+N night · H hide HUD · [ ] prev/next station</div>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/00_util.js"></script>
+<script src="../src/js/01_geo.js"></script>
+<script src="../src/js/02_data.js"></script>
+<script src="../src/js/12_terrain.js"></script>
+<script src="../src/js/30_towns.js"></script>
+<script>
+// Standalone preview for Towns (src/js/30_towns.js). Hash parameters:
+//   #station=palo_alto  dx= dz= (m offset)  yaw= pitch= (deg)  dist= (m)  night=1  terrain=1  walk=1  budget= (ms/frame)
+const P = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const Env = { scene };                         // what 12_terrain.js needs from the engine
+const camera = new THREE.PerspectiveCamera(50, 1, 0.3, 90000);
+let night = P.night === '1';
+const useTerrain = P.terrain === '1' && typeof Terrain !== 'undefined';
+
+// ---- sky, fog, lights, image-based lighting
+const skyU = { top: { value: new THREE.Color() }, hor: { value: new THREE.Color() }, sun: { value: new THREE.Vector3() }, glow: { value: new THREE.Color() } };
+const sky = new THREE.Mesh(new THREE.SphereGeometry(80000, 32, 16), new THREE.ShaderMaterial({
+  uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
+  vertexShader: `#include <common>
+    #include <logdepthbuf_pars_vertex>
+    varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    #include <logdepthbuf_vertex>
+    }`,
+  fragmentShader: `#include <common>
+    #include <logdepthbuf_pars_fragment>
+    uniform vec3 top, hor, glow, sun; varying vec3 vD;
+    void main(){
+      #include <logdepthbuf_fragment>
+      float h = max(vD.y, 0.0); vec3 c = mix(hor, top, pow(h, 0.55));
+      c += glow * pow(max(dot(vD, normalize(sun)), 0.0), 18.0) * 0.6 + glow * pow(max(dot(vD, normalize(sun)), 0.0), 600.0) * 4.0;
+      c = mix(c, hor * 0.92, smoothstep(0.02, -0.08, vD.y));
+      gl_FragColor = vec4(c, 1.0);
+      #include <colorspace_fragment>
+    }` }));
+sky.frustumCulled = false; sky.renderOrder = -10; scene.add(sky);
+const hemi = new THREE.HemisphereLight(0xcfe3f3, 0x8f7d5c, 1.1); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff0dc, 3.2); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.6;
+scene.add(sun, sun.target);
+scene.fog = new THREE.Fog(0xc9d6de, 2500, 16000);
+const pmrem = new THREE.PMREMGenerator(renderer);
+function applyTime() {
+  U.uNight.value = night ? 1 : 0;
+  if (!night) {
+    skyU.top.value.set('#5f93c7'); skyU.hor.value.set('#cfdde4'); skyU.glow.value.set('#fff1d6');
+    skyU.sun.value.set(-0.55, 0.62, 0.42);
+    sun.color.set('#fff0dc'); sun.intensity = 3.2; hemi.intensity = 1.1; hemi.color.set('#cfe3f3'); hemi.groundColor.set('#8f7d5c');
+    scene.fog.color.set('#c9d6de'); scene.fog.near = 2500; scene.fog.far = 18000; renderer.toneMappingExposure = 1.0;
+  } else {
+    skyU.top.value.set('#060b18'); skyU.hor.value.set('#1b2638'); skyU.glow.value.set('#27324a');
+    skyU.sun.value.set(0.3, 0.55, -0.6);
+    sun.color.set('#9fb4dd'); sun.intensity = 0.35; hemi.intensity = 0.16; hemi.color.set('#4b5d80'); hemi.groundColor.set('#1a1712');
+    scene.fog.color.set('#141c2a'); scene.fog.near = 1200; scene.fog.far = 11000; renderer.toneMappingExposure = 1.25;
+  }
+  // environment map from the sky only
+  const envScene = new THREE.Scene(); envScene.add(new THREE.Mesh(sky.geometry, sky.material.clone()));
+  envScene.children[0].material.uniforms = skyU;
+  if (scene.environment) scene.environment.dispose();
+  scene.environment = pmrem.fromScene(envScene, 0.02).texture;
+  if (ground) ground.material.color.set(night ? '#2c2a24' : '#b6a77c');
+}
+let ground = null;
+
+// ---- track (for context) + trackDist from corridor.json
+const segGrid = new Map(); const SG = 200;
+function trackDist(x, z) {
+  const gi = Math.floor(x / SG), gj = Math.floor(z / SG); let best = 1e4;
+  for (let j = gj - 1; j <= gj + 1; j++) for (let i = gi - 1; i <= gi + 1; i++) {
+    const L = segGrid.get(i + ',' + j); if (!L) continue;
+    for (let k = 0; k < L.length; k += 4) {
+      const ax = L[k], az = L[k + 1], bx = L[k + 2], bz = L[k + 3], dx = bx - ax, dz = bz - az;
+      let t = ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1); t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const ex = ax + dx * t - x, ez = az + dz * t - z; const d = Math.sqrt(ex * ex + ez * ez); if (d < best) best = d;
+    }
+  }
+  return best;
+}
+function groundY(x, z) { return useTerrain ? Terrain.h(x, z) : 0; }
+function buildTrack(lines) {
+  const bal = new THREE.MeshStandardMaterial({ color: 0x80766a, roughness: 1 }), rail = new THREE.MeshStandardMaterial({ color: 0x5b5550, roughness: 0.4, metalness: 0.8 });
+  for (const pts of lines) {
+    const W = pts.map(([la, lo]) => Geo.ll2w(la, lo));
+    for (let k = 0; k + 1 < W.length; k++) {
+      const a = W[k], b = W[k + 1];
+      for (const [x, z] of [[a.x, a.z], [b.x, b.z]]) { const key = Math.floor(x / SG) + ',' + Math.floor(z / SG); }
+      // index the segment in every grid cell its bounding box touches
+      const i0 = Math.floor(Math.min(a.x, b.x) / SG), i1 = Math.floor(Math.max(a.x, b.x) / SG), j0 = Math.floor(Math.min(a.z, b.z) / SG), j1 = Math.floor(Math.max(a.z, b.z) / SG);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const key = i + ',' + j; if (!segGrid.has(key)) segGrid.set(key, []); segGrid.get(key).push(a.x, a.z, b.x, b.z); }
+    }
+    // ribbons in ~2 km chunks with local coordinates
+    let start = 0;
+    while (start < W.length - 1) {
+      let end = start, len = 0; while (end < W.length - 1 && len < 2000) { len += Math.hypot(W[end + 1].x - W[end].x, W[end + 1].z - W[end].z); end++; }
+      const o = W[start], mk = (half, y, mat) => {
+        const pos = [];
+        const dens = []; for (let k = start; k <= end; k++) dens.push(W[k]);
+        const fine = []; for (let k = 0; k + 1 < dens.length; k++) { const a = dens[k], b = dens[k + 1], n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / 20)); for (let s = 0; s < n; s++) fine.push({ x: a.x + (b.x - a.x) * s / n, z: a.z + (b.z - a.z) * s / n }); }
+        fine.push(dens[dens.length - 1]);
+        for (let k = 0; k + 1 < fine.length; k++) {
+          const a = fine[k], b = fine[k + 1], L = Math.hypot(b.x - a.x, b.z - a.z) || 1, nx = -(b.z - a.z) / L, nz = (b.x - a.x) / L;
+          for (const [o0, o1] of half) {
+            const q = [[a.x + nx * o0, a.z + nz * o0], [a.x + nx * o1, a.z + nz * o1], [b.x + nx * o0, b.z + nz * o0], [b.x + nx * o1, b.z + nz * o1]]
+              .map(([x, z]) => [x - o.x, groundY(x, z) + y, z - o.z]);
+            pos.push(...q[0], ...q[2], ...q[1], ...q[1], ...q[2], ...q[3]);
+          }
+        }
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+        const m = new THREE.Mesh(g, mat); m.position.set(o.x, 0, o.z); m.receiveShadow = true; scene.add(m);
+      };
+      mk([[-6, 6]], 0.35, bal);
+      mk([[-3.0, -2.93], [-1.57, -1.5], [1.5, 1.57], [2.93, 3.0]], 0.55, rail);
+      start = end;
+    }
+  }
+}
+
+// ---- camera controls
+const view = { x: 0, y: 0, z: 0, yaw: +(P.yaw || 35) * Math.PI / 180, pitch: +(P.pitch || 28) * Math.PI / 180, dist: +(P.dist || 420), walk: P.walk === '1' };
+let stations = [];
+function goStation(id, dx = 0, dz = 0) {
+  const s = stations.find(s => s.id === id) || stations[0]; const w = Geo.ll2w(s.lat, s.lon);
+  view.x = w.x + dx; view.z = w.z + dz; view.y = groundY(view.x, view.z); document.getElementById('stations').value = s.id; current = s;
+}
+let current = null;
+const keys = new Set(); addEventListener('keydown', e => {
+  keys.add(e.key.toLowerCase());
+  if (e.key === 'n' || e.key === 'N') { night = !night; applyTime(); }
+  if (e.key === 'h' || e.key === 'H') document.body.classList.toggle('hide');
+  if (e.key === 'v' || e.key === 'V') { view.walk = !view.walk; if (view.walk) view.pitch = 0.05; else view.pitch = 0.5; }
+  if (e.key === '[' || e.key === ']') { const i = stations.indexOf(current) + (e.key === ']' ? 1 : -1); goStation(stations[(i + stations.length) % stations.length].id); }
+});
+addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+let drag = null;
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup', () => drag = null);
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan && !view.walk) { const s = view.dist * 0.0016; view.x -= (Math.cos(view.yaw) * dx - Math.sin(view.yaw) * dy) * s; view.z -= (-Math.sin(view.yaw) * dx - Math.cos(view.yaw) * dy) * s; }
+  else { view.yaw -= dx * 0.005; view.pitch = U.clamp(view.pitch + dy * 0.004 * (view.walk ? -1 : 1), view.walk ? -1.2 : 0.02, 1.5); }
+});
+canvas.addEventListener('wheel', e => { view.dist = U.clamp(view.dist * Math.exp(e.deltaY * 0.001), 8, 30000); }, { passive: true });
+function stepControls(dt) {
+  const sp = (view.walk ? 6 : Math.max(20, view.dist * 0.9)) * dt * (keys.has('shift') ? 4 : 1);
+  const fx = -Math.sin(view.yaw), fz = -Math.cos(view.yaw), rx = Math.cos(view.yaw), rz = -Math.sin(view.yaw);
+  if (keys.has('w')) { view.x += fx * sp; view.z += fz * sp; } if (keys.has('s')) { view.x -= fx * sp; view.z -= fz * sp; }
+  if (keys.has('d')) { view.x += rx * sp; view.z += rz * sp; } if (keys.has('a')) { view.x -= rx * sp; view.z -= rz * sp; }
+  if (keys.has('q')) view.yaw += dt * 1.2; if (keys.has('e')) view.yaw -= dt * 1.2;
+  if (keys.has('r')) view.pitch = Math.min(1.5, view.pitch + dt); if (keys.has('f')) view.pitch = Math.max(view.walk ? -1.2 : 0.02, view.pitch - dt);
+  view.y = groundY(view.x, view.z);
+  if (view.walk) {
+    camera.position.set(view.x, view.y + 1.7 + 0.3, view.z);
+    camera.lookAt(view.x - Math.sin(view.yaw) * Math.cos(view.pitch), view.y + 2.0 + Math.sin(view.pitch), view.z - Math.cos(view.yaw) * Math.cos(view.pitch));
+  } else {
+    const cp = Math.cos(view.pitch);
+    camera.position.set(view.x + Math.sin(view.yaw) * cp * view.dist, view.y + Math.sin(view.pitch) * view.dist + 1.5, view.z + Math.cos(view.yaw) * cp * view.dist);
+    camera.lookAt(view.x, view.y + 1.5, view.z);
+  }
+  // keep the sun's shadow box around what we look at
+  const sd = new THREE.Vector3().copy(skyU.sun.value).normalize(); const box = U.clamp(view.walk ? 160 : view.dist * 0.9, 80, 700);
+  sun.target.position.set(view.x, view.y, view.z); sun.position.set(view.x + sd.x * 2000, view.y + sd.y * 2000, view.z + sd.z * 2000);
+  const sc = sun.shadow.camera; sc.left = -box; sc.right = box; sc.top = box; sc.bottom = -box; sc.near = 100; sc.far = 4200; sc.updateProjectionMatrix();
+}
+window.setView = o => { Object.assign(view, o); if (o.yawDeg !== undefined) view.yaw = o.yawDeg * Math.PI / 180; if (o.pitchDeg !== undefined) view.pitch = o.pitchDeg * Math.PI / 180; if (o.station) goStation(o.station, o.dx || 0, o.dz || 0); return 'ok'; };
+
+// ---- HUD
+const hud = document.getElementById('hud');
+let fps = 60, frames = 0, lastHud = 0, idleFrames = 0;
+function drawHud(t) {
+  const info = renderer.info.render, s = Towns.stats, ll = Geo.w2ll(view.x, view.z);
+  hud.innerHTML = `<b>Bayline · towns</b>  ${current ? current.name : ''}${night ? '  · night' : ''}${useTerrain ? '  · terrain' : ''}
+${fps.toFixed(0)} fps   ${info.calls} draws   ${(info.triangles / 1e6).toFixed(2)} M tris
+tiles ${s.tiles} (queue ${s.queue})   build ${s.lastBuildMs.toFixed(1)} ms
+bldg ${s.buildings}  houses ${s.houses}  trees ${s.trees}  lights ${s.lights}
+${ll.lat.toFixed(5)}, ${ll.lon.toFixed(5)}   dist ${view.dist.toFixed(0)} m${view.walk ? '  (walk)' : ''}`;
+}
+
+// resolves once nothing is left to stream in (for screenshots)
+window.idle = (minMs = 1500) => new Promise(res => { const t0 = performance.now(); const chk = () => (idleFrames > 20 && performance.now() - t0 > minMs) ? res(JSON.stringify(Towns.stats)) : setTimeout(chk, 100); chk(); });
+
+function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+(async () => {
+  const corridor = await Data.json('corridor');
+  stations = corridor.stations;
+  const sel = document.getElementById('stations');
+  for (const s of stations) { const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; sel.appendChild(o); }
+  sel.addEventListener('change', () => goStation(sel.value));
+  if (useTerrain) { await Terrain.load(); } else {
+    ground = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000), new THREE.MeshStandardMaterial({ color: 0xb6a77c, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  }
+  applyTime();
+  buildTrack([corridor.mainline.pts, corridor.southCounty.pts]);
+  const t0 = performance.now();
+  const info = await Towns.init({ ll2w: Geo.ll2w, groundY, trackDist, stationList: stations });
+  console.log('towns.bin', info.tiles, 'tiles', (info.bytes / 1e6).toFixed(2), 'MB raw, init', (performance.now() - t0).toFixed(0), 'ms');
+  scene.add(Towns.group);
+  goStation(P.station || 'palo_alto', +(P.dx || 0), +(P.dz || 0));
+  const budget = +(P.budget || 0);
+  let last = performance.now(), firstIdle = false;
+  renderer.setAnimationLoop(() => {
+    const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
+    U.uTime.value = now / 1000;
+    stepControls(dt);
+    sky.position.copy(camera.position);
+    if (useTerrain) { Terrain.update(camera); Terrain.setTownFade(Towns.stats.detailR - 300, Towns.stats.detailR + 300, 1); }
+    // generous budget until the first full load, then the in-game 4 ms (or #budget=)
+    Towns.update(camera.position, { night: U.uNight.value, time: now / 1000, camPos: camera.position, budgetMs: budget || (firstIdle ? 4 : 40) });
+    if (Towns.idle()) { idleFrames++; if (!firstIdle && idleFrames > 5) { firstIdle = true; console.log('first idle after', (now - t0).toFixed(0), 'ms', JSON.stringify(Towns.stats)); } } else idleFrames = 0;
+    renderer.render(scene, camera);
+    frames++; if (now - lastHud > 500) { fps = frames * 1000 / (now - lastHud); frames = 0; lastHud = now; drawHud(now); }
+  });
+})().catch(e => { hud.textContent = 'error: ' + e.message; console.error(e); });
+</script>
+</body>
+</html>
