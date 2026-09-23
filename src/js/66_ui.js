@@ -104,15 +104,34 @@ const UI = (() => {
     let best = null, bd = 16 * devicePixelRatio;
     for (const tr of Sim.running) { const [x, y] = w2m(tr.x, tr.z, c); const d = Math.hypot(x - mx, y - my); if (d < bd) { bd = d; best = { tr }; } }
     for (const st of Stations.list) { const [x, y] = w2m(st.x, st.z, c); const d = Math.hypot(x - mx, y - my); if (d < bd * 0.8) { bd = d; best = { st }; } }
+    if (World.landmarks && map.scale > 0.004) for (const l of World.landmarks.list) { const [x, y] = w2m(l.x, l.z, c); const d = Math.hypot(x - mx, y - my); if (d < bd * 0.8) { bd = d; best = { lm: l }; } }
     if (!best) return;
     closeAll();
     if (best.tr) { Player.setFocus(best.tr.key); Player.setMode('chase'); toast('Following ' + Sim.destText(best.tr).replace(/\s+/g, ' ')); }
+    else if (best.lm) flyToLandmark(best.lm);
     else { Player.teleportToStation(best.st, 1); toast(best.st.name); }
+  }
+  // fly to a landmark: a slow orbit framed on its height and footprint
+  function flyToLandmark(l) {
+    const gy = l.y || Terrain.h(l.x, l.z), top = Math.max(20, (l.top || gy + 60) - gy);
+    Player.setMode('orbit', { target: { x: l.x, y: gy + Math.min(140, top * 0.45), z: l.z }, dist: U.clamp(Math.max(top * 2.4, (l.radius || 150) * 2.2), 160, 2600) });
+    Player.orbit.pitch = 0.3; toast(l.name + (l.blurb ? ' · ' + l.blurb : ''), 6);
+  }
+  function fillFlyTo() {
+    const sel = $('flyto'); if (!sel || sel.dataset.n === String((World.landmarks && World.landmarks.list.length) || 0)) return;
+    const L = World.landmarks ? World.landmarks.list.slice().sort((a, b) => a.name.localeCompare(b.name)) : [];
+    sel.innerHTML = '<option value="">Fly to…</option><optgroup label="Stations">' + Stations.list.map((st, i) => `<option value="s${i}">${st.name}</option>`).join('') + '</optgroup>'
+      + (L.length ? '<optgroup label="Landmarks">' + L.map(l => `<option value="l${World.landmarks.list.indexOf(l)}">${l.name}</option>`).join('') + '</optgroup>' : '');
+    sel.dataset.n = String(L.length);
+    sel.onchange = () => { const v = sel.value; sel.value = ''; if (!v) return; closeAll();
+      if (v[0] === 's') { const st = Stations.list[+v.slice(1)]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: 320 }); Player.orbit.pitch = 0.35; toast(st.name); }
+      else flyToLandmark(World.landmarks.list[+v.slice(1)]); };
   }
   function openMap() {
     closeAll(); el.mapov.hidden = false; Player.releaseLock();
     const c = el.mapc; const r = c.getBoundingClientRect(); c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio;
     const p = Env.camera.position; map.cx = p.x; map.cz = p.z; map.scale = Math.min(c.width / 36000, c.height / 30000);
+    fillFlyTo();
     if (!map.pts) { map.pts = []; for (let s = 0; s < Track.length; s += 120) { const f = {}; Track.frame(s, f); map.pts.push([f.x, f.z]); } }
   }
   function drawMap() {
