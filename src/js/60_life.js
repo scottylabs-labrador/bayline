@@ -1506,10 +1506,9 @@ const Life = (() => {
       return { geo: U.mergeGeometries(P), len: 7.6 };
     },
   };
-  function wheelsLo(parts, xs, r, halfTrack, w = 0.22) {     // far LOD: plain cylinders
+  function wheelsLo(parts, xs, r, halfTrack, w = 0.22) {     // far LOD (> 110 m): 8-sided tyres, rims are sub-pixel there
     for (const x of xs) for (const s of [-1, 1]) {
-      const t = new THREE.CylinderGeometry(r, r, w, 10); t.rotateX(Math.PI / 2); t.translate(x, r, s * halfTrack); parts.push(vp(t, TIRE, { rough: 0.9 }));
-      const h = new THREE.CylinderGeometry(r * 0.6, r * 0.6, w + 0.012, 8); h.rotateX(Math.PI / 2); h.translate(x, r, s * halfTrack); parts.push(vp(h, RIM, { rough: 0.3, metal: 0.8 }));
+      const t = new THREE.CylinderGeometry(r, r, w, 8); t.rotateX(Math.PI / 2); t.translate(x, r, s * halfTrack); parts.push(vp(t, TIRE, { rough: 0.9 }));
     }
   }
   // far LOD for the lofted types: the simple extruded bodies (a quarter of the triangles), swapped in beyond LOD_R
