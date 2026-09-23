@@ -1191,6 +1191,7 @@ const Life = (() => {
         else if (aGlow > 1.5 && aGlow < 2.5) gl = vec3(1.0, 0.03, 0.015) * (0.05 + 1.6 * night + 3.0 * aInst.y);
         else if (aGlow > 2.5 && aGlow < 3.5) gl = vec3(1.0, 0.9, 0.72) * (1.4 * night);
         else if (aGlow > 3.5) gl = vec3(1.0, 0.55, 0.1) * (0.5 + 2.0 * night);
+        gl *= 1.0 - aInst.z;                                    // parked cars: lamps off
       } else {
         if (aGear > 0.5 && aInst.y < 0.5) p = vec3(0.0);
         float t = uLifeTime + aInst.w;
@@ -1591,6 +1592,7 @@ const Life = (() => {
     if (!roadMat) roadMat = vehicleMaterial(0);
     const r = U.rng((opts.seed || 7) * 1013);
     const laneW = opts.laneWidth || 3.5, maxCars = opts.maxCars || 600, density = opts.density || 11;
+    const maxParked = opts.maxParked !== undefined ? opts.maxParked : 1400, cap = maxCars + maxParked;   // curbside parking near the camera
     const typeW = Object.assign({ sedan: 46, suv: 30, pickup: 8, van: 7, bus: 3, truck: 6 }, opts.typeWeights || {});
     const group = new THREE.Group(); group.name = 'traffic';
     // one instanced mesh per vehicle type; each can hold every car so re-streaming roads never reallocates
@@ -1601,12 +1603,12 @@ const Life = (() => {
       for (const k of Object.keys(base.attributes)) geo.setAttribute(k, base.attributes[k]);
       if (!base.boundingSphere) base.computeBoundingSphere();
       geo.boundingSphere = base.boundingSphere.clone();
-      const inst = new THREE.InstancedBufferAttribute(new Float32Array(maxCars * 4), 4); inst.setUsage(THREE.DynamicDrawUsage);
+      const inst = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4); inst.setUsage(THREE.DynamicDrawUsage);
       geo.setAttribute('aInst', inst);
-      const mesh = new THREE.InstancedMesh(geo, roadMat.m, maxCars); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const mesh = new THREE.InstancedMesh(geo, roadMat.m, cap); mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.customDepthMaterial = roadMat.d; mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = name; mesh.count = 0;
       mesh.boundingSphere = new THREE.Sphere(new V3(), 1);
-      const flare = flaresFor(mesh, inst, model.lamps, 0, maxCars); flare.visible = false;
+      const flare = flaresFor(mesh, inst, model.lamps, 0, cap); flare.visible = false;
       group.add(mesh, flare);
       return { mesh, inst, flare };
     };
@@ -1625,8 +1627,9 @@ const Life = (() => {
       pools = new THREE.InstancedMesh(pg, pm, maxCars); pools.instanceMatrix.setUsage(THREE.DynamicDrawUsage); pools.frustumCulled = false; pools.name = 'traffic-lightpools';
       pools.renderOrder = 2; pools.count = 0; group.add(pools); pools.visible = false;
     }
-    let lanes = [], cars = [];
-    function setRoads(list) {
+    let lanes = [], cars = [], parked = [];
+    const PARK_W = VEH_TYPES.map(t => ({ sedan: 50, suv: 32, pickup: 8, van: 8, bus: 0, truck: 1 })[t] || 0);
+    function setRoads(list, center) {
       const R = (list || []).map(rd => (rd && rd.pts ? { ...rd, pts: toPts(rd.pts) } : { pts: toPts(rd) })).filter(rd => rd.pts.length >= 6);
       let sx = 0, sy = 0, sz = 0, sn = 0;
       for (const rd of R) for (let i = 0; i < rd.pts.length; i += 3) { sx += rd.pts[i]; sy += rd.pts[i + 1]; sz += rd.pts[i + 2]; sn++; }
@@ -1665,6 +1668,39 @@ const Life = (() => {
         for (const c of lane.cars) { c.s = ((s % lane.len) + lane.len) % lane.len; s -= gap * lerp(0.6, 1.4, r()); }
         lane.cars.sort((a, b) => b.s - a.s);
       }
+      // curbside parking on neighbourhood streets (secondary .. unclassified) within ~450 m of the camera: both sides,
+      // a car every 6-7.6 m where the dice say so, clear of the ends (intersections), facing the flow of their side
+      parked = [];
+      const pcx = center ? center.x : ax, pcz = center ? center.z : az, PR = 450;
+      for (const rd of R) {
+        if (parked.length >= maxParked) break;
+        const cls = rd.cls !== undefined ? rd.cls : 10; if (cls < 6 || cls > 11 || rd.bridge) continue;
+        const P = rd.pts, n = P.length / 3; let near = false;
+        for (let i = 0; i < n; i++) if (Math.abs(P[i * 3] - pcx) < PR + 60 && Math.abs(P[i * 3 + 2] - pcz) < PR + 60) { near = true; break; }
+        if (!near) continue;
+        const half = (rd.width || Math.max(1, rd.lanes || 2) * 3.4) / 2; if (half < 3.2) continue;
+        let total = 0; for (let i = 0; i + 1 < n; i++) total += Math.hypot(P[i * 3 + 3] - P[i * 3], P[i * 3 + 5] - P[i * 3 + 2]);
+        let acc = 0, next = 11 + r() * 6;
+        for (let i = 0; i + 1 < n && parked.length < maxParked; i++) {
+          const x0 = P[i * 3], y0 = P[i * 3 + 1], z0 = P[i * 3 + 2], x1 = P[i * 3 + 3], y1 = P[i * 3 + 4], z1 = P[i * 3 + 5];
+          const L = Math.hypot(x1 - x0, z1 - z0); if (L < 1e-3) continue;
+          const ux = (x1 - x0) / L, uz = (z1 - z0) / L;
+          while (next < acc + L && parked.length < maxParked) {
+            const t = (next - acc) / L, px = x0 + (x1 - x0) * t, pz = z0 + (z1 - z0) * t, py = y0 + (y1 - y0) * t;
+            if (next < total - 11 && Math.hypot(px - pcx, pz - pcz) < PR) for (const side of [-1, 1]) {
+              if (r() > 0.56) continue;
+              const off = side * (half - 1.15), x = px - uz * off, z = pz + ux * off;
+              const type = VEH_TYPES[wpick(r, PARK_W)], paint = CAR_PAINT[wpick(r, CAR_PAINT.map(c => c[1]))][0];
+              const yaw = Math.atan2(-uz, ux) + (side < 0 && !rd.oneway ? Math.PI : 0) + (r() - 0.5) * 0.05;
+              _e.set(0, yaw, 0, 'YZX'); _q.setFromEuler(_e); _s.set(1, 1, 1);
+              _m.compose(_v.set(x - ax, py - ay, z - az), _q, _s);
+              parked.push({ type, paint, phase: r() * 10, m: Float32Array.from(_m.elements), x: x - ax, z: z - az });
+            }
+            next += lerp(6.0, 7.6, r());
+          }
+          acc += L;
+        }
+      }
       const sphere = box3.isEmpty() ? new THREE.Sphere(new V3(), 1) : box3.getBoundingSphere(new THREE.Sphere());
       sphere.radius += 12;
       for (const t of VEH_TYPES) { meshes[t].mesh.boundingSphere.copy(sphere); if (meshes[t].lo) meshes[t].lo.mesh.boundingSphere.copy(sphere); }
@@ -1688,7 +1724,7 @@ const Life = (() => {
     const A = 1.6, B = 2.8, S0 = 2.5, T = 1.25, SQ = 2 * Math.sqrt(A * B);
     const traffic = {
       group, meshes, setRoads,
-      get cars() { return cars; }, get lanes() { return lanes; }, get count() { return cars.length; },
+      get cars() { return cars; }, get lanes() { return lanes; }, get count() { return cars.length; }, get parked() { return parked.length; },
       update(dt = 1 / 60, env = {}) {
         dt = Math.min(dt, 0.1);
         const night = env.night !== undefined ? env.night : U.uNight.value;
@@ -1732,9 +1768,15 @@ const Life = (() => {
             _q.setFromAxisAngle(_up, yaw); _s.set(11 * fade, 1, 5.5 * fade); _m.compose(_v2, _q, _s); pools.setMatrixAt(pi++, _m);
           }
         }
+        // parked cars after the moving ones: the flares (sharing the instance matrices) only cover the moving block
+        for (const t of VEH_TYPES) { const M = meshes[t]; M.nMove = M.n; if (M.lo) M.lo.nMove = M.lo.n; }
+        for (const p of parked) {
+          const M = meshes[p.type], m = M.lo && cp && (p.x - lx) ** 2 + (p.z - lz) ** 2 > lod2 ? M.lo : M, k = m.n++;
+          m.mesh.instanceMatrix.array.set(p.m, k * 16); m.inst.setXYZW(k, p.paint, 0, 1, p.phase);
+        }
         for (const t of VEH_TYPES) for (const m of meshes[t].lo ? [meshes[t], meshes[t].lo] : [meshes[t]]) {
           m.mesh.count = m.n; if (m.n) { m.mesh.instanceMatrix.needsUpdate = true; m.inst.needsUpdate = true; }
-          m.flare.count = m.n; m.flare.visible = night > 0.03 && m.n > 0; }
+          m.flare.count = m.nMove; m.flare.visible = night > 0.03 && m.nMove > 0; }
         if (pools) { pools.visible = !!lit && pi > 0; pools.count = pi; if (lit) { pools.material.opacity = 0.5 * sstep(0.05, 0.6, night); pools.instanceMatrix.needsUpdate = true; } }
       },
     };
