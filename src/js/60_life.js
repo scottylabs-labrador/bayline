@@ -16,6 +16,7 @@ const Life = (() => {
   const V3 = THREE.Vector3;
   const _v = new V3(), _v2 = new V3(), _up = new V3(0, 1, 0), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YZX'),
     _s = new V3(), _m = new THREE.Matrix4(), _c = new THREE.Color(), _zero = new THREE.Matrix4().makeScale(0, 0, 0);
+  const _pmT = new THREE.Matrix4(), _frT = new THREE.Frustum(), _sphT = new THREE.Sphere(), _v3T = new V3();
 
   // ------------------------------------------------------------------------------------------
   // Shared shader plumbing
@@ -1749,6 +1750,11 @@ const Life = (() => {
         // camera in the group's frame: detailed bodies within VEH_LOD_R, light ones beyond; cars that are fading
         // in or out at a lane end are simply not drawn, so neither mesh spends vertices on hidden instances
         const cp = env.camPos, lx = cp ? cp.x - group.position.x : 0, lz = cp ? cp.z - group.position.z : 0, lod2 = VEH_LOD_R * VEH_LOD_R;
+        // per-instance culling: cars outside the view (with a 20 m ring kept for shadows) are not drawn at all
+        const cam = typeof Env !== 'undefined' && Env.camera ? Env.camera : null;
+        if (cam) { _pmT.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); _frT.setFromProjectionMatrix(_pmT); }
+        const gx = group.position.x, gy = group.position.y, gz = group.position.z;
+        const inView = (x, y, z) => !cam || !cp || (x - lx) ** 2 + (z - lz) ** 2 < 400 || _frT.intersectsSphere(_sphT.set(_v3T.set(x + gx, y + gy, z + gz), 7));
         for (const t of VEH_TYPES) { const M = meshes[t]; M.n = 0; if (M.lo) M.lo.n = 0; }
         for (let i = 0; i < cars.length; i++) {
           const c = cars[i], M = meshes[c.type], lane = c.lane;
@@ -1759,6 +1765,7 @@ const Life = (() => {
           const dx = ahead.x - behind.x, dz = ahead.z - behind.z, dy = ahead.y - behind.y;
           const yaw = Math.atan2(-dz, dx), pitch = Math.atan2(dy, Math.hypot(dx, dz));
           _e.set(0, yaw, pitch, 'YZX'); _q.setFromEuler(_e); _s.set(fade, fade, fade);
+          if (!inView(pos.x, pos.y, pos.z)) continue;
           const m = M.lo && cp && (pos.x - lx) ** 2 + (pos.z - lz) ** 2 > lod2 ? M.lo : M, k = m.n++;
           _m.compose(pos, _q, _s); m.mesh.setMatrixAt(k, _m);
           m.inst.setXYZW(k, c.paint, c.brake, 0, c.phase);
@@ -1770,6 +1777,7 @@ const Life = (() => {
         // parked cars after the moving ones: the flares (sharing the instance matrices) only cover the moving block
         for (const t of VEH_TYPES) { const M = meshes[t]; M.nMove = M.n; if (M.lo) M.lo.nMove = M.lo.n; }
         for (const p of parked) {
+          if (!inView(p.x, p.m[13], p.z)) continue;
           const M = meshes[p.type], m = M.lo && cp && (p.x - lx) ** 2 + (p.z - lz) ** 2 > lod2 ? M.lo : M, k = m.n++;
           m.mesh.instanceMatrix.array.set(p.m, k * 16); m.inst.setXYZW(k, p.paint, 0, 1, p.phase);
         }

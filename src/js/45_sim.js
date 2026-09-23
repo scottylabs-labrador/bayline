@@ -329,12 +329,15 @@ const Sim = (() => {
   const sFrontOf = (tr) => tr.dir ? tr.s : tr.s + tr.len;   // car 0 (south end) coupler
   // seated passengers (Life people, one instanced set per car, parented to the car) for the train you're on / next to
   const KINDS = ['commuter', 'commuter', 'office', 'student', 'tourist', 'senior', 'kid', 'cyclist'];
+  const _pw = new THREE.Vector3();
   function paxFor(e, tr, show) {
     if (typeof Life === 'undefined' || !Life.createPeople) return;
-    const cars = e.consist.cars; const bucket = Math.floor(Env.time.sec / 1200);
+    const cars = e.consist.cars; const bucket = Math.floor(Env.time.sec / 1200), cp = Env.camera.position;
     for (let ci = 0; ci < cars.length; ci++) {
       const car = cars[ci];
-      if (!show) { if (car._pax) car._pax.mesh.visible = false; continue; }
+      // only cars near the camera: from a platform the far cars' passengers are specks behind tinted glass
+      let near = show; if (near) { car.group.getWorldPosition(_pw); near = (_pw.x - cp.x) ** 2 + (_pw.z - cp.z) ** 2 < 75 * 75; }
+      if (!near) { if (car._pax) car._pax.mesh.visible = false; continue; }
       if (!car._pax) { if (!car.seats || !car.seats.length) continue; try { car._pax = Life.createPeople(Math.min(car.seats.length, 110)); } catch (err) { continue; } car._pax.mesh.frustumCulled = false; car.group.add(car._pax.mesh); car._paxKey = ''; }
       car._pax.mesh.visible = true;
       const key = tr.key + ':' + bucket;

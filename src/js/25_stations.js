@@ -798,6 +798,10 @@ const Stations = (() => {
 
   // ---------- crowds on platforms near the camera (gameplay; unchanged apart from avoiding blocks/holes) ----------
   let people = null; const crowd = []; let crowdStation = null;
+  const RIDERS = { san_francisco: 1, '22nd_street': 0.13, bayshore: 0.03, south_sf: 0.04, san_bruno: 0.06, place_MLBR: 0.38, broadway: 0.01, burlingame: 0.11,
+    san_mateo: 0.27, hayward_park: 0.04, hillsdale: 0.22, belmont: 0.08, san_carlos: 0.13, redwood_city: 0.31, menlo_park: 0.13, palo_alto: 0.6, stanford: 0.01,
+    california_ave: 0.1, san_antonio: 0.085, mountain_view: 0.38, sunnyvale: 0.29, lawrence: 0.08, santa_clara: 0.13, college_park: 0.01, sj_diridon: 0.34,
+    tamien: 0.05, capitol: 0.01, blossom_hill: 0.012, morgan_hill: 0.015, san_martin: 0.004, gilroy: 0.015 };
   function setupCrowd() { if (typeof Life === 'undefined' || !Life.createPeople) return; try { people = Life.createPeople(220); Env.scene.add(people.mesh); people.count = 0; } catch (e) { console.warn('people', e); people = null; } }
   function blocked(p, s, lat) {
     const [li, lo] = platLat(p, s); const sg = Math.sign(lo - li) || 1; const ed = (lat - li) * sg;
@@ -809,10 +813,12 @@ const Stations = (() => {
     crowd.length = 0; crowdStation = st; if (!people) return; people.mesh.position.set(st.x, 0, st.z); people.mesh.updateMatrixWorld();
     const r = U.rng(U.hashStr(st.id) + Math.floor(Env.time.sec / 900));
     const hour = Env.time.sec / 3600; const busy = (hour > 6.5 && hour < 9.5) || (hour > 16 && hour < 19.5) ? 1 : hour > 5 && hour < 23 ? 0.55 : 0.15;
-    const big = ['san_francisco', 'sj_diridon', 'place_MLBR', 'palo_alto', 'mountain_view', 'redwood_city', 'hillsdale', 'sunnyvale', 'san_mateo', '22nd_street'].includes(st.id) ? 1.8 : 1;
-    const n = Math.min(200, Math.round((10 + r() * 24) * busy * big));
+    // typical weekday boardings relative to 4th & King: the terminal and Palo Alto fill up at the peaks, halts stay quiet
+    const rider = RIDERS[st.id] !== undefined ? RIDERS[st.id] : 0.05;
+    const n = Math.min(200, Math.round((8 + r() * 10) * busy * (1 + 14 * rider)));
     for (let i = 0, tries = 0; i < n && tries < n * 4; tries++) {
-      const p = st.plats[Math.floor(r() * st.plats.length)]; const s = U.lerp(p.s0 + 12, p.s1 - 12, r());
+      // people bunch toward the middle of a platform (entrances, shelters, where the train's doors will be)
+      const p = st.plats[Math.floor(r() * st.plats.length)]; const s = U.lerp(p.s0 + 12, p.s1 - 12, U.clamp(0.5 + (r() - 0.5) * (0.35 + r() * 0.75), 0, 1));
       const [li, lo] = platLat(p, s); const w = Math.abs(lo - li); const sg = Math.sign(lo - li) || 1;
       const lat = p.side === 'I' ? U.lerp(li + 1.2, lo - 1.2, r()) : li + sg * U.lerp(1.1, Math.max(1.3, w - 0.5), r());
       if (blocked(p, s, lat)) continue; i++;
