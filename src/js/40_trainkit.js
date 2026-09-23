@@ -1966,7 +1966,7 @@ const TrainKit = (() => {
         clearcoat: 1, clearcoatRoughness: 0.015, emissive: 0xffc88c, emissiveMap: windowCard(), emissiveIntensity: 0 });
       // see-through glass when the interior is built (you're aboard or right beside the train)
       this.glassIn = new THREE.MeshPhysicalMaterial({ color: 0x30424c, roughness: 0.02, metalness: 0.0, ior: 1.52, envMapIntensity: 1.3, transparent: true, opacity: 0.2,
-        side: THREE.DoubleSide, depthWrite: false });
+        side: THREE.DoubleSide, depthWrite: false, emissive: 0xe6dccb, emissiveIntensity: 0 });
       this.signTex = U.canvasTexture(512, 128, g => { g.fillStyle = '#050403'; g.fillRect(0, 0, 512, 128); });
       this.signMat = new THREE.MeshBasicMaterial({ map: this.signTex, toneMapped: false });
       this.pisTex = null; this.pisMat = null; this.cabTex = null; this.cabMat = null;
@@ -2000,6 +2000,7 @@ const TrainKit = (() => {
         }
       }
       this.glassExt.emissiveIntensity = L.interior * n * 1.35;
+      this.glassIn.emissiveIntensity = L.interior * n * 0.11;   // at night the lit interior reflects in the windows (a faint warm haze)
       this.signMat.color.setScalar(0.75 + 0.25 * (1 - n * 0.3));
       if (this.cabMat) this.cabMat.color.setScalar(0.35 + 0.65 * L.cab);
     }
