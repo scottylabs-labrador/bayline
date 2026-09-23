@@ -83,7 +83,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => start(b.dataset.go)));
   if (hash.has('auto')) { start('explore'); } else title.hidden = false;
   if (hash.get('at')) { const st = Track.byId[hash.get('at')]; if (st) Player.teleportToStation(Stations.list[st.idx], +(hash.get('dir') || 1)); }
-  if (hash.get('cam')) { const m = hash.get('cam'); if (m === 'orbit' && hash.get('at')) { const st = Stations.list[Track.byId[hash.get('at')].idx]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: +(hash.get('dist') || 300) }); } else Player.setMode(m); }
+  if (hash.get('cam')) { const m = hash.get('cam'); const atSt = Track.byId[hash.get('at')]; if (m === 'orbit' && atSt) { const st = Stations.list[atSt.idx]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: +(hash.get('dist') || 300) }); } else Player.setMode(m); }
   if (hash.get('s')) { const f = {}; Track.frame(+hash.get('s'), f); Player.setMode('orbit', { target: { x: f.x, y: f.y, z: f.z }, dist: +(hash.get('dist') || 120) }); if (hash.get('yaw')) Player.orbit.yaw = +hash.get('yaw'); if (hash.get('pitch')) Player.orbit.pitch = +hash.get('pitch'); }
   if (hash.get('drive')) { const p = Sim.planById(hash.get('drive')); if (p) Game.startDrive(p, { auto: hash.has('autopilot') }); }
 
@@ -174,6 +174,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     const T = TIERS[tier]; Env.renderer.setPixelRatio(Math.min(T.dpr, devicePixelRatio)); Terrain.lodFactor.value = T.lod;
     if (typeof Post !== 'undefined' && Post.setQuality) safe('post', () => Post.setQuality(T.post));
     if (typeof Flora !== 'undefined' && Flora.setQuality) safe('flora', () => Flora.setQuality(T.post));
+    if (typeof Towns !== 'undefined' && Towns.setQuality) safe('towns', () => Towns.setQuality(T.post));
     window.dispatchEvent(new Event('resize'));
   }
   applyTier();

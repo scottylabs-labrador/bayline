@@ -1398,11 +1398,14 @@ const Towns = (() => {
   const tileDist = (t, p) => { const dx = Math.max(0, Math.abs(p.x - (t.ox + TILE / 2)) - TILE / 2), dz = Math.max(0, Math.abs(p.z - (t.oz + TILE / 2)) - TILE / 2); return Math.hypot(dx, dz); };
   const _jobs = [];
   let scanX = 1e9, scanZ = 1e9, scanR = 0, imgClock = 0;
+  let qR = 1;
+  function setQuality(name) { qR = { high: 1, medium: 0.72, low: 0.5 }[name] || 1; scanR = 0; }
   function update(camPos, env) {
     if (!ready) return;
     const t0 = now(); const budget = (env && env.budgetMs) || BUDGET_MS; deadline = t0 + budget;
     const alt = Math.max(0, camPos.y - ctx.groundY(camPos.x, camPos.z));
-    const bldR = BLD_R + Math.min(alt * 0.8, 1500), hiR = HI_R + Math.min(alt * 0.3, 400), roadR = ROAD_R + Math.min(alt * 0.5, 600), skyR = SKY_R + Math.min(alt * 2, 6000);
+    // the quality tier shrinks the real-building and full-detail radii (dense San Francisco is millions of triangles)
+    const bldR = (BLD_R + Math.min(alt * 0.8, 1500)) * qR, hiR = Math.max(350, (HI_R + Math.min(alt * 0.3, 400)) * qR), roadR = ROAD_R + Math.min(alt * 0.5, 600), skyR = SKY_R + Math.min(alt * 2, 6000);
     stats.detailR = bldR; stats.roadR = roadR;
     groundVis = alt < GROUND_ALT;
     // discover tiles when the camera has moved or the view radius grew
@@ -1535,6 +1538,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, buildingsAt, stats, idle, dispose, regionOf,
+  return { init, update, group, roadsNear, buildingsAt, stats, idle, dispose, regionOf, setQuality,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();
