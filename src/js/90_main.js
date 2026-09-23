@@ -30,6 +30,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       World.traffic = safe('traffic', () => { const t = Life.createTraffic && typeof Towns !== 'undefined' ? Life.createTraffic([], { maxCars: 420 }) : null; if (t) { Env.scene.add(t.group); t.cx = 1e9; t.cz = 1e9; t.tick = 0; } return t; });
     }
     if (typeof Flora !== 'undefined' && Flora.init) { await step(0.92, 'Planting every tree…'); await safeA('flora', async () => { await Flora.init(ctx); if (Flora.group) Env.scene.add(Flora.group); }); }
+    safe('groundcover', () => { if (typeof GroundCover !== 'undefined') GroundCover.init(); });
     UI.init(); Player.init();
     await step(0.96, 'Warming up…');
   } catch (e) { console.error(e); loadmsg.textContent = 'Something went wrong: ' + e.message; return; }
@@ -207,6 +208,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (T.tick <= 0) { T.tick = 1.2; if (alt < 1500 && Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650 && Towns.ready !== false) { T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500)); } }
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
     if (typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
+    if (typeof GroundCover !== 'undefined') safeFrame('groundcover', () => GroundCover.update(cp));
     Avatars.update();
     if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
@@ -216,6 +218,6 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
   window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
-    Flora: typeof Flora !== 'undefined' ? Flora : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
+    Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();
