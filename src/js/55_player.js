@@ -146,7 +146,7 @@ const Player = (() => {
     return best;
   }
   function doorNearWorld(pos) {
-    let best = null, bd = 4.2;
+    let best = null, bd = 6.5;
     for (const tr of Sim.running) {
       if (!tr.doorsOpen || !tr.entry || Math.hypot(tr.x - pos.x, tr.z - pos.z) > 400) continue;
       const cs = tr.entry.consist.cars; const side = tr.doorSide === 'right' ? 1 : -1;
