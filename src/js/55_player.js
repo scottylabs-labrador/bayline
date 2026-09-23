@@ -332,8 +332,22 @@ const Player = (() => {
     const feats = [...Track.feat.crossings.map(c => c.s), ...Track.stations.map(st => st.s)].filter(v => (v - tr.s) * sgn > 250 && (v - tr.s) * sgn < 1100);
     if (feats.length && r() < 0.6) s = feats[Math.floor(r() * feats.length)] + sgn * (20 + r() * 60);
     Track.frame(s, F); const [lo, hi] = TrackGeo.bedSpan(s);
-    const side = r() < 0.5 ? -1 : 1; const lat = side < 0 ? lo - 7 - r() * 22 : hi + 7 + r() * 22;
-    const x = F.x + F.rx * lat, z = F.z + F.rz * lat; const high = r() < 0.25;
+    // a spot in the open: not under a tree canopy (the photo's canopy mask), not on water, not inside a building
+    let x = 0, z = 0;
+    for (let k = 0; k < 10; k++) {
+      const side = r() < 0.5 ? -1 : 1; const lat = side < 0 ? lo - 7 - r() * 22 : hi + 7 + r() * 22;
+      x = F.x + F.rx * lat; z = F.z + F.rz * lat;
+      let ok = !(Terrain.maskAt && Terrain.maskAt(x, z, 2) > 0.35) && !Terrain.isWater(x, z);
+      if (ok && typeof Towns !== 'undefined' && Towns.buildingsAt) { try { for (const b of Towns.buildingsAt(x, z, 60)) { const P = b.pts, n = P.length / 2; let inside = false;
+        for (let i = 0, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside; }
+        if (inside) { ok = false; break; } } } catch (e) {} }
+      if (ok && typeof Towns !== 'undefined' && Towns.roadsNear) { try { for (const rd of Towns.roadsNear(x, z, 30)) { const P = rd.pts, hw = (rd.width || (rd.lanes || 2) * 3.4) / 2 + 1.5;   // not on a street
+        for (let i = 0; i + 5 < P.length && ok; i += 3) { const ax = P[i], az = P[i + 2], bx = P[i + 3], bz = P[i + 5], dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1;
+          const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L2)); if (Math.hypot(ax + dx * t - x, az + dz * t - z) < hw) ok = false; }
+        if (!ok) break; } } catch (e) {} }
+      if (ok) break;
+    }
+    const high = r() < 0.25;
     ts.x = x; ts.z = z; ts.y = Math.max(groundAt(x, z), F.y - 1) + (high ? 9 + r() * 20 : 1.6 + r() * 1.2); ts.s = s; ts.fov = high ? 38 : 28 + r() * 22;
   }
   function interact() { if (promptAction) { const f = promptAction; promptAction = null; f(); return true; } return false; }
