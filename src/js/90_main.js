@@ -87,6 +87,11 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   if (hash.get('at')) { const st = Track.byId[hash.get('at')]; if (st) Player.teleportToStation(Stations.list[st.idx], +(hash.get('dir') || 1)); }
   if (hash.get('cam')) { const m = hash.get('cam'); const atSt = Track.byId[hash.get('at')]; if (m === 'orbit' && atSt) { const st = Stations.list[atSt.idx]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: +(hash.get('dist') || 300) }); } else Player.setMode(m); }
   if (hash.get('s')) { const f = {}; Track.frame(+hash.get('s'), f); Player.setMode('orbit', { target: { x: f.x, y: f.y, z: f.z }, dist: +(hash.get('dist') || 120) }); if (hash.get('yaw')) Player.orbit.yaw = +hash.get('yaw'); if (hash.get('pitch')) Player.orbit.pitch = +hash.get('pitch'); }
+  if (hash.get('ll')) {   // #ll=lat,lon[,altitude m,yaw,pitch]: fly camera at a shared viewpoint
+    const [la, lo, al, yw, pt] = hash.get('ll').split(',').map(Number);
+    if (isFinite(la) && isFinite(lo)) { const w = Geo.ll2w(la, lo); Player.setMode('fly'); Player.fly.x = w.x; Player.fly.z = w.z; Player.fly.y = isFinite(al) ? al : Terrain.h(w.x, w.z) + 150;
+      if (isFinite(yw)) Player.look.yaw = yw; if (isFinite(pt)) Player.look.pitch = pt; }
+  }
   if (hash.get('drive')) { const p = Sim.planById(hash.get('drive')); if (p) Game.startDrive(p, { auto: hash.has('autopilot') }); }
 
   // ---------- keyboard ----------

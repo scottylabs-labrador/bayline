@@ -45,9 +45,10 @@ time up.
 | `K` / `P` | Cycle the weather · photo mode (hide the interface) |
 
 Link options (after `#`, joined with `&`): `t=17:30` sets the clock, `at=palo_alto` starts at a station
-(`cam=orbit&dist=400` orbits it), `w=clear|fog|cloudy|haze` sets the weather, `q=ultra|high|medium|low` forces a
-quality tier (the default adapts to your GPU), `auto` skips the title screen. Example (the evening fog river):
-`https://bayline.sheltie.scottylabs.org/#auto&t=18:20&w=fog&at=san_francisco`.
+(`cam=orbit&dist=400` orbits it), `ll=37.8045,-122.4705,265,-0.78,-0.03` flies the camera to a viewpoint (lat, lon, altitude m, yaw,
+pitch), `w=clear|fog|cloudy|haze` sets the weather, `q=ultra|high|medium|low` forces a
+quality tier (the default adapts to your GPU), `auto` skips the title screen. Example (the Golden Gate towers in the evening fog
+river): `https://bayline.sheltie.scottylabs.org/#auto&t=18:20&w=fog&ll=37.8045,-122.4705,265,-0.78,-0.03`.
 
 ## How it's built (v2: streamed photoreal)
 
