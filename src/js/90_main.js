@@ -27,7 +27,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       await step(0.88, 'Waking up the Bay…');
       World.air = safe('air', () => { const a = Life.createAirTraffic && Life.createAirTraffic(ctx); if (a) Env.scene.add(a.group); return a; });
       World.birds = safe('birds', () => { const b = Life.createBirds && Life.createBirds(ctx); if (b) Env.scene.add(b.group); return b; });
-      World.traffic = safe('traffic', () => { const t = Life.createTraffic && typeof Towns !== 'undefined' ? Life.createTraffic([], { maxCars: 420 }) : null; if (t) { Env.scene.add(t.group); t.cx = 1e9; t.cz = 1e9; t.tick = 0; } return t; });
+      World.traffic = safe('traffic', () => { const t = Life.createTraffic && typeof Towns !== 'undefined' ? Life.createTraffic([], { maxCars: 420 }) : null; if (t) { Env.scene.add(t.group); t.cx = 1e9; t.cz = 1e9; t.tick = 0; t.retries = 0; } return t; });
     }
     if (typeof Flora !== 'undefined' && Flora.init) { await step(0.92, 'Planting every tree…'); await safeA('flora', async () => { await Flora.init(ctx); if (Flora.group) Env.scene.add(Flora.group); }); }
     safe('groundcover', () => { if (typeof GroundCover !== 'undefined') GroundCover.init(); });
@@ -205,7 +205,10 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (World.birds) safeFrame('birds', () => World.birds.update(dt, envArg));
     if (World.traffic) safeFrame('traffic', () => { const T = World.traffic; T.tick -= dt;
       const alt = cp.y - Terrain.h(cp.x, cp.z);
-      if (T.tick <= 0) { T.tick = 1.2; if (alt < 1500 && Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650 && Towns.ready !== false) { T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500)); } }
+      if (T.tick <= 0) { T.tick = 1.2;
+        // re-stream when the camera moved, and keep retrying while empty (street tiles stream in after boot)
+        const moved = Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650, empty = !T.lanes || !T.lanes.length;
+        if (alt < 1500 && (moved || (empty && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500)); } }
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
     if (typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
     if (typeof GroundCover !== 'undefined') safeFrame('groundcover', () => GroundCover.update(cp));
