@@ -112,6 +112,7 @@ const Terrain = (() => {
     r.p = Stream.image(r.path, prio).then((bmp) => {
       const t = new THREE.Texture(bmp); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = maxAniso; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+      r.texel = tileSize(L) / (bmp.width || 512);                               // metres per imagery texel
       t.onUpdate = () => { if (bmp.close) bmp.close(); t.onUpdate = null; };   // once on the GPU, drop the decoded CPU copy
       r.tex = t; r.bytes = bmp.width * bmp.height * 4 * 1.34; imgBytes += r.bytes; r.state = 2; stats.img++; return r;
     }, () => { r.state = 3; return r; });
@@ -144,7 +145,7 @@ const Terrain = (() => {
   function makeMaterial() {
     const u = {
       hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
-      iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 },
+      iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
       skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime,
     };
@@ -169,7 +170,7 @@ const Terrain = (() => {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
           uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo;
-          uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas;
+          uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel;
           uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
           uniform float night; uniform float time;
           varying vec3 vW; varying vec2 vUV;
@@ -192,12 +193,35 @@ const Terrain = (() => {
             if (iHas > 0.5) {
               vec2 iuv = iUV.xy + vUV * iUV.zw;
               col = texture2D(iTex, iuv).rgb;
-              // eye-level views: parked cars and shadows baked into the photo smear at grazing angles, so near a
-              // low camera the photo softens into its local average and the surface detail below takes over
-              vec3 Vv = normalize(cameraPosition - vW);
-              float graze = 1.0 - smoothstep(0.08, 0.45, Vv.y), lowCam = 1.0 - smoothstep(15.0, 60.0, cameraPosition.y - vW.y);
-              float soft = graze * lowCam * (1.0 - smoothstep(0.45, 0.6, mk.r)) * smoothstep(6.0, 18.0, distance(cameraPosition, vW));
-              if (soft > 0.01) col = mix(col, texture2D(iTex, iuv, 7.0).rgb, soft * 0.97);
+              // eye level: the photo's baked-in cars, shadows and lines smear into blobs at grazing angles, so near a low
+              // camera the ground becomes a synthesized surface (asphalt, concrete, grass, dry grass, dirt) whose colour is
+              // the photo's local ~5 m average; aerial views keep the photograph untouched
+              float lowCam = 1.0 - smoothstep(12.0, 55.0, cameraPosition.y - vW.y);
+              float eye = lowCam * (1.0 - smoothstep(0.45, 0.6, mk.r));
+              if (eye > 0.01) {
+                vec3 lf = textureLod(iTex, iuv, clamp(log2(5.0 / iTexel), 0.0, 10.0)).rgb;
+                vec3 lf2 = textureLod(iTex, iuv, clamp(log2(14.0 / iTexel), 0.0, 10.0)).rgb;   // wider context
+                lf = mix(lf, lf2, 0.35);
+                float lum = dot(lf, vec3(0.299, 0.587, 0.114));
+                float sat = (max(lf.r, max(lf.g, lf.b)) - min(lf.r, min(lf.g, lf.b))) / max(lum, 0.03);
+                float veg = smoothstep(-0.005, 0.03, lf.g - max(lf.r * 0.96, lf.b));
+                float grey = 1.0 - smoothstep(0.1, 0.24, sat);
+                vec2 q = vW.xz; float fwq = fwidth(q.x) + fwidth(q.y);
+                float fine = 1.0 - smoothstep(0.02, 0.1, fwq), mid = 1.0 - smoothstep(0.1, 0.45, fwq);
+                // pavement: asphalt (dark) or concrete (light), aggregate grain, soft wear, sealed cracks
+                float grain = (th(floor(q * 14.0)) - 0.5) * fine + (tn(q * 2.3) - 0.5) * 0.6 * mid;
+                float wear = tn(q * 0.35);
+                float crack = (1.0 - smoothstep(0.0, 0.02, abs(tn(q * 0.41 + 7.7) - 0.5))) * smoothstep(0.5, 0.75, tn(q * 0.07)) * mid;
+                vec3 pave = lf * (0.92 + 0.16 * grain + 0.1 * (wear - 0.5)) * (1.0 - 0.3 * crack);
+                // vegetation: grass with clumps and blades, straw patches where the photo is golden
+                float clump = tn(q * 1.3), blades = th(floor(q * 22.0));
+                vec3 grass = lf * (0.8 + 0.34 * clump + 0.22 * (blades - 0.5) * fine);
+                grass = mix(grass, grass * vec3(1.08, 1.02, 0.86), smoothstep(0.5, 0.8, tn(q * 0.23)) * 0.6);
+                // bare ground: soil with pebbles
+                vec3 dirt = lf * (0.86 + 0.26 * tn(q * 1.9) + 0.18 * (th(floor(q * 18.0)) - 0.5) * fine);
+                vec3 synth = mix(mix(dirt, pave, grey), grass, veg * (1.0 - grey * 0.6));
+                col = mix(col, synth, eye * 0.96);
+              }
             } else {
               float n1 = tn(vW.xz * 0.0015);
               col = mix(vec3(0.46, 0.39, 0.24), vec3(0.34, 0.36, 0.22), smoothstep(0.3, 0.7, n1));
@@ -325,7 +349,7 @@ const Terrain = (() => {
       else { const n2 = 1 << L; const sc = SIZE / ((N - 1) * S); u.mTex.value = texFM; u.mUV.value.set(x / n2 * sc, y / n2 * sc, sc / n2, sc / n2); u.mTC.value.set((N - 1) / N, 0.5 / N); }
       // imagery
       const fi = index ? finest(irec, L, x, y, LMAX) : null;
-      if (fi) { const [r, s, ox, oy] = fi; u.iTex.value = r.tex; u.iUV.value.set(ox, oy, s, s); u.iHas.value = 1; r.used = frameNo; }
+      if (fi) { const [r, s, ox, oy] = fi; u.iTex.value = r.tex; u.iUV.value.set(ox, oy, s, s); u.iHas.value = 1; u.iTexel.value = r.texel || 1; r.used = frameNo; }
       else { u.iHas.value = 0; u.iTex.value = null; }
       u.skirt.value = Math.max(2, T / 64 * 0.8); u.nodeSize.value = T;
     }
