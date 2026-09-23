@@ -78,7 +78,8 @@ const Player = (() => {
     if (prev === 'onboard' && m !== 'onboard') ob.seat = -1;
     mode = m;
     if (m === 'cab') { look.yaw = 0; look.pitch = -0.04; fovTarget = 58; }
-    if (m === 'onboard') enterTrain(opts.car, opts.door);
+    if (m === 'onboard') { pendingEnter = { car: opts.car, door: opts.door, t: 0 }; enterTrain(opts.car, opts.door); if (ob.key) pendingEnter = null; }
+    if (m === 'cab') pendingCab = 0;
     if (m === 'chase') { orbit.rel = true; orbit.yaw = Math.PI + 0.35; orbit.pitch = 0.22; orbit.dist = 70; fovTarget = 55; }
     if (m === 'orbit') { orbit.rel = false; fovTarget = 55; if (opts.target) { setFocus(null); orbit.tx = opts.target.x; orbit.ty = opts.target.y; orbit.tz = opts.target.z; } if (opts.dist) orbit.dist = opts.dist; }
     if (m === 'trackside') { ts.s = -1; }
@@ -115,7 +116,7 @@ const Player = (() => {
   function lowestFloorNear(car, x, z) { let best = null, bd = 1e9; for (const r of car.floorRegions) { const cx = U.clamp(x, r.x0, r.x1), cz = U.clamp(z, r.z0, r.z1); const d = Math.hypot(cx - x, cz - z) + r.y * 0.3; if (d < bd) { bd = d; best = r; } } if (best) { ob.x = U.clamp(x, best.x0 + 0.2, best.x1 - 0.2); ob.z = U.clamp(z, best.z0 + 0.2, best.z1 - 0.2); return best.y; } return 1.2; }
   function sit(car, i) { const s = car.seats[i]; if (!s) return; ob.seat = i; Sim.freeSeat(focusTrain(), ob.car, i); ob.x = s.x; ob.z = s.z; ob.y = s.y - EYE + 0.35;
     // look out of the window, angled a little toward the direction the seat faces
-    const sz = Math.sign(s.z) || 1; const fwd = Math.cos(s.yaw) >= 0 ? 1 : -1; look.yaw = sz * Math.PI / 2 - sz * fwd * 0.4; look.pitch = -0.06; }
+    const sz = Math.sign(s.z) || 1; const fwd = Math.cos(s.yaw) >= 0 ? 1 : -1; look.yaw = sz * Math.PI / 2 - sz * fwd * 0.82; look.pitch = -0.1; }   // window + the seat rows ahead
   function stand(car) { const s = car.seats[ob.seat]; ob.seat = -1; if (!s) return; // step into the aisle
     let best = null, bd = 1e9; for (const r of car.floorRegions) { const cx = U.clamp(s.x, r.x0 + 0.25, r.x1 - 0.25), cz = U.clamp(0, r.z0 + 0.25, r.z1 - 0.25); const d = Math.hypot(cx - s.x, cz - s.z) + Math.abs(r.y - (s.y - 1.2)) * 2; if (d < bd) { bd = d; best = [cx, r.y, cz]; } }
     if (best) { ob.x = best[0]; ob.y = best[1]; ob.z = best[2]; } }
@@ -206,7 +207,7 @@ const Player = (() => {
     const c = cam(); tmpV.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     tmpV2.copy(c.position).add(tmpV); c.up.set(0, 1, 0); c.lookAt(tmpV2);
   }
-  let camShake = 0, ridePhase = 0, frameDt = 0.016;
+  let camShake = 0, ridePhase = 0, frameDt = 0.016, pendingEnter = null, pendingCab = 0;
   // the gentle life of a moving car: rail-joint bumps with speed, slow lateral sway, a touch of pitch
   function rideMotion(c, tr, k) {
     const v = tr ? tr.v : 0; if (v < 0.3) return; const t = U.uTime.value; ridePhase += v * frameDt;
@@ -228,7 +229,7 @@ const Player = (() => {
     const tr = focusTrain();
     switch (mode) {
       case 'cab': {
-        const car = leadCar(tr); if (!car || !car.cabEye) { setMode('chase'); break; }
+        const car = leadCar(tr); if (!car || !car.cabEye) { pendingCab += dt; if (pendingCab > 3 || !tr) setMode('chase'); break; }
         const rear = !tr.dir; const e = car.cabEye;
         tmpV.set(e[0] + (rear ? -0.22 : 0.22), e[1] + 0.1, e[2]); car.group.updateMatrixWorld(); car.group.localToWorld(tmpV); c.position.copy(tmpV);   // a touch forward/up: more track, less desk
         look.yaw = U.clamp(look.yaw, -1.9, 1.9);
@@ -237,6 +238,8 @@ const Player = (() => {
         break;
       }
       case 'onboard': {
+        // a far-away train gets its 3D consist on the next simulation frame: wait for it instead of giving up
+        if (pendingEnter) { pendingEnter.t += dt; if (cars(tr)) { enterTrain(pendingEnter.car, pendingEnter.door); pendingEnter = null; } else if (pendingEnter.t < 3 && tr) break; else { pendingEnter = null; setMode('orbit'); break; } }
         if (!tr || ob.key !== tr.key) { setMode('orbit'); break; }
         moveOnboard(dt);
         const car = cars(tr)[ob.car]; car.group.updateMatrixWorld();
