@@ -212,6 +212,8 @@ const Towns = (() => {
   }
   function bldShader(sh, u) {
     sh.uniforms.uNight = U.uNight; sh.uniforms.uFac = { value: facadeTex };
+    const skyGlsl = (typeof Sky !== 'undefined' && Sky.glsl && Sky.uniforms) ? Sky.glsl : '';   // real sky reflections in the glass
+    if (skyGlsl) Object.assign(sh.uniforms, Sky.uniforms);
     for (let i = 0; i < 4; i++) { sh.uniforms['uImg' + i] = u['uImg' + i]; sh.uniforms['uImgX' + i] = u['uImgX' + i]; }
     sh.uniforms.uImgSRGB = u.uImgSRGB;
     sh.vertexShader = sh.vertexShader
@@ -219,6 +221,7 @@ const Towns = (() => {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWallUv = aWallUv * 0.05; vB = aB; vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
+        ${skyGlsl}
         precision highp sampler2DArray;
         varying vec4 vWin; varying vec2 vWallUv; varying vec4 vB; varying vec3 vWP; uniform float uNight; uniform sampler2DArray uFac;
         uniform sampler2D uImg0; uniform sampler2D uImg1; uniform sampler2D uImg2; uniform sampler2D uImg3;
@@ -275,10 +278,17 @@ const Towns = (() => {
             outc = mix(wall, trimC, f.b) * mix(0.14, 1.0, f.a);
             float fres = 0.12;
             vec3 sky = mix(vec3(0.30, 0.40, 0.50), vec3(0.62, 0.72, 0.82), fres) * (1.0 - 0.92 * uNight);
+            #ifdef BAYLINE_SKY
+            { vec3 vv = normalize(vViewPosition), nn = normalize(vNormal); float ct = max(dot(vv, nn), 0.0);
+              fres = 0.04 + 0.96 * pow(1.0 - ct, 5.0);                     // Schlick, glass F0 = 0.04
+              vec3 rw = normalize((vec4(reflect(-vv, nn), 0.0) * viewMatrix).xyz); rw.y = max(rw.y, 0.03);
+              sky = skyRadiance(rw); }
+            #endif
             float cell = tHash3(vec3(floor(fuv.x), floor(q.y / fh), seed));
-            vec3 glass = (style == 3.0 ? mix(vec3(0.16, 0.22, 0.27), wall * 0.7, 0.4) : vec3(0.1, 0.13, 0.16) + vec3(0.04, 0.05, 0.06) * cell);
+            vec3 glass = (style == 3.0 ? mix(vec3(0.10, 0.14, 0.17), wall * 0.45, 0.35) : vec3(0.07, 0.09, 0.11) + vec3(0.04, 0.05, 0.06) * cell);
             outc = mix(outc, glass, glassM);
-            gEmit += sky * glassM * (style == 3.0 ? 0.35 + 0.5 * fres : 0.12 + 0.3 * fres);
+            // coated curtain walls mirror the sky strongly; ordinary windows less, both rising with Fresnel
+            gEmit += sky * glassM * (style == 3.0 ? 0.26 + 0.7 * fres : 0.10 + 0.6 * fres) * (0.85 + 0.3 * cell);
             float litP = style == 5.0 ? 0.12 : style == 3.0 ? 0.36 : (style == 2.0 || style == 4.0) ? 0.3 : style == 9.0 ? 0.9 : 0.45;
             if (style == 4.0 && gfl) litP = 0.85;
             float lit = step(cell, litP) * uNight;

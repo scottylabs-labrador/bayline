@@ -7,7 +7,7 @@
 const Terrain = (() => {
   // ---------- v1 fallback field (64 m heights + masks, whole world) ----------
   let N = 0, S = 64, FX0 = 0, FZ0 = 0, heights = null, mask = null, texFH = null, texFM = null;
-  const X0 = -45056, Z0 = -49152, SIZE = 102400, LMAX = 8, LH = 7;
+  const X0 = -45056, Z0 = -49152, SIZE = 102400, LMAX = 9, LH = 7;   // L9 = GPU super-resolved imagery near the track
   const HS = 129, MS = 128;             // samples per height tile / mask tile
   const G = 64;                          // quads per node side
   const lodFactor = { value: 4.2 };
@@ -51,7 +51,7 @@ const Terrain = (() => {
     try {
       const idx = await Stream.json('tiles/index.json', 0);
       index = {};
-      for (const L of [6, 7, 8]) { const s = new Set(); for (const [x, y] of (idx.levels && idx.levels[L]) || []) s.add(K(L, x, y)); index[L] = s; }
+      for (const L of [6, 7, 8, 9]) { const s = new Set(); for (const [x, y] of (idx.levels && idx.levels[L]) || []) s.add(K(L, x, y)); index[L] = s; }
       index.meta = idx;
     } catch (e) { console.warn('terrain: no tile index, fallback field only', e && e.message); index = null; }
     buildShared();
@@ -113,7 +113,7 @@ const Terrain = (() => {
       const t = new THREE.Texture(bmp); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = maxAniso; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
       t.onUpdate = () => { if (bmp.close) bmp.close(); t.onUpdate = null; };   // once on the GPU, drop the decoded CPU copy
-      r.tex = t; r.state = 2; stats.img++; return r;
+      r.tex = t; r.bytes = bmp.width * bmp.height * 4 * 1.34; imgBytes += r.bytes; r.state = 2; stats.img++; return r;
     }, () => { r.state = 3; return r; });
     return r.p;
   }
@@ -264,7 +264,8 @@ const Terrain = (() => {
       if (!frustum.intersectsBox(box)) continue;
       const dx = Math.max(x0 - cp.x, 0, cp.x - (x0 + T)), dz = Math.max(z0 - cp.z, 0, cp.z - (z0 + T)), dy = Math.max(mn - cp.y, 0, cp.y - mx);
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 1;
-      let split = L < LMAX && T / d > k;
+      // imagery-only levels (L8+ share the L7 heights) are cheap, so refine them farther out: crisp ground to ~200 m
+      let split = L < LMAX && T / d > (L >= 8 ? k * 0.5 : k);
       if (split) {
         const kids = [[L + 1, 2 * x, 2 * y], [L + 1, 2 * x + 1, 2 * y], [L + 1, 2 * x, 2 * y + 1], [L + 1, 2 * x + 1, 2 * y + 1]];
         const any = kids.some(c => nodeWanted(c[0], c[1], c[2]));
@@ -300,14 +301,16 @@ const Terrain = (() => {
     if ((frameNo & 31) === 0) evict();
   }
   // ---------- LRU eviction ----------
-  const CAP = { img: 300, hgt: 700, msk: 500 };
-  function evictMap(map, cap, dispose) {
-    if (map.size <= cap) return;
+  const CAP = { img: 300, hgt: 700, msk: 500 }, IMG_BUDGET = 520e6;   // imagery: count cap AND a GPU-memory budget
+  let imgBytes = 0;
+  function evictMap(map, cap, dispose, over) {
+    if (map.size <= cap && !(over && over())) return;
     const arr = [...map.values()].filter(r => r.state !== 1 && r.L > 2 && !(r.refs > 0) && r.used < frameNo - 30).sort((a, b) => a.used - b.used);
-    for (let i = 0; i < arr.length && map.size > cap; i++) { const r = arr[i]; if (r.state === 1) continue; dispose(r); map.delete(K(r.L, r.x, r.y)); stats.evicted++; }
+    for (let i = 0; i < arr.length && (map.size > cap || (over && over())); i++) { const r = arr[i]; if (r.state === 1) continue; dispose(r); map.delete(K(r.L, r.x, r.y)); stats.evicted++; }
   }
   function evict() {
-    evictMap(irec, CAP.img, r => { if (r.tex) r.tex.dispose(); });
+    evictMap(irec, CAP.img, r => { if (r.tex) r.tex.dispose(); imgBytes -= r.bytes || 0; }, () => imgBytes > IMG_BUDGET);
+    stats.imgMB = Math.round(imgBytes / 1e6);
     evictMap(hrec, CAP.hgt, r => { if (r.tex) r.tex.dispose(); });
     evictMap(mrec, CAP.msk, r => { if (r.tex) r.tex.dispose(); });
     // drop queued requests nobody wants any more

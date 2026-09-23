@@ -185,7 +185,7 @@ const Sim = (() => {
     if (!doorsClosed && v < 0.5) bDem = Math.max(bDem, 0.4);          // holding brake while doors are open
     // jerk limiter (traction electronics / brake valves ramp the effort), emergency applies fast
     const step = (cur, dem, r) => cur + U.clamp(dem - cur, -r * dt, r * dt);
-    D.tract = step(D.tract || 0, tDem, 0.8);
+    D.tract = (D.penalty || D.emergency) ? 0 : step(D.tract || 0, tDem, 0.8);   // PTC / emergency cut traction instantly
     D.brk = D.emergency ? step(D.brk || 0, P.em, 4.0) : step(D.brk || 0, bDem, 1.1);
     Track.frame(D.s, F); const grade = F.grade * (D.dir ? 1 : -1) * (D.reverse ? -1 : 1);
     const res = 0.006 + 0.00011 * v + 0.000042 * v * v;

@@ -48,9 +48,11 @@ time up.
 A small page (three.js r158 + all code, ~1.5 MB) plus a streamed world: every piece of data is fetched
 in parallel, on demand, around the camera, from `/data/v2/` on the same host.
 
-- **Ground:** a chunked-LOD quadtree (L0 102 km … L8 400 m tiles) that drapes 0.6 m USDA NAIP aerial
+- **Ground:** a chunked-LOD quadtree (L0 102 km … L9 200 m tiles) that drapes 0.6 m USDA NAIP aerial
   photography over high-resolution terrain (AWS Terrain Tiles), carved exactly to the railway profile.
   It sharpens progressively like a globe viewer, and masks drive water, night lights and landcover.
+  Near the line (L9) the photography is super-resolved 4× on the GPU (Real-ESRGAN via PyTorch MPS) to
+  0.2 m/px, so the ground stays crisp at street level.
 - **Buildings:** every OpenStreetMap building near the line, streamed in 800 m tiles, with real heights
   and roof shapes, and roofs textured from the same photograph.
 - **Trees:** individual crowns detected in the imagery, so every tree stands where the photo shows it.
@@ -81,12 +83,21 @@ Rebuild the world data. This needs network access; downloads are cached in `data
 ```bash
 python3 tools/bake_gtfs.py && python3 tools/bake_world.py        # timetable, track, core terrain
 python3 tools/bake_tiles.py                                        # NAIP imagery, heights, masks, trees -> data/pub/v2/tiles
+python3 tools/sr_tiles.py                                          # GPU super-resolution of the near-track imagery (L9)
 python3 tools/fetch_osm.py && python3 tools/bake_towns.py          # buildings and roads -> data/pub/v2/tiles/b
 sh tools/publish_data.sh                                           # rsync data/pub/v2 to the server volume
 ```
 
-QA: `node tools/shot.mjs "http://localhost:8123/#auto&t=08:00" out.png --gpu --wait 70000 --eval "$(cat tools/qa_drive.js)"`
-drives a full run using only keyboard events and reports every guidance step, the stops and the score.
+QA (all through real keyboard events, against the dev server):
+
+- `sh tools/qa_all.sh` renders the key views with frame cost, runs a full scripted drive and the ride/boarding flow.
+- `tools/qa_drive.js` is a careful driver: doors, departure on time, guidance, stopping on the mark.
+- `tools/qa_ptc.js` is a reckless driver who never brakes. PTC must warn, enforce a penalty brake to a stop and
+  release, both on overspeed and on the braking curve into a 30 mph restriction.
+- `tools/qa_signal.js` parks a phantom train ahead. The block signals behind it go yellow and red, and PTC must
+  stop the reckless driver before the red.
+
+Run one with `node tools/shot.mjs "http://localhost:8123/#auto&t=08:00" out.png --gpu --wait 80000 --eval "$(cat tools/qa_ptc.js)" --eval2 "JSON.stringify(window.__qa)"`.
 
 ## Multiplayer, safely
 
