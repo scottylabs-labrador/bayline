@@ -140,9 +140,14 @@ def track_points():
 
 
 # areas of interest that also get L9 (lat_s, lon_w, lat_n, lon_e): San Francisco's northeast quarter (downtown, SoMa,
-# the Embarcadero, North Beach, the Wharf, the Marina, Crissy Field), where people fly low over the city
+# the Embarcadero, North Beach, the Wharf, the Marina, Crissy Field) and the landmark campuses, where people fly low
 AOI9 = [
     (37.7650, -122.4760, 37.8120, -122.3850),
+    (37.4230, -122.1770, 37.4340, -122.1590),     # Stanford Main Quad, Oval, Hoover Tower
+    (37.3270, -121.8960, 37.3420, -121.8790),     # downtown San Jose
+    (37.3920, -121.9790, 37.4070, -121.9650),     # Levi's Stadium, Great America
+    (37.3300, -122.0160, 37.3400, -122.0030),     # Apple Park
+    (37.4170, -122.0890, 37.4300, -122.0610),     # Googleplex, Shoreline, Bay View
 ]
 
 
