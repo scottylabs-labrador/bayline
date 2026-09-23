@@ -9,7 +9,7 @@
 // Paths are relative to DATA (window.BAYLINE_DATA || './data/v2/'); lower prio = sooner.
 const Stream = (() => {
   const BASE = (typeof window !== 'undefined' && (window.BAYLINE_DATA || new URLSearchParams(location.hash.slice(1)).get('data'))) || './data/v2/';
-  const MAX_ACTIVE = 8;
+  const MAX_ACTIVE = 10;           // HTTP/2 to the proxy: plenty of multiplexing headroom
   const queue = []; const jobs = new Map(); let active = 0;
   const stats = { requests: 0, bytes: 0, errors: 0, notFound: 0, cancelled: 0, get active() { return active; }, get queued() { return queue.length; } };
   const url = (p) => (/^(https?:)?\/\//.test(p) || p.startsWith('/') || p.startsWith('./') || p.startsWith('../')) ? p : BASE + p;

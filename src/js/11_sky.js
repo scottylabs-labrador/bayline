@@ -345,11 +345,11 @@ float skyFogDensity(vec3 p) {
         vec3 col = skyRadiance(d) * uDomeScale;
         float mu = dot(d, uSkySunDir);
         // sun disk with limb darkening, reddened by the atmosphere
-        if (uSunDisk > 0.0 && mu > 0.99985) {
-          float r = clamp((1.0 - mu) / (1.0 - 0.99989), 0.0, 1.0);
+        if (uSunDisk > 0.0 && mu > 0.99997) {
+          float r = clamp((1.0 - mu) / 1.37e-5, 0.0, 1.0);          // 0.3 deg angular radius
           float disk = smoothstep(1.0, 0.92, r) * (0.6 + 0.4 * sqrt(max(1.0 - r * r, 0.0)));
           vec3 Ts = skySunTrans(uSkyCamH, uSkySunDir.y);
-          col += Ts * uSkySunE * uSkyGain * 420.0 * disk * step(-0.02, d.y);
+          col += Ts * uSkySunE * uSkyGain * 900.0 * disk * step(-0.02, d.y);
         }
         // moon
         float mm = dot(d, uSkyMoonDir);

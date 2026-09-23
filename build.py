@@ -23,9 +23,10 @@ if os.environ.get('BAYLINE_EMBED'):
         blobs.append(f'<script type="application/octet-stream" id="blob-{name}{".json" if ext == ".json" else ""}">{base64.b64encode(b).decode()}</script>')
 parts = []
 skip = set(filter(None, os.environ.get('BAYLINE_SKIP', '').split(',')))   # e.g. BAYLINE_SKIP=50_landmarks.js for partial builds
-for f in sorted(glob.glob(os.path.join(ROOT, 'src/js/*.js'))):
+JS_DIR = os.environ.get('BAYLINE_JS_DIR', os.path.join(ROOT, 'src/js'))   # tools/devbuild.sh stages a tolerant copy
+for f in sorted(glob.glob(os.path.join(JS_DIR, '*.js'))):
     if os.path.basename(f) in skip: continue
-    parts.append(f'// ===== {os.path.basename(f)} =====\n' + read(os.path.relpath(f, ROOT)))
+    parts.append(f'// ===== {os.path.basename(f)} =====\n' + open(f, encoding='utf-8').read())
 app = "(function(){'use strict';\n" + '\n'.join(parts) + '\n})();'
 stamp = time.strftime('%Y-%m-%d %H:%M')
 html = (head.replace('<!--THREE-->', '<script>' + three + '</script>')
@@ -33,5 +34,5 @@ html = (head.replace('<!--THREE-->', '<script>' + three + '</script>')
             .replace('<!--APP-->', '<script>' + app.replace('</script', '<\\/script') + '</script>')
             .replace('__BUILD__', stamp))
 os.makedirs(os.path.join(ROOT, 'dist'), exist_ok=True)
-out = os.path.join(ROOT, 'dist/index.html'); open(out, 'w', encoding='utf-8').write(html)
+out = os.path.join(ROOT, os.environ.get('BAYLINE_OUT', 'dist/index.html')); open(out, 'w', encoding='utf-8').write(html)
 print(f'{out}: {len(html)/1e6:.2f} MB ({len(blobs)} data blobs, {len(parts)} code files)')

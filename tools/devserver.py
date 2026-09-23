@@ -22,6 +22,9 @@ def resolve(path):
     path = path.split('?', 1)[0].split('#', 1)[0]
     if path in ('/', '/index.html'):
         return os.path.join(ROOT, 'dist', 'index.html')
+    m = re.match(r'^/([a-z0-9_-]+)\.html$', path)       # /lead.html etc: private test builds in dist/ (BAYLINE_OUT)
+    if m and os.path.isfile(os.path.join(ROOT, 'dist', m.group(1) + '.html')):
+        return os.path.join(ROOT, 'dist', m.group(1) + '.html')
     if path.startswith('/data/v2/'):
         return os.path.join(ROOT, 'data', 'pub', 'v2', path[len('/data/v2/'):])
     return os.path.join(ROOT, path.lstrip('/'))

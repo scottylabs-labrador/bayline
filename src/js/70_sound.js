@@ -436,6 +436,15 @@ const Sound = (() => {
 
     // ---- Doors
     function doorChime() { oneShot(buf('doorChime'), uiBus, 0.32); }
+    // cab alerts (PTC warning / enforcement): short synthesized two-tone beeps on the UI bus
+    function alertTone(kind) {
+      const t0 = ctx.currentTime + 0.01; const hi = kind === 'enforce' ? 1320 : 1046, lo = kind === 'enforce' ? 880 : 784;
+      for (let i = 0; i < (kind === 'enforce' ? 4 : 2); i++) for (const [f, dt] of [[hi, 0], [lo, 0.16]]) {
+        const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'square'; o.frequency.value = f;
+        const a = t0 + i * 0.36 + dt; g.gain.setValueAtTime(0, a); g.gain.linearRampToValueAtTime(0.09, a + 0.01); g.gain.setValueAtTime(0.09, a + 0.12); g.gain.linearRampToValueAtTime(0, a + 0.14);
+        o.connect(g); g.connect(uiBus); o.start(a); o.stop(a + 0.16);
+      }
+    }
     function doorEdge(open) { oneShot(buf(open ? 'hissOpen' : 'hissClose'), S.onboard ? uiBus : trainBus, S.onboard ? 0.28 : 0.4); }
 
     // ---- Announcements: chime, then speech. Queued, never overlapping.
@@ -624,7 +633,7 @@ const Sound = (() => {
       if (muted && 'speechSynthesis' in window && live) { try { speechSynthesis.cancel(); } catch (e) { /* ignore */ } }
     }
     return {
-      ctx, master, train, horn: hornFn, bell: bellFn, doorChime, announce, crossings, passby, ambience, tick, setVolume, setMuted, warmStep,
+      ctx, master, train, horn: hornFn, bell: bellFn, doorChime, alertTone, announce, crossings, passby, ambience, tick, setVolume, setMuted, warmStep,
       get state() { return S; },
     };
   }
@@ -661,6 +670,7 @@ const Sound = (() => {
     horn(on) { if (E) E.horn(!!on); },
     bell(on) { if (E) E.bell(!!on); },
     doorChime() { if (E) E.doorChime(); },
+    alert(kind) { if (E && E.alertTone && !muted) E.alertTone(kind || 'warn'); },
     announce(text) { return E ? E.announce(text) : Promise.resolve(); },
     crossings(list) { if (E) E.crossings(list); },
     passby(p) { if (E) E.passby(p); },

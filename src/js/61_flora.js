@@ -11,7 +11,7 @@
 //   Flora.init(ctx)            ctx = { renderer?, scene? } (defaults: Env.renderer / Env.scene); call once
 //   Flora.update(camPos, env)  every frame (streams tiles, rebuilds rings when the camera moves)
 //   Flora.group                add to the scene (init() does this when a scene is given)
-//   Flora.hasData(x, z)        true when a tree tile covers (x, z): Towns should skip its own trees there
+//   Flora.hasData(x, z)        true when a tree tile covers (x, z): Towns should skip its own trees there (alias: covers)
 //   Flora.stats                counters; Flora.setQuality('high'|'medium'|'low')
 const Flora = (() => {
   const TAU = Math.PI * 2;
@@ -23,9 +23,9 @@ const Flora = (() => {
   const KINDS = ['oak', 'redwood', 'eucalyptus', 'palm', 'sycamore', 'cypress', 'pine', 'street', 'fanpalm'];
   const NK = KINDS.length;
   const Q = {   // quality tiers
-    high: { near: 135, mid: 560, far: 1650, load: 1900, shadows: true, nearMax: 1400, midMax: 9000, farMax: 90000 },
-    medium: { near: 95, mid: 420, far: 1300, load: 1550, shadows: true, nearMax: 800, midMax: 6000, farMax: 60000 },
-    low: { near: 55, mid: 300, far: 950, load: 1200, shadows: false, nearMax: 350, midMax: 3500, farMax: 35000 },
+    high: { near: 135, mid: 560, far: 1650, load: 1900, shadows: true, nearMax: 1400, midMax: 9000, farMax: 160000 },
+    medium: { near: 95, mid: 420, far: 1300, load: 1550, shadows: true, nearMax: 800, midMax: 6000, farMax: 110000 },
+    low: { near: 55, mid: 300, far: 950, load: 1200, shadows: false, nearMax: 350, midMax: 3500, farMax: 70000 },
   };
   let q = Q.high, qName = 'high';
   function rng(seed) { let a = (seed >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -288,6 +288,9 @@ const Flora = (() => {
   // aFol (x = wind flex 0 base..1 tips, y = 1 for leaves / 0 for bark)
   // ==========================================================================================
   const _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3(), _n = new V3(), _t = new V3(), _o = new V3();
+  const QUAD = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  const OCT = Array.from({ length: 8 }, (_, i) => { const a = (i + 0.5) / 8 * TAU, R = 0.92 / Math.cos(Math.PI / 8); return [clamp(Math.cos(a) * R, -1, 1), clamp(Math.sin(a) * R, -1, 1)]; });
+  const OCT_REGS = new Set([REG.oakLeaf, REG.planeLeaf, REG.streetLeaf, REG.eucLeaf, REG.pineTuft, REG.cypressClump]);
   class Builder {
     constructor(H, crown) { this.P = []; this.N = []; this.UV = []; this.R = []; this.C = []; this.F = []; this.I = []; this.H = H; this.crown = crown; }   // crown: [cx, cy, cz, rx, ry, rz]
     get vcount() { return this.P.length / 3; }
@@ -295,7 +298,7 @@ const Flora = (() => {
       const [cx, cy, cz, rx, ry, rz] = this.crown;
       const e = Math.sqrt(((p.x - cx) / rx) ** 2 + ((p.y - cy) / ry) ** 2 + ((p.z - cz) / rz) ** 2);
       const surf = clamp((e - 0.25) / 0.75, 0, 1); const hv = clamp((p.y - (cy - ry)) / (2 * ry), 0, 1);
-      return lerp(0.42, 1.0, surf * surf * (3 - 2 * surf)) * lerp(0.72, 1.0, hv);
+      return lerp(0.55, 1.0, surf * surf * (3 - 2 * surf)) * lerp(0.74, 1.0, hv);
     }
     vert(p, n, u, v, reg, shade, flex, leaf) {
       this.P.push(p.x, p.y, p.z); this.N.push(n.x, n.y, n.z); this.UV.push(u, v); this.R.push(reg[0], reg[1], reg[2], reg[3]);
@@ -331,17 +334,21 @@ const Flora = (() => {
       const reg = regionUV(regIdx); const base = this.vcount; const [cx, cy, cz] = this.crown;
       const cv = 0.9 + 0.2 * (((Math.sin(center.x * 12.9898 + center.y * 78.233 + center.z * 37.719) * 43758.5453) % 1 + 1) % 1);
       const flipU = (((Math.sin(center.x * 3.1 + center.z * 5.7) * 9173.13) % 1 + 1) % 1) < 0.5;
-      const corners = [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, 1, 0, 1]];
+      // round clusters (painted inside a circle of radius 0.46) use an octagon: ~30% fewer shaded fragments than a quad
+      const oct = OCT_REGS.has(regIdx);
+      const corners = oct ? OCT : QUAD;
       const cb = opts.crownBlend !== undefined ? opts.crownBlend : 0.78;
-      for (const [sr, su, uu, vv] of corners) {
+      for (const [sr, su] of corners) {
         _a.copy(center).addScaledVector(r, sr).addScaledVector(u, su);
         _o.set((_a.x - cx) / (this.crown[3] * this.crown[3]), (_a.y - cy) / (this.crown[4] * this.crown[4]), (_a.z - cz) / (this.crown[5] * this.crown[5])).normalize();
         _n.copy(cn).multiplyScalar(1 - cb).addScaledVector(_o, cb).normalize();
         const shade = this.ao(_a) * (opts.shade || 1) * cv;
         const flex = Math.max(0.45, clamp(_a.y / this.H, 0, 1) ** 1.5);
+        const uu = (sr + 1) / 2, vv = (su + 1) / 2;
         this.vert(_a, _n, lerp(0.008, 0.992, flipU ? 1 - uu : uu), lerp(0.008, 0.992, vv), reg, shade, flex, 1);
       }
-      this.I.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      if (oct) for (let k = 1; k < 7; k++) this.I.push(base, base + k, base + k + 1);
+      else this.I.push(base, base + 1, base + 2, base, base + 2, base + 3);
     }
     // curved ribbon (palm frond): points along the midrib, width w(u), side vector per point, V-fold
     ribbon(pts, widths, sides, fold, regIdx, opts = {}) {
@@ -456,11 +463,14 @@ const Flora = (() => {
     for (const bp of tips) for (let k = 0; k < p.perTwig; k++) {
       const f = lerp(0.35, 1, r()); const i = Math.min(bp.length - 2, Math.floor(f * (bp.length - 1)));
       const at = bp[i].clone().lerp(bp[i + 1], r()); const out = at.clone().sub(new V3(cx, cy - ry * 0.3, cz));
+      const e = Math.hypot((at.x - cx) / rx, (at.y - cy) / ry, (at.z - cz) / rz); if (e < 0.58) continue;   // hidden deep inside the crown
       cards.push(['att', at, out, p.leafSize * lerp(0.8, 1.2, r())]);
     }
     const nClumps = p.clumps || 12, cr = Math.min(rx, ry) * (p.clumpR || 0.34);
-    const clumps = []; for (let c = 0; c < nClumps; c++) clumps.push(shellPoint(B, r, 0.8, p.shellY[0], p.shellY[1]));
-    for (let k = 0; k < p.shell; k++) {
+    // clump centres: a third on the crown's upper cap (so crowns stay closed from the air), the rest anywhere on the shell
+    const clumps = []; for (let c = 0; c < nClumps; c++) clumps.push(shellPoint(B, r, 0.8, c % 3 === 0 ? 0.45 : p.shellY[0], p.shellY[1]));
+    clumps.push(new V3(cx, cy + ry * 0.82, cz));
+    for (let k = 0; k < Math.round(p.shell * 0.85); k++) {
       const c = clumps[k % nClumps]; const g = () => (r() + r() + r() - 1.5) * 1.15;
       const pt = new V3(c.x + g() * cr, c.y + g() * cr * 0.8, c.z + g() * cr);
       cards.push(['shell', pt, null, p.leafSize * lerp(0.85, 1.25, r())]);
@@ -760,14 +770,14 @@ const Flora = (() => {
   }
   // far billboards: InstancedBufferGeometry quad; per instance: offset (xyz, local to anchor), size (w, h), kind, tint
   let farMesh = null, farGeo = null, farMax = 0;
-  const uImp = { uImpTex: { value: null }, uImpRects: { value: [] }, uFolTime: U.uTime };
+  const uImp = { uImpTex: { value: null }, uImpRects: { value: [] }, uFolTime: U.uTime, uRing: { value: new THREE.Vector4(0, 0, 0, 0) }, uFar: { value: 1650 }, uMidF: { value: [] }, uImpBase: { value: [] } };
   function farMaterial() {
     const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, alphaTest: 0.5, side: THREE.DoubleSide, envMapIntensity: 0.4 });
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, uImp);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
         attribute vec4 aOff; attribute vec4 aImp;   // aOff: xyz + yaw seed; aImp: width, height, kind, tint
-        uniform vec4 uImpRects[${NK}]; uniform float uFolTime;
+        uniform vec4 uImpRects[${NK}]; uniform float uFolTime; uniform vec4 uRing; uniform float uFar; uniform float uMidF[${NK}]; uniform float uImpBase[${NK}];
         varying vec2 vImpUv; varying vec4 vImpRect; varying float vImpTint;`)
         .replace('#include <beginnormal_vertex>', `
           // cylindrical billboard: quad corner (position.x in -0.5..0.5, position.y in 0..1) faces the camera around world up
@@ -779,7 +789,12 @@ const Flora = (() => {
           int ki = int(aImp.z + 0.5);
           vec4 rc = uImpRects[ki];
           float sway = sin(uFolTime * 0.7 + aOff.w * 6.28) * 0.012 * position.y;
-          vec3 transformed = aOff.xyz + rightV * (position.x * aImp.x + sway * aImp.y) + vec3(0.0, position.y * aImp.y, 0.0);
+          vec3 transformed = aOff.xyz + rightV * (position.x * aImp.x + sway * aImp.y) + vec3(0.0, (position.y + uImpBase[ki]) * aImp.y, 0.0);
+          // hidden inside the near/mid rings (same 3D test and camera point as the CPU ring builder), beyond the far
+          // radius, and for blanked entries (tiles that streamed out)
+          vec3 rd = vec3(aOff.x - uRing.x, aOff.y - uRing.w, aOff.z - uRing.y); float mf = uMidF[ki];
+          vec3 cd = aOff.xyz - camL;
+          if (aImp.x <= 0.0 || dot(rd, rd) < uRing.z * mf * mf || dot(cd, cd) > uFar * uFar) transformed = vec3(0.0, -1e5, 0.0);
           vImpUv = vec2(position.x + 0.5, position.y); vImpRect = rc; vImpTint = aImp.w;`);
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
         uniform sampler2D uImpTex; varying vec2 vImpUv; varying vec4 vImpRect; varying float vImpTint;`)
@@ -791,6 +806,7 @@ const Flora = (() => {
           diffuseColor *= vec4(it.rgb * tint, it.a);`);
     };
     m.customProgramCacheKey = () => 'flora-far';
+    uImp.uMidF.value = Array.from(MIDF);
     return m;
   }
   function makeFar(max) {
@@ -807,6 +823,73 @@ const Flora = (() => {
     return farMesh;
   }
 
+
+  // ==========================================================================================
+  // SHADOW PROXIES: the shadow pass draws cheap opaque crowns (a few blobs + trunk per species, dappled by a
+  // world-space noise) instead of thousands of alpha-tested leaf cards. In the main pass their vertex shader
+  // collapses every vertex outside the clip volume (no fragments); the shadow pass uses the real depth material.
+  // They share the near ring's instance buffer, so there are no extra uploads.
+  // ==========================================================================================
+  function proxyGeometry(kind) {
+    const p = SPECIES[kind]; const parts = [];
+    const add = (g, flex) => { g = g.index ? g.toNonIndexed() : g; for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal') g.deleteAttribute(k);
+      const n = g.attributes.position.count, f = new Float32Array(n * 2); for (let i = 0; i < n; i++) { f[i * 2] = flex(g.attributes.position.getY(i)); f[i * 2 + 1] = 1; } g.setAttribute('aFol', new THREE.BufferAttribute(f, 2)); parts.push(g); };
+    const H = DIM[kind][0]; const fx = (y) => clamp(y / H, 0, 1) ** 2;
+    const blob = (r, x, y, z, sx, sy, sz) => { const g = new THREE.IcosahedronGeometry(r, 1); g.scale(sx, sy, sz); g.translate(x, y, z); add(g, fx); };
+    const trunk = (r0, r1, h, x = 0, z = 0) => { const g = new THREE.CylinderGeometry(r1, r0, h, 6, 1, true); g.translate(x, h / 2, z); add(g, fx); };
+    if (p) {   // broadleaf: ellipsoid crown as 5 blobs
+      const [cx, cy, cz, rx, ry, rz] = p.crown;
+      trunk(p.trunkR, p.trunkR * 0.6, p.trunkH + ry * 0.4);
+      blob(1, cx, cy, cz, rx * 0.72, ry * 0.8, rz * 0.72);
+      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + 0.4; blob(1, cx + Math.cos(a) * rx * 0.45, cy - ry * 0.1, cz + Math.sin(a) * rz * 0.45, rx * 0.5, ry * 0.62, rz * 0.5); }
+    } else if (kind === 'redwood') { trunk(1.1, 0.1, 33); const c = new THREE.ConeGeometry(4.8, 27, 8, 1, true); c.translate(0, 8 + 13.5, 0); add(c, fx); }
+    else if (kind === 'pine') { trunk(0.5, 0.15, 18); blob(1, 0, 14.5, 0, 5.4, 4.4, 5.4); }
+    else if (kind === 'cypress') { trunk(0.6, 0.34, 8); blob(1, 1.5, 10.5, 0, 6.4, 2.9, 5.2); blob(1, -1.5, 8.8, 0.5, 4, 2.2, 3.6); }
+    else if (kind === 'palm') { trunk(0.58, 0.52, 11); blob(1, 0, 12.3, 0, 4.6, 2.0, 4.6); }
+    else if (kind === 'fanpalm') { trunk(0.33, 0.22, 20.5); blob(1, 0.5, 21.4, 0, 2.2, 1.9, 2.2); }
+    const g = U.mergeGeometries(parts); g.computeBoundingSphere(); return g;
+  }
+  let proxyDepth = null;
+  function proxyDepthMaterial() {
+    if (proxyDepth) return proxyDepth;
+    proxyDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+    proxyDepth.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, { uFolTime: U.uTime, uFolWind: U.uWind });
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+          attribute vec2 aFol; uniform float uFolTime; uniform float uFolWind; varying vec3 vPW;
+          void folWindP(inout vec3 p) {
+            vec3 ip = instanceMatrix[3].xyz; mat3 im = mat3(instanceMatrix);
+            float ph = ip.x * 0.061 + ip.z * 0.047; float t = uFolTime;
+            float sway = sin(t * 0.72 + ph) * 0.6 + sin(t * 1.63 + ph * 1.7) * 0.3 + sin(t * 3.1 + ph * 2.9) * 0.1;
+            vec3 dirL = transpose(im) * normalize(vec3(0.88, 0.0, 0.47)); dirL /= max(1e-4, dot(dirL, dirL));
+            p += dirL * sway * (0.04 + 0.32 * uFolWind) * aFol.x * (0.5 + 0.05 * p.y);
+          }`)
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\n folWindP(transformed);')
+        .replace('#include <project_vertex>', '#include <project_vertex>\n vPW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+          varying vec3 vPW;
+          float pvn(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            float n = dot(i, vec3(1.0, 57.0, 113.0));
+            vec4 a = fract(sin(vec4(n, n + 1.0, n + 57.0, n + 58.0)) * 43758.5453);
+            vec4 b = fract(sin(vec4(n + 113.0, n + 114.0, n + 170.0, n + 171.0)) * 43758.5453);
+            vec4 m = mix(a, b, f.z); vec2 m2 = mix(m.xy, m.zw, f.y); return mix(m2.x, m2.y, f.x); }`)
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+          if (pvn(vPW * 1.35) * 0.65 + pvn(vPW * 3.1) * 0.35 > 0.66) discard;   // dappled light through the crown`);
+    };
+    proxyDepth.customProgramCacheKey = () => 'flora-proxy-depth';
+    return proxyDepth;
+  }
+  const proxyMesh = [];
+  function makeProxy(i, kind, near) {
+    const nullMat = new THREE.ShaderMaterial({ vertexShader: 'void main() { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); }', fragmentShader: 'void main() { discard; }',
+      depthWrite: false, depthTest: false, colorWrite: false });
+    const m = new THREE.InstancedMesh(proxyGeometry(kind), nullMat, 1);
+    m.instanceMatrix = near.instanceMatrix;           // share the near ring's instances
+    m.count = 0; m.frustumCulled = false; m.castShadow = true; m.receiveShadow = false; m.customDepthMaterial = proxyDepthMaterial();
+    m.name = 'flora-shadow-' + kind; m.visible = false; m.renderOrder = 10;
+    proxyMesh[i] = m; return m;
+  }
+
   // ==========================================================================================
   // RUNTIME: streaming tree tiles, grounding, three rings of instances
   // ==========================================================================================
@@ -817,7 +900,7 @@ const Flora = (() => {
   const anchor = new V3(); let anchored = false;
   const tiles = new Map();           // 'tx_ty' -> { tx, ty, state, n, D (Float32Array n*10), K (Uint8Array), prio, dead }
   let index = null;                  // Set of 'tx_ty' with tree data (null = unknown: probe by fetching)
-  let dirty = true; const lastNear = new V3(1e9, 0, 0), lastFar = new V3(1e9, 0, 0);
+  let dirty = true; const lastNear = new V3(1e9, 0, 0);
   const DATA_TILE = (tx, ty) => `tiles/t/7/${tx}_${ty}${suffix}.bin`;
   const tkey = (tx, ty) => tx + '_' + ty;
   const tileOf = (x, z) => [Math.floor((x - X0) / T7), Math.floor((z - Z0) / T7)];
@@ -835,7 +918,7 @@ const Flora = (() => {
     initP = (async () => {
       const t0 = performance.now();
       renderer = ctx.renderer || (typeof Env !== 'undefined' ? Env.renderer : null);
-      if (ctx.suffix) suffix = ctx.suffix;
+      suffix = ctx.suffix || (typeof window !== 'undefined' && window.BAYLINE_FLORA_SUFFIX) || '';   // dev hook for test tiles
       if (ctx.quality && Q[ctx.quality]) { q = Q[ctx.quality]; qName = ctx.quality; }
       foliageMaterial();
       const geos = {};
@@ -843,11 +926,11 @@ const Flora = (() => {
         geoNear[k] = BUILD[k](0, 101 + i * 17).geometry();
         geoMid[k] = BUILD[k](1, 101 + i * 17).geometry();
         geos[k] = geoNear[k];
-        nearMesh[i] = makeInstanced(geoNear[k], q.nearMax, q.shadows); nearMesh[i].name = 'flora-near-' + k;
-        midMesh[i] = makeInstanced(geoMid[k], q.midMax, false); midMesh[i].name = 'flora-mid-' + k;
-        group.add(nearMesh[i], midMesh[i]);
+        nearMesh[i] = makeInstanced(geoNear[k], q.nearMax, false); nearMesh[i].name = 'flora-near-' + k; nearMesh[i].renderOrder = -2;
+        midMesh[i] = makeInstanced(geoMid[k], q.midMax, false); midMesh[i].name = 'flora-mid-' + k; midMesh[i].receiveShadow = false; midMesh[i].renderOrder = -1;
+        group.add(nearMesh[i], midMesh[i], makeProxy(i, k, nearMesh[i]));
       });
-      if (renderer) { uImp.uImpTex.value = bakeImpostors(renderer, geos); uImp.uImpRects.value = impRect.map(r => new THREE.Vector4(r[0], r[1], r[2], r[3])); }
+      if (renderer) { uImp.uImpTex.value = bakeImpostors(renderer, geos); uImp.uImpRects.value = impRect.map(r => new THREE.Vector4(r[0], r[1], r[2], r[3])); uImp.uImpBase.value = impRect.map(r => r[6] / r[5]); }
       group.add(makeFar(q.farMax));
       const scene = ctx.scene || (typeof Env !== 'undefined' ? Env.scene : null);
       if (scene && ctx.addToScene !== false) scene.add(group);
@@ -859,7 +942,7 @@ const Flora = (() => {
         const tp = idx && idx.products && (idx.products.t || idx.products.trees);
         if (tp && (Array.isArray(tp) || Array.isArray(tp.tiles))) list = Array.isArray(tp) ? tp : tp.tiles;
         const hasTrees = !!tp || (idx && Array.isArray(idx.present) && idx.present.includes('t'));
-        if (!list && hasTrees && idx.levels && idx.levels['7']) list = idx.levels['7'];
+        if (!list && (hasTrees || ctx.index) && idx.levels && idx.levels['7']) list = idx.levels['7'];   // an explicit ctx.index is taken as given
         if (list) index = new Set(list.map(([x, y]) => tkey(x, y)));
       } catch (e) { index = null; }
       ready = true; dirty = true;
@@ -867,13 +950,26 @@ const Flora = (() => {
     return initP;
   }
   function hasData(x, z) {
-    const [tx, ty] = tileOf(x, z); const k = tkey(tx, ty);
-    if (index) return index.has(k);
-    const t = tiles.get(k); return !!(t && t.state === 'ready' && t.n > 0);
+    const [tx, ty] = tileOf(x, z); const k = tkey(tx, ty); const t = tiles.get(k);
+    if (index) return index.has(k) && !(t && t.state === 'missing');
+    return !!(t && t.state === 'ready' && t.n > 0);
   }
 
   // ---- tile loading: fetch, parse, ground on the terrain, drop trees on the track bed / platforms
   const NF = 10;   // per tree: x, y, z, cos*sx, sin*sx, sy, r, g, b, seed
+  // yield to the renderer between parse slices so a 2000-tree tile never costs a long frame
+  const yieldTask = () => new Promise(r => setTimeout(r, 0));
+  // 20 m cells of the tile within ~60 m of the railway: only trees there pay for the precise bed / platform test
+  function trackMaskFor(x0, z0) {
+    if (typeof Track === 'undefined' || !Track.X || !Track.n) return null;
+    const TX = Track.X, TZ = Track.Z, N = Track.n, G = 20, NG = T7 / G, M = new Uint8Array(NG * NG); let any = false;
+    for (let i = 0; i < N; i += 2) {
+      const lx = TX[i] - x0, lz = TZ[i] - z0; if (lx < -70 || lz < -70 || lx > T7 + 70 || lz > T7 + 70) continue;
+      const ci = Math.floor(lx / G), cj = Math.floor(lz / G);
+      for (let dj = -3; dj <= 3; dj++) { const b = cj + dj; if (b < 0 || b >= NG) continue; for (let di = -3; di <= 3; di++) { const a = ci + di; if (a >= 0 && a < NG) { M[b * NG + a] = 1; any = true; } } }
+    }
+    return any ? M : null;
+  }
   async function loadTile(t) {
     t.state = 'loading'; stats.loading++;
     const t0 = performance.now();
@@ -886,19 +982,25 @@ const Flora = (() => {
       const x0 = X0 + t.tx * T7, z0 = Z0 + t.ty * T7;
       if (typeof Terrain !== 'undefined' && Terrain.ensure) { try { await Terrain.ensure(x0, z0, x0 + T7, z0 + T7, t.prio); } catch (e) { /* ground with what we have */ } }
       if (t.dead) return;
-      // is the railway anywhere near this tile? then test trees against the track bed
-      let trackNear = false;
-      if (typeof Track !== 'undefined' && Track.nearest) { const c = Track.nearest(x0 + T7 / 2, z0 + T7 / 2, 900); trackNear = !!(c && c.dist < 640); }
-      const D = new Float32Array(n * NF), K = new Uint8Array(n); let m = 0;
+      const mask = trackMaskFor(x0, z0), NG = T7 / 20;
+      const hasBed = typeof TrackGeo !== 'undefined' && TrackGeo.bedSpan, hasPlat = typeof Stations !== 'undefined' && Stations.platformY;
+      const D = new Float32Array(n * NF), K = new Uint8Array(n); let m = 0, ysum = 0;
       const H = typeof Terrain !== 'undefined' && Terrain.h ? Terrain.h : () => 0;
+      let slice = performance.now();
       for (let i = 0; i < n; i++) {
+        if ((i & 255) === 255 && performance.now() - slice > 2.5) { await yieldTask(); if (t.dead) return; slice = performance.now(); }
         const o = 4 + i * 8;
-        const x = x0 + dv.getUint16(o, true) / 65536 * T7, z = z0 + dv.getUint16(o + 2, true) / 65536 * T7;
+        const ux = dv.getUint16(o, true), uz = dv.getUint16(o + 2, true);
+        const x = x0 + ux / 65536 * T7, z = z0 + uz / 65536 * T7;
         const rB = u8[o + 4], hB = u8[o + 5]; let kind = u8[o + 6]; const tint = u8[o + 7] / 255;
         if (kind >= NK) kind = 7;
-        if (trackNear) {
-          const tr = Track.nearest(x, z, 30);
-          if (tr) { let lo = -4, hi = 4; if (typeof TrackGeo !== 'undefined' && TrackGeo.bedSpan) { const b = TrackGeo.bedSpan(tr.s); lo = b[0]; hi = b[1]; } if (tr.lat > lo - 1.8 && tr.lat < hi + 1.8) continue; }
+        if (mask && mask[Math.min(NG - 1, (uz * NG) >> 16) * NG + Math.min(NG - 1, (ux * NG) >> 16)]) {
+          const tr = Track.nearest(x, z, 50);
+          if (tr) {
+            let lo = -4, hi = 4; if (hasBed) { const bs = TrackGeo.bedSpan(tr.s); lo = bs[0]; hi = bs[1]; }
+            if (tr.lat > lo - 1.8 && tr.lat < hi + 1.8) continue;                                        // on the track bed
+            if (hasPlat && Math.abs(tr.lat) < 48 && Stations.platformY(x, z) !== null) continue;          // on a platform
+          }
         }
         const [Hm, Rm] = DIM[KINDS[kind]]; const hh = hash(Math.round(x * 7), Math.round(z * 7));
         let hgt = hB * 0.25, rad = rB * 0.1;
@@ -908,17 +1010,19 @@ const Flora = (() => {
         const pal = kind === 3 || kind === 8;
         if (!pal) { if (sy / sx > 1.45) sx = sy / 1.45; if (sy / sx < 0.62) sy = sx * 0.62; } else sx = Math.max(sx, sy * 0.7);
         sx = clamp(sx, 0.3, 2.4); sy = clamp(sy, 0.3, 2.4);
-        const yaw = hh * TAU, c = Math.cos(yaw), s = Math.sin(yaw);
+        const yaw = hh * TAU, c = Math.cos(yaw), sn = Math.sin(yaw);
         const y = H(x, z) - 0.15 * sy;
         const br = lerp(0.84, 1.12, tint) * lerp(0.94, 1.06, hash(Math.round(z * 3), 5)); const hue = (hash(Math.round(x * 3), 9) - 0.5) * 0.12;
         const b = m * NF;
-        D[b] = x; D[b + 1] = y; D[b + 2] = z; D[b + 3] = c * sx; D[b + 4] = s * sx; D[b + 5] = sy;
+        D[b] = x; D[b + 1] = y; D[b + 2] = z; D[b + 3] = c * sx; D[b + 4] = sn * sx; D[b + 5] = sy;
         D[b + 6] = br * (1 + hue); D[b + 7] = br; D[b + 8] = br * (1 - hue * 1.2); D[b + 9] = hh;
-        K[m] = kind; m++;
+        K[m] = kind; m++; ysum += y;
       }
-      t.D = D; t.K = K; t.n = m; t.state = 'ready'; dirty = true; stats.trees += m;
+      if (t.dead) return;
+      t.D = D; t.K = K; t.n = m; t.ym = m ? ysum / m : 0; t.state = 'ready'; dirty = true; stats.trees += m;
+      if (m) pendingFar.push(t);
     } catch (e) {
-      if (!t.dead) { t.state = 'empty'; t.n = 0; }
+      if (!t.dead) { t.state = e && e.notFound ? 'missing' : 'empty'; t.n = 0; }
     } finally { stats.loading--; stats.loadMs = Math.round(performance.now() - t0); }
   }
   async function inflateBytes(u8) { const s = new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate')); return new Uint8Array(await new Response(s).arrayBuffer()); }
@@ -943,36 +1047,29 @@ const Flora = (() => {
     a[o + 12] = D[b] - anchor.x; a[o + 13] = D[b + 1] - anchor.y; a[o + 14] = D[b + 2] - anchor.z; a[o + 15] = 1;
     const c = mesh.instanceColor.array, oc = slot * 3; c[oc] = D[b + 6]; c[oc + 1] = D[b + 7]; c[oc + 2] = D[b + 8];
   }
-  function rebuild(cam, doFar) {
-    const t0 = performance.now();
+  // near + mid rings: CPU-selected around the camera (3D distance, so the rings shrink as the camera climbs and the
+  // impostors / ground photo take over), rebuilt every ~12 m of camera movement; only tiles within the mid reach are scanned
+  function rebuild(cam) {
+    const t0 = performance.now(); sortCam.copy(cam); ringCam.copy(cam);
     if (!anchored || Math.abs(cam.x - anchor.x) > 3000 || Math.abs(cam.z - anchor.z) > 3000) {
-      anchor.set(Math.round(cam.x), 0, Math.round(cam.z)); group.position.copy(anchor); anchored = true; doFar = true;
+      anchor.set(Math.round(cam.x), 0, Math.round(cam.z)); group.position.copy(anchor); anchored = true; farFull = true;
     }
-    const rn2 = q.near * q.near, rm2 = q.mid * q.mid, rf2 = q.far * q.far;
+    const rn2 = q.near * q.near, rm2 = q.mid * q.mid;
     nk.fill(0); mk.fill(0);
-    let fn = 0; const off = doFar ? farGeo.attributes.aOff.array : null, imp = doFar ? farGeo.attributes.aImp.array : null;
     for (const t of tiles.values()) {
       if (t.state !== 'ready' || !t.n) continue;
-      // whole-tile distance test
       const x0 = X0 + t.tx * T7, z0 = Z0 + t.ty * T7;
-      const dx0 = Math.max(x0 - cam.x, 0, cam.x - x0 - T7), dz0 = Math.max(z0 - cam.z, 0, cam.z - z0 - T7);
-      const dmin2 = dx0 * dx0 + dz0 * dz0; if (dmin2 > rf2) continue;
-      if (!doFar && dmin2 > rm2) continue;
+      const dx0 = Math.max(x0 - cam.x, 0, cam.x - x0 - T7), dz0 = Math.max(z0 - cam.z, 0, cam.z - z0 - T7), dy0 = Math.max(0, Math.abs(cam.y - t.ym) - 90);
+      if (dx0 * dx0 + dz0 * dz0 + dy0 * dy0 > rm2) continue;
       const D = t.D, K = t.K;
       for (let i = 0; i < t.n; i++) {
-        const b = i * NF; const dx = D[b] - cam.x, dz = D[b + 2] - cam.z; const d2 = dx * dx + dz * dz;
+        const b = i * NF; const dx = D[b] - cam.x, dy = D[b + 1] - cam.y, dz = D[b + 2] - cam.z; const d2 = dx * dx + dy * dy + dz * dz;
         const k = K[i];
         if (d2 < rn2) { if (nk[k] < q.nearMax) writeInst(nearMesh[k], nk[k]++, D, b); else if (mk[k] < q.midMax) writeInst(midMesh[k], mk[k]++, D, b); }
         else if (d2 < rm2 * MIDF[k] * MIDF[k]) { if (mk[k] < q.midMax) writeInst(midMesh[k], mk[k]++, D, b); }
-        else if (doFar && d2 < rf2 && fn < farMax) {
-          const ir = impRect[k]; if (!ir) continue; if (d2 < rn2) continue;
-          const o4 = fn * 4, sx = Math.hypot(D[b + 3], D[b + 4]), sy = D[b + 5];
-          off[o4] = D[b] - anchor.x; off[o4 + 1] = D[b + 1] - anchor.y + ir[6] * sy; off[o4 + 2] = D[b + 2] - anchor.z; off[o4 + 3] = D[b + 9];
-          imp[o4] = ir[4] * sx; imp[o4 + 1] = ir[5] * sy; imp[o4 + 2] = k; imp[o4 + 3] = clamp((D[b + 7] - 0.84) / 0.28, 0, 1);
-          fn++;
-        }
       }
     }
+    for (let k = 0; k < NK; k++) if (nk[k] > 1) sortRing(nearMesh[k], nk[k]);
     let near = 0, mid = 0;
     for (let k = 0; k < NK; k++) {
       for (const [mesh, cnt] of [[nearMesh[k], nk[k]], [midMesh[k], mk[k]]]) {
@@ -980,14 +1077,67 @@ const Flora = (() => {
         if (cnt) { mesh.instanceMatrix.updateRange.offset = 0; mesh.instanceMatrix.updateRange.count = cnt * 16; mesh.instanceMatrix.needsUpdate = true;
           mesh.instanceColor.updateRange.offset = 0; mesh.instanceColor.updateRange.count = cnt * 3; mesh.instanceColor.needsUpdate = true; }
       }
+      const pm = proxyMesh[k]; pm.count = q.shadows ? nk[k] : 0; pm.visible = pm.count > 0;
       near += nk[k]; mid += mk[k];
     }
-    if (doFar) {
-      farGeo.instanceCount = fn; farMesh.visible = fn > 0;
-      for (const n of ['aOff', 'aImp']) { const at = farGeo.attributes[n]; at.updateRange.offset = 0; at.updateRange.count = fn * 4; at.needsUpdate = true; }
-      stats.far = fn;
-    }
+    // the impostor shader hides trees the rings already draw, measured from the same camera point (anchor.y is 0)
+    uImp.uRing.value.set(ringCam.x - anchor.x, ringCam.z - anchor.z, rm2, ringCam.y); uImp.uFar.value = q.far;
     stats.near = near; stats.mid = mid; stats.rebuildMs = +(performance.now() - t0).toFixed(2);
+  }
+  // far ring: one impostor per loaded tree. Arriving tiles are appended (cheap), departing tiles are blanked in place
+  // (zero size), and the buffer is compacted with a full rewrite only when the anchor moves or a third of it is dead.
+  // The vertex shader hides trees inside the rings and beyond the far radius.
+  const ringCam = new V3(); let farFull = true;
+  const farSeg = new Map(), pendingFar = []; let farUsed = 0, farDeadN = 0, farLo = Infinity, farHi = -1;
+  function appendFar(t, compacting) {
+    const key = tkey(t.tx, t.ty); if (t.dead || farSeg.has(key) || t.state !== 'ready' || !t.n) return;
+    const n = t.n;
+    if (farUsed + n > farMax) {                    // no room: compact if that would help, else leave this (far) tile out
+      if (!compacting && farDeadN > 0) farFull = true; else stats.farDropped = (stats.farDropped || 0) + n;
+      return;
+    }
+    const off = farGeo.attributes.aOff.array, imp = farGeo.attributes.aImp.array, D = t.D, K = t.K; let j = farUsed;
+    for (let i = 0; i < n; i++, j++) {
+      const b = i * NF, k = K[i]; const ir = impRect[k]; const o4 = j * 4;
+      if (!ir) { imp[o4] = 0; imp[o4 + 1] = 0; continue; }
+      off[o4] = D[b] - anchor.x; off[o4 + 1] = D[b + 1] - anchor.y; off[o4 + 2] = D[b + 2] - anchor.z; off[o4 + 3] = D[b + 9];
+      imp[o4] = ir[4] * Math.hypot(D[b + 3], D[b + 4]); imp[o4 + 1] = ir[5] * D[b + 5]; imp[o4 + 2] = k; imp[o4 + 3] = clamp((D[b + 7] - 0.84) / 0.28, 0, 1);
+    }
+    farSeg.set(key, { start: farUsed, n }); farLo = Math.min(farLo, farUsed); farHi = Math.max(farHi, farUsed + n); farUsed += n;
+  }
+  function killFar(key) {
+    const sg = farSeg.get(key); if (!sg) return; const imp = farGeo.attributes.aImp.array;
+    for (let j = sg.start; j < sg.start + sg.n; j++) { imp[j * 4] = 0; imp[j * 4 + 1] = 0; }
+    farSeg.delete(key); farDeadN += sg.n; farLo = Math.min(farLo, sg.start); farHi = Math.max(farHi, sg.start + sg.n);
+  }
+  function rebuildFar() {
+    const t0 = performance.now();
+    farSeg.clear(); farUsed = 0; farDeadN = 0; farFull = false; pendingFar.length = 0; stats.farDropped = 0;
+    const list = [...tiles.values()].filter(t => t.state === 'ready' && t.n);    // nearest tiles first, in case the buffer overflows
+    const cx = ringCam.x, cz = ringCam.z; const dist = t => Math.hypot(X0 + (t.tx + 0.5) * T7 - cx, Z0 + (t.ty + 0.5) * T7 - cz);
+    list.sort((a, b) => dist(a) - dist(b));
+    for (const t of list) appendFar(t, true);
+    farLo = 0; farHi = Math.max(farUsed, 1);
+    farGeo.instanceCount = farUsed; farMesh.visible = farUsed > 0; stats.far = farUsed;
+    stats.farMs = +(performance.now() - t0).toFixed(2);
+  }
+  function flushFar() {
+    if (farHi <= farLo) return;
+    farGeo.instanceCount = farUsed; farMesh.visible = farUsed > 0;
+    for (const n of ['aOff', 'aImp']) { const at = farGeo.attributes[n]; at.updateRange.offset = farLo * 4; at.updateRange.count = (Math.min(farHi, farMax) - farLo) * 4; at.needsUpdate = true; }
+    farLo = Infinity; farHi = -1; stats.far = farUsed - farDeadN;
+  }
+
+  // sort a ring's instances nearest-first (instance order = draw order) so near leaves hide far ones early
+  const sortCam = new V3(); let sIdx = new Int32Array(0), sKey = new Float32Array(0), sM = new Float32Array(0), sC = new Float32Array(0);
+  function sortRing(mesh, n) {
+    if (sIdx.length < n) { sIdx = new Int32Array(n * 2); sKey = new Float32Array(n * 2); sM = new Float32Array(n * 32); sC = new Float32Array(n * 6); }
+    const M = mesh.instanceMatrix.array, C = mesh.instanceColor.array;
+    const ax = sortCam.x - anchor.x, az = sortCam.z - anchor.z;
+    for (let i = 0; i < n; i++) { const dx = M[i * 16 + 12] - ax, dz = M[i * 16 + 14] - az; sKey[i] = dx * dx + dz * dz; sIdx[i] = i; }
+    const idx = Array.prototype.slice.call(sIdx, 0, n).sort((a, b) => sKey[a] - sKey[b]);
+    sM.set(M.subarray(0, n * 16)); sC.set(C.subarray(0, n * 3));
+    for (let j = 0; j < n; j++) { const i = idx[j]; M.set(sM.subarray(i * 16, i * 16 + 16), j * 16); C[j * 3] = sC[i * 3]; C[j * 3 + 1] = sC[i * 3 + 1]; C[j * 3 + 2] = sC[i * 3 + 2]; }
   }
 
   // ---- per frame
@@ -997,11 +1147,14 @@ const Flora = (() => {
     const now = performance.now();
     if (now - lastTileCheck > 250 || dirty) {
       lastTileCheck = now;
-      const [ctx, cty] = tileOf(camPos.x, camPos.z); const R = Math.ceil(q.load / T7) + 1;
-      for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const ground = typeof Terrain !== 'undefined' && Terrain.h ? Terrain.h(camPos.x, camPos.z) : 0;
+      const alt = Math.max(0, camPos.y - ground);
+      const reach = Math.sqrt(Math.max(0, q.load * q.load - alt * alt));        // nothing to load when flying above the far ring
+      const [ctx, cty] = tileOf(camPos.x, camPos.z); const R = Math.ceil(reach / T7) + 1;
+      if (reach > 0) for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
         const tx = ctx + dx, ty = cty + dy; const k = tkey(tx, ty);
         const cx = X0 + (tx + 0.5) * T7, cz = Z0 + (ty + 0.5) * T7; const d = Math.hypot(cx - camPos.x, cz - camPos.z) - T7 * 0.71;
-        if (d > q.load) continue;
+        if (d > reach) continue;
         if (index && !index.has(k)) continue;
         let t = tiles.get(k);
         if (!t) { t = { tx, ty, state: 'new', n: 0, prio: 2 + Math.max(0, d) / 400, dead: false }; tiles.set(k, t); loadTile(t); }
@@ -1011,34 +1164,34 @@ const Flora = (() => {
         const cx = X0 + (t.tx + 0.5) * T7, cz = Z0 + (t.ty + 0.5) * T7;
         if (Math.hypot(cx - camPos.x, cz - camPos.z) - T7 * 0.71 > q.load + 900) {
           t.dead = true; if (t.state === 'loading' && typeof Stream !== 'undefined') Stream.cancel(DATA_TILE(t.tx, t.ty));
-          if (t.state === 'ready') stats.trees -= t.n;
+          if (t.state === 'ready') { stats.trees -= t.n; killFar(k); }
           tiles.delete(k); dirty = true;
         }
       }
       stats.tiles = tiles.size;
     }
-    const movedN = lastNear.distanceToSquared(camPos) > 12 * 12, movedF = lastFar.distanceToSquared(camPos) > 70 * 70;
-    if (dirty || movedN || movedF) {
-      const doFar = dirty || movedF;
-      rebuild(camPos, doFar); lastNear.copy(camPos); if (doFar) lastFar.copy(camPos); dirty = false;
-    }
+    if (dirty || lastNear.distanceToSquared(camPos) > 12 * 12) { rebuild(camPos); lastNear.copy(camPos); dirty = false; }
+    if (farFull || farDeadN > Math.max(2000, farUsed * 0.35)) rebuildFar();
+    else { while (pendingFar.length) appendFar(pendingFar.shift(), false); if (farFull) rebuildFar(); }   // compact once if an append ran out of room
+    flushFar();
   }
   function setQuality(name) {
     if (!Q[name] || name === qName) return; const old = q; q = Q[name]; qName = name;
     // capacities are fixed at init (the high tier); lower tiers just use fewer instances
     q = Object.assign({}, q, { nearMax: Math.min(q.nearMax, old.nearMax, nearMesh[0] ? nearMesh[0].instanceMatrix.count : q.nearMax), midMax: Math.min(q.midMax, midMesh[0] ? midMesh[0].instanceMatrix.count : q.midMax), farMax: Math.min(q.farMax, farMax || q.farMax) });
-    for (const m of nearMesh) m.castShadow = q.shadows;
+    for (const m of nearMesh) m.castShadow = false;
     dirty = true;
   }
   function dispose() {
-    for (const t of tiles.values()) t.dead = true; tiles.clear();
-    for (const m of [...nearMesh, ...midMesh]) { m.count = 0; m.visible = false; }
-    if (farGeo) farGeo.instanceCount = 0; dirty = true;
+    for (const t of tiles.values()) t.dead = true; tiles.clear(); stats.trees = 0;
+    for (const m of [...nearMesh, ...midMesh, ...proxyMesh]) { m.count = 0; m.visible = false; }
+    if (farGeo) { farGeo.instanceCount = 0; farSeg.clear(); farUsed = 0; farDeadN = 0; pendingFar.length = 0; }
+    dirty = true;
   }
   // debug / preview: feed a tile from bytes instead of the network (same record layout as the tiles)
   function addTestTile(tx, ty, bytes) { const t = { tx, ty, state: 'new', n: 0, prio: 1, dead: false, _bytes: bytes }; tiles.set(tkey(tx, ty), t); return loadTile(t); }
   return {
-    init, update, hasData, setQuality, dispose, group, stats, KINDS, DIM,
+    init, update, hasData, covers: hasData, setQuality, dispose, group, stats, KINDS, DIM,
     get ready() { return ready; }, get quality() { return qName; }, get radii() { return { near: q.near, mid: q.mid, far: q.far, load: q.load }; },
     _geo: { near: geoNear, mid: geoMid }, _atlas: () => atlasTex, _imp: () => impTex, _tiles: tiles, addTestTile,
   };

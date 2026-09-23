@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bayline Stations</title>
+<style>
+  :root { color-scheme: dark; --ink: #f3efe6; --dim: rgba(243, 239, 230, .6); --line: rgba(255, 255, 255, .12); --red: #e0402f; }
+  * { box-sizing: border-box }
+  body { margin: 0; height: 100vh; display: grid; grid-template-columns: 300px 1fr; background: #0b0d10; color: var(--ink); font: 14px/1.4 system-ui, sans-serif }
+  aside { overflow: auto; border-right: 1px solid var(--line); padding: 14px }
+  h1 { font-size: 18px; margin: 0 0 4px } p { color: var(--dim); margin: 0 0 12px; font-size: 12px }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px }
+  button, select { font: inherit; color: inherit; background: rgba(255, 255, 255, .06); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; cursor: pointer }
+  button:hover { background: rgba(255, 255, 255, .12) } button.on { background: var(--red); border-color: var(--red) }
+  ul { list-style: none; margin: 0; padding: 0 } li button { width: 100%; text-align: left; margin: 2px 0 }
+  iframe { width: 100%; height: 100%; border: 0; background: #000 }
+  label { color: var(--dim); font-size: 12px; display: block; margin: 8px 0 4px }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Stations</h1>
+  <p>Opens the game build (<code>/</code> or a private build such as <code>/stations.html</code>) at a station. Served by <code>python3 tools/devserver.py</code> (http://localhost:8123/preview/stations.html).</p>
+  <label>Build</label>
+  <div class="row"><select id="build"><option value="/">/ (dist/index.html)</option><option value="/stations.html">/stations.html</option></select></div>
+  <label>View</label>
+  <div class="row" id="views">
+    <button data-v="walk0" class="on">Platform NB</button><button data-v="walk1">Platform SB</button>
+    <button data-v="orbit">Orbit 120 m</button><button data-v="top">Top-down</button><button data-v="far">Orbit 450 m</button>
+  </div>
+  <label>Time</label>
+  <div class="row" id="times"><button data-t="08:10" class="on">08:10</button><button data-t="12:30">12:30</button><button data-t="18:45">18:45</button><button data-t="21:30">21:30</button></div>
+  <label>Station</label>
+  <ul id="list"></ul>
+</aside>
+<iframe id="view" allow="fullscreen"></iframe>
+<script>
+  const ST = [['san_francisco', 'San Francisco'], ['22nd_street', '22nd Street'], ['bayshore', 'Bayshore'], ['south_sf', 'South San Francisco'], ['san_bruno', 'San Bruno'],
+    ['place_MLBR', 'Millbrae'], ['broadway', 'Broadway'], ['burlingame', 'Burlingame'], ['san_mateo', 'San Mateo'], ['hayward_park', 'Hayward Park'], ['hillsdale', 'Hillsdale'],
+    ['belmont', 'Belmont'], ['san_carlos', 'San Carlos'], ['redwood_city', 'Redwood City'], ['menlo_park', 'Menlo Park'], ['palo_alto', 'Palo Alto'], ['stanford', 'Stanford'],
+    ['california_ave', 'California Avenue'], ['san_antonio', 'San Antonio'], ['mountain_view', 'Mountain View'], ['sunnyvale', 'Sunnyvale'], ['lawrence', 'Lawrence'],
+    ['santa_clara', 'Santa Clara'], ['college_park', 'College Park'], ['sj_diridon', 'San Jose Diridon'], ['tamien', 'Tamien'], ['capitol', 'Capitol'], ['blossom_hill', 'Blossom Hill'],
+    ['morgan_hill', 'Morgan Hill'], ['san_martin', 'San Martin'], ['gilroy', 'Gilroy']];
+  let cur = 'burlingame', view = 'walk0', t = '08:10';
+  const $ = (id) => document.getElementById(id);
+  function go() {
+    const b = $('build').value;
+    let h = `#auto&t=${t}&at=${cur}`;
+    if (view === 'walk0') h += '&dir=0'; else if (view === 'walk1') h += '&dir=1';
+    else h += `&cam=orbit&dist=${view === 'far' ? 450 : view === 'top' ? 260 : 120}`;
+    $('view').src = b + h;
+    if (view === 'top') $('view').onload = () => { const w = $('view').contentWindow; const iv = setInterval(() => { if (w.__bayline) { clearInterval(iv); w.__bayline.Player.orbit.pitch = 1.52; } }, 200); };
+    else $('view').onload = null;
+  }
+  $('list').innerHTML = ST.map(([id, n]) => `<li><button data-s="${id}">${n}</button></li>`).join('');
+  $('list').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; cur = b.dataset.s; go(); };
+  for (const [grp, key] of [['views', 'v'], ['times', 't']]) $(grp).onclick = (e) => { const b = e.target.closest('button'); if (!b) return;
+    $(grp).querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); if (key === 'v') view = b.dataset.v; else t = b.dataset.t; go(); };
+  $('build').onchange = go;
+  go();
+</script>
+</body>
+</html>

@@ -16,7 +16,7 @@
 <div id="hud"></div>
 <div id="nav">
   <a href="#show=gallery">gallery</a><a href="#show=gallery&close=1">close-up</a><a href="#show=atlas">atlas</a><a href="#show=forest">forest</a>
-  <a href="#show=tile&real=1&view=street">Palo Alto street</a><a href="#show=tile&real=1&view=air">Palo Alto 300 m</a><a href="#show=tile&real=1&view=park">El Camino Park</a><a href="#show=tile&real=1&view=street&night=1">night</a>
+  <a href="#show=tile&view=street">Palo Alto street</a><a href="#show=tile&view=air">Palo Alto 300 m</a><a href="#show=tile&view=park">El Camino Park</a><a href="#show=tile&view=street&night=1">night</a>
 </div>
 <script>window.BAYLINE_DATA = '/data/v2/';</script>
 <script src="../vendor/three.min.js"></script>
@@ -27,7 +27,7 @@
 <script>
 (async () => {
   // #show=gallery|atlas|forest|tile  &view=street|air|park  &night=1  &sun=elev,az (deg)  &q=high|medium|low
-  // &tx=49&ty=55&suffix=_test (tile mode)  &cam=x,y,z&look=x,y,z  &n=30000 (forest)
+  // &tx=49&ty=55 (tile mode; &suffix=_test = dev test tiles)  &cam=x,y,z&look=x,y,z  &n=30000 (forest)  &alt=60 (forest camera height)
   const P = {}; for (const kv of location.hash.slice(1).split('&')) if (kv) { const [k, v] = kv.split('='); P[k] = v === undefined ? '1' : decodeURIComponent(v); }
   addEventListener('hashchange', () => location.reload());
   const SHOW = P.show || 'gallery', NIGHT = +(P.night || 0);
@@ -63,8 +63,8 @@
   let focus = new V3(0, 0, 0);
   const ground = (x, z, size, mat) => { const g = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat); g.rotation.x = -Math.PI / 2; g.position.set(x, -0.02, z); g.receiveShadow = true; scene.add(g); return g; };
   const grassMat = new THREE.MeshStandardMaterial({ color: NIGHT ? 0x2a2a20 : 0x7e7650, roughness: 0.95 });
-  await Flora.init({ renderer, scene, quality: P.q || 'high', suffix: P.suffix !== undefined ? P.suffix : (SHOW === 'tile' && !P.real ? '_test' : ''),
-    index: SHOW === 'tile' ? (P.suffix === '' || P.real ? undefined : { levels: { '7': [[+(P.tx || 49), +(P.ty || 55)]] } }) : { levels: { '7': [] } } });
+  await Flora.init({ renderer, scene, sun, quality: P.q || 'high', suffix: P.suffix !== undefined ? P.suffix : '',
+    index: SHOW === 'tile' ? undefined : { levels: { '7': [] } } });
 
   if (SHOW === 'atlas') {
     const tex = Flora._atlas(); const m = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide }));
@@ -88,7 +88,7 @@
     const tx = +(P.tx || 49), ty = +(P.ty || 55), T7 = 800, X0 = -45056, Z0 = -49152;
     const x0 = X0 + tx * T7, z0 = Z0 + ty * T7;
     ground(x0 + 400, z0 + 400, 12000, grassMat);
-    const real = P.suffix === '' || !!P.real; const R = real ? 1 : 0;
+    const real = P.suffix !== '_test'; const R = real ? 1 : 0;   // default: the published tiles (tree + NAIP L8 ground); #suffix=_test for dev test tiles
     for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {   // NAIP ground photo under the trees (L8 tiles when real data exists)
       const ttx = tx + dx, tty = ty + dy;
       if (real) { for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) { const x8 = ttx * 2 + i, y8 = tty * 2 + j; Stream.image(`tiles/img/8/${x8}_${y8}.jpg`, 1).then(bmp => { const t = new THREE.Texture(bmp); t.flipY = true; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.needsUpdate = true;
@@ -142,6 +142,7 @@
     H.textContent = `Flora preview · ${SHOW}${NIGHT ? ' · night' : ''} · quality ${Flora.quality}\n${fps.toFixed(0)} fps · ${i.calls} calls · ${(i.triangles / 1e6).toFixed(2)} M tris\n` +
       `trees ${s.trees} · near ${s.near} · mid ${s.mid} · far ${s.far} · tiles ${s.tiles}\nrebuild ${s.rebuildMs} ms · update ${upd.toFixed(2)} ms · init ${s.initMs} ms`;
     window.__flora = { calls: i.calls, tris: i.triangles, fps, stats: Object.assign({}, s), upd };
+    window.__fl = { renderer, scene, camera, sun };
   }
   requestAnimationFrame(frame);
 })();

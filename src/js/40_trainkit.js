@@ -13,66 +13,76 @@ const TrainKit = (() => {
   // ------------------------------------------------------------------------------------------ palette
   // em = weights of the four light groups [interior lights, head lamps, tail/marker lamps, interior ambient].
   // win = 1 for far-LOD window panes that glow warm at night.
+  // fx = surface character: cc clearcoat 0..1, br brushed-metal streaks 0..1, gr weathering 0..1, pat procedural
+  //      pattern id (see PAT), ao interior contact-shadow flag, sh fabric sheen colour.
   const PAL = [], PI = Object.create(null), PALN = 64;
   const IN = [0, 0, 0, 1];
-  function pal(name, hex, rough, metal, em, win) { PI[name] = PAL.length; PAL.push({ hex, rough, metal, em: em || [0, 0, 0, 0], win: win || 0 }); }
+  const PAT = { none: 0, paint: 1, fabric: 2, floor: 3, louver: 4, tread: 5, wall: 6, lodwin: 7, roof: 8, wheel: 9, rubber: 10, coil: 11, steel: 12, plastic: 13, ceil: 14 };
+  function pal(name, hex, rough, metal, em, win, fx) { PI[name] = PAL.length; PAL.push({ hex, rough, metal, em: em || [0, 0, 0, 0], win: win || 0, fx: fx || {} }); }
+  const FXI = { ao: 1 };                            // most interior surfaces: contact shadows
   // exterior
-  pal('body', '#e3e6e9', 0.3, 0.62);     // brushed stainless / white
-  pal('bodyLo', '#a9aeb4', 0.42, 0.55);  // lower skirt
-  pal('band', '#24282e', 0.24, 0.3);     // charcoal window band
-  pal('red', '#c4122f', 0.3, 0.05);      // signal red
-  pal('redDk', '#86101f', 0.45, 0.05);
-  pal('black', '#0c0d0f', 0.6, 0.15);
-  pal('rubber', '#17191c', 0.92, 0);
-  pal('frame', '#2a2d32', 0.55, 0.5);    // bogies, underframe
-  pal('frameLt', '#474b52', 0.5, 0.5);
-  pal('steel', '#83888f', 0.35, 0.85);
-  pal('wheel', '#6a6661', 0.38, 0.85);
-  pal('rust', '#5d4838', 0.85, 0.25);
-  pal('roof', '#9ca1a7', 0.55, 0.45);
-  pal('roofDk', '#5d6269', 0.6, 0.4);
-  pal('grille', '#31353b', 0.7, 0.45);
-  pal('insul', '#7a3a2b', 0.3, 0.0);     // glazed ceramic insulators
-  pal('copper', '#b87840', 0.32, 1);
-  pal('brass', '#c9a24a', 0.3, 1);
-  pal('chrome', '#d5d9dd', 0.16, 1);
-  pal('yellow', '#e2b01c', 0.45, 0.05);
-  pal('white', '#f2f2ef', 0.5, 0.0);
-  pal('headLamp', '#f7f3e6', 0.1, 0.2, [0, 1, 0, 0]);
-  pal('tailLamp', '#d3111e', 0.15, 0.1, [0, 0, 1, 0]);
+  pal('body', '#d7dbdf', 0.3, 0.5, null, 0, { cc: 1, br: 0.25, gr: 0.5, pat: PAT.paint });       // metallic silver paint, clearcoat
+  pal('bodyLo', '#9ea3a9', 0.42, 0.55, null, 0, { cc: 0.6, br: 0.2, gr: 0.95, pat: PAT.paint });
+  pal('band', '#23272d', 0.22, 0.28, null, 0, { cc: 1, gr: 0.35 });                              // charcoal window band
+  pal('red', '#bd1030', 0.28, 0.05, null, 0, { cc: 1, gr: 0.45, pat: PAT.paint });                // signal red
+  pal('redDk', '#86101f', 0.45, 0.05, null, 0, { cc: 0.7, gr: 0.6 });
+  pal('black', '#0c0d0f', 0.55, 0.15, null, 0, { cc: 0.35, gr: 0.5 });
+  pal('rubber', '#17191c', 0.9, 0, null, 0, { gr: 0.35, pat: PAT.rubber });
+  pal('frame', '#2a2d32', 0.6, 0.45, null, 0, { gr: 1 });                                          // bogies, underframe
+  pal('frameLt', '#474b52', 0.55, 0.45, null, 0, { gr: 0.9 });
+  pal('steel', '#8a8f96', 0.33, 0.85, null, 0, { br: 0.6, gr: 0.6 });
+  pal('wheel', '#6f6a64', 0.36, 0.9, null, 0, { gr: 1, pat: PAT.wheel });
+  pal('rust', '#5d4838', 0.85, 0.25, null, 0, { gr: 1 });
+  pal('roof', '#9aa0a6', 0.55, 0.45, null, 0, { gr: 1, pat: PAT.roof });
+  pal('roofDk', '#5d6269', 0.6, 0.4, null, 0, { gr: 1, pat: PAT.roof });
+  pal('grille', '#2d3136', 0.7, 0.45, null, 0, { gr: 0.8, pat: PAT.louver });
+  pal('insul', '#6f3325', 0.18, 0.0, null, 0, { cc: 1 });                                          // glazed ceramic insulators
+  pal('copper', '#b87840', 0.32, 1, null, 0, { gr: 0.4 });
+  pal('brass', '#c9a24a', 0.3, 1, null, 0, { gr: 0.3 });
+  pal('chrome', '#d5d9dd', 0.14, 1);
+  pal('yellow', '#e2b01c', 0.45, 0.05, null, 0, { cc: 0.6, gr: 0.6 });
+  pal('white', '#f2f2ef', 0.5, 0.0, null, 0, { cc: 0.3 });
+  pal('headLamp', '#f7f3e6', 0.08, 0.2, [0, 1, 0, 0], 0, { cc: 1 });
+  pal('tailLamp', '#d3111e', 0.12, 0.1, [0, 0, 1, 0], 0, { cc: 1 });
   pal('lampRim', '#15171a', 0.3, 0.6);
-  pal('lodGlass', '#1b242b', 0.1, 0.4, null, 1);
-  pal('glassDk', '#11171c', 0.08, 0.5);
+  pal('reflector', '#e8e9ea', 0.08, 1, [0, 0.35, 0, 0]);                                          // lamp reflector bowls
+  pal('lodGlass', '#1b242b', 0.1, 0.4, null, 1, { pat: PAT.lodwin });
+  pal('glassDk', '#11171c', 0.06, 0.5, null, 0, { cc: 1 });
+  pal('bodySS', '#c3c8cd', 0.3, 0.9, null, 0, { br: 1, gr: 0.55, pat: PAT.steel });             // bilevel stainless
+  pal('spring', '#3a3e44', 0.5, 0.5, null, 0, { gr: 0.9, pat: PAT.coil });
+  pal('tread', '#4b5057', 0.5, 0.6, null, 0, { gr: 0.8, pat: PAT.tread });
   // interior
-  pal('floor', '#55595f', 0.85, 0, IN);
-  pal('floorLt', '#7b7f85', 0.8, 0.1, IN);
-  pal('stepEdge', '#e0ad1a', 0.6, 0, IN);
-  pal('wall', '#eae8e3', 0.6, 0, IN);
-  pal('panel', '#cdd0d3', 0.5, 0.1, IN);
-  pal('panelDk', '#8d9298', 0.5, 0.25, IN);
-  pal('ceiling', '#f3f2ee', 0.7, 0, IN);
-  pal('light', '#fffaf0', 0.3, 0, [1.6, 0, 0, 1]);
-  pal('seat', '#2c4c63', 0.9, 0, IN);     // moquette, bay blue
-  pal('seatAlt', '#3f6d88', 0.9, 0, IN);
-  pal('seatShell', '#b8bdc3', 0.45, 0.1, IN);
-  pal('seatDk', '#33373d', 0.6, 0.2, IN);
-  pal('headrest', '#b1162f', 0.8, 0, IN);
-  pal('pole', '#c9ced3', 0.22, 1, IN);
-  pal('table', '#a59b8d', 0.45, 0, IN);
-  pal('bikeRack', '#c4122f', 0.35, 0.2, IN);
+  pal('floor', '#4f535a', 0.8, 0, IN, 0, { pat: PAT.floor, ao: 1 });
+  pal('floorLt', '#767a80', 0.75, 0.1, IN, 0, { pat: PAT.floor, ao: 1 });
+  pal('stepEdge', '#e0ad1a', 0.6, 0, IN, 0, FXI);
+  pal('wall', '#e9e7e2', 0.55, 0, IN, 0, { pat: PAT.wall, ao: 1 });
+  pal('panel', '#cfd2d5', 0.45, 0.1, IN, 0, { pat: PAT.wall, ao: 1 });
+  pal('panelDk', '#8b9096', 0.5, 0.25, IN, 0, FXI);
+  pal('ceiling', '#f3f2ee', 0.7, 0, IN, 0, { pat: PAT.ceil, ao: 1 });
+  pal('light', '#fffaf0', 0.3, 0, [1.3, 0, 0, 1]);
+  pal('seat', '#284860', 0.95, 0, IN, 0, { pat: PAT.fabric, ao: 1, sh: '#6f93b3' });              // moquette, bay blue
+  pal('seatAlt', '#3b6784', 0.95, 0, IN, 0, { pat: PAT.fabric, ao: 1, sh: '#8fb2cb' });
+  pal('seatShell', '#b8bdc3', 0.38, 0.1, IN, 0, { cc: 0.5, ao: 1 });
+  pal('seatDk', '#33373d', 0.55, 0.2, IN, 0, FXI);
+  pal('headrest', '#a8132c', 0.9, 0, IN, 0, { pat: PAT.fabric, ao: 1, sh: '#e0707e' });
+  pal('pole', '#c9ced3', 0.2, 1, IN, 0, { br: 0.4 });
+  pal('table', '#a59b8d', 0.4, 0, IN, 0, { cc: 0.5, ao: 1 });
+  pal('bikeRack', '#bd1030', 0.35, 0.2, IN, 0, { cc: 1 });
   pal('tire', '#1c1d1f', 0.9, 0, IN);
-  pal('bikeFrame', '#ececec', 0.35, 0.3, IN);  // tinted per bike instance
-  pal('wc', '#dddad3', 0.35, 0.05, IN);
+  pal('bikeFrame', '#ececec', 0.35, 0.3, IN, 0, { cc: 0.8 });  // tinted per bike instance
+  pal('wc', '#dddad3', 0.3, 0.05, IN, 0, { cc: 0.5, ao: 1 });
   pal('btnGreen', '#35d46e', 0.3, 0, [1.3, 0, 0, 1]);
   pal('btnYellow', '#f2c230', 0.3, 0, [1.3, 0, 0, 1]);
   pal('btnRed', '#e0303c', 0.3, 0, [1.1, 0, 0, 1]);
-  pal('desk', '#2a2d31', 0.6, 0.2, IN);
-  pal('deskLt', '#4b5057', 0.5, 0.25, IN);
-  pal('cabSeat', '#1e2125', 0.8, 0, IN);
-  pal('screenOff', '#07090b', 0.2, 0.3, IN);
-  pal('bellowsIn', '#3f4247', 0.9, 0, IN);
-  pal('wood', '#8a6a48', 0.55, 0, IN);
+  pal('desk', '#26292d', 0.62, 0.15, IN, 0, { pat: PAT.plastic, ao: 1 });
+  pal('deskLt', '#474c53', 0.55, 0.2, IN, 0, { pat: PAT.plastic, ao: 1 });
+  pal('cabSeat', '#1e2125', 0.85, 0, IN, 0, { pat: PAT.fabric, sh: '#555c66' });
+  pal('screenOff', '#07090b', 0.15, 0.3, IN, 0, { cc: 1 });
+  pal('bellowsIn', '#3f4247', 0.9, 0, IN, 0, { pat: PAT.rubber });
+  pal('wood', '#8a6a48', 0.55, 0, IN, 0, { cc: 0.4 });
   pal('blueSign', '#1f5fa8', 0.5, 0, [0.6, 0, 0, 1]);
+  pal('amberLed', '#ffae1a', 0.4, 0, [2.2, 0, 0, 1]);
+  pal('glassTint', '#2c3d47', 0.05, 0.2, IN, 0, { cc: 1 });
   if (PAL.length > PALN) throw new Error('TrainKit palette overflow');
   const palU = name => { const i = PI[name]; if (i === undefined) throw new Error('TrainKit: unknown palette entry ' + name); return (i + 0.5) / PALN; };
 
@@ -84,27 +94,176 @@ const TrainKit = (() => {
       const t = new THREE.DataTexture(d, PALN, 1); t.colorSpace = cs; t.magFilter = t.minFilter = THREE.NearestFilter;
       t.generateMipmaps = false; t.needsUpdate = true; return t;
     };
+    const rgb = (hex, d, o) => { const h = parseInt(hex.slice(1), 16); d[o] = h >> 16; d[o + 1] = (h >> 8) & 255; d[o + 2] = h & 255; d[o + 3] = 255; };
     palTexs = {
-      albedo: mk((p, d, o) => { const h = parseInt(p.hex.slice(1), 16); d[o] = h >> 16; d[o + 1] = (h >> 8) & 255; d[o + 2] = h & 255; d[o + 3] = 255; }, THREE.SRGBColorSpace),
+      albedo: mk((p, d, o) => rgb(p.hex, d, o), THREE.SRGBColorSpace),
       orm: mk((p, d, o) => { d[o] = p.win * 255; d[o + 1] = Math.round(p.rough * 255); d[o + 2] = Math.round(p.metal * 255); d[o + 3] = 255; }, THREE.NoColorSpace),
       em: mk((p, d, o) => { for (let k = 0; k < 4; k++) d[o + k] = Math.round(clamp(p.em[k] / 2, 0, 1) * 255); }, THREE.NoColorSpace),
+      fx: mk((p, d, o) => { const f = p.fx; d[o] = Math.round((f.cc || 0) * 255); d[o + 1] = Math.round((f.br || 0) * 255); d[o + 2] = Math.round((f.gr || 0) * 255); d[o + 3] = (f.pat || 0) * 16 + (f.ao ? 8 : 0); }, THREE.NoColorSpace),
+      sheen: mk((p, d, o) => { if (p.fx.sh) rgb(p.fx.sh, d, o); else d[o + 3] = 255; }, THREE.SRGBColorSpace),
     };
     return palTexs;
   }
-  // One per car: uLv = (interior lights, head lamps, tail lamps, interior ambient), uWin = lit-window glow.
-  function palMaterial() {
+  // Procedural surface detail from the object-space position (car frame, or the instance frame for seats,
+  // wheels and door leaves): panel seams, brushed streaks, rivets, louvers, coils, moquette, speckled floors,
+  // weathering and interior contact shadows. Everything fades out below the pixel footprint (no shimmer).
+  const TK_VERT_HEAD = `
+    varying vec3 tkP; varying vec3 tkN; varying vec3 tkAx; varying vec3 tkAy; varying vec3 tkAz;`;
+  const TK_VERT_BODY = `
+    tkP = transformed; tkN = normal;
+    { mat3 tkM = mat3(1.0);
+      #ifdef USE_INSTANCING
+        tkM = mat3(instanceMatrix);
+      #endif
+      tkAx = normalize(normalMatrix * (tkM * vec3(1.0, 0.0, 0.0))); tkAy = normalize(normalMatrix * (tkM * vec3(0.0, 1.0, 0.0)));
+      tkAz = normalize(normalMatrix * (tkM * vec3(0.0, 0.0, 1.0))); }`;
+  const TK_FRAG_HEAD = `
+    uniform sampler2D tkFx; uniform vec4 uLv; uniform float uWin; uniform vec4 tkFloors; uniform float tkWallZ;
+    varying vec3 tkP; varying vec3 tkN; varying vec3 tkAx; varying vec3 tkAy; varying vec3 tkAz;
+    float tkPat, tkGrime, tkRough, tkMetal, tkWinK; vec3 tkBump;
+    float tkH(vec2 p) { p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    float tkV(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(tkH(i), tkH(i + vec2(1.0, 0.0)), f.x), mix(tkH(i + vec2(0.0, 1.0)), tkH(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float tkSeam(float x, float period, float phase, float w) { float d = abs(fract(x / period + phase) - 0.5) * period; return 1.0 - smoothstep(w * 0.5, w, d); }
+    // height field of each pattern (metres), for bump normals
+    float tkHt(vec3 p) {
+      if (tkPat == 1.0) return -0.0014 * tkSeam(p.x, 2.35, 0.31, 0.005);
+      if (tkPat == 12.0) { float d = abs(fract(p.x / 1.02 + 0.13) - 0.5) * 1.02;
+        float r = length(vec2(d - 0.02, (fract(p.y / 0.06) - 0.5) * 0.06));
+        return -0.0012 * (1.0 - smoothstep(0.0015, 0.004, d)) + 0.0014 * (1.0 - smoothstep(0.0035, 0.0055, r)); }
+      if (tkPat == 4.0) { float l = fract(p.y * 12.0); return 0.005 * (smoothstep(0.0, 0.55, l) - smoothstep(0.55, 1.0, l)); }
+      if (tkPat == 11.0) return 0.007 * sin(fract(p.y * 16.0) * 3.14159);
+      if (tkPat == 2.0) return 0.0007 * sin(p.x * 170.0 + sin(p.y * 60.0)) * sin((p.y + p.z) * 170.0);
+      if (tkPat == 5.0) { vec2 q = fract(p.xz * 8.0 + vec2(p.z * 4.0, 0.0)); return 0.0018 * (1.0 - smoothstep(0.12, 0.2, length(q - 0.5))); }
+      if (tkPat == 10.0) return 0.0012 * sin(p.x * 260.0);
+      return 0.0;
+    }`;
+  const TK_FRAG_COLOR = `
+    {
+      vec4 fx = texture2D(tkFx, vMapUv); float fa = floor(fx.a * 255.0 + 0.5);
+      tkPat = floor(fa / 16.0); float aoF = mod(floor(fa / 8.0), 2.0);
+      vec3 p = tkP; float fw = length(fwidth(p)) + 1e-5; vec3 col = diffuseColor.rgb;
+      tkRough = 0.0; tkMetal = 0.0; tkBump = vec3(0.0); tkWinK = 1.0;
+      // --- per-pattern colour ---
+      if (tkPat == 1.0) {            // clearcoated paint: faint orange peel, panel seams
+        col *= 0.985 + 0.03 * tkV(p.xy * 23.0 + p.z * 17.0);
+        col *= 1.0 - 0.32 * tkSeam(p.x, 2.35, 0.31, 0.005) * (1.0 - smoothstep(0.003, 0.012, fw));
+      } else if (tkPat == 12.0) {   // stainless panels with rivet rows
+        float pid = floor(p.x / 1.02 + 0.13); col *= 0.93 + 0.12 * tkH(vec2(pid, floor(p.y / 1.35) + 3.0));
+        col *= 1.0 - 0.25 * (1.0 - smoothstep(0.0015, 0.004, abs(fract(p.x / 1.02 + 0.13) - 0.5) * 1.02)) * (1.0 - smoothstep(0.003, 0.01, fw));
+      } else if (tkPat == 2.0) {    // moquette: woven motif + warm flecks
+        float fade = 1.0 - smoothstep(0.002, 0.008, fw);
+        float m1 = sin(p.x * 150.0 + sin(p.y * 55.0) * 1.3) * sin(p.y * 150.0 + p.z * 150.0);
+        float fl = step(0.955, tkH(floor(vec2(p.x + p.z, p.y) * 140.0)));
+        col *= 1.0 + (0.16 * smoothstep(-0.3, 0.7, m1) - 0.07) * fade;
+        col = mix(col, vec3(0.62, 0.46, 0.2) * 0.5, fl * 0.45 * fade);
+      } else if (tkPat == 3.0) {    // speckled vinyl
+        float fade = 1.0 - smoothstep(0.003, 0.012, fw);
+        float sp = tkH(floor(p.xz * 60.0)), sp2 = tkV(p.xz * 3.0);
+        col *= (0.9 + 0.2 * sp * fade) * (0.94 + 0.1 * sp2);
+        col = mix(col, vec3(0.8), step(0.975, sp) * 0.35 * fade);
+      } else if (tkPat == 6.0) {    // wall panel seams
+        col *= 1.0 - 0.22 * tkSeam(p.x, 1.22, 0.1, 0.004) * (1.0 - smoothstep(0.002, 0.008, fw));
+      } else if (tkPat == 14.0) {   // ceiling panels
+        col *= 1.0 - 0.15 * tkSeam(p.x, 0.81, 0.05, 0.004) * (1.0 - smoothstep(0.002, 0.008, fw));
+      } else if (tkPat == 4.0) {    // louvers
+        float l = fract(p.y * 12.0); col *= mix(1.0, 0.4 + 0.6 * smoothstep(0.05, 0.4, l) * smoothstep(1.0, 0.75, l), 1.0 - smoothstep(0.01, 0.04, fw));
+      } else if (tkPat == 11.0) {   // coil spring
+        col *= 0.35 + 0.65 * sin(fract(p.y * 16.0) * 3.14159);
+      } else if (tkPat == 9.0) {    // wheel: polished tread, dusty faces
+        float tread = 1.0 - smoothstep(0.35, 0.65, abs(tkN.z));
+        col = mix(col, vec3(0.7, 0.71, 0.73), tread * 0.85); tkRough -= tread * 0.22;
+        fx.b *= 1.0 - tread * 0.95;
+      } else if (tkPat == 13.0) {   // textured plastic
+        col *= 0.95 + 0.08 * tkH(floor(p.xy * 300.0 + p.z * 200.0)) * (1.0 - smoothstep(0.001, 0.004, fw));
+      } else if (tkPat == 8.0) {    // roof: patchy
+        col *= 0.88 + 0.22 * tkV(p.xz * 1.1 + 5.0);
+      }
+      // --- brushed metal streaks ---
+      if (fx.g > 0.0) {
+        float fade = 1.0 - smoothstep(0.002, 0.01, fw);
+        float st = tkV(vec2(p.x * 1.7 + p.z * 0.4, (p.y + p.z * 0.3) * 150.0));
+        col *= 1.0 + (st - 0.5) * 0.08 * fx.g * fade; tkRough += (st - 0.5) * 0.16 * fx.g * fade;
+        tkBump += tkAy * (st - 0.5) * 0.05 * fx.g * fade;
+      }
+      // --- weathering: road dust low down, gravity streaks under windows, grime on up-facing surfaces ---
+      tkGrime = 0.0;
+      if (fx.b > 0.0) {
+        float y = p.y;
+        #ifdef USE_INSTANCING
+          y = min(y, 1.2) * 0.8;
+        #endif
+        float bottom = smoothstep(1.75, 0.35, y);
+        float blot = tkV(p.xz * 0.8 + vec2(p.y * 0.6, 3.0));
+        float streak = smoothstep(0.6, 0.95, tkV(vec2(p.x * 3.3 + p.z * 1.7, p.y * 0.22))) * smoothstep(4.5, 1.3, y);
+        float up = smoothstep(0.55, 0.95, tkN.y);
+        tkGrime = fx.b * clamp(0.13 * blot + 0.5 * bottom * (0.5 + 0.5 * blot) + 0.2 * streak + 0.35 * up * blot, 0.0, 0.82);
+        vec3 dirt = mix(vec3(0.19, 0.17, 0.15), vec3(0.23, 0.14, 0.09), smoothstep(1.3, 0.3, y));
+        col = mix(col, dirt * (0.6 + 0.8 * dot(col, vec3(0.333))), tkGrime);
+        tkRough += tkGrime * 0.38; tkMetal -= tkGrime * 0.55;
+      }
+      // --- interior contact shadows (subtle; SSAO does the rest) ---
+      if (aoF > 0.5) {
+        float d = 9.0;
+        #ifdef USE_INSTANCING
+          d = max(p.y, 0.0);
+        #else
+          for (int i = 0; i < 4; i++) { float dd = p.y - tkFloors[i]; if (dd > -0.02) d = min(d, max(dd, 0.0)); }
+        #endif
+        float ao = 1.0 - 0.22 * exp(-d * 6.0);
+        #ifndef USE_INSTANCING
+          ao *= 1.0 - 0.12 * smoothstep(0.3, 0.0, tkWallZ - abs(p.z));
+        #endif
+        col *= ao;
+      }
+      // --- bump from the pattern height field (object space -> view space) ---
+      if (tkPat > 0.5 && tkPat != 7.0 && tkPat != 9.0) {
+        float e = max(0.0012, fw * 0.5), h0 = tkHt(p);
+        vec3 g = vec3(tkHt(p + vec3(e, 0.0, 0.0)) - h0, tkHt(p + vec3(0.0, e, 0.0)) - h0, tkHt(p + vec3(0.0, 0.0, e)) - h0) / e;
+        g *= 1.0 - smoothstep(0.004, 0.02, fw);
+        tkBump += g.x * tkAx + g.y * tkAy + g.z * tkAz;
+      }
+      // far-LOD lit windows: seat backs and heads in silhouette
+      if (tkPat == 7.0) {
+        float stp = p.y < 2.25 ? 1.74 : (p.y < 3.0 ? 2.44 : 3.74);
+        float f9 = fract(p.x / 0.9 + 0.2);
+        float back = step(p.y, stp) * smoothstep(0.06, 0.14, f9) * smoothstep(0.84, 0.76, f9);
+        float occ = step(tkH(vec2(floor(p.x / 0.9 + 0.2), stp)), 0.5);
+        float head = occ * (1.0 - smoothstep(0.1, 0.13, length(vec2((f9 - 0.45) * 0.9, (p.y - stp - 0.13) * 1.2))));
+        tkWinK = 1.0 - 0.62 * max(back, head);
+      }
+      diffuseColor.rgb = col;
+      tkGrime = clamp(tkGrime, 0.0, 1.0);
+    }`;
+  // One material per car and variant ('ext' clearcoat, 'int' fabric sheen, 'lod' cheap). All share the light
+  // uniforms S = { lv, win, floors, wallZ } so lamp levels stay in sync.
+  function palMaterial(variant = 'ext', S) {
     const t = palTextures();
-    const m = new THREE.MeshStandardMaterial({ map: t.albedo, roughnessMap: t.orm, metalnessMap: t.orm, emissiveMap: t.em,
-      emissive: 0xffffff, roughness: 1, metalness: 1 });
-    const lv = { value: new THREE.Vector4(0, 0, 0, 0.2) }, win = { value: 0 };
-    m.userData.lv = lv.value; m.userData.win = win;
+    S = S || { lv: { value: new THREE.Vector4(0, 0, 0, 0.2) }, win: { value: 0 }, floors: { value: new THREE.Vector4(0.62, 1.32, 2.62, 1.75) }, wallZ: { value: 1.38 } };
+    const P = { map: t.albedo, roughnessMap: t.orm, metalnessMap: t.orm, emissiveMap: t.em, emissive: 0xffffff, roughness: 1, metalness: 1 };
+    let m;
+    if (variant === 'lod') m = new THREE.MeshStandardMaterial(P);
+    else {
+      m = new THREE.MeshPhysicalMaterial(P);
+      if (variant === 'ext') { m.clearcoat = 1; m.clearcoatMap = t.fx; m.clearcoatRoughness = 0.06; }
+      else { m.sheen = 1; m.sheenColor.setRGB(1, 1, 1); m.sheenColorMap = t.sheen; m.sheenRoughness = 0.6; }
+    }
+    m.userData.lv = S.lv.value; m.userData.win = S.win; m.userData.S = S;
     m.onBeforeCompile = sh => {
-      sh.uniforms.uLv = lv; sh.uniforms.uWin = win;
-      sh.fragmentShader = 'uniform vec4 uLv;\nuniform float uWin;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>',
-        'vec4 tkEm = texture2D( emissiveMap, vEmissiveMapUv ) * 2.0;\n' +
-        'totalEmissiveRadiance = diffuseColor.rgb * ( dot( tkEm.rgb, uLv.rgb ) + tkEm.a * uLv.w * vec3( 1.0, 0.9, 0.76 ) ) + vec3( 1.0, 0.68, 0.38 ) * texture2D( roughnessMap, vRoughnessMapUv ).r * uWin;');
+      sh.uniforms.uLv = S.lv; sh.uniforms.uWin = S.win; sh.uniforms.tkFx = { value: t.fx }; sh.uniforms.tkFloors = S.floors; sh.uniforms.tkWallZ = S.wallZ;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>' + TK_VERT_HEAD).replace('#include <begin_vertex>', '#include <begin_vertex>' + TK_VERT_BODY);
+      let f = sh.fragmentShader.replace('#include <common>', '#include <common>' + TK_FRAG_HEAD)
+        .replace('#include <map_fragment>', '#include <map_fragment>' + TK_FRAG_COLOR)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(roughnessFactor + tkRough, 0.035, 1.0);')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = clamp(metalnessFactor + tkMetal, 0.0, 1.0);')
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n normal = normalize(normal - (tkBump - dot(tkBump, normal) * normal));')
+        .replace('#include <emissivemap_fragment>',
+          'vec4 tkEm = texture2D( emissiveMap, vEmissiveMapUv ) * 2.0;\n' +
+          'totalEmissiveRadiance = diffuseColor.rgb * ( dot( tkEm.rgb, uLv.rgb ) + tkEm.a * uLv.w * vec3( 1.0, 0.9, 0.76 ) ) + vec3( 1.0, 0.68, 0.38 ) * texture2D( roughnessMap, vRoughnessMapUv ).r * uWin * tkWinK;');
+      if (variant === 'ext') f = f.replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n material.clearcoat *= 1.0 - tkGrime * 0.85; material.clearcoatRoughness = max(material.clearcoatRoughness, tkGrime * 0.55);');
+      sh.fragmentShader = f;
     };
-    m.customProgramCacheKey = () => 'tk-pal-2';
+    m.customProgramCacheKey = () => 'tk-pal-3-' + variant;
     return m;
   }
 
@@ -282,6 +441,25 @@ const TrainKit = (() => {
     });
     return _card;
   }
+  // Daylight counterpart of windowCard: what you glimpse through tinted glass from outside (albedo map of the
+  // exterior glass): bright ceiling light strip, the far side's windows, seat backs with red headrests.
+  let _dayCard = null;
+  function windowDayCard() {
+    if (_dayCard) return _dayCard;
+    _dayCard = U.canvasTexture(128, 128, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, 0, h * 0.9); gr.addColorStop(0, '#8e959b'); gr.addColorStop(0.12, '#6c747b'); gr.addColorStop(0.9, '#2a2f35');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h * 0.9);
+      g.fillStyle = '#c9d2d8'; g.fillRect(0, 5, w, 5);                                    // ceiling light strip
+      g.fillStyle = 'rgba(190,210,222,0.75)'; g.fillRect(0, h * 0.22, w, h * 0.3);         // far-side windows (sky)
+      g.fillStyle = 'rgba(70,78,86,0.9)'; for (let x = 20; x < w; x += 42) g.fillRect(x, h * 0.22, 6, h * 0.3);   // window pillars
+      for (let x = -8; x < w; x += 34) {                                                    // seat backs + headrests
+        g.fillStyle = '#1b2f40'; g.beginPath(); g.roundRect ? g.roundRect(x, h * 0.46, 26, h * 0.44, 7) : g.rect(x, h * 0.46, 26, h * 0.44); g.fill();
+        g.fillStyle = '#7a1424'; g.fillRect(x + 2, h * 0.46, 22, 7);
+      }
+      g.fillStyle = '#0b0f13'; g.fillRect(0, h * 0.9, w, h * 0.1);                         // v < 0.1: dark cab glass
+    });
+    return _dayCard;
+  }
   function glowTex() {
     if (_glowTex) return _glowTex;
     _glowTex = U.canvasTexture(64, 64, (g, w, h) => {
@@ -364,9 +542,9 @@ const TrainKit = (() => {
     return _atlas;
   }
   let _atlasMat = null, _glowMat = null;
-  const atlasMat = () => _atlasMat || (_atlasMat = new THREE.MeshStandardMaterial({ map: decalAtlas(), transparent: true, depthWrite: false, roughness: 0.35, metalness: 0.1, alphaTest: 0.02 }));
+  const atlasMat = () => _atlasMat || (_atlasMat = new THREE.MeshPhysicalMaterial({ map: decalAtlas(), transparent: true, depthWrite: false, roughness: 0.35, metalness: 0.1, alphaTest: 0.02, clearcoat: 1, clearcoatRoughness: 0.06, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
   const glowMat = () => _glowMat || (_glowMat = new THREE.PointsMaterial({ size: 1.5, sizeAttenuation: true, map: glowTex(), transparent: true, depthWrite: false,
-    blending: THREE.AdditiveBlending, vertexColors: true, toneMapped: false }));
+    blending: THREE.AdditiveBlending, vertexColors: true, toneMapped: true }));   // HDR values (> 1) so the post pipeline blooms them
 
   // Decal quads (atlas UVs). Plane z = zc facing s*Z, or x = xc facing s*X. Positioned by center + size.
   function decalZ(T, name, cx, cy, zc, w, h, s) {
@@ -412,21 +590,37 @@ const TrainKit = (() => {
   function bogie(X, bx, wb, r, motor, heavy) {
     const fy0 = r + 0.06, fy1 = r + 0.36, zf = heavy ? 1.08 : 0.98;
     for (const s of [-1, 1]) {
-      X.box('frame', bx - wb / 2 - 0.35, fy0, s * zf - 0.075, bx + wb / 2 + 0.35, fy1, s * zf + 0.075);
-      X.box('frameLt', bx - wb / 2 + 0.3, fy0 + 0.04, s * (zf + 0.08) - 0.01, bx + wb / 2 - 0.3, fy1 - 0.04, s * (zf + 0.08) + 0.01);
-      if (!heavy) X.cyl('rubber', bx, fy1 + 0.12, s * zf, 0.25, 0.22, 'y', 14);
-      else X.cyl('steel', bx, fy1 + 0.1, s * zf, 0.16, 0.2, 'y', 10);
+      const z0 = s * zf - 0.075, z1 = s * zf + 0.075;
+      // side frame: deep fish-belly centre section, raised arms over the axle boxes, end caps
+      X.box('frame', bx - wb / 2 + 0.42, r - 0.02, z0, bx + wb / 2 - 0.42, fy1, z1);
+      X.box('frameLt', bx - wb / 2 + 0.5, r + 0.02, s * (zf + 0.078) - 0.004, bx + wb / 2 - 0.5, fy1 - 0.04, s * (zf + 0.078) + 0.004);
+      if (!heavy) X.cyl('rubber', bx, fy1 + 0.12, s * zf, 0.25, 0.22, 'y', 16);          // air spring
+      else { X.cyl('spring', bx - 0.2, fy1 + 0.1, s * zf, 0.11, 0.24, 'y', 12); X.cyl('spring', bx + 0.2, fy1 + 0.1, s * zf, 0.11, 0.24, 'y', 12); }
+      X.cyl('frameLt', bx, fy1 + 0.245, s * zf, heavy ? 0.3 : 0.27, 0.03, 'y', 16);
       for (const a of [-1, 1]) {
         const ax = bx + a * wb / 2;
-        X.box('frame', ax - 0.2, r - 0.14, s * zf - 0.1, ax + 0.2, r + 0.12, s * zf + 0.1);
-        X.cyl('steel', ax, r + 0.2, s * zf, 0.085, 0.18, 'y', 8);
+        X.box('frame', ax - 0.46, r + 0.3, z0, ax + 0.46, fy1 + 0.06, z1);                       // arm over the axle box
+        X.box('frame', Math.min(ax + a * 0.34, ax + a * 0.5), r + 0.02, z0, Math.max(ax + a * 0.34, ax + a * 0.5), fy1 + 0.06, z1);   // end cap
+        X.box('frame', ax - 0.2, r - 0.14, s * zf - 0.1, ax + 0.2, r + 0.12, s * zf + 0.1);      // axle box
+        X.cyl('steel', ax, r - 0.01, s * (zf + 0.12), 0.1, 0.04, 'z', 14);                        // axle-box cover
+        X.cyl('frameLt', ax, r - 0.01, s * (zf + 0.145), 0.035, 0.02, 'z', 8);                    // speed sensor
+        for (const k of [-1, 1]) X.cyl('spring', ax + k * 0.12, r + 0.215, s * zf, 0.07, 0.17, 'y', 10);   // primary coil springs
+        X.rod('black', ax + a * 0.27, r - 0.02, s * (zf + 0.1), ax + a * 0.27, fy1 + 0.02, s * (zf + 0.1), 0.028, 8);     // vertical damper
         X.rod('frameLt', ax - a * 0.3, r + 0.16, s * (zf + 0.1), ax - a * 0.95, r + 0.42, s * (zf + 0.1), 0.035, 6);
         X.box('frameLt', ax - a * 0.62 - 0.09, r - 0.1, s * (zf - 0.2) - 0.07, ax - a * 0.62 + 0.09, r + 0.14, s * (zf - 0.2) + 0.07);  // brake unit
+        X.box('black', ax - a * 0.62 - 0.04, r - 0.22, s * (zf - 0.2) - 0.05, ax - a * 0.62 + 0.04, r - 0.1, s * (zf - 0.2) + 0.05);    // pads
       }
+      X.rod('black', bx - 0.55, fy1 + 0.05, s * (zf + 0.12), bx + 0.55, fy1 + 0.3, s * (zf + 0.12), 0.035, 8);   // yaw damper
     }
     X.box('frame', bx - 0.32, fy0 + 0.02, -zf, bx + 0.32, fy1 - 0.02, zf);
+    for (const a of [-1, 1]) X.rod('frameLt', bx + a * (wb / 2 - 0.55), r + 0.12, -zf, bx + a * (wb / 2 - 0.55), r + 0.12, zf, 0.06, 10);   // transoms
     X.box('frame', bx - 1.0, fy1 + 0.2, -0.3, bx + 1.0, fy1 + 0.3, 0.3);
-    if (motor) for (const a of [-1, 1]) X.box('frameLt', bx + a * wb / 2 - a * 0.62 - 0.28, r - 0.2, -0.55, bx + a * wb / 2 - a * 0.62 + 0.28, r + 0.22, 0.45);
+    if (motor) for (const a of [-1, 1]) {
+      const mx = bx + a * wb / 2 - a * 0.62;
+      X.cyl('frameLt', mx, r + 0.01, -0.05, 0.27, 0.86, 'z', 16);                                 // traction motor
+      X.box('frame', mx - 0.18, r - 0.22, 0.38, mx + 0.18, r + 0.2, 0.62);                         // gearbox
+      for (let k = 0; k < 5; k++) X.box('grille', mx - 0.2, r - 0.19 + k * 0.08, -0.52, mx + 0.2, r - 0.17 + k * 0.08, 0.42);
+    }
   }
   // Two-leaf plug door leaf for instancing: x in [-w/2, w/2], y in [0, h], outer face at z = 0 facing +Z.
   function doorLeafGeo(w, h, win, pal = 'red') {
@@ -679,6 +873,17 @@ const TrainKit = (() => {
         if (s > 0) G.quad(null, [h.x0, h.y0, z], [h.x1, h.y0, z], [h.x1, h.y1, z], [h.x0, h.y1, z], [0, 0, 1], uv);
         else G.quad(null, [h.x1, h.y0, z], [h.x0, h.y0, z], [h.x0, h.y1, z], [h.x1, h.y1, z], [0, 0, -1], uv);
       }
+      // rubber window seals and door frames standing 3 mm proud of the skin, grab handles beside the doors
+      const zs = s * (W + 0.003), sw = 0.032;
+      for (const h of win) { if (h.y0 === 2.6) continue;
+        T.zq('rubber', zs, h.x0 - sw, h.x1 + sw, h.y1, h.y1 + sw, s); T.zq('rubber', zs, h.x0 - sw, h.x1 + sw, h.y0 - sw, h.y0, s);
+        T.zq('rubber', zs, h.x0 - sw, h.x0, h.y0, h.y1, s); T.zq('rubber', zs, h.x1, h.x1 + sw, h.y0, h.y1, s); }
+      for (const h of doors) {
+        T.zq('black', zs, h.x0 - 0.045, h.x1 + 0.045, h.y1, h.y1 + 0.045, s); T.zq('black', zs, h.x0 - 0.045, h.x0, h.y0, h.y1, s); T.zq('black', zs, h.x1, h.x1 + 0.045, h.y0, h.y1, s);
+        for (const k of [-1, 1]) { const gx = (h.x0 + h.x1) / 2 + k * ((h.x1 - h.x0) / 2 + 0.12);
+          X.rod('pole', gx, 0.98, s * (W + 0.065), gx, 1.98, s * (W + 0.065), 0.016, 8);
+          X.rod('pole', gx, 1.02, s * W, gx, 1.02, s * (W + 0.07), 0.012, 6); X.rod('pole', gx, 1.94, s * W, gx, 1.94, s * (W + 0.07), 0.012, 6); }
+      }
       for (const dc of p.doors) {
         const [a, b] = zr(s, W - 0.07, W); T.hq('stepEdge', dc - 0.65, dc + 0.65, a, b, E.YL + 0.003, true);
         const [c, d] = zr(s, W - 0.02, W + 0.12); X.box('frame', dc - 0.66, 0.40, c, dc + 0.66, 0.45, d);
@@ -748,18 +953,35 @@ const TrainKit = (() => {
       T.xq('panel', p.cabBack, -0.4, 0.4, E.YM, E.YCAB, -1);
       buildNose(T, G, p.n0);
     }
-    // roof equipment
+    // roof equipment: HVAC units with fans and louvers, a louvered brake resistor on motor cars, equipment hatches,
+    // cable ducts, antennas on the cab roof, drip rails along both roof edges
+    const Y = E.TOP;
     const acUnit = (cx) => {
-      X.box('roof', cx - 1.15, E.TOP - 0.02, -0.95, cx + 1.15, E.TOP + 0.3, 0.95);
-      X.box('roofDk', cx - 1.1, E.TOP + 0.3, -0.9, cx + 1.1, E.TOP + 0.33, 0.9);
-      for (const dx of [-0.55, 0.55]) X.cyl('grille', cx + dx, E.TOP + 0.335, 0, 0.34, 0.012, 'y', 18);
-      for (const s of [-1, 1]) X.box('grille', cx - 0.9, E.TOP + 0.05, s * 0.955 - 0.005, cx + 0.9, E.TOP + 0.25, s * 0.955 + 0.005);
+      const hl = 1.15;
+      X.box('roof', cx - hl, Y - 0.02, -0.9, cx + hl, Y + 0.27, 0.9);
+      for (const s of [-1, 1]) X.boxR('roof', cx, Y + 0.245, s * 0.885, 2 * hl, 0.07, 0.07, s * 0.785, 0, 0);          // chamfered lid edges
+      X.box('roofDk', cx - hl + 0.04, Y + 0.27, -0.84, cx + hl - 0.04, Y + 0.29, 0.84);
+      for (const dx of [-0.55, 0.55]) { X.cyl('grille', cx + dx, Y + 0.295, 0, 0.33, 0.012, 'y', 22); X.cyl('frameLt', cx + dx, Y + 0.305, 0, 0.08, 0.02, 'y', 12);
+        for (let k = 0; k < 3; k++) X.boxR('black', cx + dx, Y + 0.302, 0, 0.6, 0.008, 0.07, 0, k * Math.PI / 3, 0); }
+      for (const s of [-1, 1]) X.box('grille', cx - hl + 0.18, Y + 0.03, s * 0.905 - 0.006, cx + hl - 0.18, Y + 0.2, s * 0.905 + 0.006);
+      for (const e of [-1, 1]) X.box('grille', cx + e * (hl + 0.004) - 0.004, Y + 0.03, -0.6, cx + e * (hl + 0.004) + 0.004, Y + 0.2, 0.6);
+    };
+    const resistor = (x0, x1) => {
+      X.box('roofDk', x0, Y - 0.02, -0.75, x1, Y + 0.34, 0.75);
+      for (const s of [-1, 1]) X.box('grille', x0 + 0.1, Y + 0.02, s * 0.755 - 0.006, x1 - 0.1, Y + 0.3, s * 0.755 + 0.006);
+      X.box('grille', x0 + 0.1, Y + 0.34, -0.65, x1 - 0.1, Y + 0.345, 0.65);
     };
     const endMid = [(p.xA + p.stA) / 2, ((p.cab ? p.cabBack : p.xB) + p.stB) / 2];
     acUnit(endMid[0]);
-    if (panto) pantoBase(X, p.bogies[0] - PD); else if (!p.cab) acUnit(endMid[1]);
-    if (p.cab) X.box('roof', p.stB + 0.2, E.TOP - 0.02, -0.8, p.cabBack - 0.1, E.TOP + 0.22, 0.8);
-    for (const s of [-1, 1]) X.box('bodyLo', p.xA + 0.1, E.TOP - 0.05, s * 0.93 - 0.02, (p.cab ? p.n0 : p.xB) - 0.1, E.TOP + 0.02, s * 0.93 + 0.02);
+    if (panto) { pantoBase(X, p.bogies[0] - PD); resistor(p.stB - 2.9, p.stB - 0.5); }
+    else if (!p.cab) acUnit(endMid[1]);
+    if (p.cab) { acUnit((p.stB + p.cabBack) / 2 - 0.3); resistor(p.ddB - 3.2, p.ddB - 0.9);
+      for (const [ax, az] of [[p.cabBack + 0.4, 0.35], [p.cabBack + 0.9, -0.3]]) { X.cyl('black', ax, Y + 0.03, az, 0.09, 0.06, 'y', 12); X.cyl('black', ax, Y + 0.08, az, 0.05, 0.05, 'y', 10); }
+      X.rod('black', p.cabBack - 0.3, Y, 0, p.cabBack - 0.3, Y + 0.45, 0, 0.008, 4); }
+    // hatches + cable duct over the double-deck section
+    for (let hx = p.ddA + 1.2; hx < p.ddB - 1.2; hx += 3.1) X.box('roofDk', hx - 0.6, Y - 0.005, -0.45, hx + 0.6, Y + 0.012, 0.45);
+    X.box('roofDk', p.ddA + 0.4, Y, 0.55, p.ddB - 0.4, Y + 0.07, 0.7);
+    for (const s of [-1, 1]) X.box('bodyLo', p.xA + 0.1, Y - 0.05, s * 0.93 - 0.02, (p.cab ? p.n0 : p.xB) - 0.1, Y + 0.02, s * 0.93 + 0.02);
     // bogies
     p.bogies.forEach((bx, i) => bogie(X, bx, E.WB, E.WR, (type === 'cab' && i === 0) || panto, false));
     // nose details (cab)
@@ -771,19 +993,45 @@ const TrainKit = (() => {
         const zc = s * 0.80, xs0 = n0 + noseX(lampY, zc), dz = Math.abs(zc) - 0.70, ang = dz > 0 ? Math.asin(clamp(dz / 0.75, 0, 1)) : 0;
         X.boxR('band', xs0 - 0.01, lampY, zc, 0.06, 0.26, 0.52, 0, -s * ang, 0);
         const hz = s * 0.68, hx = n0 + noseX(lampY, hz), tz = s * 0.93, tx = n0 + noseX(lampY, tz);
-        X.cyl('lampRim', hx + 0.012, lampY, hz, 0.085, 0.03, 'x', 16); X.cyl('headLamp', hx + 0.03, lampY, hz, 0.07, 0.02, 'x', 16);
-        X.cyl('lampRim', tx + 0.012, lampY, tz, 0.065, 0.03, 'x', 14); X.cyl('tailLamp', tx + 0.026, lampY, tz, 0.052, 0.02, 'x', 14);
+        X.cyl('lampRim', hx + 0.012, lampY, hz, 0.088, 0.03, 'x', 18); X.cyl('reflector', hx + 0.022, lampY, hz, 0.076, 0.02, 'x', 18); X.cyl('headLamp', hx + 0.036, lampY, hz, 0.05, 0.016, 'x', 16);
+        X.cyl('chrome', hx + 0.03, lampY, hz, 0.08, 0.004, 'x', 18);
+        X.cyl('lampRim', tx + 0.012, lampY, tz, 0.066, 0.03, 'x', 16); X.cyl('reflector', tx + 0.02, lampY, tz, 0.056, 0.02, 'x', 14); X.cyl('tailLamp', tx + 0.03, lampY, tz, 0.04, 0.016, 'x', 14);
         glow.head.push([hx + 0.08, lampY, hz]); glow.tail.push([tx + 0.07, lampY, tz]);
         X.boxR('black', n0 + noseX(2.5, s * 0.32) + 0.02, 2.52, s * 0.32, 0.02, 0.03, 0.62, 0, 0, 0.72);   // wiper
       }
       const ty = 3.98, tx2 = n0 + noseX(ty, 0);
       X.cyl('lampRim', tx2 + 0.01, ty, 0, 0.08, 0.04, 'x', 16); X.cyl('headLamp', tx2 + 0.03, ty, 0, 0.065, 0.02, 'x', 16);
       glow.head.push([tx2 + 0.08, ty, 0]);
-      X.boxR('frame', n0 + 2.14, 0.64, 0, 0.08, 0.82, 2.3, 0, 0, 0.21);
-      X.box('red', n0 + 2.1, 1.0, -1.1, n0 + 2.3, 1.06, 1.1);
-      X.rod('frame', n0 + 1.6, 0.87, 0, p.L / 2 - 0.12, 0.87, 0, 0.1, 10);
-      X.box('frame', p.L / 2 - 0.2, 0.72, -0.2, p.L / 2, 1.02, 0.2);
-      for (const s of [-1, 1]) X.box('frameLt', n0 + 1.2, 0.30, s * 1.28 - 0.03, n0 + 2.05, 1.05, s * 1.28 + 0.03);
+      // lower nose: red skirt (the coupler hides behind its flap) wrapping the nose ahead of the front
+      // wheels, a charcoal apron, then a V obstacle deflector with a yellow lip
+      const row = [[1.38, -E.W], ...noseRow(1.05).filter(q => q[0] >= 1.4), [1.38, E.W]];
+      const skirt = (ya, yb, pal, inset) => {
+        for (let i = 0; i < row.length - 1; i++) {
+          const A = row[i], B = row[i + 1], ia = inset * (A[0] > 1.7 ? 1 : 0.6), ib = inset * (B[0] > 1.7 ? 1 : 0.6);
+          const nx = B[1] - A[1], nz = -(B[0] - A[0]), l = Math.hypot(nx, nz) || 1; let n = [nx / l, 0, nz / l];
+          const mid = [(A[0] + B[0]) / 2 - 1.2, (A[1] + B[1]) / 2]; if (n[0] * mid[0] + n[2] * mid[1] < 0) n = [-n[0], 0, -n[2]];
+          const pa = [n0 + A[0] - n[0] * ia, A[1] - n[2] * ia], pb = [n0 + B[0] - n[0] * ib, B[1] - n[2] * ib];
+          triFacing(T, pal, [pa[0], ya, pa[1]], [pb[0], ya, pb[1]], [pb[0], yb, pb[1]], n); triFacing(T, pal, [pa[0], ya, pa[1]], [pb[0], yb, pb[1]], [pa[0], yb, pa[1]], n);
+        }
+      };
+      skirt(0.8, 1.05, 'red', 0); skirt(0.56, 0.8, 'band', 0.03);
+      for (let i = 0; i < row.length - 1; i++) { const A = row[i], B = row[i + 1]; triFacing(T, 'frame', [n0 + 1.2, 0.56, 0], [n0 + A[0] - 0.03, 0.56, A[1]], [n0 + B[0] - 0.03, 0.56, B[1]], [0, -1, 0]); }
+      T.quad('frame', [n0 + 1.38, 0.56, -1.4], [n0 + 1.38, 0.56, 1.4], [n0 + 1.38, 1.05, 1.4], [n0 + 1.38, 1.05, -1.4], [-1, 0, 0]);
+      const tipX = n0 + 2.5, dfy0 = 0.17, dfy1 = 0.56;
+      for (const sd of [-1, 1]) {
+        const A = [tipX, sd * 0.05], B = [n0 + 1.78, sd * 1.22];
+        const nx = -(B[1] - A[1]) * sd, nz = (B[0] - A[0]) * sd, l = Math.hypot(nx, nz); const n = [-nx / l * sd * sd, 0, -nz / l];
+        const nn = [Math.abs(n[0]), 0, sd * Math.abs(n[2])];
+        triFacing(T, 'band', [A[0], dfy0, A[1]], [B[0], dfy0, B[1]], [B[0], dfy1, B[1]], nn); triFacing(T, 'band', [A[0], dfy0, A[1]], [B[0], dfy1, B[1]], [A[0], dfy1, A[1]], nn);
+        const ni = [-nn[0], 0, -nn[2]], o = 0.05;
+        triFacing(T, 'frame', [A[0] - o, dfy0, A[1]], [B[0] - o, dfy0, B[1]], [B[0] - o, dfy1, B[1]], ni); triFacing(T, 'frame', [A[0] - o, dfy0, A[1]], [B[0] - o, dfy1, B[1]], [A[0] - o, dfy1, A[1]], ni);
+        const oy = [nn[0] * 0.006, nn[2] * 0.006];
+        triFacing(T, 'yellow', [A[0] + oy[0], dfy0, A[1] + oy[1]], [B[0] + oy[0], dfy0, B[1] + oy[1]], [B[0] + oy[0], dfy0 + 0.05, B[1] + oy[1]], nn); triFacing(T, 'yellow', [A[0] + oy[0], dfy0, A[1] + oy[1]], [B[0] + oy[0], dfy0 + 0.05, B[1] + oy[1]], [A[0] + oy[0], dfy0 + 0.05, A[1] + oy[1]], nn);
+        X.rod('frame', A[0] - 0.3, dfy1 - 0.02, sd * 0.3, n0 + 1.45, 0.62, sd * 0.3, 0.035, 6);
+      }
+      X.box('frame', tipX - 0.08, dfy0, -0.07, tipX + 0.02, dfy1, 0.07);
+      X.box('frame', n0 + 1.3, 0.62, -0.25, n0 + 2.35, 0.78, 0.25);                                // coupler behind the flap
+      T.quad('black', [n0 + 2.451, 0.85, -0.34], [n0 + 2.451, 0.85, 0.34], [n0 + 2.451, 0.852, 0.34], [n0 + 2.451, 0.852, -0.34], [1, 0, 0]);
       // front LED destination sign along the top of the windscreen
       const zs = [], N = 8; for (let i = 0; i <= N; i++) zs.push(lerp(0.6, -0.6, i / N));
       for (let i = 0; i < N; i++) {
@@ -997,21 +1245,18 @@ const TrainKit = (() => {
       T.hq('ceiling', p.cabBack, n0 + 0.9, -WI, WI, 3.93, false);
       T.hq('light', p.cabBack + 0.2, n0 + 0.6, -0.1, 0.1, 3.925, false);
       T.xq('panel', p.cabBack + 0.02, -WI, WI, E.YCAB, 3.95, 1);
-      X.box('desk', n0 + 1.3, E.YCAB, -1.2, n0 + 2.15, E.YCAB + 0.72, 1.2);
-      X.boxR('deskLt', n0 + 1.52, E.YCAB + 0.8, 0.1, 0.5, 0.06, 2.3, 0, 0, 0.42);
-      X.boxR('screenOff', n0 + 1.62, E.YCAB + 0.93, 0.4, 0.05, 0.34, 0.98, 0, 0, -0.55);
-      screenX(C, n0 + 1.59, E.YCAB + 0.94, 0.16, 0.44, 0.3, -1, [0, 0, 0.5, 1], 0.55);
-      screenX(C, n0 + 1.59, E.YCAB + 0.94, 0.64, 0.44, 0.3, -1, [0.5, 0, 1, 1], 0.55);
-      for (let i = 0; i < 6; i++) X.cyl(i % 3 ? 'btnYellow' : 'btnGreen', n0 + 1.5, E.YCAB + 0.83, -0.75 + i * 0.07, 0.013, 0.015, 'y', 8);
-      X.cyl('btnRed', n0 + 1.45, E.YCAB + 0.8, 1.02, 0.035, 0.03, 'y', 12);
-      X.box('cabSeat', n0 + 0.55, E.YCAB, 0.3, n0 + 0.65, E.YCAB + 0.42, 0.54);
-      X.box('cabSeat', n0 + 0.35, E.YCAB + 0.42, 0.16, n0 + 0.85, E.YCAB + 0.52, 0.68);
-      X.boxR('cabSeat', n0 + 0.33, E.YCAB + 0.95, 0.42, 0.1, 0.85, 0.5, 0, 0, 0.12);
-      for (const s of [-1, 1]) X.box('seatDk', n0 + 0.45, E.YCAB + 0.7, 0.42 + s * 0.28 - 0.03, n0 + 0.85, E.YCAB + 0.74, 0.42 + s * 0.28 + 0.03);
+      handle = cabConsole(X, C, n0 + 1.32, n0 + 2.3, E.YCAB, -1.25, 1.25, 0.42, (y, z) => n0 + noseX(y, z), G);
+      // driver's and second seat, dead-man pedal, footrest
+      cabChair(X, n0 + 0.6, E.YCAB, 0.42);
       X.box('cabSeat', n0 + 0.5, E.YCAB + 0.42, -0.72, n0 + 0.9, E.YCAB + 0.5, -0.3);
-      X.box('band', n0 + 1.35, 3.62, -0.95, n0 + 1.42, 3.66, 0.95);
-      X.box('frameLt', n0 + 1.25, E.YCAB + 0.72, -0.34, n0 + 1.45, E.YCAB + 0.78, -0.1);
-      handle = { pivot: [n0 + 1.35, E.YCAB + 0.78, -0.22] };
+      X.box('black', n0 + 1.36, E.YCAB, 0.24, n0 + 1.58, E.YCAB + 0.05, 0.5);
+      X.rod('steel', n0 + 1.62, E.YCAB + 0.12, -0.05, n0 + 1.62, E.YCAB + 0.12, 0.9, 0.016, 8);
+      // side consoles with door-release panels
+      for (const sd of [-1, 1]) {
+        X.box('desk', p.cabBack + 0.35, E.YCAB, sd > 0 ? 1.06 : -WI, n0 + 1.3, E.YCAB + 0.62, sd > 0 ? WI : -1.06);
+        X.box('deskLt', p.cabBack + 0.35, E.YCAB + 0.62, sd > 0 ? 1.04 : -WI, n0 + 1.3, E.YCAB + 0.65, sd > 0 ? WI : -1.04);
+        for (let k = 0; k < 3; k++) X.cyl(k === 1 ? 'btnYellow' : 'btnGreen', n0 + 0.6 + k * 0.12, E.YCAB + 0.66, sd * 1.2, 0.02, 0.012, 'y', 10);
+      }
     }
     const hg = new Parts();
     hg.rod('steel', 0, 0, 0, 0, 0.2, 0, 0.012, 6); hg.box('black', -0.03, 0.18, -0.05, 0.03, 0.24, 0.05); hg.box('frameLt', -0.06, -0.01, -0.03, 0.06, 0.02, 0.03);
@@ -1034,7 +1279,8 @@ const TrainKit = (() => {
     const cab0 = 4.35, cab1 = 8.9, nose1 = 10.05, hood0 = -9.75, hz = 1.25, cz = 1.58;
     // frame, sills, walkway, fuel tank, reservoirs
     X.box('frame', -10.1, 1.12, -W, 10.1, D.DECK, W);
-    for (const s of [-1, 1]) { X.box('red', -10.1, 1.17, s > 0 ? W : -W - 0.012, 10.1, 1.33, s > 0 ? W + 0.012 : -W); X.box('frameLt', -9.9, D.DECK, s * 1.42 - 0.12, 9.9, D.DECK + 0.012, s * 1.42 + 0.12); }
+    for (const s of [-1, 1]) { X.box('red', -10.1, 1.17, s > 0 ? W : -W - 0.012, 10.1, 1.33, s > 0 ? W + 0.012 : -W); X.box('tread', -9.9, D.DECK, s * 1.42 - 0.14, 9.9, D.DECK + 0.014, s * 1.42 + 0.14);
+      X.cyl('white', -0.6, 0.88, s * 1.312, 0.07, 0.012, 'z', 14); X.cyl('black', -0.6, 0.88, s * 1.32, 0.05, 0.006, 'z', 12); X.cyl('frameLt', 2.2, 1.0, s * 1.31, 0.06, 0.05, 'z', 10); }   // fuel gauge, filler
     X.box('frame', -3.9, 0.62, -1.3, 3.5, 1.12, 1.3); X.box('frame', -3.8, 0.5, -1.05, 3.4, 0.62, 1.05);
     X.box('frameLt', 3.5, 0.62, -1.3, 3.56, 1.1, 1.3); X.box('frameLt', -3.96, 0.62, -1.3, -3.9, 1.1, 1.3);
     X.cyl('steel', 1.2, 1.02, 1.31, 0.09, 0.05, 'z', 10);
@@ -1090,15 +1336,19 @@ const TrainKit = (() => {
     T.hq('floor', cab0, cab1, -cz, cz, D.CABF, true); T.hq('ceiling', cab0, cab1, -cz, cz, 4.25, false);
     T.xq('panel', cab0 + 0.06, -cz, cz, D.CABF, 4.25, 1);
     // short nose, number boards, lights, pilots, couplers, handrails, horn, bell
-    X.box('red', cab1, D.DECK, -1.16, nose1, 2.72, 1.16);
-    X.boxR('red', (cab1 + nose1) / 2 - 0.02, 2.8, 0, nose1 - cab1 + 0.04, 0.22, 2.32, 0, 0, -0.14);
-    X.box('band', nose1, 1.52, -0.36, nose1 + 0.012, 2.6, 0.36);
+    // short hood: a real prism (vertical front, chamfered brow, sloping top), louvers, nose door, anticlimber
+    { const sh = new THREE.Shape([[cab1, D.DECK], [nose1, D.DECK], [nose1, 2.36], [nose1 - 0.2, 2.64], [cab1 + 0.3, 2.86], [cab1 - 0.02, 2.9]].map(([x, y]) => new THREE.Vector2(x, y)));
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 2.2, bevelEnabled: false }); g.translate(0, 0, -1.1); X.push(g, 'red'); }
+    X.box('band', nose1, 1.55, -0.34, nose1 + 0.012, 2.25, 0.34); X.box('steel', nose1 + 0.012, 1.86, 0.24, nose1 + 0.03, 1.9, 0.3);    // nose door + handle
+    for (const s of [-1, 1]) { X.box('grille', cab1 + 0.25, 1.75, s > 0 ? 1.1 : -1.112, cab1 + 0.85, 2.45, s > 0 ? 1.112 : -1.1);
+      X.box('frame', 10.1, 1.36, s * 0.55 - 0.45, 10.26, 1.56, s * 0.55 + 0.45); }
+    for (let k = 0; k < 3; k++) X.box('frameLt', 10.26, 1.38 + k * 0.065, -1.0, 10.29, 1.41 + k * 0.065, 1.0);                   // anticlimber ribs
     X.box('band', cab1 + 0.1, 4.02, -1.3, cab1 + 0.14, 4.28, -0.5); X.box('band', cab1 + 0.1, 4.02, 0.5, cab1 + 0.14, 4.28, 1.3);
     for (const s of [-1, 1]) S.quad(null, ...(() => { const x = cab1 + 0.145, z0 = s * 0.55, z1 = s * 1.25, a = Math.min(z0, z1), b = Math.max(z0, z1);
       return [[x, 4.05, b], [x, 4.05, a], [x, 4.25, a], [x, 4.25, b]]; })(), [1, 0, 0], [[0, 0], [1, 0], [1, 0.5], [0, 0.5]]);
     const glow = { head: [], tail: [] };
     for (const s of [-1, 1]) {
-      X.cyl('lampRim', nose1 + 0.01, 2.45, s * 0.2, 0.1, 0.04, 'x', 16); X.cyl('headLamp', nose1 + 0.03, 2.45, s * 0.2, 0.08, 0.02, 'x', 16); glow.head.push([nose1 + 0.1, 2.45, s * 0.2]);
+      X.cyl('lampRim', nose1 + 0.01, 2.08, s * 0.62, 0.1, 0.04, 'x', 16); X.cyl('reflector', nose1 + 0.02, 2.08, s * 0.62, 0.085, 0.03, 'x', 16); X.cyl('headLamp', nose1 + 0.036, 2.08, s * 0.62, 0.06, 0.02, 'x', 16); glow.head.push([nose1 + 0.1, 2.08, s * 0.62]);
       X.box('frameLt', 10.2, 1.12, s * 1.3 - 0.12, 10.36, 1.4, s * 1.3 + 0.12); X.cyl('headLamp', 10.37, 1.26, s * 1.3, 0.075, 0.03, 'x', 14); glow.head.push([10.45, 1.26, s * 1.3]);
       X.cyl('tailLamp', cab1 + 0.12, 4.18, s * 1.42, 0.05, 0.03, 'x', 12); glow.tail.push([cab1 + 0.18, 4.18, s * 1.42]);
     }
@@ -1152,8 +1402,8 @@ const TrainKit = (() => {
     return { win, doors };
   }
   function blSideColor(x, y) {
-    if (Math.abs(x) < BL.DD) return y < 0.62 ? 'bodyLo' : y < 0.85 ? 'body' : y < 2.15 ? 'band' : y < 2.28 ? 'body' : y < 2.42 ? 'red' : y < 3.02 ? 'body' : y < 4.08 ? 'band' : 'body';
-    return y < 1.12 ? 'bodyLo' : y < 1.6 ? 'body' : y < 1.72 ? 'red' : y < 1.78 ? 'body' : y < 2.88 ? 'band' : 'body';
+    if (Math.abs(x) < BL.DD) return y < 0.62 ? 'bodyLo' : y < 0.85 ? 'bodySS' : y < 2.15 ? 'band' : y < 2.28 ? 'bodySS' : y < 2.42 ? 'red' : y < 3.02 ? 'bodySS' : y < 4.08 ? 'band' : 'bodySS';
+    return y < 1.12 ? 'bodyLo' : y < 1.6 ? 'bodySS' : y < 1.72 ? 'red' : y < 1.78 ? 'bodySS' : y < 2.88 ? 'band' : 'bodySS';
   }
   function blLayout(p) {
     const S = [], Tb = [], both = [...AISLE_Z, ...AISLE_Z.map(z => -z)];
@@ -1206,6 +1456,17 @@ const TrainKit = (() => {
         T.quad('panelDk', [h.x0, h.y0, zo(h.y0)], [h.x0, h.y1, zo(h.y1)], [h.x0, h.y1, zi(h.y1)], [h.x0, h.y0, zi(h.y0)], [1, 0, 0]);
         T.quad('panelDk', [h.x1, h.y0, zi(h.y0)], [h.x1, h.y1, zi(h.y1)], [h.x1, h.y1, zo(h.y1)], [h.x1, h.y0, zo(h.y0)], [-1, 0, 0]);
       }
+      // window seals (vertical lower windows), door frames, grab handles
+      const zs = s * (W + 0.003), sw = 0.03;
+      for (const h of win) { if (h.y0 > 3) continue;
+        T.zq('rubber', zs, h.x0 - sw, h.x1 + sw, h.y1, h.y1 + sw, s); T.zq('rubber', zs, h.x0 - sw, h.x1 + sw, h.y0 - sw, h.y0, s);
+        T.zq('rubber', zs, h.x0 - sw, h.x0, h.y0, h.y1, s); T.zq('rubber', zs, h.x1, h.x1 + sw, h.y0, h.y1, s); }
+      for (const h of doors) {
+        T.zq('black', zs, h.x0 - 0.04, h.x1 + 0.04, h.y1, h.y1 + 0.04, s); T.zq('black', zs, h.x0 - 0.04, h.x0, h.y0, h.y1, s); T.zq('black', zs, h.x1, h.x1 + 0.04, h.y0, h.y1, s);
+        for (const k of [-1, 1]) { const gx = (h.x0 + h.x1) / 2 + k * ((h.x1 - h.x0) / 2 + 0.1);
+          X.rod('pole', gx, 0.75, s * (W + 0.06), gx, 1.95, s * (W + 0.06), 0.016, 8);
+          X.rod('pole', gx, 0.8, s * W, gx, 0.8, s * (W + 0.065), 0.012, 6); X.rod('pole', gx, 1.9, s * W, gx, 1.9, s * (W + 0.065), 0.012, 6); }
+      }
       for (const dc of p.doors) {   // door well: two steps down to the platform
         const z0 = Math.min(s * (W - 0.33), s * W), z1 = Math.max(s * (W - 0.33), s * W), zm = s * (W - 0.16);
         X.box('frame', dc - 0.5, BL.LEAFY - 0.05, z0, dc + 0.5, BL.BOTE, z1);
@@ -1218,7 +1479,7 @@ const TrainKit = (() => {
       if (s > 0) S.quad(null, [sx0, sy0, sz], [sx1, sy0, sz], [sx1, sy1, sz], [sx0, sy1, sz], [0, 0, 1], [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]);
       else S.quad(null, [sx1, sy0, sz], [sx0, sy0, sz], [sx0, sy1, sz], [sx1, sy1, sz], [0, 0, -1], [[0, 0.5], [1, 0.5], [1, 1], [0, 1]]);
     }
-    extrudeX(T, blRoof(), p.xA, p.xB, (i, y) => y > 4.79 ? 'roof' : 'body', 0, 2.5);
+    extrudeX(T, blRoof(), p.xA, p.xB, (i, y) => y > 4.79 ? 'roof' : 'bodySS', 0, 2.5);
     extrudeX(T, blIRoof(), -BL.DD, BL.DD, () => 'ceiling', 0, 7);
     for (const z of [-0.42, 0.42]) T.hq('light', -BL.DD + 0.3, BL.DD - 0.3, z - 0.06, z + 0.06, 4.59, false);
     T.hq('frame', -BL.DD, BL.DD, -W, W, BL.BOT, false); T.hq('frame', p.xA, -BL.DD, -W, W, BL.BOTE, false); T.hq('frame', BL.DD, p.xB, -W, W, BL.BOTE, false);
@@ -1252,7 +1513,7 @@ const TrainKit = (() => {
     const gh = { z0: -BL.GW, z1: BL.GW, y0: BL.YM, y1: BL.GTOP };
     const ends = p.cab ? [[p.xA, -1]] : [[p.xA, -1], [p.xB, 1]];
     for (const [xe, s] of ends) {
-      capX(X, blSection(BL.BOTE), xe, s, 'body', gh);
+      capX(X, blSection(BL.BOTE), xe, s, 'bodySS', gh);
       const xi = xe - s * 0.07;
       wallGrid(T, -WI, WI, BL.YM, BL.CEILV, [{ x0: -BL.GW, x1: BL.GW, y0: BL.YM, y1: BL.GTOP }], (u, v) => v < 1.6 ? 'panel' : 'wall', (u, v) => [xi, v, u], [-s, 0, 0]);
       const xa = Math.min(xi, xe), xb = Math.max(xi, xe);
@@ -1267,7 +1528,7 @@ const TrainKit = (() => {
     if (p.cab) {
       const xf = p.xB, fwin = [{ x0: -1.25, x1: -0.12, y0: 2.05, y1: 2.85 }, { x0: 0.12, x1: 1.25, y0: 2.05, y1: 2.85 }];
       wallGrid(T, -W, W, BL.BOTE, BL.TOPV, fwin, (u, v) => v < 1.95 ? 'red' : 'band', (u, v) => [xf, v, u], [1, 0, 0], [], [1.95]);
-      capX(X, [[-W, BL.TOPV], [W, BL.TOPV], ...blArc, ...blArc.slice().reverse().map(([z, y]) => [-z, y])], xf, 1, 'body');
+      capX(X, [[-W, BL.TOPV], [W, BL.TOPV], ...blArc, ...blArc.slice().reverse().map(([z, y]) => [-z, y])], xf, 1, 'bodySS');
       for (const h of fwin) { G.quad(null, [xf + 0.004, h.y0, h.x1], [xf + 0.004, h.y0, h.x0], [xf + 0.004, h.y1, h.x0], [xf + 0.004, h.y1, h.x1], [1, 0, 0], [[0.5, 0.03], [0.5, 0.03], [0.5, 0.03], [0.5, 0.03]]);
         T.hq('panelDk', xf - 0.07, xf, h.x0, h.x1, h.y0, true); T.hq('panelDk', xf - 0.07, xf, h.x0, h.x1, h.y1, false); }
       wallGrid(T, -WI, WI, BL.YM, BL.CEILV, fwin, (u, v) => v < 1.6 ? 'panel' : 'wall', (u, v) => [xf - 0.07, v, u], [-1, 0, 0]);
@@ -1331,9 +1592,9 @@ const TrainKit = (() => {
       const dz = BL.SZ - W, dy = BL.SY - BL.TOPV, l = Math.hypot(dz, dy);
       wallGrid(T, p.xA, p.xB, BL.TOPV, BL.SY, [], color, (u, v) => [u, v, s * slopeZ(v, W, BL.SZ, BL.TOPV, BL.SY)], [0, -dz / l, s * dy / l], level === 1 ? [BL.DD, -BL.DD, ...d.win.flatMap(h => [h.x0, h.x1])] : [BL.DD, -BL.DD], [3.02, 3.1, 4.0, 4.08]);
     }
-    extrudeX(T, level === 1 ? blRoof() : [[BL.SZ, BL.SY], [0.62, 4.8], [-0.62, 4.8], [-BL.SZ, BL.SY]], p.xA, p.xB, (i, y) => y > 4.79 ? 'roof' : 'body', 0, 2.5);
+    extrudeX(T, level === 1 ? blRoof() : [[BL.SZ, BL.SY], [0.62, 4.8], [-0.62, 4.8], [-BL.SZ, BL.SY]], p.xA, p.xB, (i, y) => y > 4.79 ? 'roof' : 'bodySS', 0, 2.5);
     T.hq('frame', -BL.DD, BL.DD, -W, W, BL.BOT, false); T.xq('bodyLo', -BL.DD, -W, W, BL.BOT, BL.BOTE, -1); T.xq('bodyLo', BL.DD, -W, W, BL.BOT, BL.BOTE, 1);
-    capX(X, blSection(BL.BOTE), p.xA, -1, 'body'); capX(X, blSection(BL.BOTE), p.xB, 1, 'body');
+    capX(X, blSection(BL.BOTE), p.xA, -1, 'bodySS'); capX(X, blSection(BL.BOTE), p.xB, 1, 'bodySS');
     if (p.cab) { X.box('red', p.xB, BL.BOTE, -W, p.xB + 0.01, 1.95, W); X.box('lodGlass', p.xB, 2.05, -1.25, p.xB + 0.012, 2.85, 1.25); }
     for (const bx of p.bogies) X.box('frame', bx - 1.75, 0.12, -1.15, bx + 1.75, 1.0, 1.15);
     lamps();
@@ -1356,29 +1617,63 @@ const TrainKit = (() => {
     if (d.type === 'cab') decalX(T, 'wordW', BL.XE + 0.008, 1.2, 0, 1.1, 0.22, 1);
     return T.geo();
   }
-  function cabDesk(X, C, x0, x1, y, z0, z1, eyeZ) {   // desk facing +X with two screens in front of eyeZ; returns handle pivot
-    X.box('desk', x0, y, z0, x1, y + 0.72, z1);
-    X.boxR('deskLt', x0 + 0.2, y + 0.8, (z0 + z1) / 2, 0.42, 0.06, z1 - z0, 0, 0, 0.42);
-    X.boxR('screenOff', x0 + 0.28, y + 0.92, eyeZ, 0.05, 0.32, 0.92, 0, 0, -0.55);
-    screenX(C, x0 + 0.25, y + 0.93, eyeZ - 0.22, 0.42, 0.28, -1, [0, 0, 0.5, 1], 0.55);
-    screenX(C, x0 + 0.25, y + 0.93, eyeZ + 0.22, 0.42, 0.28, -1, [0.5, 0, 1, 1], 0.55);
-    for (let i = 0; i < 5; i++) X.cyl(i % 2 ? 'btnYellow' : 'btnGreen', x0 + 0.14, y + 0.83, z0 + 0.1 + i * 0.06, 0.013, 0.015, 'y', 8);
-    X.cyl('btnRed', x0 + 0.12, y + 0.83, z1 - 0.1, 0.035, 0.03, 'y', 12);
-    X.box('frameLt', x0 - 0.05, y + 0.72, eyeZ - 0.72, x0 + 0.15, y + 0.78, eyeZ - 0.5);
-    return [x0 + 0.05, y + 0.78, eyeZ - 0.61];
+  // Driver's console facing +X. x0..x1 = desk depth, y = cab floor, z0..z1 = width, ez = driver's eye z,
+  // glassX(y, z) (optional) = inner windscreen x at (y, z) for the sun visor. Returns the controller pivot.
+  // Screens and gauges map onto the consist's cab canvas (screens: top 320 px, gauges: bottom strip).
+  const CAB_V = 128 / 448;
+  function cabConsole(X, C, x0, x1, y, z0, z1, ez, glassX, G) {
+    const top = y + 0.7, zc = (z0 + z1) / 2;
+    X.box('desk', x0, y, z0, x1, top, z1);                                                           // cabinet
+    X.box('deskLt', x0 - 0.04, top, z0 + 0.02, x1, top + 0.03, z1 - 0.02);                            // desk top
+    X.boxR('deskLt', x0 + 0.2, top + 0.045, ez + 0.05, 0.42, 0.03, 1.6, 0, 0, 0.1);                    // work surface
+    // instrument panel tilted toward the driver, with two screens and two analog gauges
+    const px = x0 + 0.64, py = top + 0.21, tilt = 0.62, pw = 1.72, pz = ez - 0.15;
+    X.boxR('desk', px + 0.035, py - 0.02, pz, 0.05, 0.44, pw, 0, 0, -tilt);
+    X.boxR('black', px + 0.008, py + 0.01, ez, 0.02, 0.36, 1.12, 0, 0, -tilt);                         // screen bezel
+    screenX(C, px - 0.012, py + 0.01, ez - 0.27, 0.5, 0.32, -1, [0, CAB_V, 0.5, 1], tilt);
+    screenX(C, px - 0.012, py + 0.01, ez + 0.27, 0.5, 0.32, -1, [0.5, CAB_V, 1, 1], tilt);
+    for (let i = 0; i < 2; i++) { const gz = ez - 0.72 + i * 0.2;
+      X.boxR('lampRim', px + 0.004, py + 0.02, gz, 0.02, 0.19, 0.19, 0, 0, -tilt);
+      screenX(C, px - 0.016, py + 0.02, gz, 0.17, 0.17, -1, [i / 8, 0, (i + 1) / 8, CAB_V], tilt); }
+    screenX(C, px - 0.016, py - 0.13, ez - 0.62, 0.3, 0.075, -1, [2 / 8, 0, 4 / 8, CAB_V * 0.45], tilt);     // controller notch plate
+    // dashboard top / glare shield up to the windscreen
+    X.box('deskLt', x1 - 0.02, top - 0.03, z0 + 0.04, x1 + 0.22, top, z1 - 0.04);
+    // master controller (the handle is a separate mesh), buttons, emergency stop, horn, radio, timetable clip
+    X.box('black', x0 + 0.06, top + 0.04, ez - 0.44, x0 + 0.34, top + 0.1, ez - 0.28);
+    X.box('lampRim', x0 + 0.08, top + 0.1, ez - 0.4, x0 + 0.32, top + 0.105, ez - 0.32);
+    for (let i = 0; i < 8; i++) X.cyl(i % 3 === 2 ? 'btnYellow' : 'btnGreen', x0 + 0.14 + (i >> 2) * 0.09, top + 0.075, ez + 0.3 + (i & 3) * 0.075, 0.016, 0.012, 'y', 10);
+    for (let i = 0; i < 5; i++) X.box('frameLt', x0 + 0.34, top + 0.07, ez + 0.28 + i * 0.07, x0 + 0.37, top + 0.11, ez + 0.3 + i * 0.07);   // toggle switches
+    X.cyl('lampRim', x0 + 0.22, top + 0.07, ez + 0.72, 0.05, 0.02, 'y', 14); X.cyl('btnRed', x0 + 0.22, top + 0.09, ez + 0.72, 0.04, 0.03, 'y', 14);   // emergency stop
+    X.cyl('btnYellow', x0 + 0.3, top + 0.075, ez - 0.2, 0.022, 0.012, 'y', 10);                         // horn
+    X.box('black', x0 + 0.05, top + 0.05, z1 - 0.2, x0 + 0.25, top + 0.1, z1 - 0.08); X.box('black', x0 + 0.08, top + 0.1, z1 - 0.18, x0 + 0.22, top + 0.13, z1 - 0.1);   // radio
+    X.boxR('white', x0 + 0.3, top + 0.12, ez - 1.0, 0.22, 0.004, 0.26, 0, 0, 0.35); X.boxR('steel', x0 + 0.39, top + 0.155, ez - 1.0, 0.03, 0.01, 0.08, 0, 0, 0.35);   // timetable clip
+    // tinted roller sun visor pulled part-way down inside the windscreen (goes into the interior glass mesh)
+    if (glassX && G) {
+      const uv = [[0.5, 0.03], [0.5, 0.03], [0.5, 0.03], [0.5, 0.03]], T2 = new Tri();
+      for (let i = 0; i < 10; i++) {
+        const za = lerp(-0.95, 0.95, i / 10), zb = lerp(-0.95, 0.95, (i + 1) / 10), ya = 3.5, yb = 3.72;
+        const P = (yy, zz) => [glassX(yy, zz) - 0.07, yy, zz];
+        G.quad(null, P(ya, za), P(ya, zb), P(yb, zb), P(yb, za), [-1, 0.5, 0], uv);
+      }
+      X.rod('lampRim', glassX(3.5, 0) - 0.08, 3.5, -0.96, glassX(3.5, 0) - 0.08, 3.5, 0.96, 0.009, 6); X.rod('deskLt', glassX(3.72, 0) - 0.1, 3.73, -0.98, glassX(3.72, 0) - 0.1, 3.73, 0.98, 0.03, 10);   // blind bar + roller
+      X.push(T2.geo());
+    }
+    return { pivot: [x0 + 0.2, top + 0.1, ez - 0.36] };
   }
   function cabChair(X, x, y, z) {
-    X.box('cabSeat', x - 0.05, y, z - 0.1, x + 0.05, y + 0.42, z + 0.1);
-    X.box('cabSeat', x - 0.25, y + 0.42, z - 0.26, x + 0.25, y + 0.52, z + 0.26);
-    X.boxR('cabSeat', x - 0.27, y + 0.95, z, 0.1, 0.85, 0.5, 0, 0, 0.12);
-    for (const s of [-1, 1]) X.box('seatDk', x - 0.15, y + 0.7, z + s * 0.28 - 0.03, x + 0.25, y + 0.74, z + s * 0.28 + 0.03);
+    X.box('seatDk', x - 0.05, y, z - 0.1, x + 0.05, y + 0.42, z + 0.1);
+    X.cyl('seatDk', x, y + 0.02, z, 0.26, 0.04, 'y', 12);
+    X.box('cabSeat', x - 0.25, y + 0.42, z - 0.26, x + 0.25, y + 0.54, z + 0.26);
+    X.boxR('cabSeat', x - 0.27, y + 0.97, z, 0.12, 0.86, 0.5, 0, 0, 0.12);
+    X.boxR('cabSeat', x - 0.33, y + 1.5, z, 0.1, 0.2, 0.3, 0, 0, 0.12);                               // headrest
+    for (const s of [-1, 1]) X.box('seatDk', x - 0.15, y + 0.72, z + s * 0.28 - 0.03, x + 0.25, y + 0.76, z + s * 0.28 + 0.03);
   }
   function dslInterior(d) {
     if (d.int) return d.int;
     const X = new Parts(), T = new Tri(), G = new Tri(), P = new Tri(), C = new Tri();
     let pivot = null, seatsL = [];
     if (d.type === 'loco') {
-      pivot = cabDesk(X, C, 7.95, 8.8, D.CABF, 0.05, 1.5, 0.76);
+      pivot = cabConsole(X, C, 8.0, 8.84, D.CABF - 0.1, 0.02, 1.5, 0.76).pivot;
       cabChair(X, 7.4, D.CABF, 0.76); cabChair(X, 7.4, D.CABF, -0.8);
       X.box('deskLt', 8.2, D.CABF, -1.5, 8.8, D.CABF + 0.8, -0.3);
       X.box('panelDk', 4.45, D.CABF, -0.4, 4.5, D.CABF + 1.95, 0.4);
@@ -1401,7 +1696,7 @@ const TrainKit = (() => {
         X.box('panelDk', 11.33, 1.45 - 0.33, 0.05, xf, 1.45, WI);
         X.box('panel', 11.3, 1.12, 0.03, 11.35, 3.1, 0.3); X.box('panel', 11.3, 1.12, 1.0, 11.35, 3.1, WI);
         X.box('panel', 11.35, 1.45, 0.03, xf, 3.1, 0.07);
-        pivot = cabDesk(X, C, 12.12, xf, 1.45, 0.1, WI, 0.72);
+        pivot = cabConsole(X, C, 12.08, xf, 1.45 - 0.08, 0.1, WI, 0.72).pivot;
         cabChair(X, 11.72, 1.45, 0.72);
         X.box('band', xf - 0.12, 2.95, 0.1, xf, 3.0, WI);
       }
@@ -1451,9 +1746,34 @@ const TrainKit = (() => {
     g.strokeStyle = '#3a5870'; g.lineWidth = 4; g.beginPath(); g.moveTo(18, 222); g.lineTo(W - 18, 222); g.stroke();
     for (let i = 0; i < 6; i++) { g.fillStyle = i === 1 ? '#f2c230' : '#6f93aa'; g.beginPath(); g.arc(30 + i * ((W - 60) / 5), 222, i === 1 ? 9 : 6, 0, 6.3); g.fill(); }
   }
+  // analog gauge (brake pipe / cylinder / reservoir style) into a size x size square at x0,y0
+  function drawGauge(g, x0, y0, size, v, max, label, unit, red) {
+    const cx = x0 + size / 2, cy = y0 + size / 2, R = size * 0.44, a0 = Math.PI * 0.75, a1 = Math.PI * 2.25, ang = t => a0 + (a1 - a0) * clamp(t / max, 0, 1);
+    const bg = g.createRadialGradient(cx, cy - R * 0.3, R * 0.1, cx, cy, R * 1.1); bg.addColorStop(0, '#f4f1e8'); bg.addColorStop(1, '#cfcac0');
+    g.fillStyle = '#15171a'; g.beginPath(); g.arc(cx, cy, R * 1.12, 0, 7); g.fill(); g.fillStyle = bg; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
+    if (red != null) { g.strokeStyle = '#c62828'; g.lineWidth = size * 0.05; g.beginPath(); g.arc(cx, cy, R * 0.86, ang(red), a1); g.stroke(); }
+    g.strokeStyle = '#1b1b1b'; g.fillStyle = '#1b1b1b'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `600 ${Math.round(size * 0.085)}px ${FONT}`;
+    for (let k = 0; k <= 10; k++) { const t = max * k / 10, a = ang(t), c = Math.cos(a), sn = Math.sin(a); g.lineWidth = k % 2 ? 1 : 2;
+      g.beginPath(); g.moveTo(cx + c * R * (k % 2 ? 0.86 : 0.8), cy + sn * R * (k % 2 ? 0.86 : 0.8)); g.lineTo(cx + c * R * 0.95, cy + sn * R * 0.95); g.stroke();
+      if (!(k % 2)) g.fillText(String(Math.round(t)), cx + c * R * 0.64, cy + sn * R * 0.64); }
+    g.font = `700 ${Math.round(size * 0.07)}px ${FONT}`; g.fillText(label, cx, cy - R * 0.28); g.font = `500 ${Math.round(size * 0.065)}px ${FONT}`; g.fillText(unit, cx, cy + R * 0.3);
+    const a = ang(v); g.strokeStyle = '#c62828'; g.lineWidth = size * 0.03; g.beginPath(); g.moveTo(cx - Math.cos(a) * R * 0.15, cy - Math.sin(a) * R * 0.15); g.lineTo(cx + Math.cos(a) * R * 0.85, cy + Math.sin(a) * R * 0.85); g.stroke();
+    g.fillStyle = '#222'; g.beginPath(); g.arc(cx, cy, size * 0.04, 0, 7); g.fill();
+    const gl = g.createLinearGradient(x0, y0, x0 + size, y0 + size); gl.addColorStop(0, 'rgba(255,255,255,0.28)'); gl.addColorStop(0.45, 'rgba(255,255,255,0)'); g.fillStyle = gl; g.beginPath(); g.arc(cx, cy, R, 0, 7); g.fill();
+  }
+  // Cab canvas 1024x448: two desk screens (top 320 px) and a strip of analog gauges + the controller notch plate.
   function drawCab(g, W, H, s) {
     g.fillStyle = '#05080b'; g.fillRect(0, 0, W, H);
-    const hw = W / 2;
+    const th0 = clamp(s.throttle || 0, 0, 1), br0 = clamp(s.brake || 0, 0, 1);
+    g.fillStyle = '#111317'; g.fillRect(0, 320, W, H - 320);
+    drawGauge(g, 0, 320, 128, 110 - 26 * br0, 160, 'BRAKE PIPE', 'PSI', null);
+    drawGauge(g, 128, 320, 128, 72 * br0, 100, 'BRAKE CYL', 'PSI', 80);
+    // controller notch plate (x 256..512, y 320..378): P8..N..B7 | EB with a pointer at the current notch
+    g.fillStyle = '#1c1f23'; g.fillRect(256, 320, 256, 58); g.font = `700 13px ${FONT}`; g.textBaseline = 'middle'; g.textAlign = 'center';
+    const labels = ['EB', 'B7', 'B5', 'B3', 'B1', 'N', 'P1', 'P3', 'P5', 'P8'];
+    labels.forEach((t, i) => { g.fillStyle = t === 'N' ? '#f2f2ef' : t[0] === 'P' ? '#3fc070' : t === 'EB' ? '#ff4a3a' : '#f2b132'; g.fillText(t, 256 + 14 + i * 25.5, 336); });
+    const pos = th0 > 0 ? 5 + th0 * 4 : 5 - br0 * 4.4; g.fillStyle = '#fff'; g.beginPath(); g.moveTo(256 + 14 + pos * 25.5, 350); g.lineTo(256 + 8 + pos * 25.5, 366); g.lineTo(256 + 20 + pos * 25.5, 366); g.fill();
+    const hw = W / 2; H = 320;
     // left: speedometer
     const cx = hw / 2, cy = H * 0.56, R = H * 0.4, a0 = Math.PI * 0.8, a1 = Math.PI * 2.2, max = 110;
     const ang = v => a0 + (a1 - a0) * clamp(v / max, 0, 1);
@@ -1502,7 +1822,7 @@ const TrainKit = (() => {
     const k = d.leafKey || 'emu';
     if (!_leafGeos[k]) _leafGeos[k] = d.kind === 'emu'
       ? { o: doorLeafGeo(E.DOORW / 2, E.DOORTOP - E.YL, [-0.2, 0.2, 0.78, 1.62]), g: doorGlassGeo([-0.2, 0.2, 0.78, 1.62]) }
-      : { o: doorLeafGeo(d.leafW, d.leafH, d.leafWin, 'body'), g: doorGlassGeo(d.leafWin) };
+      : { o: doorLeafGeo(d.leafW, d.leafH, d.leafWin, 'bodySS'), g: doorGlassGeo(d.leafWin) };
     return _leafGeos[k];
   }
   const BIKE_TINTS = ['#c4122f', '#2b6f8f', '#e2b01c', '#2a2d33', '#e9e9e6', '#4d7a3a', '#d8662a', '#6b4c9a'];
@@ -1535,7 +1855,11 @@ const TrainKit = (() => {
       this.group.rotation.order = 'YZX';
       const root = this.root = flip ? new THREE.Group() : this.group;
       if (flip) { root.rotation.y = Math.PI; this.group.add(root); }
-      const mat = this.mat = palMaterial();
+      // three palette materials share one set of light uniforms: 'ext' (clearcoat) for the body, wheels and
+      // doors; 'int' (fabric sheen) for interiors; 'lod' (plain standard) for the far LOD meshes
+      const fl = d.kind === 'emu' ? [E.YL, E.YM, E.YU, E.YCAB] : d.type === 'loco' ? [D.CABF, D.CABF, D.CABF, D.CABF] : [BL.YL, BL.YM, BL.YU, 1.45];
+      const S = { lv: { value: new THREE.Vector4(0, 0, 0, 0.2) }, win: { value: 0 }, floors: { value: new THREE.Vector4(...fl) }, wallZ: { value: d.kind === 'emu' ? E.WI : d.type === 'loco' ? 1.52 : BL.WI } };
+      const mat = this.mat = palMaterial('ext', S); this.matIn = palMaterial('int', S); this.matLod = palMaterial('lod', S);
       this.ext = new THREE.Mesh(d.ext, mat); this.ext.name = 'body';
       this.glass = new THREE.Mesh(d.glass, consist.glassExt); this.glass.name = 'glass';
       this.decals = new THREE.Mesh(d.kind === 'emu' ? emuDecals(d, number, flags || {}) : dslDecals(d, number, flags || {}), atlasMat()); this.decals.name = 'decals';
@@ -1549,8 +1873,10 @@ const TrainKit = (() => {
       this.lod0 = [this.ext, this.glass, this.decals, this.wheels];
       for (const o of [this.signs, this.doorsO, this.doorsG, this.panto]) if (o) this.lod0.push(o);
       for (const o of this.lod0) root.add(o);
-      this.lod1 = new THREE.Mesh(lodGeo(d, 1), mat); this.lod2 = new THREE.Mesh(lodGeo(d, 2), mat);
+      for (const o of [this.ext, this.wheels, this.doorsO, this.panto]) if (o) { o.castShadow = true; o.receiveShadow = true; }
+      this.lod1 = new THREE.Mesh(lodGeo(d, 1), this.matLod); this.lod2 = new THREE.Mesh(lodGeo(d, 2), this.matLod);
       this.lod1.visible = this.lod2.visible = false; root.add(this.lod1, this.lod2);
+      this.lod1.castShadow = this.lod2.castShadow = true; this.lod1.receiveShadow = true;
       this.glow = null;
       if (d.glow) {
         const pts = [...d.glow.head, ...d.glow.tail], g = new THREE.BufferGeometry();
@@ -1590,21 +1916,22 @@ const TrainKit = (() => {
       if (this.int) return this.int;
       const d = this.design, I = d.kind === 'emu' ? emuInterior(d) : dslInterior(d), c = this.consist, g = new THREE.Group();
       g.name = 'interior';
-      g.add(new THREE.Mesh(I.furn, this.mat));
+      g.add(new THREE.Mesh(I.furn, this.matIn));
       if (I.seatCount) {
         I.seatAttr = I.seatAttr || new THREE.InstancedBufferAttribute(I.seatMatrices, 16);
-        const m = new THREE.InstancedMesh(I.seatGeo || seatGeo(), this.mat, I.seatCount); m.instanceMatrix = I.seatAttr; m.computeBoundingSphere(); g.add(m);
+        const m = new THREE.InstancedMesh(I.seatGeo || seatGeo(), this.matIn, I.seatCount); m.instanceMatrix = I.seatAttr; m.computeBoundingSphere(); g.add(m);
       }
       if (I.bikeCount) {
         I.bikeAttr = I.bikeAttr || new THREE.InstancedBufferAttribute(I.bikeMatrices, 16);
         if (!I.bikeColor) { const a = new Float32Array(I.bikeCount * 3), col = new THREE.Color(), r = U.rng(7);
           for (let i = 0; i < I.bikeCount; i++) { col.set(BIKE_TINTS[Math.floor(r() * BIKE_TINTS.length)]); a.set([col.r, col.g, col.b], i * 3); } I.bikeColor = new THREE.InstancedBufferAttribute(a, 3); }
-        const m = new THREE.InstancedMesh(bikeGeo(), this.mat, I.bikeCount); m.instanceMatrix = I.bikeAttr; m.instanceColor = I.bikeColor; m.computeBoundingSphere(); g.add(m);
+        const m = new THREE.InstancedMesh(bikeGeo(), this.matIn, I.bikeCount); m.instanceMatrix = I.bikeAttr; m.instanceColor = I.bikeColor; m.computeBoundingSphere(); g.add(m);
       }
       if (I.glass.attributes.position.count) { const m = new THREE.Mesh(I.glass, c.glassIn); m.renderOrder = 1; g.add(m); }
       if (I.pis.attributes.position.count) g.add(new THREE.Mesh(I.pis, c._pisMaterial()));
       if (I.cab.attributes.position.count) g.add(new THREE.Mesh(I.cab, c._cabMaterial()));
-      if (I.handle) { this.handle = new THREE.Mesh(I.handleGeo, this.mat); this.handle.position.set(...I.handle.pivot); g.add(this.handle); c._applyCabHandle(); }
+      if (I.handle) { this.handle = new THREE.Mesh(I.handleGeo, this.matIn); this.handle.position.set(...I.handle.pivot); g.add(this.handle); c._applyCabHandle(); }
+      g.traverse(o => { if (o.isMesh) { o.receiveShadow = true; o.castShadow = false; } });
       this.root.add(g); g.visible = false;
       return (this.int = g);
     }
@@ -1634,8 +1961,12 @@ const TrainKit = (() => {
       this.kind = kind; this.name = opts.name || ''; this.seed = (opts.seed >>> 0) || 0; this.speed = 0;
       this.night = 0; this.lights = { head: 1, tail: 1, interior: 1, cab: 1 }; this.lead = 'front';
       this.doorT = [0, 0]; this.doorGoal = [0, 0]; this.panto = 0; this.dest = ''; this._disp = null; this._cab = null; this._cabDrawn = 0;
-      this.glassExt = new THREE.MeshStandardMaterial({ color: 0x1a2329, roughness: 0.07, metalness: 0.55, emissive: 0xffc88c, emissiveMap: windowCard(), emissiveIntensity: 0 });
-      this.glassIn = new THREE.MeshStandardMaterial({ color: 0x2a3942, roughness: 0.04, metalness: 0.35, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
+      // exterior glass: tinted, glossy (Fresnel sky reflections), a dim interior impression by day, lit card by night
+      this.glassExt = new THREE.MeshPhysicalMaterial({ color: 0x55636b, map: windowDayCard(), roughness: 0.04, metalness: 0.0, ior: 1.52, envMapIntensity: 1.6,
+        clearcoat: 1, clearcoatRoughness: 0.015, emissive: 0xffc88c, emissiveMap: windowCard(), emissiveIntensity: 0 });
+      // see-through glass when the interior is built (you're aboard or right beside the train)
+      this.glassIn = new THREE.MeshPhysicalMaterial({ color: 0x30424c, roughness: 0.02, metalness: 0.0, ior: 1.52, envMapIntensity: 1.3, transparent: true, opacity: 0.2,
+        side: THREE.DoubleSide, depthWrite: false });
       this.signTex = U.canvasTexture(512, 128, g => { g.fillStyle = '#050403'; g.fillRect(0, 0, 512, 128); });
       this.signMat = new THREE.MeshBasicMaterial({ map: this.signTex, toneMapped: false });
       this.pisTex = null; this.pisMat = null; this.cabTex = null; this.cabMat = null;
@@ -1664,7 +1995,7 @@ const TrainKit = (() => {
         c.mat.userData.win.value = L.interior * n * 1.3;
         if (c.glow) {
           const col = c.glow.geometry.attributes.color, a = col.array, hs = isLead ? L.head * (0.35 + 0.65 * n) : 0, ts = isTrail ? L.tail * (0.25 + 0.75 * n) : 0;
-          for (let i = 0; i < col.count; i++) { if (i < c.nHead) a.set([hs, hs * 0.96, hs * 0.86], i * 3); else a.set([ts, ts * 0.08, ts * 0.06], i * 3); }
+          for (let i = 0; i < col.count; i++) { if (i < c.nHead) a.set([hs * 2.6, hs * 2.5, hs * 2.25], i * 3); else a.set([ts * 2.2, ts * 0.18, ts * 0.13], i * 3); }
           col.needsUpdate = true; c.glow.visible = hs + ts > 0.01;
         }
       }
@@ -1692,7 +2023,7 @@ const TrainKit = (() => {
       return this.pisMat;
     }
     _cabMaterial() {
-      if (!this.cabMat) { this.cabTex = U.canvasTexture(1024, 320, g => drawCab(g, 1024, 320, this._cab || {})); this.cabMat = new THREE.MeshBasicMaterial({ map: this.cabTex, toneMapped: false }); this._applyLights(); }
+      if (!this.cabMat) { this.cabTex = U.canvasTexture(1024, 448, g => drawCab(g, 1024, 448, this._cab || {})); this.cabMat = new THREE.MeshBasicMaterial({ map: this.cabTex, toneMapped: false }); this._applyLights(); }
       return this.cabMat;
     }
     setDisplay(o = {}) {
@@ -1708,7 +2039,7 @@ const TrainKit = (() => {
       const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const s = this._cab, k = [Math.round(Math.abs(s.speedMph || 0)), Math.round(s.limitMph || 0), Math.round((s.throttle || 0) * 20), Math.round((s.brake || 0) * 20), s.signal, s.nextStop, Math.round((s.distFt || 0) / 10), s.clock, s.ptc].join('|');
       if (k === this._cabKey || now - this._cabDrawn < 110) return;
-      this._cabKey = k; this._cabDrawn = now; drawCab(this.cabTex.userData.ctx, 1024, 320, s); this.cabTex.needsUpdate = true;
+      this._cabKey = k; this._cabDrawn = now; drawCab(this.cabTex.userData.ctx, 1024, 448, s); this.cabTex.needsUpdate = true;
     }
     _applyCabHandle() {
       const s = this._cab || {}, a = -((s.throttle || 0) - (s.brake || 0)) * 0.6;

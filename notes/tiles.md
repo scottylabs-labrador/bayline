@@ -2,7 +2,11 @@
 
 ## STATUS
 
-**Palo Alto test block ready.** It's in `data/pub/v2/tiles/`: L7 tx 48–50 × ty 54–56 around Palo Alto station, their 35 L8 children, and every ancestor. So L0–L6 each have the one or few tiles covering that block, with the rest of each level still missing. `tiles/index.json` exists but is marked `"partial": "pa"`. The full pyramid is being baked next, and this line will change to FULL when it is done.
+**Full pyramid bake in progress** (started 07:13). Watch `data/raw/tiles/bake_full.log`; this section will say FULL when it is done.
+
+- **Registration fix:** NAIP exportImage used to widen the latitude extent to keep square pixels, which misregistered every tile by up to ~50 m. All imagery, masks and trees from before 07:00 were deleted and are being re-fetched with `adjustAspectRatio=false`. Heights were never affected. Verified at Palo Alto: track.bin and the OSM streets sit exactly on the photographed rails and roads.
+- **Available now:** imagery for the Palo Alto block (L7 48–50 × 54–56 plus its L8 children) and the Coyote Point block (L7 30–32 × 34–36). Heights L5–L7 are available wherever the bake has reached; L0–L4 are re-derived by decimation afterwards.
+- **Being regenerated:** masks and trees, with the final water classifier. Bay glint is filled, low-lying streets and parking lots are no longer water, and salt ponds are landcover 3.
 
 ## Format recap (exactly what the files contain)
 

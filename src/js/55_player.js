@@ -165,13 +165,33 @@ const Player = (() => {
   function board(hit) { setFocus(hit.tr.key); mode = 'onboard'; enterTrain(hit.ci, hit.d); emit('mode', 'onboard'); emit('board', { tr: hit.tr }); }
 
   // ---------- world walking ----------
+  // building footprints near the walker (from Towns), refreshed as you move, so you can't walk through walls
+  let bCache = [], bAt = { x: 1e9, z: 1e9, t: 0 };
+  function nearBuildings() {
+    const now = performance.now();
+    if (typeof Towns !== 'undefined' && Towns.buildingsAt && (Math.hypot(walk.x - bAt.x, walk.z - bAt.z) > 25 || now - bAt.t > 1500)) {
+      bAt.x = walk.x; bAt.z = walk.z; bAt.t = now;
+      try { bCache = Towns.buildingsAt(walk.x, walk.z, 70).filter(b => !(b.minHeight > 2.5) && b.pts && b.pts.length >= 6); } catch (e) { bCache = []; }
+    }
+    return bCache;
+  }
+  function insideBuilding(x, z) {
+    for (const b of nearBuildings()) {
+      const P = b.pts, n = P.length / 2; let inside = false;
+      for (let i = 0, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1];
+        if (((zi > z) !== (zj > z)) && (x < (xj - xi) * (z - zi) / (zj - zi) + xi)) inside = !inside; }
+      if (inside) return true;
+    }
+    return false;
+  }
   function moveWalk(dt) {
     const run = down('ShiftLeft', 'ShiftRight'); const sp = (run ? 5.2 : 1.6) * dt;
     let fx = 0, fz = 0; if (down('KeyW', 'ArrowUp')) fx += 1; if (down('KeyS', 'ArrowDown')) fx -= 1; if (down('KeyD', 'ArrowRight')) fz += 1; if (down('KeyA', 'ArrowLeft')) fz -= 1;
     if (fx || fz) { const n = Math.hypot(fx, fz); fx /= n; fz /= n;
       const c = Math.sin(look.yaw), s = -Math.cos(look.yaw);       // forward (x,z)
       const nx = walk.x + (fx * c - fz * s) * sp, nz = walk.z + (fx * s + fz * c) * sp;
-      const gy = groundAt(nx, nz); if (gy - walk.y < 0.6 && !Terrain.isWater(nx, nz)) { walk.x = nx; walk.z = nz; } }
+      const ok = (x, z) => { const g2 = groundAt(x, z); return g2 - walk.y < 0.6 && !Terrain.isWater(x, z) && !insideBuilding(x, z); };
+      if (ok(nx, nz)) { walk.x = nx; walk.z = nz; } else if (ok(nx, walk.z)) walk.x = nx; else if (ok(walk.x, nz)) walk.z = nz; }
     const gy = groundAt(walk.x, walk.z);
     if (walk.y > gy + 0.05) { walk.vy -= 9.81 * dt; walk.y = Math.max(gy, walk.y + walk.vy * dt); } else { walk.vy = 0; walk.y = U.lerp(walk.y, gy, Math.min(1, dt * 12)); }
     if (down('Space') && walk.vy === 0 && Math.abs(walk.y - gy) < 0.1) walk.vy = 3.8, walk.y += 0.02;
@@ -186,8 +206,17 @@ const Player = (() => {
     const c = cam(); tmpV.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     tmpV2.copy(c.position).add(tmpV); c.up.set(0, 1, 0); c.lookAt(tmpV2);
   }
-  let camShake = 0;
+  let camShake = 0, ridePhase = 0, frameDt = 0.016;
+  // the gentle life of a moving car: rail-joint bumps with speed, slow lateral sway, a touch of pitch
+  function rideMotion(c, tr, k) {
+    const v = tr ? tr.v : 0; if (v < 0.3) return; const t = U.uTime.value; ridePhase += v * frameDt;
+    const a = Math.min(1, v / 30) * k;
+    const bump = Math.pow(Math.max(0, Math.sin(ridePhase * 0.36)), 24) * 0.012 + Math.sin(ridePhase * 1.7) * 0.0015;
+    c.position.y += bump * a; c.position.x += Math.sin(t * 0.9) * 0.004 * a; c.position.z += Math.sin(t * 0.7 + 1.3) * 0.004 * a;
+    c.rotateZ(Math.sin(t * 0.8) * 0.0022 * a); c.rotateX(Math.sin(ridePhase * 0.23) * 0.0012 * a);
+  }
   function update(dt) {
+    frameDt = Math.min(0.1, dt || 0.016);
     const c = cam();
     prompt = ''; promptAction = null;
     if (focus && !Sim.trainByKey(focus)) {
@@ -204,6 +233,7 @@ const Player = (() => {
         tmpV.set(e[0] + (rear ? -0.22 : 0.22), e[1] + 0.1, e[2]); car.group.updateMatrixWorld(); car.group.localToWorld(tmpV); c.position.copy(tmpV);   // a touch forward/up: more track, less desk
         look.yaw = U.clamp(look.yaw, -1.9, 1.9);
         lookQuat((rear ? Math.PI : 0) + look.yaw, look.pitch, tmpQ); c.quaternion.copy(car.group.quaternion).multiply(tmpQ);
+        rideMotion(c, tr, 1.0);
         break;
       }
       case 'onboard': {
@@ -213,6 +243,7 @@ const Player = (() => {
         const eye = ob.seat >= 0 ? car.seats[ob.seat].y : ob.y + EYE;
         tmpV.set(ob.x, eye, ob.z); car.group.localToWorld(tmpV); c.position.copy(tmpV);
         lookQuat(look.yaw, look.pitch, tmpQ); c.quaternion.copy(car.group.quaternion).multiply(tmpQ);
+        rideMotion(c, tr, ob.seat >= 0 ? 0.6 : 0.8);
         // interactions
         const d = doorNearOnboard(tr);
         if (d && ob.seat < 0) { prompt = 'Press <kbd>E</kbd> to step off'; promptAction = () => alight(tr, d); }

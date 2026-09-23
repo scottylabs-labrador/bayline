@@ -143,21 +143,36 @@ def canopy_mask(v, px_m):
     return tree
 
 
-def water_map(v, nodata, hgt, inland, salt, px_m):
-    """Water probability 0..1 at image resolution."""
-    ndwi, lum = v['ndwi'], v['lum']
-    wet = (ndwi > 0.05) & (lum > 25) & (lum < 175) & (v['ndvi'] < 0.05)
-    low = hgt < 2.5
-    w = (wet & (low | inland)) | (nodata & (hgt < 3.0)) | (inland & (ndwi > -0.05))
-    w &= ~salt
-    k = max(1, int(round(3.0 / px_m)))
-    w = cv2.morphologyEx(w.astype(np.uint8), cv2.MORPH_OPEN, np.ones((k, k), np.uint8))
-    # drop tiny blobs (pools, shadows) away from inland water
+def water_map(v, nodata, hgt, inland, salt, px_m, nir=None):
+    """Water 0/1 at image resolution.
+    Measured on NAIP (raw DN): Bay water NDWI ~0.42 (p5 0.26), NIR ~59, NDVI ~-0.3; streets/roofs NDWI ~0.10, NIR ~139.
+      sea/Bay  : below sea level in the topobathy AND water-like spectrum (or no NAIP data)
+      shore    : strict spectrum (NDWI > 0.24, NIR < 105, NDVI < -0.12) on low ground (< 3 m): marinas, sloughs, lagoons
+      inland   : OSM lakes/reservoirs/rivers with a water-like spectrum
+    then glint/boat holes are closed, specks < 600 m2 dropped, OSM salt ponds removed (landcover 3 instead)."""
+    ndwi, ndvi = v['ndwi'], v['ndvi']
+    if nir is None:
+        nirv = np.full(ndwi.shape, 60.0, np.float32)
+    else:
+        nirv = nir.astype(np.float32)
+        if nirv.shape != ndwi.shape:
+            nirv = cv2.resize(nirv, ndwi.shape[::-1], interpolation=cv2.INTER_AREA)
+    waterlike = (ndwi > 0.15) | (nirv < 80) | nodata
+    strict = (ndwi > 0.28) & (nirv < 92) & (ndvi < -0.15)
+    sea = ((hgt < -0.4) & waterlike) | (hgt < -1.5)          # clearly below sea level: always water (surf foam, glint)
+    # shore water must be solid: open first so scattered dark-asphalt / shadow pixels never merge into blobs
+    ko = max(2, int(round(3.0 / px_m)))
+    shore = cv2.morphologyEx((strict & (hgt < 3.0)).astype(np.uint8), cv2.MORPH_OPEN, np.ones((ko, ko), np.uint8)).astype(bool)
+    inl = inland & ((ndwi > 0.10) | (nirv < 90))
+    w = (sea | shore | inl | (nodata & (hgt < 3.0))).astype(np.uint8)
+    k = max(3, int(round(6.0 / px_m)) | 1)
+    w = cv2.morphologyEx(w, cv2.MORPH_CLOSE, np.ones((k, k), np.uint8))
     nlab, lab, stats, _ = cv2.connectedComponentsWithStats(w, connectivity=8)
     minpx = 600.0 / (px_m * px_m)
     keep = np.zeros(nlab, bool)
     keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= minpx
-    w = keep[lab] | (inland & (w > 0))
+    w = keep[lab] | (inland & (w > 0)) | ((hgt < -1.5) & (w > 0))
+    w &= ~salt
     return w.astype(np.float32)
 
 
@@ -191,7 +206,7 @@ def compute_direct(L, tx, ty):
     z = np.zeros((n_img, n_img), np.float32)
     inland = (areas.get(AREA_WATER, z) > 0.5)
     salt = (areas.get(AREA_SALT, z) > 0.5)
-    water = water_map(v, nd, hgt, inland, salt, px_m)
+    water = water_map(v, nd, hgt, inland, salt, px_m, nir)
     canopy = canopy_mask(v, px_m).astype(np.float32) * (1 - water)
     # landcover per image pixel, priority order
     lc = np.full((n_img, n_img), LC_GRASS, np.uint8)

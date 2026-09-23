@@ -13,7 +13,7 @@ const UI = (() => {
     // keys list
     const K = [['1', 'Cab view'], ['2', 'Onboard: walk the train'], ['3', 'Chase camera'], ['4', 'Trackside camera'], ['5', 'Helicopter'], ['6', 'Walk on the ground'], ['7', 'Fly anywhere'], ['8', 'Orbit / overview'],
       ['WASD / arrows', 'Move · look with mouse'], ['Shift', 'Run / fly faster'], ['E', 'Board · step off · sit · stand'], ['Tab', 'Follow the next train'], ['B', 'Departure board (nearest station)'], ['M', 'Live map'], ['J', 'Missions'],
-      ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['P', 'Photo mode (hide the interface)'], ['Esc', 'Release mouse / close'],
+      ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['P', 'Photo mode (hide the interface)'], ['K', 'Weather: auto · clear · fog · cloudy · haze'], ['Esc', 'Release mouse / close'],
       ['Driving: W / S', 'Power / brake notches (W also closes the doors)'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Q', 'Reverser (when stopped)'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot']];
     el.keys.innerHTML = K.map(([k, v]) => `<div><span>${v}</span><kbd>${k}</kbd></div>`).join('');
     initMap();
@@ -87,6 +87,17 @@ const UI = (() => {
     window.addEventListener('mousemove', (e) => { if (!map.drag) return; const dx = e.clientX - map.drag.x, dy = e.clientY - map.drag.y; map.drag.moved += Math.abs(dx) + Math.abs(dy); map.drag.x = e.clientX; map.drag.y = e.clientY; map.cx -= dx * devicePixelRatio / map.scale; map.cz -= dy * devicePixelRatio / map.scale; });
     window.addEventListener('mouseup', (e) => { if (!map.drag) return; const click = map.drag.moved < 5; map.drag = null; if (click && !el.mapov.hidden) mapClick(e); });
   }
+  // map imagery cache (its own ImageBitmaps; the terrain frees its copies after GPU upload)
+  const mapCache = new Map(); let mapUse = 0;
+  function mapImg(L, x, y, request) {
+    const k = L + '/' + x + '_' + y; let e = mapCache.get(k);
+    if (e) { e.used = ++mapUse; return e.img; }
+    if (!request) return null;
+    e = { img: null, used: ++mapUse }; mapCache.set(k, e);
+    Stream.image('tiles/img/' + L + '/' + x + '_' + y + '.jpg', 1).then(b => { e.img = b; }, () => {});
+    if (mapCache.size > 160) { const old = [...mapCache.entries()].sort((a, b) => a[1].used - b[1].used).slice(0, 40); for (const [kk, v] of old) { if (v.img && v.img.close) v.img.close(); mapCache.delete(kk); } }
+    return null;
+  }
   function w2m(x, z, c) { return [(x - map.cx) * map.scale + c.width / 2, (z - map.cz) * map.scale + c.height / 2]; }
   function mapClick(e) {
     const c = el.mapc, r = c.getBoundingClientRect(); const mx = (e.clientX - r.left) * devicePixelRatio, my = (e.clientY - r.top) * devicePixelRatio;
@@ -107,12 +118,33 @@ const UI = (() => {
   function drawMap() {
     const c = el.mapc, g = c.getContext('2d'); const W = c.width, H = c.height; const dpr = devicePixelRatio;
     g.fillStyle = '#10161d'; g.fillRect(0, 0, W, H);
-    // coarse land/water from the terrain mask
-    const step = Math.max(6, Math.round(9 * dpr));
-    for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
-      const wx = map.cx + (x - W / 2) / map.scale, wz = map.cz + (y - H / 2) / map.scale;
-      if (Terrain.isWater(wx, wz)) { g.fillStyle = '#16354a'; g.fillRect(x, y, step, step); }
-      else { const u = Terrain.urbanAt(wx, wz); const h = Terrain.h(wx, wz); g.fillStyle = u > 0.3 ? `rgba(120,110,95,${0.25 + u * 0.25})` : `rgba(${80 + Math.min(h, 600) / 6},${90 + Math.min(h, 600) / 10},60,0.35)`; g.fillRect(x, y, step, step); }
+    // satellite base map: the same NAIP tiles the terrain streams, at a level that fits the zoom
+    const tiled = Terrain.tiled; let drewPhoto = false;
+    if (tiled) {
+      const T0 = Terrain.TILE; const pxPerM = map.scale; let L = 0;
+      while (L < 8 && Terrain.tileSize(L) * pxPerM > 420) L++;
+      const T = Terrain.tileSize(L), n = 1 << L;
+      const wx0 = map.cx - W / 2 / pxPerM, wz0 = map.cz - H / 2 / pxPerM, wx1 = map.cx + W / 2 / pxPerM, wz1 = map.cz + H / 2 / pxPerM;
+      const tx0 = Math.max(0, Math.floor((wx0 - T0.X0) / T)), tx1 = Math.min(n - 1, Math.floor((wx1 - T0.X0) / T)), ty0 = Math.max(0, Math.floor((wz0 - T0.Z0) / T)), ty1 = Math.min(n - 1, Math.floor((wz1 - T0.Z0) / T));
+      g.imageSmoothingQuality = 'high';
+      for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+        // draw the finest cached image at or above this level
+        let l = L, x = tx, y = ty, img = null;
+        for (; l >= 0; l--, x >>= 1, y >>= 1) { const im = mapImg(l, x, y, l === L); if (im) { img = im; break; } }
+        if (!img) continue; drewPhoto = true;
+        const TL = Terrain.tileSize(l), s = T / TL, sx = (tx * T - x * TL) / TL * 512, sy = (ty * T - y * TL) / TL * 512;
+        const [px, py] = w2m(T0.X0 + tx * T, T0.Z0 + ty * T, c);
+        g.drawImage(img, sx, sy, 512 * s, 512 * s, Math.floor(px), Math.floor(py), Math.ceil(T * pxPerM) + 1, Math.ceil(T * pxPerM) + 1);
+      }
+      g.fillStyle = 'rgba(8,12,16,0.28)'; g.fillRect(0, 0, W, H);   // dim a little so the line and trains read
+    }
+    if (!drewPhoto) {
+      const step = Math.max(6, Math.round(9 * dpr));
+      for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+        const wx = map.cx + (x - W / 2) / map.scale, wz = map.cz + (y - H / 2) / map.scale;
+        if (Terrain.isWater(wx, wz)) { g.fillStyle = '#16354a'; g.fillRect(x, y, step, step); }
+        else { const u = Terrain.urbanAt(wx, wz); const h = Terrain.h(wx, wz); g.fillStyle = u > 0.3 ? `rgba(120,110,95,${0.25 + u * 0.25})` : `rgba(${80 + Math.min(h, 600) / 6},${90 + Math.min(h, 600) / 10},60,0.35)`; g.fillRect(x, y, step, step); }
+      }
     }
     // line
     g.lineWidth = 3 * dpr; g.strokeStyle = '#e8e2d4'; g.beginPath(); map.pts.forEach(([x, z], i) => { const [a, b] = w2m(x, z, c); i ? g.lineTo(a, b) : g.moveTo(a, b); }); g.stroke();

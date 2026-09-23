@@ -147,9 +147,9 @@ const Game = (() => {
     const overBy = D.v - run.ptcC.vAllow;
     if (D.penalty) { P.state = 'enforce'; if (D.v < 0.05) { P.stopT += dt; if (P.stopT > 3) { D.penalty = false; P.state = 'ok'; emit('toast', 'PTC released: proceed per signals and limits'); } } }
     else if (overBy > 1.8 * MPH) {
-      if (P.state !== 'warn') { P.state = 'warn'; P.warnT = 0; emit('toast', `PTC warning: slow to ${Math.round(run.ptcC.vAllow / MPH)} mph`); Sound.doorChime && Sound.doorChime(); }
+      if (P.state !== 'warn') { P.state = 'warn'; P.warnT = 0; emit('toast', `PTC warning: slow to ${Math.round(run.ptcC.vAllow / MPH)} mph`); Sound.alert && Sound.alert('warn'); }
       P.warnT += dt; const braking = D.lever <= -0.25;
-      if (overBy > 5 * MPH || (P.warnT > 5 && !braking)) { D.penalty = true; P.state = 'enforce'; P.stopT = 0; add(-150, 'PTC penalty brake'); }
+      if (overBy > 5 * MPH || (P.warnT > 5 && !braking)) { D.penalty = true; P.state = 'enforce'; P.stopT = 0; add(-150, 'PTC penalty brake'); Sound.alert && Sound.alert('enforce'); }
     } else { P.state = 'ok'; P.warnT = 0; }
     // signals
     const sig = TrackGeo.nextSignal(D.s, D.dir);

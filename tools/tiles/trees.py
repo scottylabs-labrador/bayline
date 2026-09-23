@@ -76,7 +76,7 @@ def detect(tx, ty):
     inland = areas.get(M_.AREA_WATER, zz) > 0.5
     salt = areas.get(M_.AREA_SALT, zz) > 0.5
     water = M_.water_map(v, d['nodata'] if d['nodata'].shape[0] == n else cv2.resize(d['nodata'].astype(np.uint8), (n, n), interpolation=cv2.INTER_NEAREST).astype(bool),
-                         hgt, inland, salt, px_m) > 0.5
+                         hgt, inland, salt, px_m, nir) > 0.5
     o = M_.osm()
     bld = np.zeros((n * 2, n * 2), np.uint8)
     s = (n * 2) / T(L)

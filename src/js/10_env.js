@@ -140,9 +140,9 @@ const Env = (() => {
     moon.position.copy(camPos).addScaledVector(moonDir, 600); moon.target.position.copy(camPos);
     // exposure: no clipped whites at noon, a touch brighter at golden hour, lights pop at night
     // (calibrated so a sunlit 18% grey reads mid-grey at noon; aerial photography albedos are ~0.1-0.25)
-    const eDay = U.lerp(0.84, 0.66, U.smooth(6, 35, eDeg));
-    const eTw = U.lerp(eDay, 1.2, U.smooth(3, -5, eDeg));
-    state.exposure = U.lerp(eTw, 1.85, U.smooth(-5, -12, eDeg));
+    const eDay = U.lerp(1.0, 0.66, U.smooth(4, 30, eDeg));
+    const eTw = U.lerp(eDay, 1.45, U.smooth(3, -4, eDeg));
+    state.exposure = U.lerp(eTw, 1.6, U.smooth(-5, -12, eDeg));
     renderer.toneMappingExposure = state.exposure * 0.93;
     if (sun.castShadow) updateShadows(camPos);
     sky.position.copy(camPos);

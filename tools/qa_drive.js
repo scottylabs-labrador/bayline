@@ -1,6 +1,6 @@
 // QA: a scripted human driver that only uses keyboard events (the real input path).
 // Injected with tools/shot.mjs --eval. Results land in window.__qa.
-(() => {
+new Promise(waitBoot => { const f = () => window.__bayline && window.__bayline.Sim.TT ? waitBoot() : setTimeout(f, 200); f(); }).then(() => {
   const B = window.__bayline; const G = B.Game;
   const key = (code) => { window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true })); window.dispatchEvent(new KeyboardEvent('keyup', { code, key: code, bubbles: true })); };
   const m = G.missionList().find(m => m.id === (window.__qaMission || 'short')); G.startMission(m);
@@ -29,4 +29,4 @@
     if (inf && inf.togo < 3 && D.v < 1.2 && D.lever > -1) key('KeyS');
   }, 60);
   return 'qa started: ' + m.title;
-})()
+})

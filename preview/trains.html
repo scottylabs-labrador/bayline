@@ -21,7 +21,8 @@
 <script>
 (() => {
   const VIEWS = ['exterior', 'nose', 'side', 'doors', 'interior-lower', 'interior-upper', 'gangway', 'bike', 'wc', 'cab', 'roof',
-    'diesel', 'diesel-rear', 'diesel-interior', 'diesel-lower', 'diesel-vestibule', 'diesel-cab', 'night-exterior', 'night-interior', 'night-diesel', 'lod', 'plan', 'diesel-plan'];
+    'diesel', 'diesel-rear', 'diesel-interior', 'diesel-lower', 'diesel-vestibule', 'diesel-cab', 'night-exterior', 'night-interior', 'night-diesel', 'lod', 'plan', 'diesel-plan',
+    'cab-game', 'diesel-cab-game', 'bogie', 'detail', 'night-nose', 'night-cab', 'diesel-nose', 'diesel-bogie'];
   const hp = new URLSearchParams(location.hash.slice(1));
   const view = hp.get('view') || 'exterior', showMeta = hp.get('meta') === '1';
   document.getElementById('links').innerHTML = VIEWS.map(v => `<a href="#view=${v}" onclick="setTimeout(()=>location.reload())">${v}</a>`).join('');
@@ -33,7 +34,7 @@
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = night ? 1.0 : 0.95;
   document.body.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(view.includes('interior') || view === 'cab' || view === 'gangway' || view === 'bike' || view === 'wc' || view.startsWith('diesel-') && view !== 'diesel-rear' ? 70 : 42, innerWidth / innerHeight, 0.05, 120000);
+  const camera = new THREE.PerspectiveCamera(view.endsWith('cab-game') || view === 'night-cab' ? 58 : view.includes('interior') || view === 'cab' || view === 'gangway' || view === 'bike' || view === 'wc' || (view.startsWith('diesel-') && !['diesel-rear', 'diesel-nose', 'diesel-bogie'].includes(view)) ? 70 : 42, innerWidth / innerHeight, 0.03, 120000);
 
   // sky dome + PMREM environment from it
   const skyMat = new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: {
@@ -48,19 +49,23 @@
   const envScene = new THREE.Scene(); envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat));
   const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(envScene, 0.02).texture;
   const hemi = new THREE.HemisphereLight(night ? 0x2a3a5a : 0xcfe4ff, night ? 0x1a1a14 : 0x8a7a55, night ? 0.25 : 1.1); scene.add(hemi);
-  const sun = new THREE.DirectionalLight(night ? 0x8090b0 : 0xfff1dc, night ? 0.25 : 2.6); sun.position.set(60, 45, 38); scene.add(sun);
+  const sun = new THREE.DirectionalLight(night ? 0x8090b0 : 0xfff1dc, night ? 0.25 : 2.6); sun.position.set(60, 45, 38); scene.add(sun, sun.target);
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  sun.castShadow = !night; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.04;
+  Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 400 });
   if (night) scene.environmentIntensity = 0.2;
 
   // ground, ballast, sleepers, rails, platform
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshLambertMaterial({ color: night ? 0x1b1a16 : 0xb8a36a }));
+  ground.receiveShadow = true;
   ground.rotation.x = -Math.PI / 2; ground.position.y = -0.35; scene.add(ground);
-  const ballast = new THREE.Mesh(new THREE.BoxGeometry(600, 0.3, 4.2), new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 1 })); ballast.position.y = -0.33; scene.add(ballast);
+  const ballast = new THREE.Mesh(new THREE.BoxGeometry(600, 0.3, 4.2), new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 1 })); ballast.position.y = -0.33; ballast.receiveShadow = true; scene.add(ballast);
   const slp = new THREE.InstancedMesh(new THREE.BoxGeometry(0.26, 0.16, 2.6), new THREE.MeshStandardMaterial({ color: 0x77716a, roughness: 0.9 }), 900);
-  const m4 = new THREE.Matrix4(); for (let i = 0; i < 900; i++) { m4.makeTranslation(-270 + i * 0.6, -0.26, 0); slp.setMatrixAt(i, m4); } scene.add(slp);
+  const m4 = new THREE.Matrix4(); for (let i = 0; i < 900; i++) { m4.makeTranslation(-270 + i * 0.6, -0.26, 0); slp.setMatrixAt(i, m4); } slp.receiveShadow = true; scene.add(slp);
   const railMat = new THREE.MeshStandardMaterial({ color: 0x8c8f93, metalness: 0.9, roughness: 0.35 });
   for (const z of [-0.7525, 0.7525]) { const r = new THREE.Mesh(new THREE.BoxGeometry(600, 0.17, 0.07), railMat); r.position.set(0, -0.085, z); scene.add(r); }
   const plat = new THREE.Mesh(new THREE.BoxGeometry(200, 0.6, 5), new THREE.MeshStandardMaterial({ color: night ? 0x6d6a66 : 0xc9c3b6, roughness: 0.85 }));
-  plat.position.set(-10, 0.25 - 0.3, 1.67 + 0.05 + 2.5); scene.add(plat);
+  plat.position.set(-10, 0.25 - 0.3, 1.67 + 0.05 + 2.5); plat.receiveShadow = true; scene.add(plat);
   const edge = new THREE.Mesh(new THREE.BoxGeometry(200, 0.012, 0.6), new THREE.MeshStandardMaterial({ color: 0xe8c33a, roughness: 0.6 }));
   edge.position.set(-10, 0.256, 1.72 + 0.3); scene.add(edge);
   if (night) for (let i = 0; i < 6; i++) { const l = new THREE.PointLight(0xffd9a0, 18, 22, 1.6); l.position.set(-80 + i * 30, 5, 5); scene.add(l);
@@ -77,7 +82,7 @@
   c.setPantograph(1);
   c.setNight(night ? 1 : 0);
   c.setLights({ head: 1, tail: 1, interior: 1, cab: 1, lead: 'front' });
-  const inside = view.includes('interior') || ['gangway', 'bike', 'wc', 'cab', 'diesel-cab', 'diesel-lower', 'diesel-vestibule'].includes(view);
+  const inside = view.includes('interior') || ['gangway', 'bike', 'wc', 'cab', 'diesel-cab', 'diesel-lower', 'diesel-vestibule', 'cab-game', 'diesel-cab-game', 'night-cab'].includes(view);
   if (inside || view === 'doors' || view === 'night-exterior') c.setInteriorVisible(true);
   if (view === 'nose' || view === 'exterior') c.cars[0].setInteriorVisible(true);
   if (view === 'doors' || view === 'night-exterior') c.setDoors('right', 1);
@@ -122,6 +127,11 @@
     case 'night-interior': set(X(2) + 2.6, 0.62 + 1.6, -0.05, X(2) - 4, 1.8, 0.05); break;
     case 'night-diesel': set(x0 + L0 / 2 + 14, 3, 12, x0 - 8, 2.2, 0); break;
     case 'lod': set(x0 + 30, 22, 70, x0 - 60, 2, 0); break;
+    case 'cab-game': case 'diesel-cab-game': case 'night-cab': { const e = c.cars[0].cabEye; const ex = x0 + e[0] + 0.22, ey = e[1] + 0.1; set(ex, ey, e[2], ex + 10, ey - 0.4, e[2]); break; }
+    case 'bogie': case 'diesel-bogie': { const b = c.cars[view === 'bogie' ? 1 : 1]; const bx = X(1) + b.bogieOffsets[0]; set(bx + 2.6, 0.9, 3.4, bx, 0.6, 0.6); break; }
+    case 'detail': set(X(1) + 9, 2.2, 7.5, X(1) + 3, 2.4, 0); break;
+    case 'night-nose': set(x0 + L0 / 2 + 6, 2.4, 5, x0 + L0 / 2 - 1.2, 2.0, 0); break;
+    case 'diesel-nose': set(x0 + L0 / 2 + 5, 2.6, 4.5, x0 + L0 / 2 - 2, 2.2, 0); break;
     case 'plan': case 'diesel-plan': { const k = +(hp.get('car') || 2); camera.up.set(0, 0, -1); set(X(k), 19, 0, X(k), 0, 0); camera.fov = 42; camera.updateProjectionMatrix(); break; }
     default: set(x0 + L0 / 2 + 15, 3.6, 12.5, x0 - 10, 2.0, 0);
   }
@@ -138,7 +148,7 @@
   c.speed = view === 'cab' || view === 'diesel-cab' ? 0 : 0;
   function loop(t) {
     const dt = Math.min(0.05, (t - last) / 1000); last = t; U.uTime.value += dt;
-    c.update(dt); renderer.render(scene, camera);
+    c.update(dt); sun.target.position.copy(target); sun.position.copy(target).add(new THREE.Vector3(60, 45, 38)); renderer.render(scene, camera);
     if (++frames === 30) {
       const i = renderer.info.render, st = { view, calls: i.calls, tris: i.triangles, cars: c.cars.length, length: +c.length.toFixed(2) };
       document.getElementById('stats').textContent = JSON.stringify(st); console.log('STATS ' + JSON.stringify(st));

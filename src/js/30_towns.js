@@ -12,9 +12,10 @@
 const Towns = (() => {
   const TILE = 800, X0 = -45056, Z0 = -49152;       // SPEC_v2 level 7
   const DIR = 'tiles/b/';
-  const ROAD_R = 1900;        // street ribbons, sidewalks, parking (hidden from high up: the photo shows the streets)
+  const ROAD_R = 1500;        // street ribbons (hidden from high up: the photo shows the streets)
   const BLD_R = 3000;         // real buildings (photo roofs, procedural facades)
-  const HI_R = 1200;          // full detail: parapets, rooftop units, curbs, crosswalks, detailed infill houses
+  const HI_R = 750;           // full detail: parapets, rooftop units, curbs, sidewalks, crosswalks, detailed infill houses
+  const SHADOW_R = 600;       // only nearby buildings cast shadows
   const SKY_R = 9000;         // tall buildings only (the skyline from afar)
   const TREE_R = 300, POLE_R = 850, POOL_R = 1500;
   const GROUND_ALT = 450;     // camera height above which street ribbons hide
@@ -160,14 +161,57 @@ const Towns = (() => {
       }`);
   };
 
-  // Buildings: one material per tile (its photo-roof textures are per-tile uniforms); the shader draws
-  // facades (windows by style, materials, storefronts, doors, garages) and photo or procedural roofs.
+  // Buildings: one material per tile (its photo-roof textures are per-tile uniforms). Facades come from a small
+  // mip-mapped texture array: one layer per window style (a single window cell: R wall detail, G glass, B trim,
+  // A dark bands) and per wall material, repeated per floor and column. Two lookups per pixel, no procedural noise:
+  // with the logarithmic depth buffer there is no early-z, so every covered pixel pays the full shader.
   //   aWin   = (floorH*100, style, seed 0..999, eave*50)   uint16
   //   aWallUv= (metres along this wall, metres above grade) * 20   int16
   //   aB     = (surface, photo slot, material, wallLen*2)    uint8   surface: 0 wall, 1 photo roof, 2 roof, 3 street-facing wall
   const DUMMY = (() => { const t = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1); t.needsUpdate = true; return t; })();
+  const FL = { plain: 0, resid: 1, office: 2, curtain: 3, store: 4, clerestory: 5, sash: 6, civic: 7, house: 8, garage: 9,
+    brick: 10, siding: 11, panels: 12, metal: 13, stone: 14, roof: 15, stucco: 16 };
+  let facadeTex = null;
+  function makeFacadeArray() {
+    const S = 128, N = 17, data = new Uint8Array(S * S * 4 * N);
+    const cv = document.createElement('canvas'); cv.width = cv.height = S; const g = cv.getContext('2d', { willReadFrequently: true });
+    const rnd = U.rng(4242);
+    // channel painter: we draw R, G, B, A as separate grayscale passes into one RGBA layer
+    for (let L = 0; L < N; L++) {
+      const R = new Float32Array(S * S).fill(0.55), G = new Float32Array(S * S), B = new Float32Array(S * S), A = new Float32Array(S * S).fill(1);
+      const rect = (arr, x0, y0, x1, y1, v, mode) => { for (let y = Math.max(0, Math.round(y0 * S)); y < Math.min(S, Math.round(y1 * S)); y++) for (let x = Math.max(0, Math.round(x0 * S)); x < Math.min(S, Math.round(x1 * S)); x++) { const k = y * S + x; arr[k] = mode === 'max' ? Math.max(arr[k], v) : v; } };
+      const noise = (amt, cell) => { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const h = U.hash2(Math.floor(x / cell) + L * 97, Math.floor(y / cell)); R[y * S + x] += (h - 0.5) * amt; } };
+      const win = (x0, y0, x1, y1, frame) => { rect(B, x0 - frame, y0 - frame * 1.6, x1 + frame, y1 + frame, 1); rect(G, x0, y0, x1, y1, 1); rect(B, x0, y0, x1, y1, 0); };
+      // v runs up the floor: canvas y = 1 - v, so y0/y1 below are measured from the TOP of the cell
+      const up = (v0, v1) => [1 - v1, 1 - v0];
+      noise(0.1, 1); noise(0.08, 8);
+      if (L === FL.resid) { const [a, b] = up(0.30, 0.86); win(0.30, a, 0.70, b, 0.035); rect(B, 0.27, up(0.26, 0.30)[0], 0.73, up(0.26, 0.30)[1], 1); }
+      else if (L === FL.office) { const [a, b] = up(0.34, 0.84); rect(G, 0, a, 1, b, 1); for (let k = 0; k < 2; k++) rect(B, k * 0.5, a, k * 0.5 + 0.02, b, 0.6); rect(R, 0, up(0.0, 0.06)[0], 1, 1, 0.35); }
+      else if (L === FL.curtain) { const [a, b] = up(0.30, 0.97); rect(G, 0.035, a, 0.965, b, 1); rect(B, 0, 0, 0.035, 1, 0.9); rect(B, 0.965, 0, 1, 1, 0.9); rect(A, 0, up(0.0, 0.30)[0], 1, 1, 0.55); }
+      else if (L === FL.store) { const [a, b] = up(0.06, 0.74); rect(G, 0.04, a, 0.96, b, 1); rect(B, 0.49, a, 0.51, b, 0.9); rect(B, 0.02, a - 0.02, 0.98, a, 0.9); rect(A, 0, up(0.78, 0.96)[0], 1, up(0.78, 0.96)[1], 0.12); }
+      else if (L === FL.clerestory) { const [a, b] = up(0.72, 0.90); rect(G, 0.10, a, 0.90, b, 1); rect(B, 0.08, a - 0.02, 0.92, b + 0.02, 0.7, 'max'); rect(G, 0.10, a, 0.90, b, 1); rect(B, 0.10, a, 0.90, b, 0); }
+      else if (L === FL.sash) { const [a, b] = up(0.22, 0.88); win(0.22, a, 0.78, b, 0.045); rect(B, 0.22, up(0.54, 0.57)[0], 0.78, up(0.54, 0.57)[1], 1); rect(B, 0, up(0.93, 1.0)[0], 1, 1, 0.7); }
+      else if (L === FL.civic) { const [a, b] = up(0.18, 0.88); win(0.28, a, 0.72, b, 0.06); rect(B, 0.28, up(0.60, 0.62)[0], 0.72, up(0.60, 0.62)[1], 1); }
+      else if (L === FL.house) { const [a, b] = up(0.36, 0.80); win(0.32, a, 0.68, b, 0.04); rect(B, 0.49, a, 0.51, b, 1); rect(B, 0.32, up(0.57, 0.59)[0], 0.68, up(0.57, 0.59)[1], 1); }
+      else if (L === FL.garage) { rect(A, 0, up(0.40, 0.92)[0], 1, up(0.40, 0.92)[1], 0.06); rect(R, 0, 0, 1, 1, 0.5); noise(0.08, 2); }
+      else if (L === FL.brick) { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const by = Math.floor(y / 8), bx = Math.floor((x + (by % 2) * 12) / 24); const mortar = (y % 8) < 1.3 || ((x + (by % 2) * 12) % 24) < 1.5; R[y * S + x] = mortar ? 0.32 : 0.5 + (U.hash2(bx, by + 900) - 0.5) * 0.35; } }
+      else if (L === FL.siding) { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) R[y * S + x] = 0.52 + 0.14 * Math.min(1, (y % 16) / 5) - ((y % 16) < 1.5 ? 0.18 : 0) + (U.hash2(x >> 3, y >> 4) - 0.5) * 0.05; }
+      else if (L === FL.panels) { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) R[y * S + x] = ((x % 64) < 1.5 || (y % 64) < 1.5) ? 0.36 : 0.52 + (U.hash2(x >> 6, (y >> 6) + 300) - 0.5) * 0.12; }
+      else if (L === FL.metal) { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) R[y * S + x] = 0.5 + 0.12 * Math.sin(x / S * Math.PI * 2 * 16); }
+      else if (L === FL.stone) { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const by = Math.floor(y / 32), bx = Math.floor((x + (by % 2) * 32) / 64); const j = (y % 32) < 1.5 || ((x + (by % 2) * 32) % 64) < 1.5; R[y * S + x] = j ? 0.36 : 0.5 + (U.hash2(bx + 50, by) - 0.5) * 0.2; } }
+      else if (L === FL.roof) { for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) R[y * S + x] = 0.5 + (U.hash2(x, y + 700) - 0.5) * 0.3 + (U.hash2(x >> 4, (y >> 4) + 800) - 0.5) * 0.12; }
+      else if (L === FL.stucco) { noise(0.06, 3); }
+      const o = L * S * S * 4;
+      for (let k = 0; k < S * S; k++) { data[o + k * 4] = Math.round(U.clamp(R[k], 0, 1) * 255); data[o + k * 4 + 1] = Math.round(G[k] * 255); data[o + k * 4 + 2] = Math.round(B[k] * 255); data[o + k * 4 + 3] = Math.round(A[k] * 255); }
+    }
+    void g; void rnd;
+    const t = new THREE.DataArrayTexture(data, S, S, N);
+    t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true; t.anisotropy = 4; t.needsUpdate = true;
+    return t;
+  }
   function bldShader(sh, u) {
-    sh.uniforms.uNight = U.uNight;
+    sh.uniforms.uNight = U.uNight; sh.uniforms.uFac = { value: facadeTex };
     for (let i = 0; i < 4; i++) { sh.uniforms['uImg' + i] = u['uImg' + i]; sh.uniforms['uImgX' + i] = u['uImgX' + i]; }
     sh.uniforms.uImgSRGB = u.uImgSRGB;
     sh.vertexShader = sh.vertexShader
@@ -175,139 +219,94 @@ const Towns = (() => {
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWin = aWin; vWallUv = aWallUv * 0.05; vB = aB; vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec4 vWin; varying vec2 vWallUv; varying vec4 vB; varying vec3 vWP; uniform float uNight;
+        precision highp sampler2DArray;
+        varying vec4 vWin; varying vec2 vWallUv; varying vec4 vB; varying vec3 vWP; uniform float uNight; uniform sampler2DArray uFac;
         uniform sampler2D uImg0; uniform sampler2D uImg1; uniform sampler2D uImg2; uniform sampler2D uImg3;
         uniform vec4 uImgX0; uniform vec4 uImgX1; uniform vec4 uImgX2; uniform vec4 uImgX3; uniform float uImgSRGB;
-        float gGlass = 0.0; float gMetal = 0.0; float gRough = -1.0; vec3 gEmit = vec3(0.0); float gPhoto = 0.0;
+        vec3 gEmit = vec3(0.0); float gPhoto = 0.0;
         vec3 tSrgb(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
-        vec2 tUv(vec4 x){ return clamp((vWP.xz - x.xy) / x.z, vec2(0.0015), vec2(0.9985)); }
-        ` + glsl_hash)
+        float tHash3(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
       {
+        vec2 wp = vWP.xz; vec2 wdx = dFdx(wp), wdy = dFdy(wp);                 // derivatives in uniform control flow
+        vec2 q = vWallUv; vec2 qdx = dFdx(q), qdy = dFdy(q);
         float surf = floor(vB.x + 0.5);
-        if (surf > 0.5 && surf < 2.5) {                                  // ---- roofs
+        if (surf > 0.5 && surf < 2.5) {                                      // ---- roofs
           vec3 base = diffuseColor.rgb;
           float slot = floor(vB.y + 0.5);
           vec4 xf = slot < 0.5 ? uImgX0 : slot < 1.5 ? uImgX1 : slot < 2.5 ? uImgX2 : uImgX3;
-          vec3 p0 = texture2D(uImg0, tUv(uImgX0)).rgb, p1 = texture2D(uImg1, tUv(uImgX1)).rgb, p2 = texture2D(uImg2, tUv(uImgX2)).rgb, p3 = texture2D(uImg3, tUv(uImgX3)).rgb;
-          vec3 ph = slot < 0.5 ? p0 : slot < 1.5 ? p1 : slot < 2.5 ? p2 : p3;
-          if (uImgSRGB > 0.5) ph = tSrgb(ph);
-          if (surf < 1.5 && xf.w > 0.5) { base = ph * 0.94; gPhoto = 1.0; }
-          else {
-            float fw = fwidth(vWP.x) + fwidth(vWP.z);
-            base *= 0.93 + 0.1 * tNoise(vWP.xz * 0.9) * (1.0 - smoothstep(0.1, 0.6, fw)) + 0.05 * tNoise(vWP.xz * 0.08);
+          if (surf < 1.5 && xf.w > 0.5) {
+            vec2 uv = clamp((wp - xf.xy) / xf.z, vec2(0.0015), vec2(0.9985)), gx = wdx / xf.z, gy = wdy / xf.z;
+            vec3 ph = slot < 0.5 ? textureGrad(uImg0, uv, gx, gy).rgb : slot < 1.5 ? textureGrad(uImg1, uv, gx, gy).rgb : slot < 2.5 ? textureGrad(uImg2, uv, gx, gy).rgb : textureGrad(uImg3, uv, gx, gy).rgb;
+            if (uImgSRGB > 0.5) ph = tSrgb(ph);
+            float g = textureGrad(uFac, vec3(wp * 0.35, ${FL.roof}.0), wdx * 0.35, wdy * 0.35).r;
+            base = ph * (0.93 + 0.14 * (g - 0.5));
+            gPhoto = 1.0;
+          } else {
+            float g = textureGrad(uFac, vec3(wp * 0.35, ${FL.roof}.0), wdx * 0.35, wdy * 0.35).r;
+            base *= 0.78 + 0.44 * g;
           }
           diffuseColor.rgb = base;
-        } else if (vWin.w > 0.5 || surf > 2.5) {                         // ---- facades
+        } else if (vWin.w > 0.5 || surf > 2.5) {                             // ---- facades
           float style = floor(vWin.y + 0.5), fh = max(2.4, vWin.x * 0.01), seed = vWin.z, eave = vWin.w * 0.02;
           float mat = floor(vB.z + 0.5), segL = vB.w * 0.5; bool front = surf > 2.5; bool longWall = vB.w > 254.5;
-          vec2 q = vWallUv;
           vec3 wall = diffuseColor.rgb;
-          float fw = max(fwidth(q.x), fwidth(q.y));
-          float detail = 1.0 - smoothstep(0.02, 0.12, fw);
-          // wall material texture
-          if (mat == 1.0) {                                               // brick, running bond
-            vec2 b = q / vec2(0.21, 0.075); float row = floor(b.y); b.x += 0.5 * mod(row, 2.0);
-            vec2 f = fract(b); float mortar = step(f.x, 0.06) + step(f.y, 0.14);
-            float hb = tHash(floor(b) + seed);
-            wall *= mix(1.0, (0.86 + 0.24 * hb) * (1.0 - 0.28 * clamp(mortar, 0.0, 1.0)), detail);
-          } else if (mat == 5.0) {                                        // wood siding
-            float s = fract(q.y / 0.2); wall *= mix(1.0, 0.9 + 0.1 * smoothstep(0.0, 0.25, s), detail);
-          } else if (mat == 3.0) {                                        // concrete panels
-            vec2 f = fract(q / vec2(3.0, fh)); float j = step(f.x, 0.012) + step(f.y, 0.02);
-            wall *= mix(1.0, (0.95 + 0.07 * tHash(floor(q / vec2(3.0, fh)) + seed)) * (1.0 - 0.2 * clamp(j, 0.0, 1.0)), detail);
-          } else if (mat == 6.0) {                                        // corrugated metal
-            wall *= mix(1.0, 0.9 + 0.1 * abs(sin(q.x * 6.2832 / 0.2)), detail); gMetal = 0.35;
-          } else if (mat == 2.0) {                                        // stone blocks
-            vec2 b = q / vec2(1.1, 0.55); b.x += 0.5 * mod(floor(b.y), 2.0); vec2 f = fract(b);
-            wall *= mix(1.0, (0.9 + 0.14 * tHash(floor(b) + seed)) * (1.0 - 0.18 * clamp(step(f.x, 0.025) + step(f.y, 0.05), 0.0, 1.0)), detail);
-          } else {                                                        // stucco / render
-            wall *= 0.95 + 0.07 * tNoise(q * 2.3 + seed) * detail + 0.04 * tNoise(q * 0.3);
-          }
-          wall *= 0.76 + 0.24 * smoothstep(-0.2, 2.4, q.y);              // grime at the base
-          wall *= 1.0 + 0.09 * step(eave - 0.06, q.y);                    // parapet coping
+          // wall material detail (world scale, mip-mapped)
+          float ml = mat == 1.0 ? ${FL.brick}.0 : mat == 5.0 ? ${FL.siding}.0 : mat == 3.0 ? ${FL.panels}.0 : mat == 6.0 ? ${FL.metal}.0 : mat == 2.0 ? ${FL.stone}.0 : ${FL.stucco}.0;
+          vec2 msc = mat == 3.0 ? vec2(1.0 / 6.0) : mat == 2.0 ? vec2(0.45) : mat == 6.0 ? vec2(0.3) : vec2(1.0 / 2.6);
+          float dcam = length(vViewPosition);                               // fragments far away skip the fine detail
+          float md = dcam < 200.0 ? textureGrad(uFac, vec3(q * msc, ml), qdx * msc, qdy * msc).r : 0.5;
+          wall *= 0.72 + 0.56 * md;
+          wall *= 0.78 + 0.22 * smoothstep(-0.2, 2.4, q.y);              // grime at the base
           vec3 outc = wall;
-          if (style > 0.5 && q.y > 0.35 && q.y < eave - 0.3) {
+          float colW = style == 3.0 ? 1.5 : style == 2.0 ? 2.7 : style == 5.0 ? 6.0 : style == 6.0 ? 1.9 : style == 8.0 ? 3.8 : style == 9.0 ? 8.0 : 3.1;
+          float cw = longWall ? colW : segL / max(1.0, floor(segL / colW + 0.5));
+          if (style > 0.5 && q.y > 0.0 && q.y < eave - 0.3) {
             float gf = (style == 4.0 || style == 7.0) ? max(fh, 4.4) : fh;
-            float fl, fy;
-            if (q.y < gf) { fl = 0.0; fy = q.y / gf; } else { float k = (q.y - gf) / fh; fl = 1.0 + floor(k); fy = fract(k); }
-            float colW = style == 3.0 ? 1.5 : style == 2.0 ? 2.7 : style == 5.0 ? 6.0 : style == 6.0 ? 1.9 : style == 8.0 ? 3.8 : style == 9.0 ? 8.0 : 3.1;
-            float cw = longWall ? colW : segL / max(1.0, floor(segL / colW + 0.5));
-            float col = floor(q.x / cw), fx = fract(q.x / cw);
-            vec4 R = vec4(0.30, 0.70, 0.30, 0.86);                        // window rect in cell space (x0, x1, y0, y1)
-            if (style == 6.0) R = vec4(0.22, 0.78, 0.22, 0.88);             // SF: tall sash windows
-            else if (style == 2.0) R = vec4(0.0, 1.0, 0.34, 0.84);          // office ribbon
-            else if (style == 3.0) R = vec4(0.04, 0.96, 0.30, 0.97);        // curtain wall vision glass above a spandrel
-            else if (style == 4.0) R = fl < 0.5 ? vec4(0.04, 0.96, 0.06, 0.74) : vec4(0.26, 0.74, 0.30, 0.86);
-            else if (style == 5.0) R = vec4(0.10, 0.90, 0.72, 0.90);        // warehouse clerestory
-            else if (style == 7.0) R = fl < 0.5 ? vec4(0.28, 0.72, 0.12, 0.80) : vec4(0.30, 0.70, 0.18, 0.88);
-            else if (style == 8.0) R = vec4(0.30, 0.70, 0.34, 0.80);        // houses: fewer, smaller windows
-            else if (style == 9.0) R = vec4(0.0, 1.0, 0.40, 0.92);          // parking garage openings
-            float house = style == 8.0 ? 1.0 : 0.0;
-            float skipCol = house * step(0.55, tHash3(vec3(col, fl, seed)));          // houses: irregular windows
-            float fx0 = 0.08 / cw, fy0 = 0.08 / fh;
-            float inWin = step(R.x, fx) * step(fx, R.y) * step(R.z, fy) * step(fy, R.w) * (1.0 - skipCol);
-            float inFrame = step(R.x - fx0, fx) * step(fx, R.y + fx0) * step(R.z - fy0 * 2.2, fy) * step(fy, R.w + fy0) * (1.0 - skipCol);
-            if (style == 3.0) {                                          // curtain wall: mullions + spandrels, all glass-like
-              float mull = 1.0 - step(0.035, fx) * step(fx, 0.965);
-              vec3 gc = mix(vec3(0.16, 0.22, 0.27), wall * 0.6, 0.35);
-              outc = mix(gc * (inWin > 0.5 ? 1.0 : 0.8), vec3(0.34, 0.36, 0.38), mull);
-              gGlass = inWin > 0.5 ? 1.0 : 0.55; gRough = 0.06; gMetal = 0.85;
-            } else if (style == 9.0) {
-              outc = mix(wall, vec3(0.05, 0.055, 0.06), inWin);
-            } else {
-              vec3 frameC = (style == 1.0 || style == 6.0 || style == 8.0) ? mix(wall, vec3(0.94, 0.93, 0.89), 0.72) : vec3(0.21, 0.22, 0.23);
-              outc = mix(wall, frameC, inFrame * (1.0 - inWin) * detail);
-              if (style == 4.0 && fl < 0.5) outc = mix(outc, vec3(0.13, 0.13, 0.14), step(0.78, fy) * step(fy, 0.96) * 0.85);   // sign band
-              if (style == 6.0 && fl > 0.5) outc = mix(outc, mix(wall, vec3(0.95), 0.5), step(0.93, fy) * 0.6);                // trim lines
-            }
-            if (inWin > 0.5) {
-              float h = tHash3(vec3(col, fl, seed));
-              if (style != 3.0) {
-                vec3 glass = vec3(0.12, 0.16, 0.2) + vec3(0.05, 0.07, 0.09) * h + vec3(0.06, 0.07, 0.08) * (fy - R.z) / (R.w - R.z);
-                if (style == 1.0 || style == 6.0 || style == 8.0) glass = mix(glass, vec3(0.62, 0.58, 0.52), step(0.72, h) * step(0.6, (fy - R.z) / (R.w - R.z)));   // blinds
-                outc = glass; gGlass = 1.0;
-              }
-              float litP = style == 5.0 ? 0.12 : style == 3.0 ? 0.36 : (style == 2.0 || style == 4.0) ? 0.3 : style == 9.0 ? 0.9 : 0.45;
-              if (style == 4.0 && fl < 0.5) litP = 0.85;
-              float lit = step(h, litP) * uNight;
-              float cool = step(0.78, tHash3(vec3(seed, col * 1.7, fl))) * step(1.5, style) * step(style, 3.5);
-              vec3 warm = mix(vec3(1.0, 0.7, 0.38), vec3(0.78, 0.86, 1.0), cool);
-              if (style == 9.0) warm = vec3(0.95, 0.9, 0.75) * 0.5;
-              gEmit = warm * lit * (0.45 + 0.55 * tHash3(vec3(fl, seed, col)));
-            }
+            bool gfl = q.y < gf;
+            float lay = style == 1.0 ? ${FL.resid}.0 : style == 2.0 ? ${FL.office}.0 : style == 3.0 ? ${FL.curtain}.0 : style == 4.0 ? (gfl ? ${FL.store}.0 : ${FL.resid}.0)
+              : style == 5.0 ? ${FL.clerestory}.0 : style == 6.0 ? ${FL.sash}.0 : style == 7.0 ? ${FL.civic}.0 : style == 8.0 ? ${FL.house}.0 : ${FL.garage}.0;
+            vec2 sc = vec2(1.0 / cw, 1.0 / (gfl ? gf : fh));
+            vec2 fuv = vec2(q.x, gfl ? q.y : q.y - gf) * sc;
+            vec4 f = textureGrad(uFac, vec3(fuv, lay), qdx * sc, qdy * sc);
+            float glassM = f.g;
+            if (style == 8.0) glassM *= step(0.4, tHash3(vec3(floor(fuv.x), floor(q.y / fh), seed)));   // houses: irregular windows
+            vec3 trimC = (style == 2.0 || style == 3.0 || style == 4.0 || style == 5.0) ? vec3(0.22, 0.23, 0.24) : mix(wall, vec3(0.94, 0.93, 0.89), 0.72);
+            outc = mix(wall, trimC, f.b) * mix(0.14, 1.0, f.a);
+            float fres = 0.12;
+            vec3 sky = mix(vec3(0.30, 0.40, 0.50), vec3(0.62, 0.72, 0.82), fres) * (1.0 - 0.92 * uNight);
+            float cell = tHash3(vec3(floor(fuv.x), floor(q.y / fh), seed));
+            vec3 glass = (style == 3.0 ? mix(vec3(0.16, 0.22, 0.27), wall * 0.7, 0.4) : vec3(0.1, 0.13, 0.16) + vec3(0.04, 0.05, 0.06) * cell);
+            outc = mix(outc, glass, glassM);
+            gEmit += sky * glassM * (style == 3.0 ? 0.35 + 0.5 * fres : 0.12 + 0.3 * fres);
+            float litP = style == 5.0 ? 0.12 : style == 3.0 ? 0.36 : (style == 2.0 || style == 4.0) ? 0.3 : style == 9.0 ? 0.9 : 0.45;
+            if (style == 4.0 && gfl) litP = 0.85;
+            float lit = step(cell, litP) * uNight;
+            vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.8, 0.88, 1.0), step(0.78, fract(cell * 7.3)) * step(1.5, style) * step(style, 3.5));
+            gEmit += wc * lit * glassM * (0.5 + 0.5 * fract(cell * 13.7));
+            if (!front && style == 4.0 && gfl) { outc = mix(outc, wall, 0.9); gEmit *= 0.1; }   // storefront glass only faces the street
           }
-          // street-facing wall: doors, garages, storefront entries
-          if (front) {
-            float L = longWall ? 40.0 : segL; float u = q.x;
-            if (style == 8.0 || style == 6.0) {                           // house: garage door + entry door
-              if (L > 6.5) {
-                float gw = L > 11.0 ? 4.9 : 2.7, gc = L * (style == 6.0 ? 0.36 : 0.7);
-                float inG = step(abs(u - gc), gw * 0.5) * step(q.y, 2.2) * step(0.02, q.y);
-                if (inG > 0.5) { float pan = step(0.5, fract(q.y / 0.55 + 0.05)); outc = mix(vec3(0.86, 0.85, 0.82), vec3(0.8, 0.79, 0.76), pan * 0.5) * (0.9 + 0.1 * tHash(vec2(seed, 3.0)));
-                  if (tHash(vec2(seed, 7.0)) < 0.35) outc = vec3(0.42, 0.3, 0.2); gGlass = 0.0; gEmit = vec3(0.0); }
-              }
+          if (front && dcam < 220.0) {                                    // street-facing wall: doors, garages, entries
+            float L = longWall ? 40.0 : segL; float uu = q.x;
+            if (style == 8.0 || style == 6.0) {
+              float gw = L > 11.0 ? 4.9 : 2.7, gc = L * (style == 6.0 ? 0.36 : 0.7);
+              if (L > 6.5 && abs(uu - gc) < gw * 0.5 && q.y < 2.2 && q.y > 0.02) { outc = mix(vec3(0.86, 0.85, 0.82), vec3(0.8, 0.79, 0.76), step(0.5, fract(q.y / 0.55 + 0.05)) * 0.5); if (fract(seed * 0.37) < 0.35) outc = vec3(0.42, 0.3, 0.2); gEmit = vec3(0.0); }
               float dc = L * (style == 6.0 ? 0.8 : 0.28);
-              float inD = step(abs(u - dc), 0.48) * step(q.y, 2.12) * step(0.02, q.y);
-              if (inD > 0.5) { float k = tHash(vec2(seed, 11.0)); outc = k < 0.3 ? vec3(0.95, 0.94, 0.9) : k < 0.55 ? vec3(0.4, 0.27, 0.18) : k < 0.75 ? vec3(0.18, 0.28, 0.22) : vec3(0.5, 0.17, 0.15); gGlass = 0.0; gEmit = vec3(1.0, 0.75, 0.45) * uNight * 0.15; }
-            } else if (style == 1.0 || style == 2.0 || style == 7.0) {   // lobby door in the middle
-              float inD = step(abs(u - L * 0.5), 1.1) * step(q.y, 2.6) * step(0.02, q.y);
-              if (inD > 0.5) { outc = vec3(0.1, 0.12, 0.13); gGlass = 1.0; gEmit = vec3(1.0, 0.85, 0.6) * uNight * 0.6; }
-            } else if (style == 5.0) {                                    // loading doors
-              float k = fract(u / 12.0); float inD = step(abs(k - 0.5), 3.8 / 24.0) * step(q.y, 4.0) * step(0.02, q.y) * step(8.0, L);
-              if (inD > 0.5) { outc = vec3(0.62, 0.63, 0.62) * (0.92 + 0.08 * step(0.5, fract(q.y / 0.35))); gGlass = 0.0; gEmit = vec3(0.0); }
+              if (abs(uu - dc) < 0.48 && q.y < 2.12 && q.y > 0.02) { float k = fract(seed * 0.113); outc = k < 0.3 ? vec3(0.95, 0.94, 0.9) : k < 0.55 ? vec3(0.4, 0.27, 0.18) : k < 0.75 ? vec3(0.18, 0.28, 0.22) : vec3(0.5, 0.17, 0.15); gEmit = vec3(1.0, 0.75, 0.45) * uNight * 0.15; }
+            } else if (style == 1.0 || style == 2.0 || style == 7.0) {
+              if (abs(uu - L * 0.5) < 1.1 && q.y < 2.6 && q.y > 0.02) { outc = vec3(0.1, 0.12, 0.13); gEmit = vec3(1.0, 0.85, 0.6) * uNight * 0.6; }
+            } else if (style == 5.0) {
+              float k = fract(uu / 12.0);
+              if (L > 8.0 && abs(k - 0.5) < 3.8 / 24.0 && q.y < 4.0 && q.y > 0.02) { outc = vec3(0.62, 0.63, 0.62) * (0.92 + 0.08 * step(0.5, fract(q.y / 0.35))); gEmit = vec3(0.0); }
             }
-          } else if (style == 4.0 && q.y < 4.4) {                       // storefronts only face the street
-            float fl0 = q.y < 4.4 ? 1.0 : 0.0; outc = mix(outc, wall * 0.97, fl0 * 0.92 * step(0.5, gGlass)); gGlass *= 1.0 - fl0; gEmit *= 1.0 - fl0;
           }
+          outc *= 1.0 + 0.09 * step(eave - 0.06, q.y);                    // parapet coping
           diffuseColor.rgb = outc;
         }
       }`)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += gEmit * 1.3;')
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-        if (gPhoto > 0.5) normal = normalize(mix(normal, normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), 0.55));`)
-      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = gRough > 0.0 ? mix(roughnessFactor, gRough, gGlass) : mix(roughnessFactor, 0.16, gGlass);')
-      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = max(gMetal * max(gGlass, 0.4), mix(metalnessFactor, 0.3, gGlass));')
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += gEmit * 1.3;');
+        if (gPhoto > 0.5) normal = normalize(mix(normal, normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), 0.55));`);
   }
   function makeImgUniforms() {
     const u = { uImgSRGB: { value: 0 } };
@@ -315,13 +314,13 @@ const Towns = (() => {
     return u;
   }
   function makeBldMat(u) {
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.0 });
+    const m = new THREE.MeshLambertMaterial({ vertexColors: true });
     m.onBeforeCompile = sh => bldShader(sh, u);
-    m.customProgramCacheKey = () => 'towns-bld-v2';
+    m.customProgramCacheKey = () => 'towns-bld-v3';
     m.userData.u = u;
     return m;
   }
-  const skyU = makeImgUniforms(); const skyMat = makeBldMat(skyU);     // far skyline: no photo roofs
+  const skyU = makeImgUniforms(); let skyMat = null;                    // far skyline: no photo roofs (created in init)
 
   // Procedural houses (infill only): instanced; per-vertex part id picks wall/roof/trim/glass/door colors per instance.
   const houseMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.0 });
@@ -583,7 +582,7 @@ const Towns = (() => {
     const ints = [];
     for (let i = 0; i < n0; i++) { const it = inter.get(Math.round(P[i * 2] * 10) + ':' + Math.round(P[i * 2 + 1] * 10)); if (it) ints.push({ u: u0[i], R: it.R, flags: it.flags }); }
     const cw = hi && c >= 4 && c <= 12 && urban && !bridge;
-    const brk = []; const seg = hi ? 8 : 24;
+    const brk = []; const seg = hi ? 12 : 40;
     for (let i = 0; i + 1 < n0; i++) { const L = u0[i + 1] - u0[i], m = Math.max(1, Math.ceil(L / seg)); for (let k = 0; k < m; k++) brk.push(u0[i] + L * k / m); }
     brk.push(total);
     if (hi) for (const it of ints) for (const d of [it.R + 0.3, it.R + 1.0, it.R + 4.0]) { if (it.u - d > 0) brk.push(it.u - d); if (it.u + d < total) brk.push(it.u + d); }
@@ -661,7 +660,7 @@ const Towns = (() => {
           rquad(tb, A, B, Cc, D, col, mark, lanes, w4, [us[i], o0, us[i], o1, us[j], o0, us[j], o1], [f0, f0, f1, f1], false, kind === 3);
         } else {
           const A = [a0x, Y(i, o0) + lift + dy0, a0z], B = [a0x, Y(i, o0) + lift + dy1, a0z], Cc = [b0x, Y(j, o0) + lift + dy0, b0z], D = [b0x, Y(j, o0) + lift + dy1, b0z];
-          rquad(tb, A, B, Cc, D, col, mark, lanes, w4, [us[i], o0, us[i], o0, us[j], o0, us[j], o0], [f0, f0, f1, f1], true, false);
+          rquad(tb, A, B, Cc, D, col, mark, lanes, w4, [us[i], o0, us[i], o0, us[j], o0, us[j], o0], [f0, f0, f1, f1], kind !== 1, false);
         }
       }
     }
@@ -1067,20 +1066,42 @@ const Towns = (() => {
   function imgAt(x, z) { if (!hasImagery()) return null; try { const r = Terrain.imagery(x, z); return r && r.tex ? r : null; } catch (e) { return null; } }
   const retainTex = tex => { if (tex && hasTerrain() && typeof Terrain.retain === 'function') try { Terrain.retain(tex); } catch (e) { /* optional API */ } };
   const releaseTex = tex => { if (tex && hasTerrain() && typeof Terrain.release === 'function') try { Terrain.release(tex); } catch (e) { /* optional API */ } };
+  // Each slot (tile quadrant) uses the terrain's finest imagery when it is at least level 7; otherwise the tile loads its own
+  // level-7 photo (level 6 if missing), so roofs 1–3 km away are still sharp even where the terrain only draws coarse nodes.
+  function ownImagery(t) {
+    if (t.own || !hasStream() || typeof Stream.image !== 'function') return;
+    t.own = { state: 1, tex: null, x0: t.ox, z0: t.oz, size: TILE, L: 7 };
+    const load = (L, tx, ty) => Stream.image(`tiles/img/${L}/${tx}_${ty}.jpg`, 6 + Math.round(t.dist / 500)).then(bmp => {
+      if (t.state === 'dead') { if (bmp.close) bmp.close(); return; }
+      const tex = new THREE.Texture(bmp); tex.flipY = false; tex.colorSpace = THREE.SRGBColorSpace; tex.generateMipmaps = true;
+      tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter; tex.anisotropy = 4; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.needsUpdate = true;
+      const T = 102400 / (1 << L);
+      Object.assign(t.own, { state: 2, tex, bmp, x0: X0 + tx * T, z0: Z0 + ty * T, size: T, L }); refreshImagery(t);
+    });
+    load(7, t.tx, t.ty).catch(() => load(6, t.tx >> 1, t.ty >> 1)).catch(() => { t.own.state = 3; });
+  }
   function refreshImagery(t) {
     if (!t.u) return;
     for (let q = 0; q < 4; q++) {
-      const im = imgAt(t.ox + ((q & 1) ? 0.75 : 0.25) * TILE, t.oz + ((q & 2) ? 0.75 : 0.25) * TILE);
+      let im = imgAt(t.ox + ((q & 1) ? 0.75 : 0.25) * TILE, t.oz + ((q & 2) ? 0.75 : 0.25) * TILE);
+      if (!im || im.L < 7) {
+        if (!t.own) ownImagery(t);
+        if (t.own && t.own.state === 2 && (!im || im.L < t.own.L)) im = t.own;
+      }
       const sl = t.slots[q];
       if (!im) continue;
       if (sl.tex === im.tex && sl.x0 === im.x0 && sl.z0 === im.z0 && sl.size === im.size) continue;
-      releaseTex(sl.tex); retainTex(im.tex);
+      if (sl.tex !== (t.own && t.own.tex)) releaseTex(sl.tex);
+      if (im !== t.own) retainTex(im.tex);
       sl.tex = im.tex; sl.x0 = im.x0; sl.z0 = im.z0; sl.size = im.size; sl.L = im.L;
-      t.u['uImg' + q].value = im.tex; t.u['uImgX' + q].value.set(im.x0, im.z0, im.size, 1);
+      t.u['uImg' + q].value = im.tex; t.u['uImgX' + q].value.set(im.x0, im.z0, im.size, (im.L === undefined || im.L >= 6) ? 1 : 0);   // coarser photos would smear streets onto roofs
       t.u.uImgSRGB.value = im.tex.colorSpace === THREE.SRGBColorSpace ? 0 : 1;
     }
   }
-  function dropImagery(t) { if (!t.slots) return; for (const sl of t.slots) { releaseTex(sl.tex); sl.tex = null; } }
+  function dropImagery(t) {
+    if (t.slots) for (const sl of t.slots) { if (!(t.own && sl.tex === t.own.tex)) releaseTex(sl.tex); sl.tex = null; }
+    if (t.own) { if (t.own.tex) t.own.tex.dispose(); if (t.own.bmp && t.own.bmp.close) t.own.bmp.close(); t.own = null; }
+  }
 
   // ------------------------------------------------------------------ tile building (generators, time-sliced)
   // Two independent parts per tile, each with a level:
@@ -1097,7 +1118,7 @@ const Towns = (() => {
     clearBld(t);
     if (g) {
       if (!t.mat) { t.u = makeImgUniforms(); t.mat = makeBldMat(t.u); t.slots = [0, 1, 2, 3].map(() => ({ tex: null, x0: 0, z0: 0, size: 0 })); }
-      const m = new THREE.Mesh(g, t.mat); m.castShadow = true; m.receiveShadow = true; m.name = 'buildings'; t.root.add(m); t.bldMesh = m;
+      const m = new THREE.Mesh(g, t.mat); m.castShadow = t.dist < SHADOW_R; m.receiveShadow = true; m.name = 'buildings'; t.root.add(m); t.bldMesh = m;
       t.bldTris = (g.index ? g.index.count : 0) / 3; stats.bldTris += t.bldTris;
       refreshImagery(t);
     }
@@ -1264,7 +1285,7 @@ const Towns = (() => {
         _m.makeTranslation(hx, hf(hx, hz) + 0.5, hz); pools.setMatrixAt(i, _m);
       });
       pools.computeBoundingSphere(); pools.userData.pool = true; pools.renderOrder = 4; pools.name = 'streetlight-pools'; objs.push(pools);
-      poles.computeBoundingSphere(); poles.castShadow = true; poles.userData.pole = true; glows.userData.glow = true; glows.frustumCulled = false; glows.renderOrder = 5;
+      poles.computeBoundingSphere(); poles.castShadow = false; poles.userData.pole = true; glows.userData.glow = true; glows.frustumCulled = false; glows.renderOrder = 5;
       poles.name = 'streetlights'; glows.name = 'streetlight-glow'; objs.push(poles, glows);
     }
     clearGnd(t);
@@ -1330,7 +1351,7 @@ const Towns = (() => {
     const T = s.data; const tb = new TB(BSPEC); const hf = (x, z) => ctx.groundY(T.ox + x, T.oz + z);
     for (let i = 0; i < T.b.length; i++) { buildingInto(tb, T.b[i], T, hf, i, false, false); if ((i & 7) === 7 && now() > deadline) yield; }
     const g = tb.build();
-    if (g) { const m = new THREE.Mesh(g, skyMat); m.castShadow = true; m.receiveShadow = false; m.name = 'skyline'; s.root.add(m); s.mesh = m; }
+    if (g) { const m = new THREE.Mesh(g, skyMat); m.castShadow = false; m.receiveShadow = false; m.name = 'skyline'; s.root.add(m); s.mesh = m; }
     s.built = true;
   }
 
@@ -1386,6 +1407,8 @@ const Towns = (() => {
       stats.tiles = tiles.size; stats.sky = skyTiles.size;
     }
     // full tiles: state machine, wanted levels (hysteresis on the way down), unloading
+    // shadows: only tiles that can overlap the sun's shadow box cast or receive (the box follows the camera; see Env)
+    const shR = ((typeof Env !== 'undefined' && Env.state && Env.state.shadowSize) || SHADOW_R / 2.2) * 2.2 + 150;
     _jobs.length = 0;
     for (const t of [...tiles.values()]) {
       const d = t.dist = tileDist(t, camPos);
@@ -1405,6 +1428,8 @@ const Towns = (() => {
         if (wg === 0 && t.gndLvl) clearGnd(t);
       }
       if (t.gndLvl) lodTouch(t, false);
+      if (t.bldMesh) { const cs = d < shR; if (t.bldMesh.castShadow !== cs) { t.bldMesh.castShadow = cs; t.bldMesh.receiveShadow = cs; for (const m of t.houseMeshes) { m.castShadow = cs; m.receiveShadow = cs; } } }
+      if (t.gndMesh) { const rs = d < shR; if (t.gndMesh.receiveShadow !== rs) t.gndMesh.receiveShadow = rs; }
       if (t.gen || wb !== t.bldLvl || wg !== t.gndLvl) _jobs.push(t);
     }
     // skyline tiles: shown only where the full tile has no buildings yet
@@ -1490,6 +1515,7 @@ const Towns = (() => {
     const idx = await getJson(DIR + 'index.json', 0);
     if (!idx || idx.version !== 3) throw new Error('towns: unexpected index version');
     for (const [tx, ty, bytes, nb, sky] of idx.tiles) index.set(K(tx, ty), { key: K(tx, ty), tx, ty, bytes, nb, sky });
+    facadeTex = makeFacadeArray(); skyMat = makeBldMat(skyU);
     buildVariants();
     for (const k of ['broad', 'conifer', 'palm', 'euc']) { TREEG[k] = treeGeo(k, false); TREEG_LO[k] = treeGeo(k, true); TREEG[k].userData.shared = TREEG_LO[k].userData.shared = true; }
     buildLightGeo(); lightGeo.userData.shared = glowGeo.userData.shared = poolGeo.userData.shared = true;
@@ -1498,5 +1524,5 @@ const Towns = (() => {
     return { tiles: index.size };
   }
   return { init, update, group, roadsNear, buildingsAt, stats, idle, dispose, regionOf,
-    get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, skyMat } };
+    get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

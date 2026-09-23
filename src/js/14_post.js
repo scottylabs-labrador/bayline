@@ -14,6 +14,7 @@ const Post = (() => {
   };
   let quality = 'high', Q = QUALITY.high, enabled = true, W = 0, H = 0, frame = 0;
   const stats = { calls: 0, triangles: 0 };
+  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true };   // per-pass switches (profiling)
   const sz = new THREE.Vector2();
 
   // ---------------------------------------------------------------- full-screen plumbing
@@ -27,12 +28,12 @@ const Post = (() => {
   // camera-ray helpers shared by the passes (logarithmic depth: d = log2(1 + w) / log2(far + 1))
   const cam = {
     uProjInv: { value: new THREE.Matrix4() }, uCamWorld: { value: new THREE.Matrix4() }, uCamPos: { value: new THREE.Vector3() },
-    uLogC: { value: 1 }, uTexel: { value: new THREE.Vector2() }, uFocal: { value: 1 },
+    uLogC: { value: 1 }, uTexel: { value: new THREE.Vector2() }, uFocal: { value: 1 }, uTanHalf: { value: new THREE.Vector2(1, 1) },
   };
   const CAMGLSL = /* glsl */`
-    uniform mat4 uProjInv, uCamWorld; uniform vec3 uCamPos; uniform float uLogC, uFocal; uniform vec2 uTexel;
+    uniform mat4 uProjInv, uCamWorld; uniform vec3 uCamPos; uniform float uLogC, uFocal; uniform vec2 uTexel, uTanHalf;
     float depthW(float d) { return exp2(d * uLogC) - 1.0; }
-    vec3 viewRay(vec2 uv) { vec4 p = uProjInv * vec4(uv * 2.0 - 1.0, 1.0, 1.0); p.xyz /= p.w; return p.xyz / -p.z; }
+    vec3 viewRay(vec2 uv) { return vec3((uv * 2.0 - 1.0) * uTanHalf, -1.0); }      // symmetric perspective, z = -1
     vec3 viewPosAt(vec2 uv, float d) { return viewRay(uv) * depthW(d); }
     float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
   `;
@@ -48,7 +49,7 @@ const Post = (() => {
   function build(w, h) {
     disposeAll(); W = w; H = h;
     const maxS = R.capabilities.maxSamples || 4;
-    let samples = Math.min(Q.samples, maxS); if (w * h > 4.6e6 && samples > 2) samples = 2;
+    let samples = debug.msaa ? Math.min(Q.samples, maxS) : 0; if (w * h > 4.6e6 && samples > 2) samples = 2;
     const dt = new THREE.DepthTexture(w, h, THREE.FloatType); dt.format = THREE.DepthFormat; dt.minFilter = dt.magFilter = THREE.NearestFilter;
     rtScene = mkRT(w, h, { depthBuffer: true, depthTexture: dt, samples });
     const hw = Math.ceil(w / 2), hh = Math.ceil(h / 2);
@@ -71,7 +72,9 @@ const Post = (() => {
       vec2 tx = vec2(uTexel.x * 2.0, 0.0), ty = vec2(0.0, uTexel.y * 2.0);
       vec3 pr = vp(vUv + tx) - P, pl = P - vp(vUv - tx), pu = vp(vUv + ty) - P, pd = P - vp(vUv - ty);
       vec3 dx = abs(pr.z) < abs(pl.z) ? pr : pl, dy = abs(pu.z) < abs(pd.z) ? pu : pd;
-      vec3 N = normalize(cross(dx, dy));
+      vec3 Nc = cross(dx, dy); float nl = length(Nc);
+      if (!(nl > 1e-9)) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }        // degenerate / NaN guard
+      vec3 N = Nc / nl;
       float w = -P.z; float rad = min(uRadius * (1.0 + w * 0.01), 7.0);
       float rpx = rad * uFocal / w;
       if (rpx < 1.2) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }
@@ -84,7 +87,7 @@ const Post = (() => {
         vec3 v = vp(suv) - P; float dist = length(v);
         occ += max(dot(N, v / max(dist, 1e-4)) - 0.1, 0.0) * (1.0 - smoothstep(rad * 0.55, rad, dist));
       }
-      float ao = 1.0 - uStrength * occ / float(uSamples);
+      float ao = 1.0 - uStrength * occ / float(uSamples); if (!(ao >= 0.0 && ao <= 1.0)) ao = 1.0;
       ao = mix(1.0, ao, 1.0 - smoothstep(500.0, 1400.0, w));
       gl_FragColor = vec4(clamp(ao, 0.0, 1.0), d, 0.0, 1.0);
     }`);
@@ -113,6 +116,9 @@ const Post = (() => {
       else if (ro.y > topMax || ro.y < 0.0) t1 = -1.0;
       if (t1 <= t0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
       float seg = t1 - t0, jit = ign(gl_FragCoord.xy);
+      float probe = 0.0;                                   // cheap early-out: is there any fog along this ray?
+      for (int k = 0; k < 6; k++) { float a = (float(k) + 0.5) / 6.0; probe = max(probe, skyFogReach((ro + rd * (t0 + seg * a * a)).xz)); }
+      if (probe < 0.002 && skyFogReach((ro + rd * t0).xz) < 0.002) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
       float mu = dot(rd, uSkySunDir);
       float phase = 0.3 + 3.4 * skyPhaseHG(mu, 0.62);
       vec3 L = vec3(0.0); float T = 1.0; float N = float(uSteps);
@@ -126,10 +132,11 @@ const Post = (() => {
           float sig = dens * 0.0045; float Ts = exp(-sig * dt);
           float below = max(uFogTop - p.y, 0.0);
           // sun-side shading of the billows: density a little way toward the sun darkens the lee sides
-          float occ = skyFogDensity(p + uSkySunDir * 70.0 + vec3(0.0, 25.0, 0.0));
+          float occ = dens > 0.04 ? skyFogDensity(p + uSkySunDir * 70.0 + vec3(0.0, 25.0, 0.0)) : 0.0;
           float sunVis = exp(-below * 0.0045 * uFogDens * 0.3 / max(uSkySunDir.y + 0.1, 0.1)) * exp(-occ * 0.9);
           float gl = skyFogGlow(p.xz);
-          vec3 Ls = uSkySunColor * sunVis * phase * 0.3 + uSkyAmbient * (0.75 + 0.35 * sunVis) + (uSkyGlow * (0.35 + 2.6 * gl) + vec3(0.004, 0.006, 0.011)) * uSkyNight * 2.0;
+          float dark = uSkyNight * uSkyNight;                  // city glow only once it's really dark (twilight fog stays lavender)
+          vec3 Ls = uSkySunColor * sunVis * phase * 0.3 + uSkyAmbient * (0.75 + 0.35 * sunVis) + (uSkyGlow * vec3(0.8, 0.9, 1.1) * (0.3 + 2.2 * gl) + vec3(0.004, 0.006, 0.011)) * dark * 2.0;
           L += T * (1.0 - Ts) * Ls; T *= Ts;
           if (T < 0.015) break;
         }
@@ -137,9 +144,9 @@ const Post = (() => {
       gl_FragColor = vec4(L, T);
     }`);
   const compMat = mk(Object.assign({
-    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() },
+    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() },
   }, cam, Sky.uniforms), Sky.glsl + Sky.glslFx + CAMGLSL + /* glsl */`
-    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO; uniform vec2 uAOHalf; varying vec2 vUv;
+    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
     float aoUp(vec2 uv, float d) {       // joint bilateral upsample of the half-res AO (depth stored in .g)
       vec2 hp = uv / uAOHalf - 0.5; vec2 f = fract(hp); vec2 b = (floor(hp) + 0.5) * uAOHalf;
       float w0 = depthW(d); float s = 0.0, ws = 0.0;
@@ -183,7 +190,8 @@ const Post = (() => {
           cl.rgb += (1.0 - cl.a) * a * cc; cl.a += (1.0 - cl.a) * a;
         }
       }
-      vec4 fg = texture2D(tFog, vUv);
+      vec2 ft = uFogTexel;
+      vec4 fg = texture2D(tFog, vUv) * 0.4 + (texture2D(tFog, vUv + vec2(ft.x, ft.y)) + texture2D(tFog, vUv + vec2(-ft.x, ft.y)) + texture2D(tFog, vUv + vec2(ft.x, -ft.y)) + texture2D(tFog, vUv - ft)) * 0.15;
       if (above) { col = col * fg.a + fg.rgb; col = col * (1.0 - cl.a) + cl.rgb; }
       else {
         col = col * (1.0 - cl.a) + cl.rgb;
@@ -195,12 +203,14 @@ const Post = (() => {
         }
         col = col * fg.a + fg.rgb;
       }
-      gl_FragColor = vec4(col, 1.0);
+      if (!(dot(col, vec3(1.0)) < 1e6)) col = vec3(0.0);    // NaN/Inf guard (comparisons with NaN are false)
+      col = max(col, vec3(0.0));
+      gl_FragColor = vec4(min(col, vec3(60000.0)), 1.0);
     }`);
   // bloom
   const brightMat = mk({ tSrc: { value: null }, uThreshold: { value: 1.0 }, uExposure: { value: 1 }, uTexel: { value: new THREE.Vector2() } }, /* glsl */`
     uniform sampler2D tSrc; uniform float uThreshold, uExposure; uniform vec2 uTexel; varying vec2 vUv;
-    vec3 fetch(vec2 o) { vec3 c = texture2D(tSrc, vUv + o * uTexel).rgb; return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure * 0.25); }   // Karis-style firefly tamer
+    vec3 fetch(vec2 o) { vec3 c = texture2D(tSrc, vUv + o * uTexel).rgb; if (any(isnan(c))) c = vec3(0.0); return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure * 0.25); }   // Karis-style firefly tamer
     void main() {
       vec3 c = 0.25 * (fetch(vec2(-1.0, -1.0)) + fetch(vec2(1.0, -1.0)) + fetch(vec2(-1.0, 1.0)) + fetch(vec2(1.0, 1.0)));
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure; float knee = uThreshold * 0.5;
@@ -281,19 +291,20 @@ const Post = (() => {
       cam.uProjInv.value.copy(camera.projectionMatrixInverse); cam.uCamWorld.value.copy(camera.matrixWorld);
       cam.uCamPos.value.setFromMatrixPosition(camera.matrixWorld); cam.uLogC.value = Math.log2(camera.far + 1);
       cam.uFocal.value = 0.5 * H * camera.projectionMatrix.elements[5];
+      cam.uTanHalf.value.set(1 / camera.projectionMatrix.elements[0], 1 / camera.projectionMatrix.elements[5]);
       const depth = rtScene.depthTexture;
       // 2. SSAO (half res) + bilateral blur
-      const useAO = Q.ao > 0;
+      const useAO = Q.ao > 0 && debug.ao;
       if (useAO) {
         aoMat.uniforms.tDepth.value = depth; aoMat.uniforms.uSamples.value = Q.ao; pass(aoMat, rtAO[0]);
         blurMat.uniforms.tAO.value = rtAO[0].texture; blurMat.uniforms.uDir.value.set(1 / rtAO[0].width, 0); pass(blurMat, rtAO[1]);
         blurMat.uniforms.tAO.value = rtAO[1].texture; blurMat.uniforms.uDir.value.set(0, 1 / rtAO[0].height); pass(blurMat, rtAO[0]);
       }
       // 3. marine layer raymarch (half res)
-      fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = Q.fogSteps; pass(fogMat, rtFog);
+      fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; pass(fogMat, rtFog);
       // 4. composite -> HDR
       compMat.uniforms.tScene.value = rtScene.texture; compMat.uniforms.tDepth.value = depth; compMat.uniforms.tAO.value = rtAO[0].texture;
-      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height);
+      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(0.75 / rtFog.width, 0.75 / rtFog.height);
       pass(compMat, rtHDR);
       // 5. bloom
       const exposure = Env.state.exposure || 1, night = U.uNight.value;
@@ -319,13 +330,26 @@ const Post = (() => {
       R.info.autoReset = true; R.setRenderTarget(null); R.render(scene, camera);
     }
   }
+  // GPU cost (ms) of the current view, synced with a 1-px readback: Post.profile(12) -> { scene, total, post, ao, fog }
+  function profile(n = 12) {
+    if (!rtScene || failed) return null;
+    const gl = R.getContext(), px = new Uint8Array(4);
+    const sync = () => { R.setRenderTarget(null); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); };
+    const time = (f) => { f(); sync(); const t0 = performance.now(); for (let i = 0; i < n; i++) f(); sync(); return (performance.now() - t0) / n; };
+    const d = Object.assign({}, debug), r2 = (v) => Math.round(v * 100) / 100;
+    const sceneOnly = time(() => { R.setRenderTarget(rtScene); R.render(scene, camera); });
+    const all = time(() => render(0));
+    debug.ao = false; const noAO = time(() => render(0)); debug.ao = d.ao;
+    debug.fog = false; const noFog = time(() => render(0)); debug.fog = d.fog;
+    return { scene: r2(sceneOnly), total: r2(all), post: r2(all - sceneOnly), ao: r2(all - noAO), fog: r2(all - noFog), w: W, h: H, quality };
+  }
   function setQuality(q) {
     if (!QUALITY[q]) return; quality = q; Q = QUALITY[q]; W = H = 0;       // rebuild targets next frame
     const s = Env.sun.shadow; if (s.mapSize.x !== Q.shadow) { s.mapSize.set(Q.shadow, Q.shadow); if (s.map) { s.map.dispose(); s.map = null; } }
   }
   setQuality('high');
   return {
-    render, setQuality, stats,
+    render, setQuality, stats, debug, profile, rebuild() { W = H = 0; },
     get quality() { return quality; },
     get enabled() { return enabled && !failed; }, set enabled(v) { enabled = !!v; if (!enabled) R.info.autoReset = true; },
     get targets() { return { rtScene, rtHDR, rtFog, rtAO }; },

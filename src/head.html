@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Bayline</title>
 <meta name="description" content="Bayline: an unofficial simulator of the San Francisco Peninsula commuter rail line, with the real timetable, stations, terrain and towns.">
+<link rel="preload" href="./data/v2/core/terrain.bin" as="fetch" crossorigin>
+<link rel="preload" href="./data/v2/core/track.bin" as="fetch" crossorigin>
+<link rel="preload" href="./data/v2/core/timetable.json" as="fetch" crossorigin>
+<link rel="preload" href="./data/v2/tiles/index.json" as="fetch" crossorigin>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap">
@@ -118,7 +122,7 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 #missions .m b{display:block;font-size:16px} #missions .m small{color:var(--ink-dim)}
 #result .score{font-family:var(--mono);font-size:40px;font-weight:600}
 #crosshair{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:rgba(255,255,255,.7);z-index:9;pointer-events:none}
-@media (max-width:760px){#strip{display:none} #title .modes{grid-template-columns:1fr} #cab{width:auto;right:16px}}
+@media (max-width:760px){#strip{display:none} #title .modes{grid-template-columns:1fr} #cab{width:auto;right:12px;left:12px;bottom:112px;padding:10px 12px} #cab .grid{display:none} #hud .tl{min-width:0;max-width:56vw;padding:8px 10px;left:10px;top:10px} #hud .clock{font-size:19px} #hud .where{font-size:12px} #hud .sub{display:none} #hud .tr{top:10px;right:10px;flex-direction:column;align-items:flex-end;gap:5px} #hud .tr .pill{padding:5px 9px;font-size:11px} #title .card{padding:22px 20px 18px} #title .foot{flex-direction:column;align-items:flex-start}}
 </style>
 </head>
 <body>
@@ -150,6 +154,13 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
     <button class="chip" data-t="21:30">Night</button>
     <span style="flex:1"></span>
     <button class="chip" id="mpchip"><span class="dot" id="mpdot"></span><span id="mptext">Solo</span></button>
+  </div>
+  <div class="row" id="wxchips" style="margin-top:8px">
+    <span style="color:var(--ink-faint);font-size:13px;margin-right:4px">Weather</span>
+    <button class="chip on" data-w="auto">Today's forecast</button>
+    <button class="chip" data-w="clear">Clear</button>
+    <button class="chip" data-w="fog">Marine layer</button>
+    <button class="chip" data-w="cloudy">Clouds</button>
   </div>
   <div class="foot"><span>Unofficial. Not affiliated with Caltrain or the Peninsula Corridor Joint Powers Board. Timetable: GTFS feed. Imagery: USDA NAIP via USGS. Map data © OpenStreetMap contributors. Terrain: AWS Terrain Tiles.</span><span>Press <kbd>H</kbd> for controls</span></div>
 </div></div>

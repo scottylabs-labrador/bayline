@@ -29,6 +29,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       World.birds = safe('birds', () => { const b = Life.createBirds && Life.createBirds(ctx); if (b) Env.scene.add(b.group); return b; });
       World.traffic = safe('traffic', () => { const t = Life.createTraffic && typeof Towns !== 'undefined' ? Life.createTraffic([], { maxCars: 420 }) : null; if (t) { Env.scene.add(t.group); t.cx = 1e9; t.cz = 1e9; t.tick = 0; } return t; });
     }
+    if (typeof Flora !== 'undefined' && Flora.init) { await step(0.92, 'Planting every tree…'); await safeA('flora', async () => { await Flora.init(ctx); if (Flora.group) Env.scene.add(Flora.group); }); }
     UI.init(); Player.init();
     await step(0.96, 'Warming up…');
   } catch (e) { console.error(e); loadmsg.textContent = 'Something went wrong: ' + e.message; return; }
@@ -62,6 +63,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   $('loading').style.opacity = 0; setTimeout(() => $('loading').remove(), 700);
   const chips = document.querySelectorAll('#timechips .chip[data-t]');
   chips.forEach(ch => ch.addEventListener('click', () => { chips.forEach(c => c.classList.remove('on')); ch.classList.add('on'); const v = ch.dataset.t; if (v === 'now') Env.goLive(); else { const [h, m] = v.split(':').map(Number); Env.setClock(h * 3600 + m * 60); Env.time.scale = 1; } Sim.update(0.016, Env.camera.position); if (!started) pickCinematic(); }));
+  const wxc = document.querySelectorAll('#wxchips .chip[data-w]');
+  wxc.forEach(ch => ch.addEventListener('click', () => { wxc.forEach(c => c.classList.remove('on')); ch.classList.add('on'); if (Env.state) Env.state.weather = ch.dataset.w; }));
   let wantNet = location.protocol.startsWith('http');
   const mpchip = $('mpchip'); const setMpText = () => { $('mptext').textContent = wantNet ? (typeof Net !== 'undefined' ? Net.status.text || 'Online' : 'Online') : 'Solo'; $('mpdot').classList.toggle('on', wantNet && typeof Net !== 'undefined' && Net.status.online); };
   mpchip.addEventListener('click', () => { wantNet = !wantNet; if (typeof Net !== 'undefined') { if (wantNet) Net.connect(); else Net.disconnect(); } setMpText(); });
@@ -105,6 +108,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (c === 'Digit0') { Env.goLive(); UI.toast('Live time'); return; }
       let i = scales.indexOf(Env.time.scale); if (i < 0) i = 0; i = U.clamp(i + (c === 'Equal' ? 1 : -1), 0, scales.length - 1); Env.time.scale = scales[i]; if (scales[i] !== 1) Env.time.live = false; UI.toast('Time ×' + scales[i]); return; }
     if (c === 'KeyP') { document.body.classList.toggle('photo'); return; }
+    if (c === 'KeyK' && Env.state) { const W = ['auto', 'clear', 'fog', 'cloudy', 'haze']; const i = (W.indexOf(Env.state.weather || 'auto') + 1) % W.length; Env.state.weather = W[i]; UI.toast('Weather: ' + ({ auto: "today's forecast", clear: 'clear skies', fog: 'the marine layer rolls in', cloudy: 'clouds', haze: 'hazy' })[W[i]]); return; }
     if (c === 'KeyV' && typeof Sound !== 'undefined') { Sound.setMuted(!Sound.muted); UI.toast(Sound.muted ? 'Sound off' : 'Sound on'); return; }
   });
   Game.on((ev, d) => { if (ev === 'toast') UI.toast(d, 4); if (ev === 'score' && d.msg) UI.toast((d.pts > 0 ? '+' : '') + Math.round(d.pts) + '  ' + d.msg, 2.6); if (ev === 'result') UI.showResult(d); });
@@ -167,6 +171,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   function applyTier() {
     const T = TIERS[tier]; Env.renderer.setPixelRatio(Math.min(T.dpr, devicePixelRatio)); Terrain.lodFactor.value = T.lod;
     if (typeof Post !== 'undefined' && Post.setQuality) safe('post', () => Post.setQuality(T.post));
+    if (typeof Flora !== 'undefined' && Flora.setQuality) safe('flora', () => Flora.setQuality(T.post));
     window.dispatchEvent(new Event('resize'));
   }
   applyTier();
@@ -183,6 +188,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (avg > 0.026 && tier < TIERS.length - 1) { tier++; applyTier(); } else if (avg < 0.0135 && tier > 0) { calm++; if (calm >= 4) { calm = 0; tier--; applyTier(); } } else calm = 0; }
     streamUi();
     const camP = Env.camera.position;
+    // the Bay's afternoon sea breeze: calm mornings, gusty 2–6 PM, easing at night (trees, flags, water)
+    { const h = Env.time.sec / 3600; U.uWind.value = 0.18 + 0.5 * Math.exp(-((h - 16) ** 2) / 8) + 0.06 * Math.sin(U.uTime.value * 0.37) * Math.sin(U.uTime.value * 0.11); }
     Env.update(dt, camP);
     Sim.update(dt, camP);
     Game.update(Env.time.paused ? 0 : dt * Env.time.scale);
@@ -199,12 +206,16 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       const alt = cp.y - Terrain.h(cp.x, cp.z);
       if (T.tick <= 0) { T.tick = 1.2; if (alt < 1500 && Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650 && Towns.ready !== false) { T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500)); } }
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
+    if (typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
     Avatars.update();
     if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
-    Env.renderer.render(Env.scene, Env.camera);
+    if (typeof Post !== 'undefined' && Post.render && Post.enabled !== false && !postBroken) { try { Post.render(dt); } catch (e) { postBroken = true; console.error('post', e); Env.renderer.setRenderTarget(null); Env.renderer.render(Env.scene, Env.camera); } }
+    else Env.renderer.render(Env.scene, Env.camera);
   }
+  let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
-  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null };
+  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+    Flora: typeof Flora !== 'undefined' ? Flora : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();

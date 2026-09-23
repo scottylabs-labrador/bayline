@@ -112,7 +112,8 @@ const Terrain = (() => {
     r.p = Stream.image(r.path, prio).then((bmp) => {
       const t = new THREE.Texture(bmp); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = maxAniso; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
-      r.tex = t; r.bmp = bmp; r.state = 2; stats.img++; return r;
+      t.onUpdate = () => { if (bmp.close) bmp.close(); t.onUpdate = null; };   // once on the GPU, drop the decoded CPU copy
+      r.tex = t; r.state = 2; stats.img++; return r;
     }, () => { r.state = 3; return r; });
     return r.p;
   }
@@ -306,7 +307,7 @@ const Terrain = (() => {
     for (let i = 0; i < arr.length && map.size > cap; i++) { const r = arr[i]; if (r.state === 1) continue; dispose(r); map.delete(K(r.L, r.x, r.y)); stats.evicted++; }
   }
   function evict() {
-    evictMap(irec, CAP.img, r => { if (r.tex) r.tex.dispose(); if (r.bmp && r.bmp.close) r.bmp.close(); });
+    evictMap(irec, CAP.img, r => { if (r.tex) r.tex.dispose(); });
     evictMap(hrec, CAP.hgt, r => { if (r.tex) r.tex.dispose(); });
     evictMap(mrec, CAP.msk, r => { if (r.tex) r.tex.dispose(); });
     // drop queued requests nobody wants any more
