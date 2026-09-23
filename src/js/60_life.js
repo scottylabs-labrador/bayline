@@ -1381,7 +1381,7 @@ const Life = (() => {
         else if (aKind < 5.5) { col = vec3(1.0, 0.1, 0.04); I = step(0.86, fract(t * 0.95 + 0.5)) * 1.5 * lit; }
         else { col = vec3(1.0, 0.95, 0.86); I = step(0.5, aInst.y) * aInst.z * (0.2 + 1.2 * smoothstep(0.2, 0.9, face)) * lit; }
       }
-      vec4 mv = viewMatrix * wp;
+      vec4 mv = blBend(viewMatrix * wp);
       float size = max(aSize * scl, -mv.z * 0.0024) * (0.55 + 0.45 * clamp(I, 0.0, 1.0));
       mv.xy += aCorner * size;
       gl_Position = projectionMatrix * mv;

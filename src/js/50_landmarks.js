@@ -703,7 +703,7 @@ const Landmarks = (() => {
         #include <common>
         #include <fog_pars_vertex>
         #include <logdepthbuf_pars_vertex>
-        void main(){ vP = aP; vec4 mvPosition = modelViewMatrix * vec4(position,1.0); gl_Position = projectionMatrix * mvPosition;
+        void main(){ vP = aP; vec4 mvPosition = blBend(modelViewMatrix * vec4(position,1.0)); gl_Position = projectionMatrix * mvPosition;
           #include <logdepthbuf_vertex>
           #include <fog_vertex>
         }`,

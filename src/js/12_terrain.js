@@ -174,6 +174,61 @@ const Terrain = (() => {
     t.anisotropy = maxAniso; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
     return (waveTex = t);
   }
+  // ---------- water surface shared by the Bayline terrain and the Globe ----------
+  // blWater: tint by depth, wind waves from the LEAN slope map (three scales, gusts drifting downwind, damped in the
+  // shallows), roughness from the unresolved slope variance (sun glitter widens with distance), and on ocean coasts
+  // whitewater lines rolling in over the shoaling bottom plus the swash on the sand.
+  //   p = world xz, depth (m), water weight, fwq = pixel footprint (m), fwDepth = fwidth(depth), ocean/sea 0..1
+  const WATER_GLSL = () => `
+    #ifndef BL_WATER
+    #define BL_WATER
+    uniform sampler2D uWaveN; uniform float uWindW; uniform float uWaveT;
+    float wth(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    float wtn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+      return mix(mix(wth(i), wth(i+vec2(1,0)), f.x), mix(wth(i+vec2(0,1)), wth(i+vec2(1,1)), f.x), f.y); }
+    // (fw = metres per pixel). Once a tile covers only a few dozen pixels its mip still holds the longest waves,
+    // which would repeat tile after tile as a lattice of glints, so the slope is folded into the variance there
+    vec3 waveLayer(vec2 q, float c, float s, float size, float v, float fw) {
+      vec4 w = texture2D(uWaveN, vec2(c * q.x + s * q.y, -s * q.x + c * q.y) / size - vec2(v, 0.0));
+      vec2 m = (w.rg * 2.0 - 1.0) * ${WAVE_S.toFixed(1)};
+      float vr = max(w.b * ${(2 * WAVE_S * WAVE_S).toFixed(1)} - dot(m, m), 0.0);
+      float res = smoothstep(12.0, 56.0, size / max(fw, 1e-4));
+      vr += dot(m, m) * (1.0 - res); m *= res;
+      return vec3(c * m.x - s * m.y, s * m.x + c * m.y, vr);
+    }
+    void blWater(vec2 p, float depth, float water, float fwq, float fwDepth, float ocean, float sea, inout vec3 col, inout vec3 nW, inout float rough) {
+      float time = uWaveT;
+      vec3 deep = vec3(0.035, 0.085, 0.11), shallow = col * 0.55;
+      // deep water converges on one tone whatever the photo source (NAIP no-data fill, Sentinel-2 ocean)
+      col = mix(col, mix(shallow, deep, smoothstep(0.0, 12.0, depth)), water * mix(0.8, 0.97, smoothstep(8.0, 25.0, depth)));
+      vec2 wd = vec2(0.8, 0.6), wq = vec2(dot(p, wd), dot(p, vec2(-wd.y, wd.x)));
+      float gust = wtn(wq / 460.0 - vec2(time * 0.011, 0.0)) * 0.65 + wtn(wq / 110.0 - vec2(time * 0.045, 0.0)) * 0.35;
+      float amp = (0.35 + 1.25 * uWindW) * (0.3 + 1.4 * gust * gust) * mix(0.55, smoothstep(-0.3, 1.5, depth), sea) * (1.0 + 0.7 * ocean);
+      vec3 l1 = waveLayer(wq, 1.0, 0.0, 6.1, time * 0.26, fwq);
+      vec3 l2 = waveLayer(wq, 0.94, 0.34, 19.0, time * 0.105, fwq);
+      vec3 l3 = waveLayer(wq, 0.9, -0.44, 57.0, time * 0.052, fwq);
+      vec3 a3 = vec3(0.058, 0.066, 0.05) * amp;
+      vec2 sw = l1.xy * a3.x + l2.xy * a3.y + l3.xy * a3.z;
+      float vu = l1.z * a3.x * a3.x + l2.z * a3.y * a3.y + l3.z * a3.z * a3.z;
+      sw = sw.x * wd + sw.y * vec2(-wd.y, wd.x);
+      nW = normalize(mix(nW, normalize(vec3(-sw.x, 1.0, -sw.y)), water));
+      rough = mix(rough, sqrt(sqrt(0.0007 * amp + vu)), water);
+      if (ocean > 0.01) {
+        float zone = smoothstep(0.15, 0.8, depth) * (1.0 - smoothstep(4.5, 8.0, depth));
+        float n1 = wtn(p / 70.0 + vec2(time * 0.01, 0.0)), n2 = wtn(p / 17.0 + vec2(0.0, time * 0.03));
+        float ph = depth * 3.6 + time * 0.55 + n1 * 2.4;
+        float sp = sin(ph), band = smoothstep(0.45, 0.9, sp) + 0.4 * smoothstep(-0.3, 0.8, sin(ph + 0.9)) * (1.0 - smoothstep(0.45, 0.9, sp));
+        band *= 0.5 + 0.75 * n2;
+        band = mix(band, 0.3 * (0.5 + 0.75 * n2), smoothstep(0.5, 1.4, fwDepth * 3.6));
+        // (a depth of exactly 0 means no bathymetry here, e.g. coarse fallback heights clamped to sea level: no swash)
+        float swash = smoothstep(0.02, 0.1, depth) * (1.0 - smoothstep(0.1, 0.9, depth)) * (0.55 + 0.45 * sin(time * 0.35 + n1 * 6.0));
+        float foam = clamp(max(band * zone, swash), 0.0, 1.0) * ocean * water;
+        col = mix(col, vec3(0.9, 0.92, 0.92), foam * 0.92);
+        nW = normalize(mix(nW, vec3(0.0, 1.0, 0.0), foam));
+        rough = mix(rough, 0.7, foam);
+      }
+    }
+    #endif`;
   // ---------- eye-level ground detail: four tileable grey-scale patterns in one mipmapped texture ----------
   // R asphalt (aggregate), G dirt (grit and pebbles), B grass (blades over soil), A concrete (speckle and voids): 512 px
   // over a 2.5 m tile (5 mm/px). Each channel has mean 0.5 and modulates the photo's local colour; mipmaps and
@@ -239,7 +294,7 @@ const Terrain = (() => {
       hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
       iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
-      skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind, uGround: { value: groundDetailTexture() },
+      skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind, uWaveT: U.uTime, uGround: { value: groundDetailTexture() },
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
@@ -266,7 +321,8 @@ const Terrain = (() => {
           uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo;
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel;
           uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
-          uniform float night; uniform float time; uniform sampler2D uWaveN; uniform float uWindW; uniform sampler2D uGround;
+          uniform float night; uniform float time; uniform sampler2D uGround;
+          ${WATER_GLSL()}
           varying vec3 vW; varying vec2 vUV;
           float th(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
           float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -278,16 +334,7 @@ const Terrain = (() => {
           vec3 gN; float gRough; vec3 gEmis; float gWater;
           // one wave layer: LEAN sample of the slope map in a frame rotated by (c, s); returns the slope rotated back
           // (xy) and the unresolved slope variance inside the pixel footprint (z)
-          // (fw = metres per pixel). Once a tile covers only a few dozen pixels its mip still holds the longest waves,
-          // which would repeat tile after tile as a lattice of glints, so the slope is folded into the variance there
-          vec3 waveLayer(vec2 q, float c, float s, float size, float v, float fw) {
-            vec4 w = texture2D(uWaveN, vec2(c * q.x + s * q.y, -s * q.x + c * q.y) / size - vec2(v, 0.0));
-            vec2 m = (w.rg * 2.0 - 1.0) * ${WAVE_S.toFixed(1)};
-            float vr = max(w.b * ${(2 * WAVE_S * WAVE_S).toFixed(1)} - dot(m, m), 0.0);
-            float res = smoothstep(12.0, 56.0, size / max(fw, 1e-4));
-            vr += dot(m, m) * (1.0 - res); m *= res;
-            return vec3(c * m.x - s * m.y, s * m.x + c * m.y, vr);
-          }`)
+`)
         .replace('#include <color_fragment>', `#include <color_fragment>
           {
             // ---- normal from the height data (per pixel) ----
@@ -381,43 +428,10 @@ const Terrain = (() => {
             gRough = mix(0.93, 0.07, water);
             float hw = hInfo.x + texture2D(hTex, tc).r, fwDepth = fwidth(hw);          // (derivative outside the branch)
             if (water > 0.0) {
-              float depth = clamp(-hw, 0.0, 30.0);
-              vec3 deep = vec3(0.035, 0.085, 0.11), shallow = col * 0.55;
-              col = mix(col, mix(shallow, deep, smoothstep(0.0, 12.0, depth)), water * 0.8);
-              // waves run downwind (the sea breeze pours ESE through the Golden Gate); gusts drift over the water as
-              // patches of darker chop and glassy calm; waves die in the shallows; lakes and reservoirs stay calmer
-              vec2 wd = vec2(0.8, 0.6), wq = vec2(dot(vW.xz, wd), dot(vW.xz, vec2(-wd.y, wd.x)));
-              float gust = tn(wq / 460.0 - vec2(time * 0.011, 0.0)) * 0.65 + tn(wq / 110.0 - vec2(time * 0.045, 0.0)) * 0.35;
-              float sea = 1.0 - step(1.0, hw);
               // the Pacific side of the Peninsula (west of a line from the Golden Gate to the San Mateo coast ridge)
+              float sea = 1.0 - step(1.0, hw);
               float ocean = smoothstep(700.0, -700.0, vW.x - (-18638.0 + 0.3103 * vW.z)) * sea;
-              float amp = (0.35 + 1.25 * uWindW) * (0.3 + 1.4 * gust * gust) * mix(0.55, smoothstep(-0.3, 1.5, depth), sea) * (1.0 + 0.7 * ocean);
-              vec3 l1 = waveLayer(wq, 1.0, 0.0, 6.1, time * 0.26, fwq);
-              vec3 l2 = waveLayer(wq, 0.94, 0.34, 19.0, time * 0.105, fwq);
-              vec3 l3 = waveLayer(wq, 0.9, -0.44, 57.0, time * 0.052, fwq);
-              vec3 a3 = vec3(0.058, 0.066, 0.05) * amp;                              // per-layer rms slope
-              vec2 sw = l1.xy * a3.x + l2.xy * a3.y + l3.xy * a3.z;                   // resolved slope (wind frame)
-              float vu = l1.z * a3.x * a3.x + l2.z * a3.y * a3.y + l3.z * a3.z * a3.z; // unresolved variance (both axes)
-              sw = sw.x * wd + sw.y * vec2(-wd.y, wd.x);
-              vec3 wn = normalize(vec3(-sw.x, 1.0, -sw.y));
-              nW = normalize(mix(nW, wn, water));
-              // GGX alpha^2 ~ total slope variance: sharp sparkles up close, a broad glitter path far away
-              float alpha = sqrt(0.0007 * amp + vu);
-              gRough = mix(0.93, sqrt(alpha), water);
-              // Pacific surf: whitewater lines rolling in over the shoaling bottom (a ~11 s swell), and the swash on the sand
-              if (ocean > 0.01) {
-                float zone = smoothstep(0.15, 0.8, depth) * (1.0 - smoothstep(4.5, 8.0, depth));
-                float n1 = tn(vW.xz / 70.0 + vec2(time * 0.01, 0.0)), n2 = tn(vW.xz / 17.0 + vec2(0.0, time * 0.03));
-                float ph = depth * 3.6 + time * 0.55 + n1 * 2.4;
-                float sp = sin(ph), band = smoothstep(0.45, 0.9, sp) + 0.4 * smoothstep(-0.3, 0.8, sin(ph + 0.9)) * (1.0 - smoothstep(0.45, 0.9, sp));
-                band *= 0.5 + 0.75 * n2;                                                               // crests, then aerated trails
-                band = mix(band, 0.3 * (0.5 + 0.75 * n2), smoothstep(0.5, 1.4, fwDepth * 3.6));   // lines average out far away
-                float swash = (1.0 - smoothstep(0.1, 0.9, depth)) * (0.55 + 0.45 * sin(time * 0.35 + n1 * 6.0));
-                float foam = clamp(max(band * zone, swash), 0.0, 1.0) * ocean * water;
-                col = mix(col, vec3(0.9, 0.92, 0.92), foam * 0.92);
-                nW = normalize(mix(nW, vec3(0.0, 1.0, 0.0), foam));
-                gRough = mix(gRough, 0.7, foam);
-              }
+              blWater(vW.xz, clamp(-hw, 0.0, 30.0), water, fwq, fwDepth, ocean, sea, col, nW, gRough);
             }
             // ---- night: the photo goes dark, streets and towns glow (mask G) ----
             // city lights from the air: a dim sodium/LED haze along lit areas plus sparse point lights; band-limited
@@ -591,6 +605,6 @@ const Terrain = (() => {
   const urbanAt = (x, z) => { const v = maskAt(x, z, 1); return v; };
   function setTownFade() {}
   return { load, h, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, update, setTownFade, lodFactor, stats, group,
-    groundDetail: groundDetailTexture, GROUND_TILE: GTILE,
+    groundDetail: groundDetailTexture, GROUND_TILE: GTILE, waveTexture, WATER_GLSL,
     get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH } };
 })();

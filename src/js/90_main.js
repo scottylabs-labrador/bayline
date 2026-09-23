@@ -32,6 +32,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof Flora !== 'undefined' && Flora.init) { await step(0.92, 'Planting every tree…'); await safeA('flora', async () => { await Flora.init(ctx); if (Flora.group) Env.scene.add(Flora.group); }); }
     safe('groundcover', () => { if (typeof GroundCover !== 'undefined') GroundCover.init(); });
     safe('boats', () => { if (typeof Boats !== 'undefined') Boats.init(); });
+    safe('globe', () => { if (typeof Globe !== 'undefined') Globe.init(); });
     UI.init(); Player.init();
     await step(0.96, 'Warming up…');
   } catch (e) { console.error(e); loadmsg.textContent = 'Something went wrong: ' + e.message; return; }
@@ -217,6 +218,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Player.update(dt);
     const cp = Env.camera.position; envArg.night = U.uNight.value; envArg.time = Env.time.sec; envArg.camPos = cp;
     Terrain.update(Env.camera);
+    if (typeof Globe !== 'undefined') safeFrame('globe', () => Globe.update(Env.camera));
     TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp);
     Stations.update(dt, cp, Sim.running);
     if (typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
@@ -241,7 +243,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
   let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
-  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Globe: typeof Globe !== 'undefined' ? Globe : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
     Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();

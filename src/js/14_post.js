@@ -36,6 +36,20 @@ const Post = (() => {
     vec3 viewRay(vec2 uv) { return vec3((uv * 2.0 - 1.0) * uTanHalf, -1.0); }      // symmetric perspective, z = -1
     vec3 viewPosAt(vec2 uv, float d) { return viewRay(uv) * depthW(d); }
     float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+    // the picture bends the world down by K d² (see BEND_GLSL): a level surface at height H is, along a camera ray,
+    // the parabola ro.y + rd.y t + K |rd.xz|² t² = H. Returns the ray interval [tA, tB] below that surface
+    // (tA < 0 < tB when the camera is below it; tA > tB when the ray never gets below it)
+    vec2 blLevelHits(float roy, vec3 rd, float H) {
+      float A = 7.848061e-8 * dot(rd.xz, rd.xz), b = rd.y, c = roy - H;
+      if (A < 1e-16) { if (abs(b) < 1e-7) return c < 0.0 ? vec2(-1e9, 1e9) : vec2(1e9, -1e9); float t = -c / b; return b > 0.0 ? vec2(-1e9, t) : vec2(t, 1e9); }
+      float disc = b * b - 4.0 * A * c;
+      if (disc < 0.0) return vec2(1e9, -1e9);
+      float q = -0.5 * (b + (b >= 0.0 ? 1.0 : -1.0) * sqrt(disc));
+      float r1 = q / A, r2 = c / q;
+      return vec2(min(r1, r2), max(r1, r2));
+    }
+    // unbent height of a point on a camera ray (what fog and cloud densities are defined on)
+    float blUnbentY(vec3 p, vec3 ro) { vec2 d = p.xz - ro.xz; return p.y + 7.848061e-8 * dot(d, d); }
   `;
 
   // ---------------------------------------------------------------- targets
@@ -111,9 +125,8 @@ const Post = (() => {
       vec3 vr = viewRay(vUv); float tS = d >= 0.99999 ? 1e9 : depthW(d) * length(vr);
       vec3 rd = normalize(mat3(uCamWorld) * vr), ro = uCamPos;
       float topMax = uFogTop * 1.2 + 90.0;
-      float t0 = 0.0, t1 = min(tS, 70000.0);
-      if (abs(rd.y) > 1e-5) { float ta = -ro.y / rd.y, tb = (topMax - ro.y) / rd.y; t0 = max(t0, min(ta, tb)); t1 = min(t1, max(ta, tb)); }
-      else if (ro.y > topMax || ro.y < 0.0) t1 = -1.0;
+      vec2 lh = blLevelHits(ro.y, rd, topMax);                // the curved layer top
+      float t0 = max(0.0, lh.x), t1 = min(min(tS, 70000.0), lh.y);
       if (t1 <= t0) { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
       float seg = t1 - t0, jit = ign(gl_FragCoord.xy);
       float probe = 0.0;                                   // cheap early-out: is there any fog along this ray?
@@ -130,6 +143,7 @@ const Post = (() => {
         float a0 = float(i) / N, a1 = float(i + 1) / N;
         float ta0 = t0 + seg * a0 * a0, ta1 = t0 + seg * a1 * a1, dt = ta1 - ta0;
         vec3 p = ro + rd * mix(ta0, ta1, fract(jit + float(i) * 0.618034));
+        p.y = blUnbentY(p, ro);
         float dens = skyFogDensity(p);
         if (dens > 0.001) {
           float sig = dens * 0.0045; float Ts = exp(-sig * dt);
@@ -178,13 +192,14 @@ const Post = (() => {
       }
       // cumulus deck: three slices through the 1.6-2.3 km layer (domed tops, darker bases, silver lining)
       bool above = ro.y > 2150.0; vec4 cl = vec4(0.0);
-      if (abs(rd.y) > 1e-4 && uCloudCover > 0.001) {
+      if (uCloudCover > 0.001) {
         for (int s = 0; s < 3; s++) {
           float si = above ? float(2 - s) : float(s);
-          float tc = (1650.0 + si * 330.0 - ro.y) / rd.y;
-          if (tc <= 0.0 || tc >= tS) continue;
+          float H = 1650.0 + si * 330.0; vec2 ch = blLevelHits(ro.y, rd, H);
+          float tc = ro.y < H ? ch.y : ch.x;                   // the deck curves down to the horizon
+          if (tc <= 0.0 || tc >= tS || tc > 5e5) continue;
           vec3 cp = ro + rd * tc;
-          float cd = skyCloudDensH(cp.xz, si * 0.5) * (1.0 - smoothstep(28000.0, 72000.0, tc));
+          float cd = skyCloudDensH(cp.xz, si * 0.5) * (1.0 - smoothstep(90000.0, 190000.0, tc));
           if (cd < 0.003) continue;
           float lit = 0.5 + 0.25 * si;
           vec3 cc = uSkySunColor * (0.2 * lit + skyPhaseHG(mu, 0.62) * (above ? 0.35 : 1.0) * (1.0 - cd * 0.65)) + uSkyAmbient * (0.7 + 0.35 * lit) + uSkyGlow * uSkyNight * 1.8;
@@ -199,9 +214,9 @@ const Post = (() => {
       else {
         col = col * (1.0 - cl.a) + cl.rgb;
         // cirrus veil (only the sky)
-        if (sky && rd.y > 0.0) {
-          float tci = (9000.0 - ro.y) / rd.y;
-          if (tci > 0.0) { vec3 cp = ro + rd * tci; float ci = skyCirrus(cp.xz) * smoothstep(0.0, 0.1, rd.y);
+        if (sky && rd.y > -0.05) {
+          vec2 cih = blLevelHits(ro.y, rd, 9000.0); float tci = ro.y < 9000.0 ? cih.y : cih.x;
+          if (tci > 0.0 && tci < 8e5) { vec3 cp = ro + rd * tci; float ci = skyCirrus(cp.xz) * smoothstep(-0.02, 0.1, rd.y) * (1.0 - smoothstep(2.5e5, 6e5, tci));
             vec3 cc = uSkySunColor * (0.16 + 0.8 * skyPhaseHG(mu, 0.6)) + uSkyAmbient * 0.8 + uSkyGlow * uSkyNight; col = mix(col, cc, ci * 0.55); }
         }
         col = col * fg.a + fg.rgb;

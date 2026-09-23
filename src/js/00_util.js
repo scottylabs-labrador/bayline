@@ -1,5 +1,24 @@
 // Shared helpers. build.py concatenates every src/js/*.js file (sorted by name) into ONE function
 // scope, so top-level consts declared here are visible to every later file. No imports/exports.
+// Earth curvature for every material: after the (precise, float64-composed) modelView transform, each vertex
+// drops by d²/2R, d = its horizontal distance from the camera, measured in view space so nothing near the camera
+// jitters. The world and all physics stay flat; only the picture bends, so horizons, far mountains, the Farallones
+// and cloud decks sink below the horizon as they do. Orthographic passes (shadow maps, impostor bakes) stay unbent:
+// shadow lookups use unbent world positions, so they remain consistent.
+const BEND_GLSL = `
+#ifndef BL_BEND
+#define BL_BEND
+vec4 blBend( vec4 mv ) {
+  vec3 bu = viewMatrix[ 1 ].xyz;                                   // world up, in view space
+  float bv = dot( mv.xyz, bu );
+  mv.xyz -= bu * max( dot( mv.xyz, mv.xyz ) - bv * bv, 0.0 ) * 7.848061e-8;   // 1 / (2 x 6371 km)
+  return mv;
+}
+#endif
+`;
+THREE.ShaderChunk.common += BEND_GLSL;
+THREE.ShaderChunk.project_vertex = THREE.ShaderChunk.project_vertex.replace('gl_Position = projectionMatrix * mvPosition;',
+  'if ( ! isOrthographic ) mvPosition = blBend( mvPosition );\ngl_Position = projectionMatrix * mvPosition;');
 const U = (() => {
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -75,6 +94,7 @@ const U = (() => {
   const uNight = { value: 0 };   // 0 = full day, 1 = full night
   const uTime = { value: 0 };    // seconds since page start (for animation)
   const uWind = { value: 0.4 };  // 0..1
-  return { clamp, lerp, invLerp, smooth, TAU, DEG, wrapAngle, rng, hash2, hashStr, noise2, fbm2,
+  const BEND_K = 1 / (2 * 6371000);   // drop (m) = BEND_K * d²
+  return { clamp, lerp, invLerp, smooth, TAU, DEG, wrapAngle, rng, hash2, hashStr, noise2, fbm2, BEND_K, BEND_GLSL,
            mergeGeometries, place, tint, canvasTexture, uNight, uTime, uWind };
 })();

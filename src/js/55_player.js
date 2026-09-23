@@ -68,7 +68,9 @@ const Player = (() => {
   function cars(tr) { return tr && tr.entry ? tr.entry.consist.cars : null; }
   function leadCar(tr) { const cs = cars(tr); if (!cs) return null; return tr.dir ? cs[0] : cs[cs.length - 1]; }
   function setFocus(key) { focus = key; Sim.setFocus(key); }
-  function groundAt(x, z) { const p = Stations.platformY(x, z); const t = Terrain.h(x, z); return p !== null ? Math.max(p, t) : Math.max(t, Terrain.isWater(x, z) ? 0.3 : t); }
+  function groundAt(x, z) {
+    if (typeof Globe !== 'undefined' && !Globe.inBayline(x, z)) return Math.max(Globe.h(x, z), 0);   // the rest of the planet
+    const p = Stations.platformY(x, z); const t = Terrain.h(x, z); return p !== null ? Math.max(p, t) : Math.max(t, Terrain.isWater(x, z) ? 0.3 : t); }
 
   function setMode(m, opts = {}) {
     const prev = mode;
@@ -314,7 +316,7 @@ const Player = (() => {
         if (down('KeyS', 'ArrowDown')) { fly.x -= fx * sp; fly.y -= fy * sp; fly.z -= fz * sp; }
         if (down('KeyD', 'ArrowRight')) { fly.x += rx * sp; fly.z += rz * sp; } if (down('KeyA', 'ArrowLeft')) { fly.x -= rx * sp; fly.z -= rz * sp; }
         if (down('KeyE', 'Space')) fly.y += sp; if (down('KeyQ', 'ControlLeft')) fly.y -= sp;
-        fly.x = U.clamp(fly.x, -52000, 52000); fly.z = U.clamp(fly.z, -52000, 52000); fly.y = U.clamp(fly.y, groundAt(fly.x, fly.z) + 1.8, 30000);
+        fly.x = U.clamp(fly.x, -300000, 300000); fly.z = U.clamp(fly.z, -300000, 300000); fly.y = U.clamp(fly.y, groundAt(fly.x, fly.z) + 1.8, 30000);
         c.position.set(fly.x, fly.y, fly.z); worldLook(look.yaw, look.pitch);
         break;
       }
@@ -323,7 +325,9 @@ const Player = (() => {
     const fovEff = c.aspect < 1 ? Math.min(100, 2 * Math.atan(Math.tan(fovTarget * U.DEG / 2) / Math.pow(c.aspect, 0.75)) / U.DEG) : fovTarget;
     c.fov = U.lerp(c.fov, fovEff, Math.min(1, dt * 4)); c.updateProjectionMatrix();
     // near plane: tiny indoors, larger outdoors at altitude (log depth handles the rest)
-    const alt = c.position.y - Terrain.h(c.position.x, c.position.z); c.near = mode === 'onboard' || mode === 'cab' ? 0.03 : alt > 500 ? 1 : 0.1; c.updateProjectionMatrix();
+    const alt = c.position.y - groundAt(c.position.x, c.position.z); c.near = mode === 'onboard' || mode === 'cab' ? 0.03 : alt > 500 ? 1 : 0.1;
+    // far plane: past the geometric horizon (the globe draws the rest of the planet; log depth keeps precision)
+    c.far = U.clamp(Math.sqrt(2 * 6371000 * Math.max(c.position.y, 0) + 1e8) * 1.25 + 60000, 140000, 900000); c.updateProjectionMatrix();
   }
   function pickTrackside(tr) {
     const sgn = tr.dir ? 1 : -1; const r = Math.random;

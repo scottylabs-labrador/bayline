@@ -424,7 +424,7 @@ const Towns = (() => {
     uniforms: { uNight: U.uNight },
     vertexShader: `#include <common>
       #include <logdepthbuf_pars_vertex>
-      varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * blBend(modelViewMatrix * instanceMatrix * vec4(position, 1.0));
       #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `#include <common>
@@ -445,7 +445,7 @@ const Towns = (() => {
         // a lamp's glare: luminaire-sized up close (a big halo 20 m away reads as a moon), a minimum on-screen size far away
         float dist = length(c.xyz); float s = mix(0.8, 2.4 + dist * 0.004, smoothstep(8.0, 160.0, dist));
         c.xyz += normalize(-c.xyz) * 0.6;
-        c.xy += (uv - 0.5) * s; vA = uNight * clamp(2.4 / s, 0.25, 1.0); gl_Position = projectionMatrix * c;
+        c.xy += (uv - 0.5) * s; vA = uNight * clamp(2.4 / s, 0.25, 1.0); gl_Position = projectionMatrix * blBend(c);
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `#include <common>
