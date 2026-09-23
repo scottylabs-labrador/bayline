@@ -116,7 +116,7 @@ const Globe = (() => {
   function hAt(lat, lon) {
     for (let z = HZ_MAX; z >= 0; z--) {
       const fx = tx(lon, z), fy = ty(lat, z); const r = hrec.get(key(z, Math.floor(fx), Math.floor(fy)));
-      if (r && r.state === 2) return seaClamp(sampleRec(r, fx, fy));
+      if (r && r.state === 2) { let v = sampleRec(r, fx, fy); if (v > 0 && typeof Airports !== 'undefined') { const F = Airports.runwaysIn(lat - 1e-4, lat + 1e-4, lon - 1e-4, lon + 1e-4); if (F) v = Airports.flattenH(F, lat, lon, v); } return seaClamp(v); }
     }
     return 0;
   }
@@ -193,10 +193,11 @@ const Globe = (() => {
 
   // ------------------------------------------------------------------ material
   const shared = { uExcl: { value: new THREE.Vector4(BX0, BZ0, BX0 + BS, BZ0 + BS) }, uExclOn: { value: 1 }, night: U.uNight,
-    uWaveN: { value: null }, uWindW: U.uWind, uWaveT: U.uTime, uDebug: { value: 0 } };
+    uWaveN: { value: null }, uWindW: U.uWind, uWaveT: U.uTime, uDebug: { value: 0 }, uGround: { value: null } };
   function makeMaterial() {
     if (!shared.uWaveN.value && Terrain.waveTexture) shared.uWaveN.value = Terrain.waveTexture();
-    const u = Object.assign({ iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 } }, shared);
+    if (!shared.uGround.value && Terrain.groundDetail) shared.uGround.value = Terrain.groundDetail();
+    const u = Object.assign({ iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 10 }, iEox: { value: 1 } }, shared);
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0, envMapIntensity: 0.5 });
     m.userData.u = u; m.customProgramCacheKey = () => 'bayline-globe-v2';
     m.onBeforeCompile = (sh) => {
@@ -208,6 +209,9 @@ const Globe = (() => {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform vec4 uExcl; uniform float uExclOn; uniform float night; uniform float uDebug;
+          uniform sampler2D uGround; uniform float iTexel; uniform float iEox;
+          float gh1(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+          float gn1(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(gh1(i), gh1(i+vec2(1,0)), f.x), mix(gh1(i+vec2(0,1)), gh1(i+vec2(1,1)), f.x), f.y); }
           varying vec3 vGW; varying vec2 vGUv; varying float vGH; varying vec3 vGN; vec3 gGN; float gGRough; float gGWater;
           ${Terrain.WATER_GLSL ? Terrain.WATER_GLSL() : ''}`)
         .replace('#include <color_fragment>', `#include <color_fragment>
@@ -215,12 +219,28 @@ const Globe = (() => {
             if (uExclOn > 0.5 && vGW.x > uExcl.x && vGW.x < uExcl.z && vGW.z > uExcl.y && vGW.z < uExcl.w) discard;   // Bayline draws here
             float fwq = fwidth(vGW.x) + fwidth(vGW.z), depth = clamp(-vGH, 0.0, 30.0), fwDepth = fwidth(depth);
             vec3 col = iHas > 0.5 ? texture2D(iTex, iUV.xy + vGUv * iUV.zw).rgb : vec3(0.18, 0.2, 0.16);
+            // Sentinel-2 mosaics are darker and cooler than the colour-balanced NAIP the Bayline square uses
+            col = mix(col, pow(col, vec3(0.88)) * vec3(1.34, 1.3, 1.2), iEox);
             // water: at or below sea level (bathymetry) and water-coloured in the photo (polders stay land)
             vec3 pc = pow(max(col, vec3(0.0)), vec3(1.0 / 2.2));
             float lum = dot(pc, vec3(0.299, 0.587, 0.114));
             float blu = smoothstep(-0.02, 0.06, pc.b - pc.r) * (1.0 - smoothstep(0.42, 0.62, lum));
             gGWater = (1.0 - smoothstep(-0.2, 0.6, vGH)) * max(blu, 1.0 - smoothstep(0.1, 0.22, lum));
             gGN = normalize(vGN); gGRough = 0.93;
+            // close to the ground a Sentinel-2 pixel (5-10 m) covers many screen pixels: add real surface texture (grass,
+            // soil, asphalt, concrete from the Bayline detail set) tinted by the photo, plus metre-scale variation,
+            // fading in only as the image gets magnified
+            vec2 q = vGW.xz; vec2 qdx = dFdx(q), qdy = dFdy(q);
+            float mag = 1.0 - smoothstep(0.35, 1.2, fwq / max(iTexel, 0.5));
+            if (mag > 0.01 && gGWater < 0.5) {
+              vec4 gd = mix(textureGrad(uGround, q / 2.5, qdx / 2.5, qdy / 2.5), textureGrad(uGround, q / 7.3 + 0.37, qdx / 7.3, qdy / 7.3), 0.4) - 0.5;
+              float sat = (max(pc.r, max(pc.g, pc.b)) - min(pc.r, min(pc.g, pc.b))) / max(lum, 0.03);
+              float veg = smoothstep(-0.01, 0.04, pc.g - max(pc.r * 0.97, pc.b)), grey = 1.0 - smoothstep(0.1, 0.24, sat);
+              float det = mix(mix(gd.g * 1.8, (lum < 0.3 ? gd.r * 1.8 : gd.a * 1.4), grey), gd.b * 1.9, veg * (1.0 - grey * 0.6));
+              float fwn = fwq;
+              float v1 = mix(0.5, gn1(q / 6.0), 1.0 - smoothstep(1.5, 5.0, fwn)), v2 = mix(0.5, gn1(q / 1.7 + 3.1), 1.0 - smoothstep(0.4, 1.5, fwn));
+              col *= 1.0 + mag * (det + (v1 - 0.5) * 0.22 + (v2 - 0.5) * 0.14);
+            }
             #ifdef BL_WATER
             if (gGWater > 0.0) blWater(vGW.xz, depth, gGWater, fwq, fwDepth, gGWater, 1.0, col, gGN, gGRough);
             #endif
@@ -256,11 +276,13 @@ const Globe = (() => {
     const sz = 2 ** n.z, geo = n.mesh ? n.mesh.geometry : new THREE.BufferGeometry();
     const pos = new Float32Array((NV + 4 * N) * 3), nrm = new Float32Array((NV + 4 * N) * 3), uv = new Float32Array((NV + 4 * N) * 2), wat = new Float32Array(NV + 4 * N);   // wat: raw height (bathymetry)
     const lats = new Float64Array(V); for (let j = 0; j < V; j++) lats[j] = latOf(n.y + j / N, n.z);
+    const F = n.z >= 11 && typeof Airports !== 'undefined' ? Airports.runwaysIn(n.latS, n.latN, n.lonW, n.lonE) : null;   // flatten under runways
     let mn = 1e9, mx = -1e9;
     for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
       const k = j * V + i, lon = n.lonW + (n.lonE - n.lonW) * i / N, lat = lats[j];
       let hv = 0;
       if (hr) { const d = n.z - hr.z; const s = d >= 0 ? 1 / (1 << d) : (1 << -d); hv = sampleRec(hr, (n.x + i / N) * s, (n.y + j / N) * s); }
+      if (F && hv > 0) hv = Airports.flattenH(F, lat, lon, hv);
       wat[k] = hv;
       const y = seaClamp(hv); if (y < mn) mn = y; if (y > mx) mx = y;
       pos[k * 3] = (lon - frame.lon0) * frame.mlon - cx; pos[k * 3 + 1] = y; pos[k * 3 + 2] = -(lat - frame.lat0) * frame.mlat - cz;
@@ -353,7 +375,7 @@ const Globe = (() => {
       const us = inUS(L.latC, L.lonC), iz = Math.min(L.z, us ? 16 : 14);
       const id = L.z - iz; needI(iz, L.x >> id, L.y >> id, prio + 0.5, us);
       const ir = bestI(L.z, L.x, L.y); const u = n.mesh.material.userData.u;
-      if (ir) { const dd = L.z - ir.z, s = 1 / (1 << dd); u.iTex.value = ir.tex; u.iUV.value.set((L.x - (ir.x << dd)) * s, (L.y - (ir.y << dd)) * s, s, s); u.iHas.value = 1; }
+      if (ir) { const dd = L.z - ir.z, s = 1 / (1 << dd); u.iTex.value = ir.tex; u.iUV.value.set((L.x - (ir.x << dd)) * s, (L.y - (ir.y << dd)) * s, s, s); u.iHas.value = 1; u.iTexel.value = L.size / 256 / s; u.iEox.value = ir.src === 'eox' ? 1 : 0; }
       else u.iHas.value = 0;
       n.mesh.visible = true; drawn.push(n);
     }
@@ -374,10 +396,11 @@ const Globe = (() => {
     for (const [k2, r] of irec) if (r.state === 1 && r.used < frameNo - 120 && r.job) { r.job.cancelled = true; irec.delete(k2); }
     for (const [k2, r] of hrec) if (r.state === 1 && r.used < frameNo - 120 && r.job) { r.job.cancelled = true; hrec.delete(k2); }
   }
+  function invalidate() { for (const n of nodes.values()) n.hKey = -2; }
   function init() {
     try { maxAniso = Math.min(8, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
     Env.scene.add(group);
   }
-  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, maybeRebase, inBayline, h, hAt, ensure, lodK,
+  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, maybeRebase, invalidate, inBayline, h, hAt, ensure, lodK,
     set enabled(v) { enabled = !!v; }, get enabled() { return enabled; }, tx, ty, lonOf, latOf, inUS };
 })();

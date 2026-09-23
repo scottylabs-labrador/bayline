@@ -74,7 +74,9 @@ const Player = (() => {
   function leadCar(tr) { const cs = cars(tr); if (!cs) return null; return tr.dir ? cs[0] : cs[cs.length - 1]; }
   function setFocus(key) { focus = key; Sim.setFocus(key); }
   function groundAt(x, z) {
-    if (typeof Globe !== 'undefined' && !Globe.inBayline(x, z)) return Math.max(Globe.h(x, z), 0);   // the rest of the planet
+    const ap = typeof Airports !== 'undefined' ? Airports.groundAt(x, z) : null;
+    if (typeof Globe !== 'undefined' && !Globe.inBayline(x, z)) return Math.max(Globe.h(x, z), 0, ap ?? -1e9);   // the rest of the planet
+    if (ap !== null) return Math.max(ap, Terrain.h(x, z));
     const p = Stations.platformY(x, z); const t = Terrain.h(x, z); return p !== null ? Math.max(p, t) : Math.max(t, Terrain.isWater(x, z) ? 0.3 : t); }
 
   function setMode(m, opts = {}) {
