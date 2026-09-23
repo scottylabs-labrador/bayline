@@ -252,7 +252,9 @@ const Terrain = (() => {
           varying vec3 vW; varying vec2 vUV;`)
         .replace('#include <beginnormal_vertex>', `
           vec2 uvn = position.xz + 0.5;
-          float hq = texture2D(hTex, (hUV.xy + uvn * hUV.zw) * hTC.x + hTC.y).r + hInfo.x;
+          // the heights carry bathymetry (the Golden Gate is ~110 m deep): open water is drawn at sea level, while the
+          // fragment shader still reads the true depth for the water colour
+          float hq = max(texture2D(hTex, (hUV.xy + uvn * hUV.zw) * hTC.x + hTC.y).r + hInfo.x, 0.0);
           vec3 objectNormal = vec3(0.0, 1.0, 0.0);`)
         .replace('#include <begin_vertex>', `
           vec3 transformed = vec3(position.x, hq - position.y * skirt, position.z);
@@ -288,6 +290,7 @@ const Terrain = (() => {
             vec2 tc = (hUV.xy + vUV * hUV.zw) * hTC.x + hTC.y; float e = hInfo.z;
             float hl = texture2D(hTex, tc - vec2(e, 0.0)).r, hr = texture2D(hTex, tc + vec2(e, 0.0)).r;
             float hd = texture2D(hTex, tc - vec2(0.0, e)).r, hu = texture2D(hTex, tc + vec2(0.0, e)).r;
+            hl = max(hl + hInfo.x, 0.0); hr = max(hr + hInfo.x, 0.0); hd = max(hd + hInfo.x, 0.0); hu = max(hu + hInfo.x, 0.0);   // sea level
             vec3 nW = normalize(vec3(hl - hr, 2.0 * hInfo.y, hd - hu));
             vec4 mk = texture2D(mTex, (mUV.xy + vUV * mUV.zw) * mTC.x + mTC.y);
             float water = smoothstep(0.45, 0.6, mk.r);
@@ -519,10 +522,10 @@ const Terrain = (() => {
         const T = tileSize(L); let fx = (x - X0 - tx * T) / T * 128, fz = (z - Z0 - ty * T) / T * 128;
         fx = fx < 0 ? 0 : fx > 127.999 ? 127.999 : fx; fz = fz < 0 ? 0 : fz > 127.999 ? 127.999 : fz;
         const i = fx | 0, j = fz | 0, u = fx - i, v = fz - j, k = j * HS + i, H = r.h;
-        return H[k] * (1 - u) * (1 - v) + H[k + 1] * u * (1 - v) + H[k + HS] * (1 - u) * v + H[k + HS + 1] * u * v;
+        return Math.max(0, H[k] * (1 - u) * (1 - v) + H[k + 1] * u * (1 - v) + H[k + HS] * (1 - u) * v + H[k + HS + 1] * u * v);   // sea level (see the vertex shader)
       }
     }
-    return fallbackH(x, z);
+    return Math.max(0, fallbackH(x, z));
   }
   // L7 tiles (or the finest existing level) needed for a rectangle
   function detailTiles(x0, z0, x1, z1) {
