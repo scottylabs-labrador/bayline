@@ -1424,13 +1424,13 @@ const Life = (() => {
   // ==========================================================================================
   function birdGeo(kind) {
     const P = []; const add = (g, hex, side, span) => { g = prep(g); const c = lin(hex); constAttr(g, 'aBCol', [c.r, c.g, c.b]); constAttr(g, 'aWing', [side, span]); P.push(g); };
-    const K = { gull: { L: 0.44, S: 0.7, body: 0xf4f4f2, wing: 0xb9bfc5, tip: 0x1a1a1a, bill: 0xe0b020 },
-      pelican: { L: 1.15, S: 1.15, body: 0x8a7b68, wing: 0x6b5d4f, tip: 0x2a2520, bill: 0xb89a6a },
-      crow: { L: 0.45, S: 0.46, body: 0x141416, wing: 0x18181b, tip: 0x0e0e10, bill: 0x111111 },
-      pigeon: { L: 0.32, S: 0.33, body: 0x80838c, wing: 0x8e919a, tip: 0x3a3c42, bill: 0x2a2a2a } }[kind];
+    const K = { gull: { L: 0.44, S: 0.7, bw: 0.15, body: 0xf4f4f2, head: 0xf6f6f4, wing: 0xb9bfc5, tip: 0x1a1a1a, bill: 0xe0b020 },
+      pelican: { L: 1.15, S: 1.15, bw: 0.17, body: 0x8a7b68, head: 0xe8e0cc, wing: 0x6b5d4f, tip: 0x2a2520, bill: 0xb89a6a },
+      crow: { L: 0.45, S: 0.46, bw: 0.15, body: 0x141416, head: 0x121214, wing: 0x18181b, tip: 0x0e0e10, bill: 0x111111 },
+      pigeon: { L: 0.32, S: 0.33, bw: 0.22, body: 0x6b6e78, head: 0x4a4f5c, wing: 0x7c7f89, tip: 0x2e3036, bill: 0x2a2a2a } }[kind];
     const L = K.L, S = K.S;
-    add(sph(1, 7, 5, 0, 0, 0, L * 0.5, L * 0.16, L * 0.16), K.body, 0, 0);
-    add(sph(L * 0.11, 6, 4, L * 0.46, L * 0.06, 0), kind === 'pelican' ? 0xe8e0cc : K.body, 0, 0);
+    add(sph(1, 8, 6, 0, 0, 0, L * 0.42, L * K.bw, L * K.bw * 1.05), K.body, 0, 0);
+    add(sph(L * 0.11, 6, 5, L * 0.42, L * 0.08, 0), K.head, 0, 0);
     { const b = new THREE.ConeGeometry(L * 0.035, kind === 'pelican' ? L * 0.45 : L * 0.14, 5); b.rotateZ(-Math.PI / 2); b.translate(L * (kind === 'pelican' ? 0.78 : 0.62), L * 0.04, 0); add(b, K.bill, 0, 0); }
     { const t = new THREE.ConeGeometry(L * 0.12, L * 0.3, 4); t.rotateZ(Math.PI / 2); t.scale(1, 0.3, 1); t.translate(-L * 0.55, 0, 0); add(t, K.wing, 0, 0); }
     for (const s of [-1, 1]) {
@@ -1475,9 +1475,10 @@ const Life = (() => {
         float cyc = fract(t * 0.023 + ph * 0.137);
         fly = smoothstep(0.9, 0.92, cyc) * (1.0 - smoothstep(0.975, 1.0, cyc));
         float ang = ph * 5.0 + t * 0.12 / max(0.5, aB0.w);
-        pos = aB0.xyz + vec3(cos(ang) * aB0.w, fly * 2.4, -sin(ang) * aB0.w);
-        yaw = ang - 1.5708;
-        pitch = -0.45 * max(0.0, sin(t * 3.1 + ph * 7.0)) * (1.0 - fly) * step(0.4, fract(t * 0.2 + ph));
+        pos = aB0.xyz + vec3(cos(ang) * aB0.w, fly * 2.4 + 0.1 * scl * (1.0 - fly), -sin(ang) * aB0.w);   // standing on its legs
+        yaw = ang + 1.5708;
+        float peck = max(0.0, sin(t * 3.1 + ph * 7.0)) * step(0.4, fract(t * 0.2 + ph));
+        pitch = (0.32 - 0.8 * peck) * (1.0 - fly);
         flapAmp = 0.9 * fly;
         flapMean = mix(0.0, 0.1, fly);
       }

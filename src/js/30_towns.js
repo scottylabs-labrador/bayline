@@ -538,8 +538,8 @@ const Towns = (() => {
   // anything straddling the tracks, and whatever the engine marks with ctx.keepOut(x, z).
   function skipBuilding(b, T) {
     const P = b.pts, n = P.length / 2; let cx = 0, cz = 0;
-    for (let i = 0; i < n; i++) { cx += P[i * 2]; cz += P[i * 2 + 1]; } cx = T.ox + cx / n; cz = T.oz + cz / n;
-    const td = ctx.trackDist(cx, cz);
+    for (let i = 0; i < n; i++) { cx += P[i * 2]; cz += P[i * 2 + 1]; }
+    const td = T.td ? T.td(cx / n, cz / n) : ctx.trackDist(T.ox + cx / n, T.oz + cz / n); cx = T.ox + cx / n; cz = T.oz + cz / n;
     if (td < 7 || ((b.kind === 5 || b.kind === 6 || b.kind === 7) && td < 22)) return true;
     if (b.kind === 6) for (const s of stationW) if (Math.hypot(s.x - cx, s.z - cz) < 160) return true;
     return !!(ctx.keepOut && ctx.keepOut(cx, cz));
@@ -962,7 +962,13 @@ const Towns = (() => {
     const seed = (t.tx * 73856093) ^ (t.tz * 19349663);
     const rnd = U.rng(seed);
     const objs = [];
+    // distance to the tracks: exact only near them (ctx.trackDist can be costly); 125 m coarse samples give a lower bound
+    const tdc = new Float32Array(81);
+    for (let j = 0; j < 9; j++) for (let i = 0; i < 9; i++) tdc[j * 9 + i] = ctx.trackDist(T.ox + i * 125, T.oz + j * 125);
+    const td = t.td = (x, z) => { const i = Math.min(8, Math.max(0, Math.round(x / 125))), j = Math.min(8, Math.max(0, Math.round(z / 125)));
+      const lb = tdc[j * 9 + i] - Math.hypot(x - i * 125, z - j * 125); return lb > 45 ? lb : ctx.trackDist(T.ox + x, T.oz + z); };
     // --- OSM buildings
+    T.td = td;
     const bg = new GB([['aWin', 4], ['aWallUv', 2]]);
     for (let i = 0; i < T.b.length; i++) { buildingInto(bg, T.b[i], T, hf, seed & 0xffff, i, hi); if ((i & 15) === 15 && now() > deadline) yield; }
     const bgeo = bg.build();
@@ -1037,7 +1043,7 @@ const Towns = (() => {
             const cx = cxs + nxs * off, cz = czs + nzs * off;
             if (cx < 0 || cx >= TILE || cz < 0 || cz >= TILE) continue;   // each tile owns the houses centred in it
             if (!rectFree(cx, cz, ux * side, uz * side, W / 2 + (sfRow ? 0 : 0.8), D / 2 + 0.5, O_PARK)) continue;   // backyards don't block street houses
-            if (ctx.trackDist(T.ox + cx, T.oz + cz) < 15 + Math.max(W, D) * 0.5 || (ctx.keepOut && ctx.keepOut(T.ox + cx, T.oz + cz))) continue;
+            if (td(cx, cz) < 15 + Math.max(W, D) * 0.5 || (ctx.keepOut && ctx.keepOut(T.ox + cx, T.oz + cz))) continue;
             const g0 = hf(cx, cz), g1 = hf(cx + nxs * D * 0.5, cz + nzs * D * 0.5), g2 = hf(cx - nxs * D * 0.5, cz - nzs * D * 0.5);
             if (Math.abs(g1 - g2) > 4.5) continue;
             markRect(cx, cz, ux * side, uz * side, W / 2 + (sfRow ? 0 : 0.6), D / 2 + (sfRow ? 0 : 0.6), O_HOUSE);
@@ -1063,7 +1069,7 @@ const Towns = (() => {
                 flatQuad(yards, dcx, dcz, ux, uz, 1.6, setback / 2 + 0.3, COL.drive, driveEx, 0.12);
               }
               if (rnd() < 0.75) { const bx2 = cx + nxs * (D / 2 + 3 + rnd() * 4) + ux * (rnd() - 0.5) * W, bz2 = cz + nzs * (D / 2 + 3 + rnd() * 4) + uz * (rnd() - 0.5) * W;
-                if (ctx.trackDist(T.ox + bx2, T.oz + bz2) > 9) (region >= 4 && rnd() < 0.12 ? trees.palm : rnd() < 0.12 ? trees.conifer : rnd() < 0.08 ? trees.euc : trees.broad).push([bx2, hf(bx2, bz2), bz2, 0.8 + rnd() * 0.7]); }
+                if (td(bx2, bz2) > 9) (region >= 4 && rnd() < 0.12 ? trees.palm : rnd() < 0.12 ? trees.conifer : rnd() < 0.08 ? trees.euc : trees.broad).push([bx2, hf(bx2, bz2), bz2, 0.8 + rnd() * 0.7]); }
               if (rnd() < 0.3) { const fx = cxs + nxs * (edge + setback * 0.5) - ux * W * 0.25, fz = czs + nzs * (edge + setback * 0.5) - uz * W * 0.25;
                 trees.broad.push([fx, hf(fx, fz), fz, 0.6 + rnd() * 0.5]); }
             }
@@ -1072,7 +1078,7 @@ const Towns = (() => {
           if (res && rnd() < (region === 0 ? 0.35 : 0.8)) for (const side of [-1, 1]) {
             if (rnd() < 0.25) continue;
             const o = r.width / 2 + (region >= 1 ? 0.9 : 0.8), px = cxs + (-uz * side) * o, pz = czs + (ux * side) * o;
-            if (px >= 0 && px < TILE && pz >= 0 && pz < TILE && ctx.trackDist(T.ox + px, T.oz + pz) > 9 && occAt(px, pz) !== O_PARK)
+            if (px >= 0 && px < TILE && pz >= 0 && pz < TILE && td(px, pz) > 9 && occAt(px, pz) !== O_PARK)
               (region === 4 && rnd() < 0.2 ? trees.palm : trees.broad).push([px, hf(px, pz), pz, 0.75 + rnd() * 0.6]);
           }
           s += lot;
@@ -1117,7 +1123,7 @@ const Towns = (() => {
           }
           const turn = rnd() < 0.5, ax = turn ? -uz : ux, az = turn ? ux : uz;   // local X axis of the footprint
           if (!rectFree(cx, cz, ax, az, W / 2 + 2, D / 2 + 2)) continue;
-          if (ctx.trackDist(T.ox + cx, T.oz + cz) < 18 + Math.max(W, D) * 0.5 || (ctx.keepOut && ctx.keepOut(T.ox + cx, T.oz + cz))) continue;
+          if (td(cx, cz) < 18 + Math.max(W, D) * 0.5 || (ctx.keepOut && ctx.keepOut(T.ox + cx, T.oz + cz))) continue;
           const nzx = -az, nzz = ax, g0 = hf(cx, cz), g1 = hf(cx + nzx * D * 0.5, cz + nzz * D * 0.5), g2 = hf(cx - nzx * D * 0.5, cz - nzz * D * 0.5);
           if (Math.abs(g1 - g2) > 4.5) continue;
           markRect(cx, cz, ax, az, W / 2 + 4, D / 2 + 5, O_HOUSE);
@@ -1147,7 +1153,7 @@ const Towns = (() => {
         const ux = (bx - ax) / (L || 1), uz = (bz - az) / (L || 1);
         for (; next < u0 + L; next += gapL) {
           const s0 = next - u0, o = r.width / 2 + (r.cls <= 9 ? 1.0 : 0.7), px = ax + ux * s0 - uz * o * side, pz = az + uz * s0 + ux * o * side;
-          if (px >= 0 && px < TILE && pz >= 0 && pz < TILE && ctx.trackDist(T.ox + px, T.oz + pz) > 6)
+          if (px >= 0 && px < TILE && pz >= 0 && pz < TILE && td(px, pz) > 6)
             lights.push([px, hf(px, pz) + 0.3, pz, Math.atan2(uz * side, -ux * side)]);   // arm reaches over the street
           if (r.cls <= 7 || !(r.flags & 1)) side = -side;
         }
@@ -1156,7 +1162,7 @@ const Towns = (() => {
     }
     // OSM-mapped trees and park trees
     for (const tr of T.t) { const arr = tr.kind === 1 ? trees.palm : tr.kind === 2 ? trees.conifer : tr.kind === 3 ? trees.euc : trees.broad;
-      if (ctx.trackDist(T.ox + tr.x, T.oz + tr.z) > 7) arr.push([tr.x, hf(tr.x, tr.z), tr.z, [0.6, 0.9, 1.25, 1.6][tr.size] || 1]); }
+      if (td(tr.x, tr.z) > 7) arr.push([tr.x, hf(tr.x, tr.z), tr.z, [0.6, 0.9, 1.25, 1.6][tr.size] || 1]); }
     for (const a of T.a) {
       if (now() > deadline) yield;
       if (a.kind !== 0 && a.kind !== 5) continue;
@@ -1165,7 +1171,7 @@ const Towns = (() => {
       for (let k = 0, tries = 0; k < cnt && tries < cnt * 4; tries++) {
         const x = minx + rnd() * (maxx - minx), z = minz + rnd() * (maxz - minz);
         let inside = false; for (let i = 0, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside; }
-        if (!inside || occAt(x, z) >= O_HOUSE || ctx.trackDist(T.ox + x, T.oz + z) < 9) continue;
+        if (!inside || occAt(x, z) >= O_HOUSE || td(x, z) < 9) continue;
         (rnd() < 0.1 ? trees.conifer : rnd() < 0.08 ? trees.euc : trees.broad).push([x, hf(x, z), z, 0.8 + rnd() * 0.8]); k++;
       }
     }

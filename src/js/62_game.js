@@ -20,7 +20,7 @@ const Game = (() => {
     const D = Sim.startDrive(plan, { auto: !!opts.auto });
     D.s = Sim.stopS(plan.trip.stops[k0][0], plan.dir); D.v = 0;
     D.doorsTarget = 1; D.doors = 1; D.doorSideNow = Sim.doorSide(plan.trip.stops[k0][0], plan.dir);
-    run = { plan, trip: plan.trip, dir: plan.dir, k: k0 + 1, endK: opts.endK !== undefined ? opts.endK : plan.trip.stops.length - 1, atK: k0, dwellT: 0, score: 0, pax: 60 + Math.floor(Math.random() * 60),
+    run = { plan, trip: plan.trip, dir: plan.dir, k0, k: k0 + 1, endK: opts.endK !== undefined ? opts.endK : plan.trip.stops.length - 1, atK: k0, dwellT: 0, score: 0, pax: 60 + Math.floor(Math.random() * 60),
       stats: { stops: 0, ontime: 0, perfect: 0, errSum: 0, overs: 0, maxOver: 0, reds: 0, emerg: 0, missed: 0, harsh: 0, dist: 0, t0: Env.time.sec }, over: 0, ptc: 0, lastSig: 2, log: [],
       state: 'dwell', departOK: false, title: opts.title || '', announced: {}, mission: opts.mission || null };
     Player.setFocus(plan.key); Player.setMode('cab');
@@ -31,12 +31,12 @@ const Game = (() => {
     if (!run) return;
     const r = run; run = null; Sim.stopDrive();
     const st = r.stats; const mins = (Env.time.sec - st.t0) / 60;
-    const grade = r.score >= 900 ? 'A+' : r.score >= 700 ? 'A' : r.score >= 500 ? 'B' : r.score >= 300 ? 'C' : r.score >= 100 ? 'D' : 'F';
-    const key = r.trip.route + ':' + r.trip.stops[0][0] + '>' + r.trip.stops[r.endK][0];
+    const q = r.score / Math.max(220, (r.endK - r.k0) * 220); const grade = q >= 0.95 ? 'A+' : q >= 0.85 ? 'A' : q >= 0.7 ? 'B' : q >= 0.5 ? 'C' : q >= 0.3 ? 'D' : 'F';
+    const key = r.trip.route + ':' + r.trip.stops[r.k0][0] + '>' + r.trip.stops[r.endK][0];
     const prev = best[key]; if (completed && (!prev || r.score > prev)) { best[key] = r.score; saveBest(); }
     emit('result', { kicker: completed ? 'Run complete' : 'Run ended', title: completed ? (grade.startsWith('A') ? 'Beautifully driven' : grade === 'B' ? 'Solid run' : 'You made it') : 'Off duty early',
       score: Math.round(r.score), grade, lines: [
-        `${Sim.routeShort(r.trip)} ${r.trip.id} · ${name(r.trip.stops[0][0])} → ${name(r.trip.stops[r.endK][0])} · ${(st.dist / 1609.34).toFixed(1)} mi in ${mins.toFixed(0)} min`,
+        `${Sim.routeShort(r.trip)} ${r.trip.id} · ${name(r.trip.stops[r.k0][0])} → ${name(r.trip.stops[r.endK][0])} · ${(st.dist / 1609.34).toFixed(1)} mi in ${mins.toFixed(0)} min`,
         `Station stops: ${st.stops} · on time ${st.ontime} · perfect marks ${st.perfect}${st.stops ? ` · average error ${(st.errSum / st.stops).toFixed(1)} m` : ''}`,
         `Speeding: ${st.overs ? st.overs + ' warnings, worst +' + st.maxOver.toFixed(0) + ' mph' : 'none'} · red signals ${st.reds} · emergency stops ${st.emerg} · missed stops ${st.missed}`,
         prev ? `Best on this run: ${prev}` : 'First time on this run',

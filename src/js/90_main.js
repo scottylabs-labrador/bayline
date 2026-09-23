@@ -18,7 +18,9 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     TrackGeo.init();
     await step(0.58, 'Reading the timetable…');
     await Sim.init();
-    const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.h(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), stationList: Stations.list.map(s => ({ id: s.id, name: s.name, x: s.x, z: s.z, s: s.s })) };
+    const keepOut = (x, z) => { const L = World.landmarks; if (!L) return false; for (const l of L.list) { const r = l.radius || 0; if (r > 0 && Math.abs(x - l.x) < r && Math.abs(z - l.z) < r && Math.hypot(x - l.x, z - l.z) < r) return true; } return false; };
+    const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.h(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), isWater: (x, z) => Terrain.isWater(x, z), keepOut,
+      stationList: Stations.list.map(s => ({ id: s.id, name: s.name, x: s.x, z: s.z, s: s.s })) };
     if (typeof Towns !== 'undefined') { await step(0.64, 'Raising the towns…'); await safeA('towns', async () => { await Towns.init(ctx); Env.scene.add(Towns.group); }); }
     if (typeof Landmarks !== 'undefined') { await step(0.8, 'Placing landmarks…'); World.landmarks = safe('landmarks', () => { const L = Landmarks.build(ctx); Env.scene.add(L.group); return L; }); }
     if (typeof Life !== 'undefined') {
@@ -161,7 +163,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Terrain.update(Env.camera);
     TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp);
     Stations.update(dt, cp, Sim.running);
-    if (typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => Towns.update(cp, envArg));
+    if (typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
     if (World.air) safeFrame('air', () => World.air.update(dt, envArg));
     if (World.birds) safeFrame('birds', () => World.birds.update(dt, envArg));
@@ -174,6 +176,6 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Env.renderer.render(Env.scene, Env.camera);
   }
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
-  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start };
+  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null };
   requestAnimationFrame(frame);
 })();

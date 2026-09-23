@@ -25,6 +25,15 @@ const Landmarks = (() => {
     MAT.lights.userData.lightKey = true; MAT.beacon.userData.lightKey = true;
     return MAT;
   }
+  let PTS = null;
+  function pointsMaterial(key) {
+    if (!PTS) {
+      PTS = { lights: new THREE.PointsMaterial({ size: 2.2, sizeAttenuation: false, vertexColors: true, toneMapped: false }),
+              beacon: new THREE.PointsMaterial({ size: 3.4, sizeAttenuation: false, vertexColors: true, toneMapped: false }) };
+      PTS.lights.visible = PTS.beacon.visible = false;
+    }
+    return PTS[key];
+  }
   const extraMaterials = [];   // per-landmark textured materials that need night updates
   function trackMat(m, kind) { m.userData.nightKind = kind; extraMaterials.push(m); return m; }
 
@@ -137,6 +146,12 @@ const Landmarks = (() => {
         mesh.receiveShadow = !isLight;
         this.tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
         group.add(mesh);
+        if (key === 'lights' || key === 'beacon') {       // far-visible light points (constant pixel size, night only)
+          const pp = [], pc = [];
+          for (const gg of geos) { gg.computeBoundingBox(); const b = gg.boundingBox, c = gg.attributes.color; pp.push((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2); pc.push(c.getX(0), c.getY(0), c.getZ(0)); }
+          const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3)); pg.setAttribute('color', new THREE.Float32BufferAttribute(pc, 3)); pg.computeBoundingSphere();
+          const pts = new THREE.Points(pg, pointsMaterial(key)); pts.name = (opts.name || '') + ':' + key + '-points'; pts.renderOrder = -1; group.add(pts);
+        }
       }
       this.parts.clear(); return group;
     }
@@ -326,7 +341,7 @@ const Landmarks = (() => {
       k.extrude('smooth', 0xe7e3da, [[hw0 - 4, y0], [hw0 + 5.5, y0 + 10], [hw1 + 3, y1], [hw1 - 1, y1]], 12, 0, 0, -6, 0, sgn > 0 ? 0 : Math.PI, 0);
     }
     // spire
-    k.pyramid('smooth', 0xe7e3da, 15, 15, 55, 0, 205, 0);
+    k.pyramid(floodWarm(), 0xe7e3da, 15, 15, 55, 0, 205, 0);
     k.box('lights', 0xfff3d0, 0.8, 0.8, 0.8, 0, 260, 0);
     k.toGroup(g, { name: 'transamerica' });
     return g;
@@ -446,7 +461,7 @@ const Landmarks = (() => {
     const g = seatedGroup(ctx, 37.767888, -122.387421, { bearing: 0 });
     const k = new Kit();
     k.lathe('glass', 0x7b95a6, [[0, 0], [70, 0], [70, 9], [0, 9]], 40, 0, 0, 0, 1, 0.84);
-    k.lathe('smooth', 0xeee9df, [[66, 9], [72, 9], [73, 16], [71, 30], [66, 38], [40, 42], [0, 43], [0, 36], [62, 34], [66, 9]], 40, 0, 0, 0, 1, 0.84);
+    k.lathe(floodMat(0xf3e6d8, 0.16, { roughness: 0.6, metalness: 0.1 }), 0xeee9df, [[66, 9], [72, 9], [73, 16], [71, 30], [66, 38], [40, 42], [0, 43], [0, 36], [62, 34], [66, 9]], 40, 0, 0, 0, 1, 0.84);
     for (let i = 0; i < 64; i++) { const a = i / 64 * Math.PI * 2; const r = 72.6; k.box('smooth', 0xf6f2ea, 0.8, 26, 2.5, Math.cos(a) * r, 9, Math.sin(a) * r * 0.84, -a + (i % 2 ? 0.35 : -0.35)); }
     k.box('lights', 0xffe7c2, 1, 1, 1, 0, 43.5, 0);
     k.toGroup(g, { name: 'chase' });
@@ -465,12 +480,13 @@ const Landmarks = (() => {
       const x = -93 + i * 7.45; k.box('window', 0x2a2f33, 3.4, 5.6, 0.4, x, 1, side * 15.05); k.box('window', 0x2a2f33, 3.2, 3.6, 0.4, x, 9, side * 15.05);
     }
     // clock tower
-    k.box('solid', stone, 17, 44, 17, 0, 0, 4);
-    k.box('solid', 0xe2dacb, 14, 10, 14, 0, 44, 4);
+    const fl = floodWarm();
+    k.box(fl, stone, 17, 44, 17, 0, 0, 4);
+    k.box(fl, 0xe2dacb, 14, 10, 14, 0, 44, 4);
     for (let i = 0; i < 4; i++) { const r = rot(8.6, 0, i * Math.PI / 2); k.cylX('lights', 0xfff3dd, 3.2, 0.4, r[0], 37.5, r[1] + 4, 20, i * Math.PI / 2); }
-    k.box('solid', stone, 11, 8, 11, 0, 54, 4);
+    k.box(fl, stone, 11, 8, 11, 0, 54, 4);
     for (let i = 0; i < 4; i++) { const r = rot(5.6, 0, i * Math.PI / 2); k.box('window', 0x1e2226, 0.4, 5, 3, r[0], 55, r[1] + 4, i * Math.PI / 2); }
-    k.box('solid', 0xe2dacb, 8, 5, 8, 0, 62, 4);
+    k.box(fl, 0xe2dacb, 8, 5, 8, 0, 62, 4);
     k.pyramid('smooth', 0x7b8a86, 8.5, 8.5, 6, 0, 67, 4);
     k.cyl('metal', 0xcfcfcf, 0.12, 0.12, 5, 0, 73, 4, 6);
     // ferry piers on the bay side
@@ -485,10 +501,11 @@ const Landmarks = (() => {
     const k = new Kit(), conc = 0xe9e3d3;
     k.box('solid', conc, 26, 8, 26, 0, -10, 0); k.box('solid', conc, 24, 9, 24, 0, -2, 0);
     const prof = []; for (let i = 0; i <= 32; i++) { const a = i / 32 * Math.PI * 2; prof.push([Math.cos(a) * (5.6 + (i % 2) * 0.35), Math.sin(a) * (5.6 + (i % 2) * 0.35)]); }
-    k.prism('solid', conc, prof, 50, 0, 7, 0);
-    k.cyl('solid', conc, 6.3, 6.1, 1.2, 0, 57, 0, 32);
+    const fl = floodWarm();
+    k.prism(fl, conc, prof, 50, 0, 7, 0);
+    k.cyl(fl, conc, 6.3, 6.1, 1.2, 0, 57, 0, 32);
     for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; k.box('window', 0x1d2124, 1.2, 4, 0.5, Math.cos(a) * 5.9, 52, Math.sin(a) * 5.9, -a + Math.PI / 2); }
-    k.cyl('solid', conc, 5.8, 6.2, 5.8, 0, 58.2, 0, 32);
+    k.cyl(fl, conc, 5.8, 6.2, 5.8, 0, 58.2, 0, 32);
     // floodlights
     for (let i = 0; i < 4; i++) { const r = rot(10, 0, i * Math.PI / 2 + 0.4); k.box('lights', 0xfff1d6, 1, 0.6, 1, r[0], 7.2, r[1]); }
     k.toGroup(g, { name: 'coit' });
@@ -504,7 +521,7 @@ const Landmarks = (() => {
       const nb = 12;
       for (let s = 0; s < nb; s++) {
         const y0 = s * 245 / nb, y1 = (s + 1) * 245 / nb;
-        const col = y0 > 150 ? ((s % 2) ? white : red) : 0xd0cfcb;
+        const col = (s % 2) ? white : red;
         k.beam('paint', col, legAt(i, y0), legAt(i, y1), 4.2 - 1.6 * y0 / 245);
       }
       // lattice zigzag along each leg face
@@ -670,6 +687,7 @@ const Landmarks = (() => {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere(); return g;
   }
+  let FW = null; const floodWarm = () => FW || (FW = floodMat(0xffd9a8, 0.2, { roughness: 0.8, metalness: 0 }));
   function floodMat(emissive, k = 0.3, base = {}) {
     const m = new THREE.MeshStandardMaterial(Object.assign({ vertexColors: true, roughness: 0.5, metalness: 0.2, emissive: new THREE.Color(emissive), emissiveIntensity: 0 }, base));
     m.userData.floodK = k; return trackMat(m, 'flood');
@@ -695,17 +713,22 @@ const Landmarks = (() => {
         #include <logdepthbuf_pars_fragment>
         void main(){
           #include <logdepthbuf_fragment>
-          float x = vP.x, h = vP.y;
+          float xi = vP.x, h = vP.y;
+          float d = abs(fract(xi + 0.5) - 0.5), fw = max(fwidth(xi), 1e-4);
+          float line = 1.0 - smoothstep(0.035, 0.035 + fw * 1.3, d);
+          line = mix(line, 0.38, smoothstep(0.06, 0.3, fw));          // far away the strands merge into a glowing curtain
+          float x = xi * 12.0 / 3200.0;
           float w1 = 0.5 + 0.5*sin(x*70.0 - uTime*0.8 + sin(h*3.0 + uTime*0.35)*2.0);
           float w2 = 0.5 + 0.5*sin(x*23.0 + uTime*0.5 - h*4.0);
           float fall = 0.5 + 0.5*sin(h*16.0 + uTime*2.0 + x*140.0);
-          float cell = floor(x*420.0) + floor(h*36.0 - uTime*2.5)*57.0;
+          float cell = floor(xi) + floor(h*36.0 - uTime*2.5)*57.0;
           float sparkle = step(0.975, fract(sin(cell*12.9898)*43758.5453));
           float v = pow(w1*w2, 1.3)*0.95 + fall*0.10 + sparkle*0.8;
-          float a = clamp(v, 0.0, 1.0) * smoothstep(0.3, 0.75, uNight);
-          gl_FragColor = vec4(vec3(0.93,0.96,1.0)*a*1.4, a);
+          float a = clamp(v, 0.0, 1.0) * line * smoothstep(0.3, 0.75, uNight);
+          gl_FragColor = vec4(vec3(0.93,0.96,1.0)*a*2.2, 1.0);
           #include <fog_fragment>
         }`,
+      extensions: { derivatives: true },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: true, toneMapped: false,
     });
     return bayLightsMat;
@@ -754,17 +777,18 @@ const Landmarks = (() => {
     }
     // main cables, hangers and the LED strands
     const ledPos = [], ledP = [], ledIdx = [];
-    const strand = (x, y0, y1, z) => { const w = 0.5, xr = x / W7, o = ledPos.length / 3;
-      ledPos.push(x - w, y0, z, x + w, y0, z, x + w, y1, z, x - w, y1, z); ledP.push(xr, 0, xr, 0, xr, 1, xr, 1); ledIdx.push(o, o + 1, o + 2, o, o + 2, o + 3); };
+    const curtain = (cols, z) => { for (let i = 0; i < cols.length; i++) { const [x, y0, y1] = cols[i], o = ledPos.length / 3;   // LED sheet through the suspender cables
+      ledPos.push(x, y0, z, x, y1, z); ledP.push(x / 12, 0, x / 12, 1); if (i > 0) ledIdx.push(o - 2, o, o + 1, o - 2, o + 1, o - 1); } };
     const spans = [[W1, deckY(W1) + 2, T[0], TH, 0], [T[0], TH, T[1], TH, 1], [T[1], TH, CA, 66, 0], [CA, 66, T[2], TH, 0], [T[2], TH, T[3], TH, 1], [T[3], TH, W7 - 10, deckY(W7) + 2, 0]];
     for (const sd of [-1, 1]) for (const [x0, y0, x1, y1, main] of spans) {
       const cp = cablePts(x0, y0, x1, y1, main ? deckY((x0 + x1) / 2) + 5 : Math.min(y0, y1) - 3, 22, sd * LZ);
       k.tube('paint', 0x8f969a, cp, 0.6, 5, 1);
-      for (let x = x0 + 12; x < x1 - 6; x += 12) {
+      const cols = [];
+      for (let x = Math.ceil((x0 + 6) / 12) * 12; x < x1 - 6; x += 12) {
         const yc = cableY(cp, x), yd = deckY(x) + 1.4; if (yc - yd < 1.5) continue;
-        hanger(k, 'paint', 0x7c8286, x, yd, yc, sd * LZ, 0.2);
-        strand(x, yd + 0.4, yc - 0.2, sd * (LZ + 0.3));
+        hanger(k, 'paint', 0x7c8286, x, yd, yc, sd * LZ, 0.2); cols.push([x, yd + 0.4, yc - 0.2]);
       }
+      curtain(cols, sd * (LZ + 0.3));
     }
     for (let x = 20; x < W7; x += 45) for (const sd of [-1, 1]) k.box('lights', 0xffd9a0, 0.8, 0.3, 0.8, x, deckY(x) + 8.5, sd * (W / 2 - 1));
     k.toGroup(g, { name: 'baybridge-west' });
@@ -1005,7 +1029,8 @@ const Landmarks = (() => {
   }
   // list: [[designation at end A, designation at end B, [latA,lonA], [latB,lonB], width m], ...]
   function runwayMeshes(ctx, list, ox, oz) {
-    const T = runwayTextures(), E = { pos: [], uv: [], idx: [] }, B = { pos: [], uv: [], idx: [] };
+    const T = runwayTextures(), E = { pos: [], uv: [], idx: [] }, B = { pos: [], uv: [], idx: [] }, LP = [], LC = [];
+    const light = (p, r, g, b) => { LP.push(p[0], p[1] + 0.5, p[2]); LC.push(r, g, b); };
     const quad = (M, pts, uvs) => { const o = M.pos.length / 3; for (const p of pts) M.pos.push(p[0], p[1], p[2]); for (const t of uvs) M.uv.push(t[0], t[1]); M.idx.push(o, o + 1, o + 2, o, o + 2, o + 3); };
     for (const [dA, dB, A, Bp, w] of list) {
       const a = ctx.ll2w(A[0], A[1]), b = ctx.ll2w(Bp[0], Bp[1]);
@@ -1014,13 +1039,18 @@ const Landmarks = (() => {
       const cu = c => [(c * 85 + 0.5) / 1024, (c * 85 + 84.5) / 1024], EL = 420;
       { const [u0, u1] = cu(RWY_ENDS.indexOf(dA)); for (let i = 0; i < 2; i++) { const s0 = i * EL / 2, s1 = s0 + EL / 2; quad(E, [P(s0, -w / 2), P(s0, w / 2), P(s1, w / 2), P(s1, -w / 2)], [[u0, s0 / EL], [u1, s0 / EL], [u1, s1 / EL], [u0, s1 / EL]]); } }
       { const [u0, u1] = cu(RWY_ENDS.indexOf(dB)); for (let i = 0; i < 2; i++) { const s0 = i * EL / 2, s1 = s0 + EL / 2; quad(E, [P(L - s0, w / 2), P(L - s0, -w / 2), P(L - s1, -w / 2), P(L - s1, w / 2)], [[u0, s0 / EL], [u1, s0 / EL], [u1, s1 / EL], [u0, s1 / EL]]); } }
+      for (let s0 = 0; s0 <= L; s0 += 60) for (const sd of [-1, 1]) light(P(s0, sd * (w / 2 + 1.5)), 1, 0.93, 0.8);   // edge lights
+      for (let t = -w / 2; t <= w / 2; t += 4) { light(P(-2, t), 0.35, 1, 0.45); light(P(L + 2, t), 0.35, 1, 0.45); }  // threshold lights
+      for (let s0 = 60; s0 < L - 60; s0 += 30) light(P(s0, 0), 0.9, 0.95, 1);                                          // centreline
       const n = Math.max(1, Math.round((L - 2 * EL) / 200));
       for (let i = 0; i < n; i++) { const s0 = EL + (L - 2 * EL) * i / n, s1 = EL + (L - 2 * EL) * (i + 1) / n, v0 = (s0 - EL) / 60, v1 = (s1 - EL) / 60;
         quad(B, [P(s0, -w / 2), P(s0, w / 2), P(s1, w / 2), P(s1, -w / 2)], [[0, v0], [1, v0], [1, v1], [0, v1]]); }
     }
     const mk = (M, map, name) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(M.pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(M.uv, 2));
       g.setIndex(M.idx); g.computeVertexNormals(); g.computeBoundingSphere(); const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, roughness: 0.92 })); m.name = name; m.receiveShadow = true; return m; };
-    return [mk(E, T.ends, 'runway-ends'), mk(B, T.body, 'runways')];
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(LP, 3)); lg.setAttribute('color', new THREE.Float32BufferAttribute(LC, 3)); lg.computeBoundingSphere();
+    const pts = new THREE.Points(lg, pointsMaterial('lights')); pts.name = 'runway-lights'; pts.renderOrder = -1;
+    return [mk(E, T.ends, 'runway-ends'), mk(B, T.body, 'runways'), pts];
   }
   // Hillside letters draped on the terrain. lines: [{ text, len, v (m upslope = toward -Z), u (m east) }]
   function drapedLetters(ctx, cx, cz, lines, depth, lift) {
@@ -1093,6 +1123,18 @@ const Landmarks = (() => {
     return g;
   });
 
+  // --- San Jose Mineta International (SJC): parallel runways 12/30 beside the Guadalupe River, terminals A and B.
+  const SJC_RWY = [['30L', '12R', [37.35099, -121.91707], [37.37374, -121.94201], 46], ['30R', '12L', [37.35225, -121.91526], [37.375, -121.94019], 46]];
+  def('SJC', 37.3639, -121.9289, 1800, 'San Jose Mineta International: two parallel runways a few minutes from downtown, with Terminal B\'s long glass concourse.', (ctx) => {
+    const c = ctx.ll2w(37.3639, -121.9289), gy = ctx.groundY(c.x, c.z); const g = new THREE.Group(); g.position.set(c.x, 0, c.z);
+    for (const m of runwayMeshes(ctx, SJC_RWY, c.x, c.z)) g.add(m);
+    const k = new Kit();
+    for (const t of SJC_TERM) { k.prism('smooth', 0xdcdfe1, t.p, t.h - 1.5, 0, gy, 0); k.prism('metal', 0xaeb5bb, scalePolyAbout(t.p, 0.995), 1.5, 0, gy + t.h - 1.5, 0); }
+    for (const [x, z, r] of [[150, -330, -0.85], [230, -240, -0.85], [330, -120, -0.85], [420, -10, -0.85], [-150, -700, 2.3], [-60, -620, 2.3]]) jetAt(k, 'smooth', x, gy, z, r, 1.0);
+    k.toGroup(g, { name: 'sjc' });
+    return g;
+  });
+
   // --- Oracle headquarters, Redwood Shores: the "database cylinder" towers (OSM positions and heights).
   def('Oracle Towers', 37.5303, -122.2640, 260, 'Oracle\'s Redwood Shores headquarters: six glass cylinder towers around a lagoon, long said to resemble database icons.', (ctx) => {
     const c = ctx.ll2w(37.5303, -122.2640), gy = ctx.groundY(c.x, c.z); const g = new THREE.Group(); g.position.set(c.x, gy, c.z);
@@ -1135,10 +1177,11 @@ const Landmarks = (() => {
     const g = seatedGroup(ctx, 37.427615, -122.166995, { bearing: QUAD_AXIS + 90 });
     const k = new Kit(), tan = 0xdcc59c, tile = 0xb5654a;
     k.box('solid', tan, 34, 13, 30, 0, 0, 0); k.hip('smooth', tile, 35, 31, 4, 0, 13, 0);
-    k.box('solid', tan, 15, 47, 15, 0, 13, 0);
+    const fl = floodWarm();
+    k.box(fl, tan, 15, 47, 15, 0, 13, 0);
     for (let f = 0; f < 4; f++) { const ry = f * Math.PI / 2; k.windows('window', 0x3a3530, 3, 1, 1.2, 30, 1.6, 0, -2.8, 17, 7.55, ry, 0.2); }
     k.box('solid', 0xe2cda6, 16.4, 1.2, 16.4, 0, 60, 0);
-    k.box('solid', tan, 15.6, 11, 15.6, 0, 61.2, 0);
+    k.box(fl, tan, 15.6, 11, 15.6, 0, 61.2, 0);
     for (let f = 0; f < 4; f++) { const ry = f * Math.PI / 2; k.windows('window', 0x2a2724, 3, 1, 2.6, 7, 1.6, 0, -4.2, 62.5, 7.85, ry, 0.3); }
     k.box('solid', 0xe2cda6, 16.6, 1.2, 16.6, 0, 72.2, 0); k.box('solid', tan, 12.5, 3, 12.5, 0, 73.4, 0);
     k.dome('smooth', tile, 6.8, 0, 76.4, 0, 16, 1.25); k.cyl('smooth', 0xe2cda6, 1.1, 1.3, 2.4, 0, 84.4, 0, 10); k.cone('metal', 0xd4b26a, 0.6, 1.6, 0, 86.8, 0 - 0, 8);
@@ -1364,7 +1407,7 @@ const Landmarks = (() => {
       ringSoup.quad([Ro * c0, 0, Ro * s0], [Ro * c1, 0, Ro * s1], [Ro * c1, H, Ro * s1], [Ro * c0, H, Ro * s0], [c0 + c1, 0, s0 + s1]);
       ringSoup.quad([Ri * c0, 0, Ri * s0], [Ri * c1, 0, Ri * s1], [Ri * c1, H, Ri * s1], [Ri * c0, H, Ri * s0], [-(c0 + c1), 0, -(s0 + s1)]);
     }
-    k.add('glass', ringSoup.geo(), 0x8fa7b5);
+    k.add('window', ringSoup.geo(), 0x8fa7b5);
     for (const y of [0.2, 5.8, 11.4, 17.0]) { k.add('smooth', ringSectorFlat(Ro - 1, Ro + 3.2, y + 4.4, 0, Math.PI * 2, N), 0xf1f1ee); k.add('smooth', ringSectorFlat(Ri - 3.2, Ri + 1, y + 4.4, 0, Math.PI * 2, N), 0xf1f1ee); }
     k.add('smooth', ringSectorFlat(Ri - 4, Ro + 4.5, H, 0, Math.PI * 2, N), 0xe9e9e6);
     k.add('solid', ringSectorFlat(Ri + 6, Ro - 6, H + 0.6, 0, Math.PI * 2, N), 0x2f3a48);        // solar roof
@@ -1430,7 +1473,7 @@ const Landmarks = (() => {
     const ry = ryOf(66), cx0 = -8, cz0 = 14, L = 48;
     const at = (lx, lz) => { const r = rot(lx, lz, ry); return [cx0 + r[0], cz0 + r[1]]; };
     let q = at(0, 0); k.box('solid', cream, L, 13, 15, q[0], 0, q[1], ry); k.gable('smooth', tile, L, 15.5, 5, q[0], 13, q[1], ry, 0.6);
-    q = at(-L / 2 - 0.6, 0); k.box('solid', 0xf3e8d0, 1.6, 17, 17, q[0], 0, q[1], ry); k.extrude('solid', 0xf3e8d0, [[-8.5, 0], [8.5, 0], [6, 3.2], [3, 3.2], [0, 6], [-3, 3.2], [-6, 3.2]], 1.6, q[0], 17, q[1], 0, ry + Math.PI / 2, 0);
+    q = at(-L / 2 - 0.6, 0); k.box(floodWarm(), 0xf3e8d0, 1.6, 17, 17, q[0], 0, q[1], ry); k.extrude(floodWarm(), 0xf3e8d0, [[-8.5, 0], [8.5, 0], [6, 3.2], [3, 3.2], [0, 6], [-3, 3.2], [-6, 3.2]], 1.6, q[0], 17, q[1], 0, ry + Math.PI / 2, 0);
     q = at(-L / 2 - 1.5, 0); k.box('window', 0x3a2b22, 0.4, 5, 3, q[0], 0, q[1], ry); k.cyl('window', 0xe8c9a0, 1.1, 1.1, 0.3, q[0], 11, q[1], 12);
     for (const sz of [-1, 1]) { q = at(-L / 2 - 1.45, sz * 4.6); k.box('smooth', 0x9ab0c0, 0.3, 3.2, 1.2, q[0], 5.5, q[1], ry); k.box('smooth', 0xc97a5a, 0.3, 3.2, 1.2, q[0], 10.5, q[1], ry); }
     q = at(-L / 2 + 4, 10.5); k.box('solid', cream, 7, 20, 7, q[0], 0, q[1], ry); k.box('window', 0x2d2622, 7.2, 3, 3, q[0], 15, q[1], ry); k.box('solid', 0xf3e8d0, 7.6, 1, 7.6, q[0], 20, q[1], ry);
@@ -1701,9 +1744,18 @@ const Landmarks = (() => {
       for (let i = 0; i < 5; i++) platformLamp(k, -20 + i * 10, -10);
       signPlane(grp, name, 'classic', 7, 1, 0, 7.4, -5.12, Math.PI);
     },
+    mission(k, grp, name) {                      // generic Mission Revival depot: stucco, red tile, arcade, curved parapet
+      const st = 0xefe3c8, tile = 0xb5654a;
+      k.box('solid', st, 20, 4.8, 8, 0, 0, 0); k.hip('smooth', tile, 21.5, 9.5, 2.8, 0, 4.8, 0);
+      arcade(k, st, 4, 4.6, 3.2, -9.2, -5.4, 0.9); k.box('smooth', tile, 19, 0.4, 2.6, 0, 4.9, -4.9);
+      missionGable(k, st, 7, 2.6, 0, 4.8, -4.4, 0);
+      k.windows('window', 0x3a3026, 4, 1, 1.5, 2.2, 3.4, 0, -7.4, 1.2, 4.05, 0, 0.2);
+      for (let i = 0; i < 4; i++) platformLamp(k, -13 + i * 8.7, -8);
+      signPlane(grp, name, 'classic', 7, 1.1, 0, 3.9, -5.95, Math.PI);
+    },
     shelter(k, grp, name) {                      // modern platform shelter: glass back, curved steel roof, bench, ticket machine
       k.box('paint', 0x4b5258, 0.2, 2.8, 0.2, -5.6, 0, 1); k.box('paint', 0x4b5258, 0.2, 2.8, 0.2, 5.6, 0, 1);
-      k.box('glass', 0x9fb4c0, 11.4, 2.3, 0.08, 0, 0.3, 1.1); k.add('metal', xform(new THREE.CylinderGeometry(6, 6, 12, 16, 1, false, -0.3, 0.6), 0, 2.8 - 6 * Math.cos(0.3) + 0.2, 0.2 - 0, Math.PI / 2, 0, Math.PI / 2, 1, 1, 0.55), 0xb9c0c6);
+      k.box('glass', 0x9fb4c0, 11.4, 2.3, 0.08, 0, 0.3, 1.1); k.boxC('metal', 0xb9c0c6, 12.4, 0.16, 3.8, 0, 2.95, 0.3, -0.07, 0, 0); k.boxC('paint', 0x4b5258, 12.4, 0.3, 0.2, 0, 2.85, 1.15);
       bench(k, -2, 0.4); bench(k, 2, 0.4); ticketMachine(k, 4.4, 0.5);
       k.box('lights', 0xfff0d8, 9, 0.06, 0.3, 0, 2.72, 0.2);
       if (name) signPlane(grp, name, 'modern', 3.6, 0.55, -3.5, 2.35, 1.2, Math.PI);
@@ -1717,15 +1769,30 @@ const Landmarks = (() => {
       if (name) signPlane(grp, name, 'modern', 4.2, 0.6, 0, 2.9, -1.86, Math.PI);
     },
   };
+  DEPOT_BUILDERS.modern = DEPOT_BUILDERS.mountain_view;
+  // Generic style names (as used by the station builder) resolve to the real station's building when the
+  // station name is known, otherwise to a representative style.
+  const DEPOT_BY_NAME = { 'san francisco': 'sf_4th_king', millbrae: 'millbrae', burlingame: 'burlingame', 'san mateo': 'san_mateo', 'san carlos': 'san_carlos',
+    'redwood city': 'redwood_city', 'menlo park': 'menlo_park', 'palo alto': 'palo_alto', 'mountain view': 'mountain_view', sunnyvale: 'sunnyvale',
+    'santa clara': 'santa_clara', 'san jose diridon': 'sj_diridon', 'san jose': 'sj_diridon', gilroy: 'gilroy' };
+  const DEPOT_ALIAS = { terminal: 'sf_4th_king', stone: 'san_carlos', victorian: 'menlo_park', streamline: 'palo_alto', diridon: 'sj_diridon', historic: 'mission' };
+  function resolveDepotStyle(style, name) {
+    if (DEPOT_BUILDERS[style] && !['mission', 'modern'].includes(style)) return style;
+    const byName = name ? DEPOT_BY_NAME[String(name).toLowerCase().trim()] : null;
+    return byName || (DEPOT_BUILDERS[style] ? style : DEPOT_ALIAS[style]) || 'modern';
+  }
   const Depots = {
     styles: Object.keys(DEPOT_BUILDERS),
+    resolve: resolveDepotStyle,
     build(style, opts = {}) {
-      const fn = DEPOT_BUILDERS[style] || DEPOT_BUILDERS.small;
+      style = resolveDepotStyle(style, opts.name);
+      const fn = DEPOT_BUILDERS[style];
       const grp = new THREE.Group(); grp.name = 'depot:' + style;
       const k = new Kit(); const name = opts.name !== undefined ? opts.name : (DEPOT_NAMES[style] || '');
       fn(k, grp, name, opts);
       k.toGroup(grp, { name: 'depot-' + style });
       grp.userData.tris = k.tris; grp.userData.style = style;
+      const bb = new THREE.Box3().setFromObject(grp); grp.userData.footprint = { x0: bb.min.x, x1: bb.max.x, z0: bb.min.z, z1: bb.max.z, height: bb.max.y };
       return grp;
     },
   };
@@ -1754,6 +1821,7 @@ const Landmarks = (() => {
     M.lights.color.setScalar(0.42 + 0.95 * n);
     const blink = (clock % 1.5) < 0.75;
     M.beacon.color.setScalar(n > 0.25 ? (blink ? 1.4 : 0.12) : 0.75);
+    if (PTS) { PTS.lights.visible = n > 0.2; PTS.lights.color.setScalar(U.clamp((n - 0.2) * 1.8, 0, 1.3)); PTS.beacon.visible = n > 0.2 && blink; }
     for (const m of extraMaterials) {
       const kind = m.userData.nightKind;
       if (kind === 'windows') m.emissiveIntensity = 1.1 * n;

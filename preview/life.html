@@ -108,7 +108,7 @@
     shape.moveTo(west, pts[0][1]); for (const [x, z] of pts) shape.lineTo(x, z); shape.lineTo(west, pts[pts.length - 1][1]); shape.lineTo(west, pts[0][1]);
     const g = new THREE.ShapeGeometry(shape); g.rotateX(Math.PI / 2);   // shape y -> world z
     const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 9, uv.getY(i) / 9);
-    const land = new THREE.Mesh(g, mat({ map: T.grass, color: 0xffffff })); land.position.y = 0.0; land.receiveShadow = true;
+    const land = new THREE.Mesh(g, mat({ map: T.grass, color: 0xffffff })); land.position.y = 0.0; land.receiveShadow = true; land.visible = SHOW !== 'birds';
     // flip faces up (rotateX(+90) makes them face down)
     g.index ? g.index.array.reverse() : null; g.computeVertexNormals();
     local.add(land);
@@ -292,6 +292,7 @@
   if (has('birds')) {
     const spots = SHOW === 'birds'
       ? [{ kind: 'gull', x: ORIGIN.x + 10, y: 0, z: ORIGIN.z - 40, count: 18, radius: 35, height: 14 },
+         { kind: 'gull', x: ORIGIN.x + 0, y: 0, z: ORIGIN.z - 6, count: 5, radius: 7, height: 6 },
          { kind: 'gull', x: ORIGIN.x - 60, y: 0, z: ORIGIN.z - 120, count: 12, radius: 60, height: 30 },
          { kind: 'pelican', x: ORIGIN.x - 160, y: 0, z: ORIGIN.z - 25, count: 7, length: 400, height: 2.5, heading: 0.1 },
          { kind: 'crow', x: ORIGIN.x + 30, y: 0, z: ORIGIN.z + 10, count: 5, radius: 20, height: 16 },
@@ -308,14 +309,16 @@
   const cam = { target: new V3(), dist: 20, az: 1.2, el: 0.2 };
   const presets = {
     people: [[0, 1.3, -0.8], 15, -1.2, 0.07], traffic: [[0, 1, 34], 48, 0.95, 0.32], trees: [[0, 15, -60], 155, 1.5708, 0.05],
-    birds: [[0, 9, -20], 36, 1.35, 0.12], all: [[0, 6, 10], 95, 1.05, 0.2],
+    birds: [[0, 7, -12], 26, 1.4, 0.14], all: [[0, 6, 10], 95, 1.05, 0.2],
   };
   let follow = P.follow !== undefined ? +P.follow : -1;
   if (SHOW === 'air') {
     const r = Life.RUNWAYS.sfo28L, a = Geo.ll2w(r.start[0], r.start[1]), b = Geo.ll2w(r.end[0], r.end[1]);
     const L = Math.hypot(b.x - a.x, b.z - a.z), dx = (b.x - a.x) / L, dz = (b.z - a.z) / L;
-    const d = 3200; cam.target.set(a.x - dx * d, 15 + d * Math.tan(3 * Math.PI / 180) - 40, a.z - dz * d);
-    cam.dist = 2300; cam.az = 1.62; cam.el = 0.05;
+    // stand on the Coyote Point shore under the 28L final approach, 3.2 km out, and look up at the arrivals
+    const d = 3200; cam.target.set(a.x - dx * d, 15 + d * Math.tan(3 * Math.PI / 180), a.z - dz * d);
+    cam.dist = 440; cam.az = Math.atan2(-dx, dz); cam.el = -Math.asin((cam.target.y - 3) / 440);
+    if (P.seek === undefined) P.seek = '1';
   } else {
     const pr = presets[SHOW] || presets.all; const [t, dist, az, el] = pr;
     cam.target.copy(W(t[0], t[1], t[2])); cam.dist = dist; cam.az = az; cam.el = el;
@@ -341,6 +344,13 @@
   addEventListener('wheel', e => { cam.dist = Math.max(1.5, Math.min(40000, cam.dist * Math.exp(e.deltaY * 0.001))); }, { passive: true });
   addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
 
+  // #seek=1: jump the clock to the moment an airliner passes closest to the camera target (the schedule is deterministic)
+  if (air && P.seek && +P.seek && follow < 0) {
+    let best = Infinity, bestT = simT;
+    for (let k = 0; k < 900; k++) { air.update(0, { time: simT + k }); for (const p of air.positions()) { if (p.type === 'cessna') continue;
+      const d2 = (p.x - cam.target.x) ** 2 + (p.y - cam.target.y) ** 2 + (p.z - cam.target.z) ** 2; if (d2 < best) { best = d2; bestT = simT + k; } } }
+    simT = bestT - 1.5;
+  }
   // ---------------------------------------------------------------- loop
   const hud = document.getElementById('hud');
   const clock = new THREE.Clock(); let frames = 0, acc = 0, fps = 0, cpuMs = 0, cpuAcc = 0;

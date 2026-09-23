@@ -83,7 +83,15 @@ N night · H hide HUD
   pick.value = depotStyle ? 'depot=' + depotStyle : 'lm=' + want;
   pick.onchange = () => { location.hash = pick.value + (night ? '&night=1' : ''); location.reload(); };
 
-  if (depotStyle) {
+  let sheetItems = null;
+  if (depotStyle === 'sheet') {
+    sheetItems = [];
+    Depots.styles.forEach((st, i) => { const d = Depots.build(st, {}); d.position.set((i % 5) * 400, 0, Math.floor(i / 5) * 400); scene.add(d);
+      const b = new THREE.Box3().setFromObject(d);
+      const plat = new THREE.Mesh(new THREE.BoxGeometry(b.max.x - b.min.x + 40, 0.9, 5), new THREE.MeshStandardMaterial({ color: 0xbdb8ad, roughness: 0.9 }));
+      plat.position.set((b.min.x + b.max.x) / 2, 0.45, b.min.z - 3); plat.receiveShadow = true; scene.add(plat);
+      sheetItems.push({ name: st, tris: d.userData.tris, obj: d, y: 0 }); console.log('[depot]', st, 'tris', d.userData.tris); });
+  } else if (depotStyle) {
     const styles = depotStyle === 'all' ? Depots.styles : [depotStyle];
     let x = 0; const g = new THREE.Group();
     for (const s of styles) {
@@ -114,11 +122,12 @@ N night · H hide HUD
   }
 
   // ---- contact sheet (#sheet=1): every landmark in its own tile, for quick visual review
-  if (H.get('sheet') === '1' && lm) {
-    const cols = +(H.get('cols') || 7), tiles = [], list = lm.list.filter(l => !H.get('filter') || new RegExp(H.get('filter'), 'i').test(l.name));
+  if ((H.get('sheet') === '1' && lm) || sheetItems) {
+    const src = sheetItems || lm.list.map(l => ({ name: l.name, tris: l.tris, obj: lm.group.getObjectByName('lm:' + l.name), y: l.y }));
+    const cols = +(H.get('cols') || (sheetItems ? 5 : 7)), tiles = [], list = src.filter(l => !H.get('filter') || new RegExp(H.get('filter'), 'i').test(l.name));
     const rows = Math.ceil(list.length / cols), tw = innerWidth / cols, th = innerHeight / rows;
     for (const L of list) {
-      const obj = lm.group.getObjectByName('lm:' + L.name), b = new THREE.Box3().setFromObject(obj);
+      const obj = L.obj, b = new THREE.Box3().setFromObject(obj);
       const f = { x: (b.min.x + b.max.x) / 2, y: L.y, z: (b.min.z + b.max.z) / 2, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) / 2, top: b.max.y };
       const wet = /Bridge|Alcatraz/.test(L.name), R = Math.min(20000, Math.max(800, f.r * 3)), N = 90, geo = new THREE.PlaneGeometry(2 * R, 2 * R, N, N); geo.rotateX(-Math.PI / 2);
       const pos = geo.attributes.position, col = new Float32Array(pos.count * 3), cL = new THREE.Color(0xb7a57a), cG = new THREE.Color(0x8f9a5c), cW = new THREE.Color(0x3d6f86);
@@ -127,15 +136,15 @@ N night · H hide HUD
       geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals();
       const gm = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: wet ? 0.35 : 0.95 })); gm.position.set(f.x, 0, f.z); gm.receiveShadow = true; scene.add(gm);
       const h = Math.max(1, f.top - f.y), tall = h > f.r * 0.8;
-      tiles.push({ L, f, dist: tall ? h * 1.7 + f.r : f.r * 2.1 + h, el: (tall ? 12 : 28) * Math.PI / 180, ty: f.y + h * (tall ? 0.45 : 0.2) });
+      tiles.push({ L, f, dist: sheetItems ? f.r * 2.4 + h : tall ? h * 1.7 + f.r : f.r * 2.1 + h, el: (tall ? 12 : sheetItems ? 20 : 28) * Math.PI / 180, ty: f.y + h * (tall ? 0.45 : 0.2) });
     }
     const labels = document.createElement('div'); labels.style.cssText = 'position:fixed;inset:0;pointer-events:none;font:11px/1.2 ui-monospace,Menlo,monospace;color:#fff;text-shadow:0 1px 2px #000';
     tiles.forEach((t, i) => { const d = document.createElement('div'); d.textContent = t.L.name + ' · ' + (t.L.tris | 0); d.style.cssText = `position:absolute;left:${(i % cols) * tw + 4}px;top:${Math.floor(i / cols) * th + 3}px`; labels.appendChild(d); });
     document.body.appendChild(labels); hud.style.display = 'none';
     camera.aspect = tw / th; camera.updateProjectionMatrix(); renderer.setScissorTest(true);
-    const az = +(H.get('az') ?? 35) * Math.PI / 180; let lastS = performance.now();
+    const az = +(H.get('az') ?? (sheetItems ? 150 : 35)) * Math.PI / 180; let lastS = performance.now();
     const loop = (now) => {
-      const dt = Math.min(0.1, (now - lastS) / 1000); lastS = now; U.uTime.value += dt; lm.update(dt, { night, time: 0, camPos: null });
+      const dt = Math.min(0.1, (now - lastS) / 1000); lastS = now; U.uTime.value += dt; if (lm) lm.update(dt, { night, time: 0, camPos: null }); else Landmarks.setNight(night, dt);
       tiles.forEach((t, i) => {
         const x = (i % cols) * tw, y = innerHeight - (Math.floor(i / cols) + 1) * th, c = Math.cos(t.el);
         camera.position.set(t.f.x + t.dist * c * Math.sin(az), t.ty + t.dist * Math.sin(t.el), t.f.z + t.dist * c * Math.cos(az)); camera.lookAt(t.f.x, t.ty, t.f.z);
