@@ -325,7 +325,14 @@ const Towns = (() => {
             float wpp = max(fwidth(fuv.x), fwidth(fuv.y));
             float lit = mix(step(cell, litP), litP * 0.5, smoothstep(0.8, 3.0, wpp)) * uNight;
             vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.8, 0.88, 1.0), step(0.78, fract(cell * 7.3)) * step(1.5, style) * step(style, 3.5));
-            gEmit += wc * lit * mix(glassV, 0.45, smoothstep(0.8, 3.0, wpp)) * mix(0.5 + 0.5 * fract(cell * 13.7), 0.75, smoothstep(0.8, 3.0, wpp)) * 0.8;
+            // shop interiors: ceiling lights (brighter toward the top of the glass), dim display counters low down,
+            // and bay-to-bay variation, instead of a flat lit panel
+            float ib = 1.0;
+            if (style == 4.0 && gfl) { float sv = clamp((fract(fuv.y) - 0.06) / 0.68, 0.0, 1.0);
+              float shelf = 1.0 - 0.5 * (smoothstep(0.03, 0.0, abs(sv - 0.36)) + smoothstep(0.03, 0.0, abs(sv - 0.62)));
+              float racks = 0.8 + 0.2 * step(0.35, fract(fuv.x * 7.0 + cell * 3.1));
+              ib = mix(0.12, 0.75, smoothstep(0.2, 1.0, sv)) * shelf * racks * (0.7 + 0.45 * fract(cell * 5.31 + floor(fuv.x * 3.0) * 0.37)) * (1.0 - 0.4 * step(sv, 0.3)); }
+            gEmit += wc * lit * ib * mix(glassV, 0.45, smoothstep(0.8, 3.0, wpp)) * mix(0.5 + 0.5 * fract(cell * 13.7), 0.75, smoothstep(0.8, 3.0, wpp)) * 0.8;
             if (!front && style == 4.0 && gfl) { outc = mix(outc, wall, 0.9); gEmit *= 0.1; }   // storefront glass only faces the street
           }
           if (front && dcam < 220.0) {                                    // street-facing wall: doors, garages, entries
