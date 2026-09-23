@@ -222,6 +222,33 @@ const Game = (() => {
     if (seg.kind === 0 && !seg.final && Env.time.sec > seg.t1 - 9 && !lastAnn[key + 'c']) { lastAnn[key + 'c'] = 1; Sound.doorChime && Sound.doorChime(); }
   }
 
+  // ---------------- platform announcements (on foot at a station) ----------------
+  // two minutes out, on arrival, and a stand-back warning for trains that run through without stopping
+  const said = {}; let lastSay = -1e9;
+  function say(key, text, toast) {
+    if (said[key]) return; said[key] = 1;
+    if (Env.time.sec - lastSay < 12 && Env.time.sec >= lastSay) return;   // never talk over the previous one
+    lastSay = Env.time.sec; Sound.announce && Sound.announce(text); if (toast) emit('toast', toast);
+  }
+  function updatePlatform() {
+    if (Player.mode !== 'walk' || Sim.drive) return;
+    const st = Stations.nearest(Env.camera.position, 90); if (!st) return;
+    const si = Sim.TT.stations.indexOf(st.id); if (si < 0) return;
+    const now = Env.time.sec;
+    for (const d of Sim.departures(si, now, 6)) {
+      const stop = d.trip.stops[d.k], arr = (stop[1] !== undefined ? stop[1] : stop[2] - 30) + d.plan.dayOff, eta = arr - now;
+      const rs = Sim.routeShort(d.trip), who = rs.charAt(0) + rs.slice(1).toLowerCase() + ' ' + d.trip.id + ' to ' + name(d.trip.stops[d.trip.stops.length - 1][0]);
+      const way = d.dir ? 'southbound' : 'northbound';
+      if (eta > 95 && eta < 125) say(d.trip.id + ':2m:' + si, 'The next ' + way + ' train, ' + who + ', will arrive in about two minutes.', 'Next ' + way + ': ' + who + ' in 2 min');
+      if (eta > 12 && eta < 28) say(d.trip.id + ':arr:' + si, 'Now arriving: ' + who + '. Please stand behind the yellow line.');
+    }
+    for (const tr of Sim.running) {
+      if (!tr.trip || tr.remote || !tr.trip.stops.length || tr.trip.stops.some(x => x[0] === si)) continue;
+      const dist = (st.s - tr.s) * (tr.dir ? 1 : -1); if (dist < 0 || dist > 900 || tr.v < 5) continue;
+      if (dist / tr.v < 25) say(tr.key + ':thru:' + si, 'Attention: a train is approaching and will not stop at this station. Please stand back from the platform edge.');
+    }
+  }
+
   // ---------------- missions ----------------
   function nextTripFrom(stId, filter, after) {
     const si = Sim.TT.stations.indexOf(stId); const t0 = after !== undefined ? after : Env.time.sec;
@@ -282,6 +309,6 @@ const Game = (() => {
         emit('result', { kicker: 'Landmark tour', title: 'Tour complete', score: Math.max(100, Math.round(1500 - mins * 8)), grade: mins < 60 ? 'A' : mins < 120 ? 'B' : 'C', lines: [`Three landmarks in ${Math.round(mins)} minutes of Bay Area time.`] }); }
     }
   }
-  function update(dt) { updateRun(dt); updateRide(); updateMission(dt); }
+  function update(dt) { updateRun(dt); updateRide(); updatePlatform(); updateMission(dt); }
   return { update, startDrive, endRun, stopInfo, driveKeys, dmi, guide, missionList, startMission, on: (f) => listeners.push(f), get run() { return run; }, get mission() { return mission; }, best };
 })();
