@@ -95,15 +95,22 @@ const Towns = (() => {
   const roadMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.93, metalness: 0.0 });
   roadMat.onBeforeCompile = sh => {
     sh.uniforms.uNight = U.uNight;
+    // the terrain's mipmapped surface detail (R asphalt aggregate, A concrete): real texture instead of blocky noise
+    const gt = typeof Terrain !== 'undefined' && Terrain.groundDetail ? Terrain.groundDetail() : null;
+    sh.uniforms.uGround = { value: gt }; sh.defines = Object.assign(sh.defines || {}, gt ? { ROAD_DETAIL: 1 } : {});
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aMark; attribute vec2 aRoadUv; varying vec4 vMark; varying vec2 vRoadUv;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMark = vec4(aMark.x, aMark.y, aMark.z * 0.25, aMark.w / 255.0); vRoadUv = aRoadUv;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec4 vMark; varying vec2 vRoadUv; uniform float uNight;' + glsl_hash)
+      .replace('#include <common>', '#include <common>\nvarying vec4 vMark; varying vec2 vRoadUv; uniform float uNight; uniform sampler2D uGround;' + glsl_hash)
       .replace('#include <color_fragment>', `#include <color_fragment>
       {
         float t = floor(vMark.x + 0.5);
         vec2 q = vRoadUv;
+        vec4 gd = vec4(0.0);
+        #ifdef ROAD_DETAIL
+        gd = mix(texture2D(uGround, q / 2.5), texture2D(uGround, vec2(q.y, -q.x) / 6.3 + 0.37), 0.4) - 0.5;   // (sampled before any branch)
+        #endif
         if (t > 0.5) {
           float n1 = tHash(floor(q * 1.7)), n2 = tHash(floor(q * 0.21 + 3.1));
           vec3 base = diffuseColor.rgb;
@@ -112,7 +119,12 @@ const Towns = (() => {
           float line = 0.0; vec3 lc = vec3(0.90, 0.90, 0.86);
           if (t < 6.5) {                                   // asphalt
             float far = smoothstep(0.08, 0.6, aa);
+            #ifdef ROAD_DETAIL
+            // aggregate from the detail texture, soft resurfacing patches and wear instead of square cells
+            base *= (0.93 + 0.1 * tNoise(q * 0.13) + 0.05 * tNoise(q * 0.031 + 5.0)) * (1.0 + gd.r * 1.4);
+            #else
             base *= 0.90 + (0.12 * n1 + 0.07 * n2) * (1.0 - far) + 0.03 * tNoise(q * 0.05);
+            #endif
             float hw = W * 0.5;
             if (t > 1.5) { float edge = abs(abs(q.y) - (hw - 0.45)); line = max(line, 1.0 - smoothstep(0.07, 0.07 + aa, edge)); }
             if (t == 2.0 || t == 5.0) {                    // two-way: double yellow center
@@ -141,9 +153,10 @@ const Towns = (() => {
             base *= 1.0 - 0.05 * smoothstep(0.35, 0.0, abs(fract(q.y / 1.8) - 0.5));   // tire tracks
           } else if (t == 7.0) {                           // crosswalk (continental stripes)
             float s = step(0.45, fract(q.y / 1.2));
-            base = mix(base, vec3(0.88, 0.88, 0.85), s * (0.8 + 0.2 * n1));
+            base = mix(base, vec3(0.88, 0.88, 0.85), s * (0.8 + 0.2 * n1) * clamp(0.9 + gd.r * 1.6, 0.0, 1.0));   // worn paint
+            base *= 1.0 + gd.r * 1.2;
           } else if (t == 8.0) {                           // parking lot with stall lines
-            base *= 0.92 + 0.1 * n1;
+            base *= (0.94 + 0.08 * tNoise(q * 0.2)) * (1.0 + gd.r * 1.4);
             float st = 1.0 - smoothstep(0.05, 0.05 + aax * 1.5, abs(fract(q.x / 2.75) - 0.5) * 2.75);
             float row = step(abs(fract(q.y / 12.0) - 0.5) * 12.0, 2.6);
             float far = smoothstep(0.08, 0.5, aax);
@@ -154,7 +167,7 @@ const Towns = (() => {
             base *= 0.92 + 0.08 * step(0.5, fract(q.x / 1.6)) + 0.06 * n1;
           } else if (t == 11.0) {                          // concrete sidewalk with joints
             float j = min(abs(fract(q.x / 1.5) - 0.5), 0.5) * 1.5;
-            base *= (0.95 + 0.06 * n1) * (1.0 - 0.18 * (1.0 - smoothstep(0.02, 0.02 + aax, 0.75 - j)));
+            base *= (0.96 + 0.05 * tNoise(q * 0.7)) * (1.0 + gd.a * 1.4) * (1.0 - 0.18 * (1.0 - smoothstep(0.02, 0.02 + aax, 0.75 - j)));
           }
           diffuseColor.rgb = base;
         }
@@ -233,6 +246,7 @@ const Towns = (() => {
       {
         vec2 wp = vWP.xz; vec2 wdx = dFdx(wp), wdy = dFdy(wp);                 // derivatives in uniform control flow
         vec2 q = vWallUv; vec2 qdx = dFdx(q), qdy = dFdy(q);
+        vec3 pdx = dFdx(vViewPosition), pdy = dFdy(vViewPosition);          // wall tangent frame (window recesses)
         float surf = floor(vB.x + 0.5);
         if (surf > 0.5 && surf < 2.5) {                                      // ---- roofs
           vec3 base = diffuseColor.rgb;
@@ -275,6 +289,21 @@ const Towns = (() => {
             float glassM = f.g;
             if (style == 8.0) glassM *= step(0.4, tHash3(vec3(floor(fuv.x), floor(q.y / fh), seed)));   // houses: irregular windows
             vec3 trimC = (style == 2.0 || style == 3.0 || style == 4.0 || style == 5.0) ? vec3(0.22, 0.23, 0.24) : mix(wall, vec3(0.94, 0.93, 0.89), 0.72);
+            // recessed windows: the glass sits ~13 cm behind the wall, so at an angle the reveal (the opening's side and
+            // head) hides part of it. Parallax: sample the glass mask where the view ray reaches the glass plane.
+            float rev = 0.0;
+            if (glassM > 0.01 && style != 3.0 && dcam < 160.0) {
+              float det = qdx.x * qdy.y - qdx.y * qdy.x;
+              if (abs(det) > 1e-10) {
+                vec3 Tw = normalize((pdx * qdy.y - pdy * qdx.y) / det), Bw = normalize((pdy * qdx.x - pdx * qdy.x) / det);
+                vec3 V = normalize(-vViewPosition);
+                vec3 vt = vec3(dot(V, Tw), dot(V, Bw), abs(dot(V, normalize(vNormal))));
+                vec2 off = -vt.xy / max(vt.z, 0.2) * 0.13;
+                float g2 = textureGrad(uFac, vec3(fuv + off * sc, lay), qdx * sc, qdy * sc).g;
+                rev = clamp(glassM - g2, 0.0, 1.0) * (1.0 - smoothstep(110.0, 160.0, dcam));
+              }
+            }
+            float glassV = max(glassM - rev, 0.0);
             outc = mix(wall, trimC, f.b) * mix(0.14, 1.0, f.a);
             float fres = 0.12;
             vec3 sky = mix(vec3(0.30, 0.40, 0.50), vec3(0.62, 0.72, 0.82), fres) * (1.0 - 0.92 * uNight);
@@ -287,15 +316,16 @@ const Towns = (() => {
             float cell = tHash3(vec3(floor(fuv.x), floor(q.y / fh), seed));
             vec3 glass = (style == 3.0 ? mix(vec3(0.10, 0.14, 0.17), wall * 0.45, 0.35) : vec3(0.07, 0.09, 0.11) + vec3(0.04, 0.05, 0.06) * cell);
             outc = mix(outc, glass, glassM);
+            outc = mix(outc, mix(wall, trimC, 0.35) * 0.6, rev);                // the reveal, in its own shade
             // coated curtain walls mirror the sky strongly; ordinary windows less, both rising with Fresnel
-            gEmit += sky * glassM * (style == 3.0 ? 0.26 + 0.7 * fres : 0.10 + 0.6 * fres) * (0.85 + 0.3 * cell);
+            gEmit += sky * glassV * (style == 3.0 ? 0.26 + 0.7 * fres : 0.10 + 0.6 * fres) * (0.85 + 0.3 * cell);
             float litP = style == 5.0 ? 0.12 : style == 3.0 ? 0.36 : (style == 2.0 || style == 4.0) ? 0.3 : style == 9.0 ? 0.9 : 0.45;
             if (style == 4.0 && gfl) litP = 0.85;
             // per-window lit/unlit, averaged to the lit fraction once windows get smaller than a pixel (no sparkle)
             float wpp = max(fwidth(fuv.x), fwidth(fuv.y));
             float lit = mix(step(cell, litP), litP * 0.5, smoothstep(0.8, 3.0, wpp)) * uNight;
             vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.8, 0.88, 1.0), step(0.78, fract(cell * 7.3)) * step(1.5, style) * step(style, 3.5));
-            gEmit += wc * lit * mix(glassM, 0.45, smoothstep(0.8, 3.0, wpp)) * mix(0.5 + 0.5 * fract(cell * 13.7), 0.75, smoothstep(0.8, 3.0, wpp)) * 0.8;
+            gEmit += wc * lit * mix(glassV, 0.45, smoothstep(0.8, 3.0, wpp)) * mix(0.5 + 0.5 * fract(cell * 13.7), 0.75, smoothstep(0.8, 3.0, wpp)) * 0.8;
             if (!front && style == 4.0 && gfl) { outc = mix(outc, wall, 0.9); gEmit *= 0.1; }   // storefront glass only faces the street
           }
           if (front && dcam < 220.0) {                                    // street-facing wall: doors, garages, entries

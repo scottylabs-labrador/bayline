@@ -83,7 +83,7 @@ const GroundCover = (() => {
           float d = distance(wBase.xz, uCam.xz);
           float fade = smoothstep(${R.toFixed(1)}, ${(R * 0.62).toFixed(1)}, d) * uFade;
           // tufts shrink toward the edge of a grassy patch instead of stopping at a hard, sawtooth boundary
-          float sc = smoothstep(0.3, 0.62, grassy + (fract(aTuft.w * 5.1) - 0.5) * 0.12) * fade * (0.7 + 0.6 * fract(aTuft.w * 7.3));
+          float sc = smoothstep(0.38, 0.62, grassy + (fract(aTuft.w * 5.1) - 0.5) * 0.1) * fade * (0.7 + 0.6 * fract(aTuft.w * 7.3));
           float ang = aTuft.w * 6.2832;
           vec3 p = position; p.xz = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * p.xz;
           float lawn = greenish * (1.0 - golden) * smoothstep(0.1, 0.25, sat);   // vivid, irrigated green = mowed lawn
@@ -173,15 +173,18 @@ const GroundCover = (() => {
     for (let i = 0; i < 4; i++) if (!uni['uImg' + i].value) uni['uImg' + i].value = seen[0] ? seen[0].tex : null;
     return seen.length;
   }
-  let lastBind = 0;
+  let lastBind = 0, lastRoadGen = -1;
   function update(camPos) {
     if (!ready) return;
     const alt = camPos.y - Terrain.h(camPos.x, camPos.z);
     const f = 1 - U.smooth(18, 34, alt); uni.uFade.value = f; uni.uCam.value.copy(camPos);
     mesh.visible = f > 0.01 && Terrain.tiled; if (!mesh.visible) return;
     const now = performance.now();
-    if (Math.hypot(camPos.x - lastX, camPos.z - lastZ) > 5) {
-      lastX = camPos.x; lastZ = camPos.z;
+    // rebuild after moving, or when new road data streamed in (a teleport lands before the streets do, and grass
+    // must never grow through them)
+    const roadGen = typeof Towns !== 'undefined' && Towns.stats ? Towns.stats.roadGen : 0;
+    if (Math.hypot(camPos.x - lastX, camPos.z - lastZ) > 5 || (roadGen !== lastRoadGen && now - lastBind > 400)) {
+      lastX = camPos.x; lastZ = camPos.z; lastRoadGen = roadGen;
       if (!bindImagery(camPos.x, camPos.z)) { mesh.visible = false; return; }
       rebuild(camPos.x, camPos.z); lastBind = now;
     } else if (now - lastBind > 1500) { lastBind = now; bindImagery(camPos.x, camPos.z); }   // finer imagery may have streamed in
