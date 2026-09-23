@@ -175,7 +175,10 @@ const Sky = (() => {
   // fog-top altitude (m) and inland advance (m) through the day: deep and far at night, burns off by late morning,
   // sits offshore in the afternoon, pours back over the ridge and through the gaps from late afternoon
   function fogSchedule(sec, strength) {
-    const h = sec / 3600; const key = [[0, 470, 16000], [5, 480, 17000], [8, 420, 13000], [10, 330, 4000], [11.5, 260, 400], [15, 280, 0], [16.5, 330, 3000], [18.5, 430, 11000], [21, 480, 16000], [24, 470, 16000]];
+    // (hour, top m, reach m): deep overnight and in the morning, burnt back at midday, then the classic summer evening
+    // influx pours through the Golden Gate as a low river of fog (~150-200 m: the bridge towers stand out of it) that
+    // deepens again after dark
+    const h = sec / 3600; const key = [[0, 470, 16000], [5, 480, 17000], [8, 420, 13000], [10, 330, 4000], [11.5, 260, 400], [15, 220, 0], [17, 140, 4500], [19, 170, 11000], [21.5, 360, 15000], [24, 470, 16000]];
     let i = 0; while (i < key.length - 2 && h > key[i + 1][0]) i++;
     const a = key[i], b = key[i + 1], t = U.smooth(0, 1, (h - a[0]) / (b[0] - a[0]));
     const top = U.lerp(a[1], b[1], t) * (0.55 + 0.6 * strength), dist = U.lerp(a[2], b[2], t) * (0.25 + 0.95 * strength);
