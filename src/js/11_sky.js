@@ -190,7 +190,7 @@ const Sky = (() => {
     uSkyLUT: { value: lutTex }, uSkyTex: { value: null }, uSkySunDir: { value: new THREE.Vector3(0, 1, 0) }, uSkyMoonDir: { value: new THREE.Vector3(0, 1, 0) },
     uSkySunColor: { value: new THREE.Vector3(3, 3, 3) }, uSkyAmbient: { value: new THREE.Vector3(0.3, 0.35, 0.45) }, uSkyGlow: { value: new THREE.Vector3(0, 0, 0) },
     uSkyBMs: { value: MIE_BASE * 2 }, uSkyBMe: { value: MIE_BASE * 2 / 0.9 }, uSkyGain: { value: SKY_GAIN }, uSkyNight: U.uNight, uSkyTime: U.uTime, uSkyCamH: { value: 2 },
-    uSkySunE: { value: SUN_E }, uSkyMoon: { value: 0 },
+    uSkySunE: { value: SUN_E }, uSkyMoon: { value: 0 }, uSkyMoonUp: { value: 0 },
     uCloudTex: { value: cloudTex }, uCloudCover: { value: 0.2 }, uCirrus: { value: 0.3 }, uCloudOfs: { value: new THREE.Vector2() },
     uFogMap: { value: fogMap }, uFogNoise: { value: fogNoise }, uFogTop: { value: 400 }, uFogDist: { value: 8000 }, uFogDens: { value: 1 }, uFogOfs: { value: new THREE.Vector3() },
     uWorld: { value: new THREE.Vector4(WORLD.X0, WORLD.Z0, WORLD.SIZE, 0) },
@@ -200,7 +200,7 @@ const Sky = (() => {
 #define BAYLINE_SKY
 uniform sampler2D uSkyLUT; uniform sampler2D uSkyTex;
 uniform vec3 uSkySunDir, uSkyMoonDir, uSkySunColor, uSkyAmbient, uSkyGlow;
-uniform float uSkyBMs, uSkyBMe, uSkyGain, uSkyNight, uSkyTime, uSkyCamH, uSkySunE, uSkyMoon;
+uniform float uSkyBMs, uSkyBMe, uSkyGain, uSkyNight, uSkyTime, uSkyCamH, uSkySunE, uSkyMoon, uSkyMoonUp;
 #define SKY_RG 6360e3
 #define SKY_RT 6420e3
 #define SKY_HR 8000.0
@@ -354,10 +354,22 @@ float skyFogDensity(vec3 p) {
           vec3 Ts = skySunTrans(uSkyCamH, uSkySunDir.y);
           col += Ts * uSkySunE * uSkyGain * 900.0 * disk * step(-0.02, d.y);
         }
-        // moon
+        // moon: a 0.52 deg sphere lit by the real sun direction, so its phase (crescent, quarter, gibbous) matches the sky,
+        // with limb darkening, faint earthshine on the dark side and a tight aureole
         float mm = dot(d, uSkyMoonDir);
-        col += vec3(0.82, 0.86, 0.94) * smoothstep(0.999982, 0.999988, mm) * 1.6 * smoothstep(0.15, 0.6, uSkyNight) * uSkyMoon;
-        col += vec3(0.5, 0.56, 0.7) * pow(max(mm, 0.0), 1800.0) * 0.08 * uSkyNight * uSkyMoon;   // moon halo
+        if (mm > 0.99995 && uSkyMoonUp > 0.0) {
+          vec3 md = uSkyMoonDir, ax = normalize(cross(md, abs(md.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0))), ay = cross(ax, md);
+          vec3 off = d - md * mm; vec2 q = vec2(dot(off, ax), dot(off, ay)) / 0.00454;
+          float r2 = dot(q, q);
+          if (r2 < 1.0) {
+            vec3 n = ax * q.x + ay * q.y - md * sqrt(1.0 - r2);                  // the face turned toward us
+            float lit = smoothstep(-0.04, 0.12, dot(n, uSkySunDir));
+            float mottle = 0.86 + 0.14 * hsh(floor(vec3(q * 7.0, 3.0)));        // maria and highlands
+            float edge = 1.0 - smoothstep(0.85, 1.0, r2);
+            col += vec3(0.82, 0.84, 0.88) * (lit * mottle * (0.72 + 0.28 * sqrt(1.0 - r2)) * 1.25 + 0.012) * edge * smoothstep(0.15, 0.6, uSkyNight) * uSkyMoonUp;
+          }
+        }
+        col += vec3(0.5, 0.56, 0.7) * (pow(max(mm, 0.0), 40000.0) * 0.05 + pow(max(mm, 0.0), 2500.0) * 0.006) * uSkyNight * uSkyMoon;   // aureole
         // stars (twinkle; fade into the horizon haze and the city glow)
         if (uSkyNight > 0.02 && d.y > 0.0) {
           vec3 g = floor(d * 420.0); float s = hsh(g); float tw = 0.7 + 0.3 * sin(uSkyTime * 3.0 + s * 80.0);
@@ -427,7 +439,7 @@ float skyFogDensity(vec3 p) {
     cpuScatter(camH, 0, 1, 0, sd, bMs, bMe, _a);
     let hx = [0, 0, 0]; for (const [x, z] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { cpuScatter(camH, x * 0.94, 0.34, z * 0.94, sd, bMs, bMe, _b); for (let c = 0; c < 3; c++) hx[c] += _b[c] / 4; }
     const night = st.night; const moonUp = U.smooth(-0.05, 0.3, (st.moonDir || sd).y) * (st.moonPhase !== undefined ? st.moonPhase : 0.7);
-    uniforms.uSkyMoon.value = moonUp;
+    uniforms.uSkyMoon.value = moonUp; uniforms.uSkyMoonUp.value = U.smooth(-0.02, 0.05, (st.moonDir || sd).y);   // (disk: its own phase from geometry)
     ambient.setRGB(_a[0] * 0.4 + hx[0] * 0.6 + night * 0.012, _a[1] * 0.4 + hx[1] * 0.6 + night * 0.017, _a[2] * 0.4 + hx[2] * 0.6 + night * 0.03);
     uniforms.uSkyAmbient.value.set(ambient.r, ambient.g, ambient.b);
     // city glow (sodium + LED) at night; stronger under the marine layer

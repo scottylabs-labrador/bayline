@@ -435,7 +435,8 @@ const Towns = (() => {
       #include <logdepthbuf_pars_vertex>
       uniform float uNight; varying vec2 vUv; varying float vA;
       void main(){ vUv = uv; vec4 c = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-        float dist = length(c.xyz); float s = 2.4 + dist * 0.004;
+        // a lamp's glare: luminaire-sized up close (a big halo 20 m away reads as a moon), a minimum on-screen size far away
+        float dist = length(c.xyz); float s = mix(0.8, 2.4 + dist * 0.004, smoothstep(8.0, 160.0, dist));
         c.xyz += normalize(-c.xyz) * 0.6;
         c.xy += (uv - 0.5) * s; vA = uNight * clamp(2.4 / s, 0.25, 1.0); gl_Position = projectionMatrix * c;
         #include <logdepthbuf_vertex>
