@@ -166,7 +166,7 @@ const GroundCover = (() => {
       sl.tex = im ? im.tex : null;
       uni['uImg' + i].value = im ? im.tex : null;
       uni.uImgR.value[i].set(im ? im.x0 : 0, im ? im.z0 : 0, im ? im.size : 0, 0);
-      uni.uTexel.value.setComponent(i, im ? im.size / (im.L === 9 ? 1024 : 512) : 1);
+      uni.uTexel.value.setComponent(i, im ? (im.texel || im.size / 512) : 1);
     }
     // an unbound sampler must still point at a valid texture
     for (let i = 0; i < 4; i++) if (!uni['uImg' + i].value) uni['uImg' + i].value = seen[0] ? seen[0].tex : null;

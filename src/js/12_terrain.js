@@ -421,7 +421,7 @@ const Terrain = (() => {
   // area, like the photo roofs of an 800 m town tile's 400 m quadrants, pass maxL = 8)
   function imagery(x, z, maxL = LMAX) {
     if (!index) return null; const Lt = Math.min(LMAX, maxL); const Tt = tileSize(Lt); let tx = Math.floor((x - X0) / Tt), ty = Math.floor((z - Z0) / Tt);
-    for (let L = Lt; L >= 0; L--, tx >>= 1, ty >>= 1) { const r = irec.get(K(L, tx, ty)); if (r && r.state === 2) { const T = tileSize(L); return { tex: r.tex, x0: X0 + tx * T, z0: Z0 + ty * T, size: T, L }; } }
+    for (let L = Lt; L >= 0; L--, tx >>= 1, ty >>= 1) { const r = irec.get(K(L, tx, ty)); if (r && r.state === 2) { const T = tileSize(L); return { tex: r.tex, x0: X0 + tx * T, z0: Z0 + ty * T, size: T, L, texel: r.texel || T / 512 }; } }
     return null;
   }
   function retain(tex) { for (const r of irec.values()) if (r.tex === tex) { r.refs = (r.refs || 0) + 1; return; } }
