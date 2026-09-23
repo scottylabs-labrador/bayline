@@ -275,9 +275,15 @@ const Terrain = (() => {
               nW = normalize(mix(nW, wn, water));
             }
             // ---- night: the photo goes dark, streets and towns glow (mask G) ----
+            // city lights from the air: a dim sodium/LED haze along lit areas plus sparse point lights; band-limited
+            // so the points average out (no white sparkle) when many fall inside one pixel
             float gl = mk.g;
-            float spark = smoothstep(0.55, 0.95, th(floor(vW.xz / 18.0))) * smoothstep(0.15, 0.6, gl);
-            gEmis = vec3(1.0, 0.72, 0.42) * (pow(gl, 1.6) * 0.9 + spark * 1.6) * night * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
+            float fwl = fwidth(vW.x) + fwidth(vW.z);
+            float pts = smoothstep(0.86, 0.98, th(floor(vW.xz / 11.0))) * smoothstep(0.2, 0.7, gl);
+            float ptsAvg = 0.07 * smoothstep(0.2, 0.7, gl);                                  // mean of the point field
+            pts = mix(pts, ptsAvg, smoothstep(3.0, 11.0, fwl));
+            vec3 lamp = mix(vec3(1.0, 0.62, 0.3), vec3(0.95, 0.9, 0.82), step(0.55, th(floor(vW.xz / 180.0))));   // sodium / LED districts
+            gEmis = lamp * (pow(gl, 1.8) * 0.16 + pts * 1.1) * night * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
             diffuseColor.rgb = col;
             gN = nW;
           }`)

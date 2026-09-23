@@ -291,9 +291,11 @@ const Towns = (() => {
             gEmit += sky * glassM * (style == 3.0 ? 0.26 + 0.7 * fres : 0.10 + 0.6 * fres) * (0.85 + 0.3 * cell);
             float litP = style == 5.0 ? 0.12 : style == 3.0 ? 0.36 : (style == 2.0 || style == 4.0) ? 0.3 : style == 9.0 ? 0.9 : 0.45;
             if (style == 4.0 && gfl) litP = 0.85;
-            float lit = step(cell, litP) * uNight;
+            // per-window lit/unlit, averaged to the lit fraction once windows get smaller than a pixel (no sparkle)
+            float wpp = max(fwidth(fuv.x), fwidth(fuv.y));
+            float lit = mix(step(cell, litP), litP * 0.5, smoothstep(0.8, 3.0, wpp)) * uNight;
             vec3 wc = mix(vec3(1.0, 0.72, 0.42), vec3(0.8, 0.88, 1.0), step(0.78, fract(cell * 7.3)) * step(1.5, style) * step(style, 3.5));
-            gEmit += wc * lit * glassM * (0.5 + 0.5 * fract(cell * 13.7));
+            gEmit += wc * lit * mix(glassM, 0.45, smoothstep(0.8, 3.0, wpp)) * mix(0.5 + 0.5 * fract(cell * 13.7), 0.75, smoothstep(0.8, 3.0, wpp)) * 0.8;
             if (!front && style == 4.0 && gfl) { outc = mix(outc, wall, 0.9); gEmit *= 0.1; }   // storefront glass only faces the street
           }
           if (front && dcam < 220.0) {                                    // street-facing wall: doors, garages, entries
