@@ -31,6 +31,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     }
     if (typeof Flora !== 'undefined' && Flora.init) { await step(0.92, 'Planting every tree…'); await safeA('flora', async () => { await Flora.init(ctx); if (Flora.group) Env.scene.add(Flora.group); }); }
     safe('groundcover', () => { if (typeof GroundCover !== 'undefined') GroundCover.init(); });
+    safe('boats', () => { if (typeof Boats !== 'undefined') Boats.init(); });
     UI.init(); Player.init();
     await step(0.96, 'Warming up…');
   } catch (e) { console.error(e); loadmsg.textContent = 'Something went wrong: ' + e.message; return; }
@@ -212,6 +213,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
     if (typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
     if (typeof GroundCover !== 'undefined') safeFrame('groundcover', () => GroundCover.update(cp));
+    if (typeof Boats !== 'undefined') safeFrame('boats', () => Boats.update(dt, envArg));
     Avatars.update();
     if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
