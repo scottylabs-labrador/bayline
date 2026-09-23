@@ -312,7 +312,8 @@ const Terrain = (() => {
               // only a camera at eye/cab height (walking, platforms, the cab) sees the smear; from trackside, chase and
               // helicopter heights the super-resolved photograph itself looks better, so it stays
               float lowCam = 1.0 - smoothstep(5.0, 16.0, cameraPosition.y - vW.y);
-              float eye = lowCam * (1.0 - smoothstep(0.45, 0.6, mk.r));
+              // ...and only within ~100 m: farther out the photograph (parking lots, stripes, yards) is as sharp as it gets
+              float eye = lowCam * (1.0 - smoothstep(0.45, 0.6, mk.r)) * (1.0 - smoothstep(45.0, 130.0, dcam));
               if (eye > 0.01) {
                 vec3 lf = textureLod(iTex, iuv, clamp(log2(5.0 / iTexel), 0.0, 10.0)).rgb;
                 vec3 lf2 = textureLod(iTex, iuv, clamp(log2(14.0 / iTexel), 0.0, 10.0)).rgb;   // wider context
