@@ -142,12 +142,44 @@ const Terrain = (() => {
     try { maxAniso = Math.min(12, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
   }
   const SKY_GLSL = () => (typeof Sky !== 'undefined' && Sky.glsl) ? Sky.glsl : '';
+  // ---------- water: a tileable wind-wave slope map, LEAN-encoded (RG = mean slope, B = mean squared slope) ----------
+  // ~70 directional waves with integer wavevectors (so the tile repeats seamlessly), a Phillips-like spectrum and
+  // spreading around +x (downwind). B holds the squared slope, so mipmapping turns waves smaller than a pixel into
+  // surface roughness: the sun glitter widens and dims with distance, as it does on the Bay, instead of sparkling.
+  const WAVE_S = 3.0;                                  // RG range, in units of the per-axis rms slope
+  let waveTex = null;
+  function waveTexture() {
+    if (waveTex) return waveTex;
+    const N = 256, r = U.rng(7717), sx = new Float32Array(N * N), sy = new Float32Array(N * N);
+    const ci = new Float32Array(N), si = new Float32Array(N), cj = new Float32Array(N), sj = new Float32Array(N);
+    for (let n = 0; n < 72; n++) {
+      const k = 2 + Math.pow(r(), 1.7) * 34;                           // cycles per tile, long waves favoured
+      let th = (r() - 0.5) * 2.2; if (r() < 0.18) th += Math.PI;       // spread around downwind, a few running back
+      const kx = Math.round(k * Math.cos(th)), ky = Math.round(k * Math.sin(th)); if (!kx && !ky) continue;
+      const km = Math.hypot(kx, ky), cth = Math.cos(Math.atan2(ky, kx));
+      const a = Math.pow(km, -1.45) * (0.25 + 0.75 * Math.max(cth, 0) ** 2) * (0.6 + 0.8 * r()), ph = r() * 6.2832, w = 6.2832 / N;
+      for (let i = 0; i < N; i++) { ci[i] = Math.cos(kx * i * w); si[i] = Math.sin(kx * i * w); cj[i] = Math.cos(ky * i * w + ph); sj[i] = Math.sin(ky * i * w + ph); }
+      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {           // h = a cos(k.p + ph): slope = -a k sin(k.p + ph)
+        const q = -a * (si[i] * cj[j] + ci[i] * sj[j]), o = j * N + i; sx[o] += q * kx; sy[o] += q * ky;
+      }
+    }
+    let ss = 0; for (let o = 0; o < N * N; o++) ss += sx[o] * sx[o] + sy[o] * sy[o];
+    const inv = 1 / Math.sqrt(ss / (2 * N * N)), d = new Uint8Array(N * N * 4), c8 = v => Math.max(0, Math.min(255, Math.round(v * 255)));
+    for (let o = 0; o < N * N; o++) {
+      const x = sx[o] * inv, y = sy[o] * inv;
+      d[o * 4] = c8(x / WAVE_S * 0.5 + 0.5); d[o * 4 + 1] = c8(y / WAVE_S * 0.5 + 0.5); d[o * 4 + 2] = c8((x * x + y * y) / (2 * WAVE_S * WAVE_S)); d[o * 4 + 3] = 255;
+    }
+    const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+    t.anisotropy = maxAniso; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
+    return (waveTex = t);
+  }
   function makeMaterial() {
     const u = {
       hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
       iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
-      skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime,
+      skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind,
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
@@ -172,12 +204,20 @@ const Terrain = (() => {
           uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo;
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel;
           uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
-          uniform float night; uniform float time;
+          uniform float night; uniform float time; uniform sampler2D uWaveN; uniform float uWindW;
           varying vec3 vW; varying vec2 vUV;
           float th(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
           float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
             return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }
-          vec3 gN; float gRough; vec3 gEmis;`)
+          vec3 gN; float gRough; vec3 gEmis; float gWater;
+          // one wave layer: LEAN sample of the slope map in a frame rotated by (c, s); returns the slope rotated back
+          // (xy) and the unresolved slope variance inside the pixel footprint (z)
+          vec3 waveLayer(vec2 q, float c, float s, float size, float v) {
+            vec4 w = texture2D(uWaveN, vec2(c * q.x + s * q.y, -s * q.x + c * q.y) / size - vec2(v, 0.0));
+            vec2 m = (w.rg * 2.0 - 1.0) * ${WAVE_S.toFixed(1)};
+            float vr = max(w.b * ${(2 * WAVE_S * WAVE_S).toFixed(1)} - dot(m, m), 0.0);
+            return vec3(c * m.x - s * m.y, s * m.x + c * m.y, vr);
+          }`)
         .replace('#include <color_fragment>', `#include <color_fragment>
           {
             // ---- normal from the height data (per pixel) ----
@@ -261,18 +301,31 @@ const Terrain = (() => {
               float a = tn(p * 2.1), b = tn((p + vec2(0.3, 0.0)) * 2.1), c = tn((p + vec2(0.0, 0.3)) * 2.1);
               nW = normalize(nW + vec3(a - b, 0.0, a - c) * bump * det * f21);
             }
-            // ---- water: keep the photo's tint (South Bay silt, Pacific blue), add waves and a glossy surface ----
+            // ---- water: keep the photo's tint (South Bay silt, Pacific blue); wind waves from the LEAN slope map ----
+            gWater = water;
             gRough = mix(0.93, 0.07, water);
             if (water > 0.0) {
-              float depth = clamp(-(hInfo.x + texture2D(hTex, tc).r), 0.0, 30.0);
+              float hw = hInfo.x + texture2D(hTex, tc).r, depth = clamp(-hw, 0.0, 30.0);
               vec3 deep = vec3(0.035, 0.085, 0.11), shallow = col * 0.55;
               col = mix(col, mix(shallow, deep, smoothstep(0.0, 12.0, depth)), water * 0.8);
-              float wf = smoothstep(6000.0, 300.0, dcam);
-              vec2 wp = vW.xz * 0.11 + vec2(time * 0.31, time * 0.19); vec2 wq = vW.xz * 0.023 - vec2(time * 0.07, -time * 0.05);
-              float wa = tn(wp), wb = tn(wp + vec2(0.37, 0.0)), wc = tn(wp + vec2(0.0, 0.37));
-              float xa = tn(wq), xb = tn(wq + vec2(0.41, 0.0)), xc = tn(wq + vec2(0.0, 0.41));
-              vec3 wn = normalize(vec3((wa - wb) * 0.55 * wf + (xa - xb) * 0.4, 1.0, (wa - wc) * 0.55 * wf + (xa - xc) * 0.4));
+              // waves run downwind (the sea breeze pours ESE through the Golden Gate); gusts drift over the water as
+              // patches of darker chop and glassy calm; waves die in the shallows; lakes and reservoirs stay calmer
+              vec2 wd = vec2(0.8, 0.6), wq = vec2(dot(vW.xz, wd), dot(vW.xz, vec2(-wd.y, wd.x)));
+              float gust = tn(wq / 460.0 - vec2(time * 0.011, 0.0)) * 0.65 + tn(wq / 110.0 - vec2(time * 0.045, 0.0)) * 0.35;
+              float sea = 1.0 - step(1.0, hw);
+              float amp = (0.35 + 1.25 * uWindW) * (0.3 + 1.4 * gust * gust) * mix(0.55, smoothstep(-0.3, 1.5, depth), sea);
+              vec3 l1 = waveLayer(wq, 1.0, 0.0, 6.1, time * 0.26);
+              vec3 l2 = waveLayer(wq, 0.94, 0.34, 19.0, time * 0.105);
+              vec3 l3 = waveLayer(wq, 0.9, -0.44, 57.0, time * 0.052);
+              vec3 a3 = vec3(0.058, 0.066, 0.05) * amp;                              // per-layer rms slope
+              vec2 sw = l1.xy * a3.x + l2.xy * a3.y + l3.xy * a3.z;                   // resolved slope (wind frame)
+              float vu = l1.z * a3.x * a3.x + l2.z * a3.y * a3.y + l3.z * a3.z * a3.z; // unresolved variance (both axes)
+              sw = sw.x * wd + sw.y * vec2(-wd.y, wd.x);
+              vec3 wn = normalize(vec3(-sw.x, 1.0, -sw.y));
               nW = normalize(mix(nW, wn, water));
+              // GGX alpha^2 ~ total slope variance: sharp sparkles up close, a broad glitter path far away
+              float alpha = sqrt(0.0007 * amp + vu);
+              gRough = mix(0.93, sqrt(alpha), water);
             }
             // ---- night: the photo goes dark, streets and towns glow (mask G) ----
             // city lights from the air: a dim sodium/LED haze along lit areas plus sparse point lights; band-limited
@@ -292,7 +345,11 @@ const Terrain = (() => {
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
           normal = normalize((viewMatrix * vec4(gN, 0.0)).xyz);`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-          totalEmissiveRadiance += gEmis;`);
+          totalEmissiveRadiance += gEmis;`)
+        .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
+          #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
+            radiance *= 1.0 + gWater;
+          #endif`);
     };
     return m;
   }
