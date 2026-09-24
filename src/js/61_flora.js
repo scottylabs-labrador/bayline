@@ -265,26 +265,40 @@ const Flora = (() => {
     g.putImageData(img, x0, y0);
   }
   function hash2(x, y, s) { let h = (x * 374761393 + y * 668265263 + s * 144665) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
-  // spread leaf colours into transparent pixels (alpha stays 0) so filtering never pulls in dark fringes. Works on the
-  // raw RGBA arrays of the whole atlas (width AT): a canvas keeps no colour under alpha 0, so the atlas is uploaded from
-  // these arrays. mask: the alpha source (defaults to d itself)
-  function dilateArr(d, x0, y0, passes, mask) {
-    const S = RS, m = mask || d, A = new Uint8Array(S * S), at = (x, y) => ((y0 + y) * AT + x0 + x) * 4;
-    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) A[y * S + x] = m[at(x, y) + 3] > 8 ? 1 : 0;
-    const filled = A.slice();
-    for (let p = 0; p < passes; p++) {
-      const next = A.slice();
-      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-        const i = y * S + x; if (A[i]) continue;
-        let r = 0, gg = 0, b = 0, n = 0;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= S || yy >= S) continue; if (!A[yy * S + xx]) continue; const j = at(xx, yy); r += d[j]; gg += d[j + 1]; b += d[j + 2]; n++; }
-        if (n) { const o = at(x, y); d[o] = r / n; d[o + 1] = gg / n; d[o + 2] = b / n; next[i] = 1; }
+  // spread leaf colours into transparent pixels (alpha stays 0) so filtering never pulls in dark fringes: pull-push
+  // (average the covered texels down a pyramid, then fill every empty texel from the nearest coarser level), on the raw
+  // RGBA arrays of the whole atlas (width AT). A canvas keeps no colour under alpha 0, so the atlas is uploaded from
+  // these arrays. arrs: arrays to fill (same layout); mask: the alpha source
+  function fillEmpty(arrs, mask, x0, y0) {
+    const at = (x, y) => ((y0 + y) * AT + x0 + x) * 4, nA = arrs.length;
+    const levels = []; let S = RS;
+    // level 0: covered texels' values (premultiplied by coverage weight 1/0)
+    let W = new Float32Array(S * S), V = arrs.map(() => new Float32Array(S * S * 3));
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const i = y * S + x, o = at(x, y); if (mask[o + 3] > 8) { W[i] = 1; for (let k = 0; k < nA; k++) { const d = arrs[k]; V[k][i * 3] = d[o]; V[k][i * 3 + 1] = d[o + 1]; V[k][i * 3 + 2] = d[o + 2]; } } }
+    levels.push({ S, W, V });
+    while (S > 1) {
+      const S2 = S >> 1, W2 = new Float32Array(S2 * S2), V2 = arrs.map(() => new Float32Array(S2 * S2 * 3));
+      for (let y = 0; y < S2; y++) for (let x = 0; x < S2; x++) {
+        const j = y * S2 + x; let w = 0;
+        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const i = (y * 2 + dy) * S + x * 2 + dx, wi = W[i]; if (!wi) continue; w += wi; for (let k = 0; k < nA; k++) { V2[k][j * 3] += V[k][i * 3]; V2[k][j * 3 + 1] += V[k][i * 3 + 1]; V2[k][j * 3 + 2] += V[k][i * 3 + 2]; } }
+        W2[j] = w;
       }
-      A.set(next);
+      S = S2; W = W2; V = V2; levels.push({ S, W, V });
     }
-    let mr = 0, mg = 0, mb = 0, mn = 0; for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (filled[y * S + x]) { const o = at(x, y); mr += d[o]; mg += d[o + 1]; mb += d[o + 2]; mn++; }
-    if (mn) { mr /= mn; mg /= mn; mb /= mn; }
-    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (!A[y * S + x]) { const o = at(x, y); d[o] = mr; d[o + 1] = mg; d[o + 2] = mb; }
+    // push: each level's empty texels take their parent's (normalised) value; level 0 writes back into the arrays
+    for (let l = levels.length - 2; l >= 0; l--) {
+      const L = levels[l], P = levels[l + 1];
+      for (let y = 0; y < L.S; y++) for (let x = 0; x < L.S; x++) {
+        const i = y * L.S + x; if (L.W[i]) continue;
+        const pi = Math.min(y >> 1, P.S - 1) * P.S + Math.min(x >> 1, P.S - 1), pw = P.W[pi] || 1e-9;
+        for (let k = 0; k < nA; k++) { L.V[k][i * 3] = P.V[k][pi * 3] / pw; L.V[k][i * 3 + 1] = P.V[k][pi * 3 + 1] / pw; L.V[k][i * 3 + 2] = P.V[k][pi * 3 + 2] / pw; }
+        L.W[i] = 1;
+      }
+      if (l > 0) for (let i = 0; i < L.S * L.S; i++) { const w = L.W[i]; if (w > 0 && w !== 1) { for (let k = 0; k < nA; k++) { L.V[k][i * 3] /= w; L.V[k][i * 3 + 1] /= w; L.V[k][i * 3 + 2] /= w; } L.W[i] = 1; } }
+    }
+    const L0 = levels[0];
+    for (let y = 0; y < RS; y++) for (let x = 0; x < RS; x++) { const i = y * RS + x, o = at(x, y); if (mask[o + 3] > 8) continue;
+      for (let k = 0; k < nA; k++) { const d = arrs[k]; d[o] = L0.V[k][i * 3]; d[o + 1] = L0.V[k][i * 3 + 1]; d[o + 2] = L0.V[k][i * 3 + 2]; } }
   }
   // tangent-space normals from a height field: h = alpha-blurred silhouette (rounded needles, knots, leaflets) plus
   // luminance (bark ridges). wrap: tileable regions (barks) sample across the edges
@@ -335,7 +349,7 @@ const Flora = (() => {
     for (const reg of [REG.redwoodSpray, REG.pineTuft, REG.cypressClump, REG.palmFrond, REG.fanLeaf, REG.deadFrond]) deriveNormals(cd, nd, ...at(reg), false, 0.3, 0.3);
     for (const reg of [REG.barkOak, REG.barkRedwood, REG.barkEuc, REG.barkPlane, REG.barkPalm, REG.barkPine]) deriveNormals(cd, nd, ...at(reg), true, 0, 1.0);
     for (const reg of [REG.oakLeaf, REG.planeLeaf, REG.streetLeaf, REG.eucLeaf, REG.redwoodSpray, REG.pineTuft, REG.cypressClump, REG.palmFrond, REG.fanLeaf, REG.deadFrond]) {
-      dilateArr(nd, ...at(reg), 12, cd); dilateArr(cd, ...at(reg), 12);
+      fillEmpty([cd, nd], cd, ...at(reg));
       for (let y = 0; y < RS; y++) for (let x = 0; x < RS; x++) { const o = ((at(reg)[1] + y) * AT + at(reg)[0] + x) * 4; if (cd[o + 3] <= 8) cd[o + 3] = 0; }
     }
     const mk = (data, srgb) => { const t = new THREE.DataTexture(new Uint8Array(data.buffer), AT, AT, THREE.RGBAFormat, THREE.UnsignedByteType);
