@@ -748,15 +748,19 @@ const Landmarks = (() => {
   // anchorage. Towers, anchorages and abutments are at their OpenStreetMap positions.
   const BBW = { abut: [37.7863573, -122.3905385], w1: [37.7883031, -122.3884509], ca: [37.7981898, -122.3778605], ybi: [37.8082033, -122.3671316],
     towers: [[37.7907532, -122.3858231], [37.795588, -122.3806477], [37.8007874, -122.3750797], [37.8056223, -122.3698997]] };
-  def('Bay Bridge (West Span)', 37.79819, -122.37786, 1800, 'Twin 1936 suspension bridges joined mid-bay at a concrete anchorage; at night tens of thousands of LEDs shimmer on its cables (The Bay Lights).', (ctx) => {
-    const a = ctx.ll2w(...BBW.abut), b = ctx.ll2w(...BBW.ybi);
+  // upper deck (westbound) top; lower deck (eastbound) 9.5 m below. 58 m clearance over the channels.
+  function bbwGeom(ll2w) {
+    const a = ll2w(...BBW.abut), b = ll2w(...BBW.ybi);
     const dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
-    const along = ll => { const p = ctx.ll2w(ll[0], ll[1]); return (p.x - a.x) * ux + (p.z - a.z) * uz; };
+    const along = ll => { const p = ll2w(ll[0], ll[1]); return (p.x - a.x) * ux + (p.z - a.z) * uz; };
     const W1 = along(BBW.w1), CA = along(BBW.ca), T = BBW.towers.map(along), W7 = L;
+    const deckY = x => x < W1 ? 30 + 32 * U.smooth(0, W1, x) : 62 + 8 * Math.sin(Math.PI * Math.min(1, (x - W1) / (W7 - W1)));
+    return { a, dx, dz, ux, uz, W1, CA, T, W7, deckY, TD: 9.5 };
+  }
+  def('Bay Bridge (West Span)', 37.79819, -122.37786, 1800, 'Twin 1936 suspension bridges joined mid-bay at a concrete anchorage; at night tens of thousands of LEDs shimmer on its cables (The Bay Lights).', (ctx) => {
+    const { a, dx, dz, W1, CA, T, W7, deckY } = bbwGeom(ctx.ll2w);
     const g = new THREE.Group(); g.position.set(a.x, 0, a.z); g.rotation.y = ryOf(Math.atan2(dx, -dz) / DEG);
     const k = new Kit(), steel = 0x9ea5a9, dark = 0x7a8286;
-    // upper deck (westbound) top; lower deck (eastbound) 9.5 m below. 58 m clearance over the channels.
-    const deckY = x => x < W1 ? 30 + 32 * U.smooth(0, W1, x) : 62 + 8 * Math.sin(Math.PI * Math.min(1, (x - W1) / (W7 - W1)));
     const W = 20, TD = 9.5, LZ = 11.5;
     const top = [], bot = [];
     for (let x = 0; x < W7; x += 30) {
@@ -817,14 +821,18 @@ const Landmarks = (() => {
   // parallel decks, then the concrete Skyway descending to the Oakland touchdown.
   const BB_EB = [[37.811311,-122.363778],[37.81194,-122.363126],[37.812303,-122.362716],[37.812579,-122.362386],[37.812941,-122.361918],[37.813295,-122.361426],[37.813534,-122.36107],[37.813777,-122.360688],[37.814008,-122.360301],[37.817225,-122.354667],[37.817513,-122.354115],[37.817718,-122.353673],[37.817904,-122.353237],[37.818075,-122.352794],[37.818232,-122.352336],[37.818373,-122.351874],[37.818537,-122.35125],[37.818643,-122.350773],[37.818733,-122.350297],[37.820023,-122.341501],[37.821272,-122.332932],[37.821402,-122.331956],[37.821561,-122.330629],[37.821659,-122.329673],[37.821751,-122.328688],[37.821831,-122.327715]];
   const BB_WB = [[37.814388,-122.360446],[37.814466,-122.360312],[37.817525,-122.354958],[37.817674,-122.354682],[37.817816,-122.354404],[37.818018,-122.353977],[37.818144,-122.353689],[37.818324,-122.353245],[37.818436,-122.352947],[37.81854,-122.352644],[37.818687,-122.352181],[37.818774,-122.351873],[37.818857,-122.351558],[37.818968,-122.351083],[37.819035,-122.350764],[37.819094,-122.350443],[37.81917,-122.349956],[37.820404,-122.341524],[37.821589,-122.333408],[37.82172,-122.33243],[37.821801,-122.331781],[37.821914,-122.330798],[37.821981,-122.330144],[37.822045,-122.329489],[37.82213,-122.328504],[37.822189,-122.327757]];
-  def('Bay Bridge (East Span)', 37.8152652, -122.3585059, 1900, 'The 2013 East Span: a single 160 m tower carries two parallel decks, the world\'s longest self-anchored suspension span.', (ctx) => {
-    const o = ctx.ll2w(37.8152652, -122.3585059); const g = new THREE.Group(); g.position.set(o.x, 0, o.z);
-    const k = new Kit();
-    const eb = localPath(ctx, BB_EB, o.x, o.z), wb = localPath(ctx, BB_WB, o.x, o.z);
+  function bbeGeom(ll2w) {
+    const o = ll2w(37.8152652, -122.3585059), eb = localPath({ ll2w }, BB_EB, o.x, o.z), wb = localPath({ ll2w }, BB_WB, o.x, o.z);
     const S = arcLen(eb), TOT = S[S.length - 1], Sw = arcLen(wb);
     const sT = projectOnPath(eb, S, 0, 0), sTw = projectOnPath(wb, Sw, 0, 0), sW2 = sT - 385, sE2 = sT + 180;
     const hFn = s => s < sW2 ? 42 + 6 * U.smooth(0, sW2, s) : s < sE2 + 80 ? 48 : Math.max(3, 48 - 40 * U.smooth(sE2 + 80, TOT - 250, s) - 5 * U.smooth(TOT - 250, TOT, s));
     const hW = s => hFn(s - sTw + sT);
+    return { o, eb, wb, S, Sw, TOT, sT, sTw, sW2, sE2, hFn, hW };
+  }
+  def('Bay Bridge (East Span)', 37.8152652, -122.3585059, 1900, 'The 2013 East Span: a single 160 m tower carries two parallel decks, the world\'s longest self-anchored suspension span.', (ctx) => {
+    const { o, eb, wb, S, Sw, sT, sTw, sW2, sE2, hFn, hW } = bbeGeom(ctx.ll2w);
+    const g = new THREE.Group(); g.position.set(o.x, 0, o.z);
+    const k = new Kit();
     const common = { width: 25, thick: 1.8, color: 0xd2cfc6, girder: 0xc9c5bb, girderH: 3.4, step: 30, pierStep: 160, pierCols: 1, pierW: y => 7 + y * 0.05, pierColor: 0xc9c5ba, lamps: 50, rail: true };
     deckAlong(k, eb, hFn, Object.assign({ pierStart: sE2, pierSkip: s => s < sE2 - 5 }, common));
     deckAlong(k, wb, hW, Object.assign({ pierStart: sE2 - sT + sTw, pierSkip: s => s < sE2 - sT + sTw - 5 }, common));
@@ -852,13 +860,17 @@ const Landmarks = (() => {
   });
 
   // --- Golden Gate Bridge. Towers at their OSM positions (1280 m main span, 343 m side spans).
-  def('Golden Gate Bridge', 37.81976, -122.47856, 1800, 'The 1937 International Orange suspension bridge; its towers rise 227 m above the Golden Gate strait.', (ctx) => {
-    const n = ctx.ll2w(37.8255026, -122.4792332), s = ctx.ll2w(37.8140144, -122.477891);
-    const dx = s.x - n.x, dz = s.z - n.z, MAIN = Math.hypot(dx, dz);
-    const g = new THREE.Group(); g.position.set(n.x, 0, n.z); g.rotation.y = ryOf(Math.atan2(dx, -dz) / DEG);
-    const k = new Kit(), orange = 0xc0482f, TH = 227, LZ = 13.75, W = 27, NA = -343, SA = MAIN + 343;
-    const towerMatl = floodMat(0xff8a4a, 0.28, { roughness: 0.55, metalness: 0.25 });
+  function ggGeom(ll2w) {
+    const n = ll2w(37.8255026, -122.4792332), s = ll2w(37.8140144, -122.477891);
+    const dx = s.x - n.x, dz = s.z - n.z, MAIN = Math.hypot(dx, dz), NA = -343, SA = MAIN + 343;
     const dY = x => 70 + 5 * Math.sin(Math.PI * Math.min(1, Math.max(0, x / MAIN))) - (x < NA ? (NA - x) * 0.012 : 0);
+    return { n, dx, dz, MAIN, NA, SA, dY };
+  }
+  def('Golden Gate Bridge', 37.81976, -122.47856, 1800, 'The 1937 International Orange suspension bridge; its towers rise 227 m above the Golden Gate strait.', (ctx) => {
+    const { n, dx, dz, MAIN, NA, SA, dY } = ggGeom(ctx.ll2w);
+    const g = new THREE.Group(); g.position.set(n.x, 0, n.z); g.rotation.y = ryOf(Math.atan2(dx, -dz) / DEG);
+    const k = new Kit(), orange = 0xc0482f, TH = 227, LZ = 13.75, W = 27;
+    const towerMatl = floodMat(0xff8a4a, 0.28, { roughness: 0.55, metalness: 0.25 });
     const top = [], bot = [];
     for (let x = NA - 280; x < SA + 330; x += 30) {
       const x1 = x + 30, y0 = dY(x), y1 = dY(x1), p = Math.atan2(y1 - y0, 30);
@@ -909,10 +921,15 @@ const Landmarks = (() => {
 
   // --- San Mateo-Hayward Bridge: high-rise over the channel at the Peninsula end, then a 7 km trestle.
   const SMB = [[37.572901,-122.263128],[37.588998,-122.245479],[37.589216,-122.245233],[37.589423,-122.244999],[37.589556,-122.244834],[37.589689,-122.244661],[37.589802,-122.24451],[37.589918,-122.244345],[37.590031,-122.244173],[37.590155,-122.243974],[37.590267,-122.243783],[37.590387,-122.243562],[37.590486,-122.243367],[37.59059,-122.243156],[37.590673,-122.242969],[37.590755,-122.242774],[37.590837,-122.242565],[37.590918,-122.242341],[37.590983,-122.242151],[37.591048,-122.241941],[37.591192,-122.241466],[37.591328,-122.24101],[37.592821,-122.235988],[37.593364,-122.23421],[37.593834,-122.232653],[37.602338,-122.204066],[37.608002,-122.185009],[37.612346,-122.170389],[37.616709,-122.155695]];
-  def('San Mateo-Hayward Bridge', 37.5940, -122.2300, 5500, 'An 11 km crossing of the Bay: an orthotropic steel high-rise over the shipping channel, then a long low trestle to Hayward.', (ctx) => {
-    const o = ctx.ll2w(...SMB[0]); const g = new THREE.Group(); g.position.set(o.x, 0, o.z);
-    const k = new Kit(); const pts = localPath(ctx, SMB, o.x, o.z), S = arcLen(pts);
+  function smbGeom(ll2w) {
+    const o = ll2w(...SMB[0]), pts = localPath({ ll2w }, SMB, o.x, o.z), S = arcLen(pts);
     const hFn = s => s < 450 ? 5 + s / 450 * 22 : s < 950 ? 27 + (s - 450) / 500 * 17 : s < 1850 ? 44 : s < 2800 ? 44 - (s - 1850) / 950 * 36 : 8;
+    return { o, pts, S, hFn };
+  }
+  def('San Mateo-Hayward Bridge', 37.5940, -122.2300, 5500, 'An 11 km crossing of the Bay: an orthotropic steel high-rise over the shipping channel, then a long low trestle to Hayward.', (ctx) => {
+    const { o, pts, S, hFn } = smbGeom(ctx.ll2w);
+    const g = new THREE.Group(); g.position.set(o.x, 0, o.z);
+    const k = new Kit();
     deckAlong(k, pts, hFn, { width: 26, thick: 2.2, color: 0xb9b6ad, step: 60, pierStep: 42, pierCols: 2, pierColor: 0xaaa69c, pierSkip: s => s > 950 && s < 1850 && (s % 90) > 42 });
     for (let s = 950; s < 1850; s += 45) { const a = sampleAt(pts, S, s), b = sampleAt(pts, S, s + 45), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
       k.boxC('paint', 0x5f7f96, 45.5, 3.6, 18, (a[0] + b[0]) / 2, 44 - 4, (a[1] + b[1]) / 2, 0, -ang, 0); }
@@ -922,14 +939,60 @@ const Landmarks = (() => {
     return g;
   });
   const DUMB = [[37.497936,-122.130011],[37.498366,-122.129447],[37.498768,-122.128941],[37.499163,-122.128405],[37.499516,-122.127902],[37.499869,-122.127379],[37.50676,-122.117138],[37.508776,-122.114143],[37.509179,-122.113566],[37.50959,-122.113013],[37.510027,-122.112454],[37.510512,-122.11185],[37.510998,-122.11129],[37.511483,-122.110755],[37.511975,-122.110239],[37.512467,-122.109739],[37.512967,-122.109256],[37.513487,-122.10879],[37.514072,-122.10834]];
-  def('Dumbarton Bridge', 37.5068, -122.1171, 1400, 'The southernmost Bay crossing (1982), arching 26 m over the channel between Menlo Park and Newark.', (ctx) => {
-    const o = ctx.ll2w(...DUMB[0]); const g = new THREE.Group(); g.position.set(o.x, 0, o.z);
-    const k = new Kit(); const pts = localPath(ctx, DUMB, o.x, o.z); const S = arcLen(pts), T = S[S.length - 1];
+  function dumbGeom(ll2w) {
+    const o = ll2w(...DUMB[0]), pts = localPath({ ll2w }, DUMB, o.x, o.z), S = arcLen(pts), T = S[S.length - 1];
     const hFn = s => { const u = s / T; return 4 + 28 * Math.exp(-Math.pow((u - 0.55) / 0.22, 2)); };
+    return { o, pts, S, hFn };
+  }
+  def('Dumbarton Bridge', 37.5068, -122.1171, 1400, 'The southernmost Bay crossing (1982), arching 26 m over the channel between Menlo Park and Newark.', (ctx) => {
+    const { o, pts, hFn } = dumbGeom(ctx.ll2w);
+    const g = new THREE.Group(); g.position.set(o.x, 0, o.z);
+    const k = new Kit();
     deckAlong(k, pts, hFn, { width: 26, thick: 3.4, color: 0xc2beb4, step: 30, pierStep: 55, pierCols: 2, pierColor: 0xb8b3a8, lamps: 60, rail: true });
     k.toGroup(g, { name: 'dumbarton' });
     return g;
   });
+
+  // Road decks of the modelled bridges: the driving surface at a world point (null off the decks), from the same
+  // geometry the models are built from, so Towns lays the OSM bridge roads and their traffic on the decks (not on
+  // its generic 6.5 m overpass ramps, which put Golden Gate traffic just above the water). dirx/dirz, the direction
+  // of travel, picks the West Span's deck: westbound on top, eastbound 9.5 m below.
+  let DECKS = null;
+  function nearestOnPath(pts, S, x, z) {
+    let best = 1e18, bs = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2)), px = a[0] + dx * t - x, pz = a[1] + dz * t - z, d = px * px + pz * pz;
+      if (d < best) { best = d; bs = S[i - 1] + t * Math.sqrt(L2); }
+    }
+    return { s: bs, d: Math.sqrt(best) };
+  }
+  function decks() {
+    if (DECKS) return DECKS;
+    const ll2w = Geo.ll2w, D = [];
+    const axis = (o, ux, uz, a0, a1, hw, y) => { const xs = [o.x + ux * a0, o.x + ux * a1], zs = [o.z + uz * a0, o.z + uz * a1];
+      D.push({ o, ux, uz, a0, a1, hw, y, minx: Math.min(...xs) - hw, maxx: Math.max(...xs) + hw, minz: Math.min(...zs) - hw, maxz: Math.max(...zs) + hw }); };
+    const path = (o, pts, S, hw, y) => { let minx = 1e18, maxx = -1e18, minz = 1e18, maxz = -1e18;
+      for (const p of pts) { minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]); minz = Math.min(minz, p[1]); maxz = Math.max(maxz, p[1]); }
+      D.push({ o, pts, S, hw, y, minx: o.x + minx - hw, maxx: o.x + maxx + hw, minz: o.z + minz - hw, maxz: o.z + maxz + hw }); };
+    { const g = ggGeom(ll2w); axis(g.n, g.dx / g.MAIN, g.dz / g.MAIN, g.NA - 280, g.SA + 330, 15, al => g.dY(al) + 0.8); }
+    { const g = bbwGeom(ll2w); axis(g.a, g.ux, g.uz, 0, g.W7, 13, (al, fwd) => g.deckY(al) - (fwd > 0 ? g.TD : 0)); }
+    { const g = bbeGeom(ll2w); path(g.o, g.eb, g.S, 14, g.hFn); path(g.o, g.wb, g.Sw, 14, g.hW); }
+    { const g = smbGeom(ll2w); path(g.o, g.pts, g.S, 16, g.hFn); }
+    { const g = dumbGeom(ll2w); path(g.o, g.pts, arcLen(g.pts), 16, g.hFn); }
+    return (DECKS = D);
+  }
+  function deckAt(x, z, dirx, dirz) {
+    let best = null, bd = 1e18;
+    for (const e of decks()) {
+      if (x < e.minx || x > e.maxx || z < e.minz || z > e.maxz) continue;
+      if (e.pts) { const r = nearestOnPath(e.pts, e.S, x - e.o.x, z - e.o.z); if (r.d <= e.hw && r.d < bd) { bd = r.d; best = e.y(r.s); } continue; }
+      const px = x - e.o.x, pz = z - e.o.z, al = px * e.ux + pz * e.uz, lat = Math.abs(pz * e.ux - px * e.uz);
+      if (al < e.a0 || al > e.a1 || lat > e.hw || lat >= bd) continue;
+      bd = lat; best = e.y(al, dirx === undefined ? 0 : dirx * e.ux + dirz * e.uz);
+    }
+    return best;
+  }
 
   // ================================================================== shared builders (peninsula / south bay)
   // Triangle soup whose faces are oriented by a hint direction (robust winding for hand-built shells).
@@ -1915,6 +1978,6 @@ const Landmarks = (() => {
       },
     };
   }
-  return { build, stream, Depots, setNight, names: () => LM.map(l => l.name) };
+  return { build, stream, Depots, setNight, deckAt, names: () => LM.map(l => l.name) };
 })();
 const Depots = Landmarks.Depots;

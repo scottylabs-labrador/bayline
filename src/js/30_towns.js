@@ -578,7 +578,10 @@ const Towns = (() => {
       const ap = []; for (let j = 0; j < n; j++) ap.push({ ang: u8r() / 256 * Math.PI * 2, hw: u8r() / 4 }); it.push({ x, z, flags: f, ap }); }
     for (let i = 0; i < nL; i++) { lamps.push(dv.getInt16(o, true) * 0.1, dv.getInt16(o + 2, true) * 0.1); o += 4; }
     const [ox, oz] = tileOrigin(tx, ty);
-    return { tx, ty, ox, oz, region, mask, b, r, a, t, it, lamps: new Float32Array(lamps) };
+    // OSM footprints of the modelled bridges' towers and anchorages (they would stand as office blocks): the model draws those
+    const onBridge = bb => { const P = bb.pts, n = P.length / 2; let cx = 0, cz = 0; for (let i = 0; i < n; i++) { cx += P[i * 2]; cz += P[i * 2 + 1]; } return Landmarks.deckAt(ox + cx / n, oz + cz / n) !== null; };
+    const keep = typeof Landmarks !== 'undefined' && Landmarks.deckAt ? b.filter(bb => !onBridge(bb)) : b;
+    return { tx, ty, ox, oz, region, mask, b: keep, r, a, t, it, lamps: new Float32Array(lamps) };
   }
   function remember(k, d) { decoded.delete(k); decoded.set(k, d); while (decoded.size > 140) decoded.delete(decoded.keys().next().value); }
   function infillAt(T, x, z) {                  // tile-local metres -> is this 25 m cell open for procedural houses?
@@ -615,6 +618,30 @@ const Towns = (() => {
     if (c === 1 || c === 3) return 3;
     if (c <= 9) return oneway ? 3 : (r.lanes >= 2 ? (urban ? 2 : 5) : 1);
     return 1;
+  }
+  // Modelled bridges (Landmarks.deckAt): the deck height at each point of a road piece (NaN off the decks; null when
+  // the piece touches none). The piece's end-to-end direction picks the Bay Bridge West Span's deck.
+  function deckHeights(ox, oz, xs, zs, n) {
+    if (typeof Landmarks === 'undefined' || !Landmarks.deckAt || n < 2) return null;
+    const dx = xs[n - 1] - xs[0], dz = zs[n - 1] - zs[0], dl = Math.hypot(dx, dz) || 1;
+    let dk = null;
+    for (let i = 0; i < n; i++) { const y = Landmarks.deckAt(ox + xs[i], oz + zs[i], dx / dl, dz / dl); if (y !== null) { if (!dk) dk = new Float32Array(n).fill(NaN); dk[i] = y; } }
+    return dk;
+  }
+  // a bridge road's traffic path (world xyz): on a modelled deck, resampled every ~20 m so cars follow its profile
+  function onDecks(a) {
+    const n = a.length / 3; if (typeof Landmarks === 'undefined' || !Landmarks.deckAt || n < 2) return a;
+    const dx = a[n * 3 - 3] - a[0], dz = a[n * 3 - 1] - a[2], dl = Math.hypot(dx, dz) || 1, ux = dx / dl, uz = dz / dl;
+    const out = []; let any = false;
+    for (let i = 0; i < n; i++) {
+      const j = Math.min(n - 1, i + 1), m = j > i ? Math.max(1, Math.ceil(Math.hypot(a[j * 3] - a[i * 3], a[j * 3 + 2] - a[i * 3 + 2]) / 20)) : 1;
+      for (let k = 0; k < m; k++) {
+        const t = k / m, x = a[i * 3] + (a[j * 3] - a[i * 3]) * t, z = a[i * 3 + 2] + (a[j * 3 + 2] - a[i * 3 + 2]) * t;
+        const d = Landmarks.deckAt(x, z, ux, uz); if (d !== null) any = true;
+        out.push(x, d !== null ? d + 0.12 : a[i * 3 + 1] + (a[j * 3 + 1] - a[i * 3 + 1]) * t, z);
+      }
+    }
+    return any ? new Float32Array(out) : a;
   }
   // One road piece -> asphalt ribbon with lane markings (shader), curbs, verge, sidewalks (urban), shoulders (rural),
   // parapets + piers (bridges), crosswalks at urban intersections. Sidewalks stop at cross streets.
@@ -691,15 +718,19 @@ const Towns = (() => {
       gC[i] = hf(xs[i], zs[i]);
       gL[i] = hf(xs[i] + nx[i] * outer, zs[i] + nz[i] * outer); gR[i] = hf(xs[i] - nx[i] * outer, zs[i] - nz[i] * outer);
     }
+    // on a modelled bridge the road lies on the model's deck, which has its own parapets and piers (NaN = off it)
+    const dk = bridge ? deckHeights(T.ox, T.oz, xs, zs, n) : null, onDeck = i => dk !== null && dk[i] === dk[i];
     const Y = (i, off) => {
-      if (bridge) return gC[i] + os[i];
+      if (bridge) return onDeck(i) ? dk[i] - lift + 0.12 : gC[i] + os[i];
       const g = off >= 0 ? gC[i] + (gL[i] - gC[i]) * Math.min(1, off / outer) : gC[i] + (gR[i] - gC[i]) * Math.min(1, -off / outer);
       return Math.max(g, gC[i] - 0.6) + os[i];
     };
     const w4 = Math.min(255, Math.round(r.width * 4)), lanes = Math.min(255, r.lanes);
-    for (const [o0, o1, dy0, dy1, col, mark, vert, kind] of bands) {
+    for (let bi = 0; bi < bands.length; bi++) {
+      const [o0, o1, dy0, dy1, col, mark, vert, kind] = bands[bi];
       for (let i = 0; i < n - 1; i++) {
         const j = i + 1, um = (us[i] + us[j]) / 2;
+        if (bi > 0 && onDeck(i) && onDeck(j)) continue;          // a bridge's own parapets / underside
         if (kind === 1 && nearInt(um, 0.3)) continue;
         if (kind === 2) { const it = nearInt(um, 4.0); if (!it || Math.abs(um - it.u) < it.R + 1.0 || !(it.flags & 8) || ((it.flags & 1) && region !== 0 && !core)) continue; }
         const a0x = xs[i] + nx[i] * o0 * mit[i], a0z = zs[i] + nz[i] * o0 * mit[i], a1x = xs[i] + nx[i] * o1 * mit[i], a1z = zs[i] + nz[i] * o1 * mit[i];
@@ -717,7 +748,7 @@ const Towns = (() => {
     if (bridge) {                       // piers every ~28 m where the deck is high
       let next = 14;
       for (let i = 0; i < n; i++) {
-        if (us[i] >= next && os[i] > 2.5) { next = us[i] + 28;
+        if (us[i] >= next && os[i] > 2.5 && !onDeck(i)) { next = us[i] + 28;
           const top = Y(i, 0) + lift - 1.4, bot = gC[i] - 0.5, w = Math.min(hw * 0.8, 5);
           roadBox(tb, xs[i], (top + bot) / 2, zs[i], 1.2, top - bot, w * 2, Math.atan2(nx[i], nz[i]), COL.deck); }
       }
@@ -1554,8 +1585,9 @@ const Towns = (() => {
         const P = rd.pts, n = P.length / 2; let hit = false;
         for (let i = 0; i < n; i++) if (Math.abs(T.ox + P[i * 2] - x) < r && Math.abs(T.oz + P[i * 2 + 1] - z) < r) { hit = true; break; }
         if (!hit) continue;
-        const a = new Float32Array(n * 3);
+        let a = new Float32Array(n * 3);
         for (let i = 0; i < n; i++) { const wx = T.ox + P[i * 2], wz = T.oz + P[i * 2 + 1]; a[i * 3] = wx; a[i * 3 + 1] = ctx.groundY(wx, wz) + LIFT[Math.min(rd.cls, 14)] + (rd.off ? rd.off[i] : 0); a[i * 3 + 2] = wz; }
+        if (rd.flags & 2) a = onDecks(a);
         out.push({ pts: a, cls: rd.cls, lanes: rd.lanes, oneway: !!(rd.flags & 1), speed: _speed[rd.cls], width: rd.width, urban: !!(rd.flags & 8), bridge: !!(rd.flags & 2) });
       }
     });
