@@ -92,14 +92,20 @@ const Traffic = (() => {
 
   // ---------------------------------------------------------------- drawing
   const CLASSES = ['a320', 'b738', 'b789', 'b744', 'c172', 'f16', 'a388', 'conc', 'b350', 'dhc6', 'dc3', 'e330', 'h125'];
+  // one instanced mesh per class for the far model, and (once ACModel has built them in the background) a detailed
+  // one within NEAR metres: gear up in the air, gear down on the ground
+  const NEAR = 2500;
+  let liteMat = null;
+  const mkMesh = (geo) => { const m = new THREE.InstancedMesh(geo, liteMat, 160); m.count = 0; m.frustumCulled = false; m.castShadow = true; m.receiveShadow = false;
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.layers.enable(1); group.add(m); return m; };
+  function meshFor(c, lod) {
+    const k = c + '|' + lod; if (meshes[k]) return meshes[k];
+    const g = ACModel.lite(AIRCRAFT.byId[c], lod, true); return g ? (meshes[k] = mkMesh(g.clone())) : null;
+  }
   function initMeshes() {
     meshes = {};
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.15 });
-    for (const c of CLASSES) {
-      const geo = ACModel.lite(AIRCRAFT.byId[c]);
-      const m = new THREE.InstancedMesh(geo, mat, 160); m.count = 0; m.frustumCulled = false; m.castShadow = true; m.receiveShadow = false;
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.layers.enable(1); group.add(m); meshes[c] = m;
-    }
+    liteMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.15 });
+    for (const c of CLASSES) meshes[c] = mkMesh(ACModel.lite(AIRCRAFT.byId[c]));
     // lights: instanced camera-facing glows (nav, strobes, beacons, landing), curved like the world
     const N = 160 * 7, geo = new THREE.InstancedBufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3)); geo.setIndex([0, 1, 2, 0, 2, 3]);
@@ -135,7 +141,7 @@ const Traffic = (() => {
   function removeLabel(t) { if (t.label) { group.remove(t.label); t.label.material.map.dispose(); t.label.material.dispose(); t.label = null; } }
   const m4 = new THREE.Matrix4(), sc = new THREE.Vector3(), tv = new THREE.Vector3(), tq = new THREE.Quaternion(), qFix = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
   function draw(dt, now) {
-    const counts = {}; for (const c of CLASSES) counts[c] = 0;
+    const counts = new Map();
     const cam = Env.camera.position, aP = lights.geometry.attributes.aP, aC = lights.geometry.attributes.aC; let nl = 0;
     const near = [];
     for (const t of targets.values()) {
@@ -153,8 +159,8 @@ const Traffic = (() => {
       t.pitch += ((f.ground ? 0 : gam + 2.5 * D) - t.pitch) * Math.min(1, dt);
       if (t.player) { t.hdg = f.trk; t.pitch = t.mpPitch; t.bank = t.mpRoll; }
       FDM.attitude(tq, t.hdg, t.pitch, t.bank); tq.multiply(qFix);
-      const m = meshes[t.cls]; if (counts[t.cls] >= 160) continue;
-      sc.setScalar(t.scale); m4.compose(t.pos, tq, sc); m.setMatrixAt(counts[t.cls]++, m4);
+      const m = (d < NEAR && meshFor(t.cls, f.ground || t.onGround ? 'gear' : 'near')) || meshes[t.cls], n = counts.get(m) || 0; if (n >= 160) continue;
+      sc.setScalar(t.scale); m4.compose(t.pos, tq, sc); m.setMatrixAt(n, m4); counts.set(m, n + 1);
       // lights (world positions from the model's tips)
       if (nl + 7 <= aP.count && d < 80000) {
         const mdl = AIRCRAFT.byId[t.cls].model, Lh = mdl.L * t.scale, ph = now / 1000 + t.phase;
@@ -170,7 +176,7 @@ const Traffic = (() => {
       }
       if (d < 7000) near.push({ t, d });
     }
-    for (const c of CLASSES) { meshes[c].count = counts[c]; meshes[c].instanceMatrix.needsUpdate = true; }
+    for (const k in meshes) { const m = meshes[k]; m.count = counts.get(m) || 0; m.visible = m.count > 0; m.instanceMatrix.needsUpdate = true; }
     lights.geometry.instanceCount = nl; aP.needsUpdate = true; aC.needsUpdate = true;
     // callsign labels on the closest few
     near.sort((a, b) => a.d - b.d); const keep = new Set(photo() ? [] : near.slice(0, 10).map(n => n.t));   // (photo mode: no labels)
