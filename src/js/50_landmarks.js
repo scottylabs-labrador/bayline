@@ -244,6 +244,9 @@ const Landmarks = (() => {
   }
   const circle = (r, n = 24, ox = 0, oz = 0) => Array.from({ length: n }, (_, i) => [ox + r * Math.cos(i / n * Math.PI * 2), oz + r * Math.sin(i / n * Math.PI * 2)]);
   const scalePoly = (poly, s, sz = s) => poly.map(p => [p[0] * s, p[1] * sz]);
+  // collision solids for the flight physics, in the landmark's own frame: footprint, top, and for slabs (decks, portals) a bottom
+  const RB = (hx, hz, cx = 0, cz = 0) => [[cx - hx, cz - hz], [cx + hx, cz - hz], [cx + hx, cz + hz], [cx - hx, cz + hz]];
+  const CIRC = (r, n = 12) => { const o = []; for (let i = 0; i < n; i++) o.push([Math.cos(i / n * 2 * Math.PI) * r, Math.sin(i / n * 2 * Math.PI) * r]); return o; };
   function meshFromGeo(geo, mat, name) { const m = new THREE.Mesh(geo, mat); m.name = name || ''; m.castShadow = true; m.receiveShadow = true; return m; }
 
   // Triangle soup with faces oriented away from `center`.
@@ -319,6 +322,7 @@ const Landmarks = (() => {
     g.add(meshFromGeo(inner, trackMat(im, 'crownScreen'), 'salesforce:screen'));
     k.box('lights', 0xff3030, 1.2, 1.2, 1.2, 0, 326, 0);
     k.toGroup(g, { name: 'salesforce' });
+    g.userData.solids = [{ pts: base, top: 170 }, { pts: scalePoly(base, 0.86), top: 300 }, { pts: scalePoly(base, 0.81), hole: scalePoly(base, 0.75), top: 326 }];   // (the crown is an open ring over the roof)
     return g;
   });
 
@@ -344,6 +348,7 @@ const Landmarks = (() => {
     k.pyramid(floodWarm(), 0xe7e3da, 15, 15, 55, 0, 205, 0);
     k.box('lights', 0xfff3d0, 0.8, 0.8, 0.8, 0, 260, 0);
     k.toGroup(g, { name: 'transamerica' });
+    g.userData.solids = [[27, 60], [21.8, 110], [16.9, 160], [12, 205], [4, 245]].map(([h, top]) => ({ pts: RB(h, h), top }));
     return g;
   });
 
@@ -368,6 +373,7 @@ const Landmarks = (() => {
     k.cyl('metal', 0xd8dde2, 0.35, 0.8, 22, -6, 236, 0, 8);
     k.box('lights', 0xff3020, 0.8, 0.8, 0.8, -6, 258, 0);
     k.toGroup(g, { name: '181fremont' });
+    g.userData.solids = [{ pts: RB(17.9, 17.9), top: 210 }, { pts: RB(12, 12), top: 236 }];
     return g;
   });
   def('Millennium Tower', 37.790405, -122.396187, 200, 'The 197 m blue-glass residential tower on Mission Street.', (ctx) => {
@@ -376,6 +382,7 @@ const Landmarks = (() => {
     const secs = [], ys = [];
     for (let i = 0; i <= 9; i++) { ys.push(i * 21.8); secs.push(scalePoly(plan, i > 7 ? 0.9 : 1)); }
     g.add(meshFromGeo(loftGeo(secs, ys, 7, 7, true), towerMat('blue', 17, 1, 1), 'millennium:shell'));
+    g.userData.solids = [{ pts: plan, top: 196 }];
     return g;
   });
   def('555 California Street', 37.79208, -122.40368, 240, 'The dark carnelian-granite Bank of America Center (1969), 237 m tall.', (ctx) => {
@@ -389,6 +396,7 @@ const Landmarks = (() => {
       g.add(meshFromGeo(loftGeo(secs, [y0, y1], 7, 6, true), towerMat('dark', 23, 1, 1, { metalness: 0.35, roughness: 0.45 }), '555:tier'));
     }
     k.toGroup(g, { name: '555' });
+    g.userData.solids = tiers.map(([, y1, L, W]) => ({ pts: RB(L, W + 1.25), top: y1 }));
     return g;
   });
   def('One Rincon Hill', 37.78585, -122.39220, 200, 'The 188 m tower at the foot of the Bay Bridge, capped by a water-tank damper.', (ctx) => {
@@ -402,6 +410,7 @@ const Landmarks = (() => {
     k.box('glass', 0x7fa6ac, 20, 12, 20, 0, 176, 0);
     k.box('lights', 0xbfe6ff, 20.4, 1, 20.4, 0, 187, 0);
     k.toGroup(g, { name: 'rincon' });
+    g.userData.solids = [{ pts: RB(14.5, 14.5), top: 188 }];
     return g;
   });
 
@@ -509,6 +518,7 @@ const Landmarks = (() => {
     // floodlights
     for (let i = 0; i < 4; i++) { const r = rot(10, 0, i * Math.PI / 2 + 0.4); k.box('lights', 0xfff1d6, 1, 0.6, 1, r[0], 7.2, r[1]); }
     k.toGroup(g, { name: 'coit' });
+    g.userData.solids = [{ pts: RB(13, 13), top: 7 }, { pts: CIRC(6.2), top: 64 }];
     return g;
   });
 
@@ -792,6 +802,11 @@ const Landmarks = (() => {
     }
     for (let x = 20; x < W7; x += 45) for (const sd of [-1, 1]) k.box('lights', 0xffd9a0, 0.8, 0.3, 0.8, x, deckY(x) + 8.5, sd * (W / 2 - 1));
     k.toGroup(g, { name: 'baybridge-west' });
+    { const sol = [];                                   // towers (legs, the braced frame between them above the deck), both decks with the truss, the anchorages
+      for (const tx of T) { for (const sd of [-1, 1]) sol.push({ pts: RB(3.3, 2.6, tx, sd * LZ), top: TH }); sol.push({ pts: RB(2.3, LZ, tx, 0), bot: deckY(tx) + 3, top: TH }); }
+      for (let x = 0; x < W7; x += 60) { const xc = Math.min(W7 - 30, x + 30); sol.push({ pts: RB(30, W / 2 + 0.5, xc, 0), bot: deckY(xc) - TD - 1.5, top: deckY(xc) + 1.2 }); }
+      sol.push({ pts: RB(32, 24, CA, 0), top: 67 }, { pts: RB(23, 20, W1, 0), top: deckY(W1) - 2 }, { pts: RB(25, 21, W7 - 10, 0), top: 56 });
+      g.userData.solids = sol; }
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(ledPos, 3)); lg.setAttribute('aP', new THREE.Float32BufferAttribute(ledP, 2)); lg.setIndex(ledIdx);
     lg.computeBoundingSphere(); const leds = new THREE.Mesh(lg, bayLightsMaterial()); leds.name = 'baylights'; leds.renderOrder = 5; g.add(leds);
     g.userData.tris = k.tris + ledIdx.length / 3 + 220;
@@ -884,6 +899,11 @@ const Landmarks = (() => {
     k.box('solid', 0xa39e92, 50, dY(NA) + 16, 60, NA - 10, -8, 0); k.box('solid', 0xa39e92, 50, dY(SA) + 16, 60, SA + 10, -8, 0);
     for (let x = NA - 240; x < SA + 300; x += 50) for (const sd of [-1, 1]) k.box('lights', 0xffc070, 0.7, 0.4, 0.7, x, dY(x) + 7.5, sd * (W / 2 - 0.5));
     k.toGroup(g, { name: 'goldengate' });
+    const sol = [];                                     // towers (legs; the portal struts from 118 m), the deck and truss, the anchorages
+    for (const tx of [0, MAIN]) { for (const sd of [-1, 1]) sol.push({ pts: RB(5, 8.25, tx, sd * LZ), top: TH }); sol.push({ pts: RB(3.3, LZ, tx, 0), bot: 118, top: TH }); }
+    for (let x = NA - 280; x < SA + 330; x += 60) sol.push({ pts: RB(30, W / 2 + 0.5, x + 30, 0), bot: dY(x + 30) - 7.6, top: dY(x + 30) + 1.5 });
+    sol.push({ pts: RB(25, 30, NA - 10, 0), top: dY(NA) + 8 }, { pts: RB(25, 30, SA + 10, 0), top: dY(SA) + 8 });
+    g.userData.solids = sol;
     return g;
   });
 

@@ -39,14 +39,28 @@ const Flight = (() => {
   // (the Bay's OSM buildings, OpenFreeMap's elsewhere) are cached every half second or 60 m
   const roofs = { list: [], t: 0, x: 1e9, z: 1e9 };
   function inRing(P, x, z) { let c = false; for (let i = 0, n = P.length / 2, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; }
-  function roofAt(x, z) { let best = null; for (const r of roofs.list) { if (x < r.x0 || x > r.x1 || z < r.z0 || z > r.z1 || (best !== null && r.top <= best)) continue; if (inRing(r.pts, x, z)) best = r.top; } return best; }
+  let probeY = 0, probeUp = 2;                          // the aircraft this frame (CG height, how far it reaches above it): a slab (bridge deck) it passes wholly under is not there
+  function roofAt(x, z) { let best = null; for (const r of roofs.list) { if (x < r.x0 || x > r.x1 || z < r.z0 || z > r.z1 || (best !== null && r.top <= best) || (r.bot !== undefined && probeY + probeUp < r.bot)) continue; if (inRing(r.pts, x, z) && !(r.hole && inRing(r.hole, x, z))) best = r.top; } return best; }
   function refreshRoofs(dt) {
     roofs.t -= dt; if (!ac) return;
     if (roofs.t > 0 && Math.hypot(ac.pos.x - roofs.x, ac.pos.z - roofs.z) < 60) return;
     roofs.t = 0.5; roofs.x = ac.pos.x; roofs.z = ac.pos.z; roofs.list.length = 0;
     const x = ac.pos.x, z = ac.pos.z, bay = Globe.inBayline(x, z), terr = bay ? Terrain.h(x, z) : Globe.h(x, z);
     if (ac.pos.y - terr > 650) return;                                          // (nothing built that tall)
-    const add = (pts, top) => { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 1]); z1 = Math.max(z1, pts[i + 1]); } roofs.list.push({ pts, top, x0, z0, x1, z1 }); };
+    const add = (pts, top, bot, hole) => { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (let i = 0; i < pts.length; i += 2) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 1]); z1 = Math.max(z1, pts[i + 1]); } roofs.list.push({ pts, top, bot, hole, x0, z0, x1, z1 }); };
+    // the hand-built landmarks (towers, bridges) carry their own solids in their frame
+    const L = typeof World !== 'undefined' && World.landmarks && World.landmarks.group;
+    if (L) for (const g of L.children) {
+      const S = g.userData && g.userData.solids; if (!S) continue;
+      if (g.userData.solidR === undefined) { let m = 0; for (const so of S) for (const q of so.pts) m = Math.max(m, Math.hypot(q[0], q[1])); g.userData.solidR = m; }
+      const e = g.matrixWorld.elements; if (Math.hypot(e[12] - x, e[14] - z) > g.userData.solidR + 250) continue;
+      const tf = (pts) => { const P = new Float32Array(pts.length * 2); pts.forEach((q, i) => { P[i * 2] = e[0] * q[0] + e[8] * q[1] + e[12]; P[i * 2 + 1] = e[2] * q[0] + e[10] * q[1] + e[14]; }); return P; };
+      for (const so of S) {
+        const P = tf(so.pts); let near = false;
+        for (let i = 0; i < P.length && !near; i += 2) near = Math.abs(P[i] - x) < 400 && Math.abs(P[i + 1] - z) < 400;
+        if (near) add(P, so.top + e[13], so.bot !== undefined ? so.bot + e[13] : undefined, so.hole ? tf(so.hole) : undefined);
+      }
+    }
     if (bay) { if (typeof Towns !== 'undefined' && Towns.buildingsAt) for (const b of Towns.buildingsAt(x, z, 220)) { if (b.height < 2.5) continue; let base = Terrain.h(b.x, b.z); const P = b.pts; for (let i = 0; i < P.length; i += 2) base = Math.min(base, Terrain.h(P[i], P[i + 1])); add(P, base + b.height); } }
     else if (typeof WorldTiles !== 'undefined' && WorldTiles.buildingsNear) for (const b of WorldTiles.buildingsNear(x, z, 220)) add(b.pts, b.top);
   }
@@ -253,7 +267,11 @@ const Flight = (() => {
     if (ac.out.onGround) { UI.toast('The autopilot engages in flight'); return; }
     A.on = true; if (A.hdg === null) A.hdg = Math.round(E.hdg / D) * D; if (A.alt === null) A.alt = Math.round(ac.pos.y / FT / 100) * 100 * FT;
     if (A.vs === null) A.vs = (T.fdm.retract ? 1800 : 600) * FT / 60;
-    if (T.fdm.heli) { A.spd = Math.round(ac.out.cas / KT); A.athr = false; }
+    if (T.fdm.heli) {         // helicopter: slow = hold this spot; moving = hold speed, heading and height
+      A.athr = false; A.holdFn = null;
+      if (ac.out.gs < 5 * KT) { const ll = Globe.w2ll(ac.pos.x, ac.pos.z); A.holdFn = () => Globe.ll2w(ll.lat, ll.lon); A.spd = 0; say('AP', 'HOVER HOLD'); }
+      else A.spd = Math.round(ac.out.cas / KT);
+    }
     else if (!A.athr && fcs.assist !== 'direct') { A.athr = true; A.spd = Math.round(ac.out.cas / KT); A.thrI = ac.ctl.thr; }
     say('AP', 'ON'); A.gs = A.loc = A.flare = A.retard = false;
   }
@@ -279,7 +297,7 @@ const Flight = (() => {
     A.nav = { apt: a, ident: a.ident }; A.arrived = false; A.descending = false;
     A.navFn = (p) => { const ll = Globe.w2ll(p.x, p.z); return { brg: Airports.bearing(ll.lat, ll.lon, a.lat, a.lon) * D, dist: Airports.hav(ll.lat, ll.lon, a.lat, a.lon), elev: a.elev }; };
     A.onArrive = () => {
-      if (T.fdm.heli) { setSimRate(1); UI.toast(`Hovering over ${a.ident}. Hold S to let down and land; the stick moves you around`, 8); return; }
+      if (T.fdm.heli) { setSimRate(1); A.holdFn = () => Globe.ll2w(a.lat, a.lon); UI.toast(`Hovering over ${a.ident}. Hold S to let down and land; the stick moves you around`, 8); return; }
       const r = runwayChoice(a); if (!r) return;
       setApproachRunway(a, r.rw, r.end); A.appr = true; A.gs = A.loc = A.flare = A.retard = false; A.nav = null; A.toIF = undefined;
       if (fcs.assist !== 'direct') { A.athr = true; A.spd = Math.round(AIRCRAFT.vref(T, ac.mass) + 5); if (!fcs.autoBrake) fcs.autoBrake = 0.45; }
@@ -547,7 +565,7 @@ const Flight = (() => {
       // carry the aircraft with it instead of letting the gear springs launch it
       if (ac.out.onGround && ac.out.gs < 40) { const gh = groundFn(ac.pos.x, ac.pos.z).h; if (gLast !== null && Math.abs(gh - gLast) > 0.08 && Math.hypot(ac.pos.x - gLastX, ac.pos.z - gLastZ) < 3) ac.pos.y += gh - gLast; }
       if (simRate > 1 && (ac.out.agl < 600 || !fcs.ap.on || crashed)) setSimRate(1);
-      ac.step(dt * simRate, env); record(dt * simRate);
+      probeY = ac.pos.y; probeUp = T.fdm.heli ? 3.2 : Math.max(1.5, T.model.L * 0.12); ac.step(dt * simRate, env); record(dt * simRate);
       gLast = groundFn(ac.pos.x, ac.pos.z).h; gLastX = ac.pos.x; gLastZ = ac.pos.z;
       events(dt);
       FDM.euler(ac.q, E);
@@ -620,7 +638,7 @@ const Flight = (() => {
   const api = {
     init, start, stop, update, restart, fromHash, on, input, cam, warn, prefs,
     get active() { return active; }, get loading() { return loading; }, get ac() { return ac; }, get fcs() { return fcs; }, get type() { return T; }, get model() { return model; }, get cfg() { return cfg; },
-    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, joinTraffic, directTo, shareLink, fromFlyAt, startReplay, stopReplay, get replaying() { return !!replay; }, get simRate() { return simRate; }, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
+    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, joinTraffic, directTo, shareLink, fromFlyAt, startReplay, stopReplay, get replaying() { return !!replay; }, get simRate() { return simRate; }, get roofs() { return roofs; }, roofAt, heliAirStart, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
   };
   return api;
 })();
