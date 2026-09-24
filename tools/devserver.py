@@ -44,6 +44,17 @@ class Handler(BaseHTTPRequestHandler):
         self.serve(head=False)
 
     def serve(self, head):
+        m = re.match(r'^/adsb/point/(-?[0-9]{1,2}\.[0-9])/(-?[0-9]{1,3}\.[0-9])/([0-9]{2,3})$', self.path)
+        if m:   # the production nginx proxies adsb.lol (no CORS); do the same here for local testing
+            import urllib.request
+            try:
+                req = urllib.request.Request('https://api.adsb.lol/v2/point/%s/%s/%s' % m.groups(), headers={'User-Agent': 'Bayline dev'})
+                body = urllib.request.urlopen(req, timeout=8).read(); code = 200
+            except Exception as e:
+                body = b'{"ac":[]}'; code = 502
+            self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(body))); self.end_headers()
+            if not head: self.wfile.write(body)
+            return
         fp = os.path.realpath(resolve(self.path))
         if not fp.startswith(os.path.realpath(ROOT)) or not os.path.isfile(fp):
             body = b'not found\n'

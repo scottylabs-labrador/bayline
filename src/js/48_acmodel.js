@@ -628,5 +628,34 @@ const ACModel = (() => {
     U.global(root);
     return { root, update, dispose, eye, panel: { canvas: panelC, tex: panelT, w: pw, h: ph }, inside, parts, lamps, spot, type };
   }
-  return { build };
+  // a light single-mesh version for traffic (instanced): vertex-coloured fuselage, wings, tails and engines
+  function lite(type) {
+    const m = type.model, geos = [], col = hex(m.livery.base), tail = hex(m.livery.tail), belly = hex(m.livery.belly || '#d9dde2'), dark = [0.07, 0.08, 0.1];
+    const fz = fuselage(m), g0 = fz.geo, pos = g0.attributes.position, cl = g0.attributes.color;
+    const F = m.fus, L = m.L;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), s2 = m.nose - x, q = fz.prof(Math.max(0, Math.min(L, s2))), c = (q.top + q.bot) / 2, r = (q.top - q.bot) / 2 || 1, v = (y - c) / r;
+      let k = col;
+      if (m.kind === 'jet' && v < -0.35) k = belly;
+      if (m.kind === 'jet' && s2 > L - F.tailLen * 0.8 && v > -0.6 + (s2 - (L - F.tailLen * 0.8)) / F.tailLen) k = tail;
+      if (m.kind === 'jet' && Math.abs(v - 0.2) < 0.07 && s2 > F.noseLen && s2 < L - F.tailLen * 0.9) k = dark;
+      if (s2 < (m.kind === 'jet' ? F.noseLen * 0.6 : 2) && s2 > (m.kind === 'jet' ? F.noseLen * 0.25 : 1.5) && v > 0.25 && v < 0.75) k = dark;
+      cl.setXYZ(i, k[0], k[1], k[2]);
+    }
+    geos.push(g0);
+    const w = m.wing, wc = m.kind === 'jet' ? '#d9dde2' : m.livery.base;
+    const wr = surface(w, [], { color: wc, metal: '#c4cad1', noMetal: m.kind !== 'jet' }); const wg = wr.gb.geo(); geos.push(wg, mirrorZ(wg));
+    const ht = m.htail, hr = surface({ ...ht, y0: ht.y0 || (m.kind === 'jet' ? F.d * 0.18 : 0.2), tt: ht.t, twist: 0, cam: 0 }, [], { color: m.kind === 'jet' ? '#dfe3e8' : wc, noMetal: true });
+    const hg = hr.gb.geo(); geos.push(hg, mirrorZ(hg));
+    const vt = m.vtail, vr = surface({ x: vt.x, y0: 0, span: vt.h, c0: vt.c0, c1: vt.c1, sweep: vt.sweep, z: vt.z, t: vt.t, tt: vt.t, cam: 0 }, [], { vertical: true, noMetal: true, color: m.livery.tail });
+    geos.push(vr.gb.geo());
+    for (const e of m.engines) {
+      if (e.type === 'fan') { const R = e.d / 2, Ln = e.len; const gb = lathe([[0.02, R * 0.82], [0, R * 0.9], [-0.14, R], [-Ln * 0.35, R], [-Ln * 0.62, R * 0.93], [-Ln * 0.72, R * 0.84], [-Ln * 0.95, R * 0.4], [-Ln * 1.1, 0.02]], 14, 0, (i) => i <= 1 ? [0.75, 0.77, 0.8] : i >= 6 ? [0.3, 0.32, 0.35] : col);
+        const g = gb.geo(); const P2 = P(e.x, e.y, e.z); g.translate(P2.x, P2.y, P2.z); geos.push(g);
+        const face = new GB(); const c0 = face.v(new V3(P2.x - 0.02, P2.y, P2.z), 0, 0, dark); for (let k = 0; k <= 14; k++) { const a = k / 14 * Math.PI * 2; face.v(new V3(P2.x - 0.02, P2.y + Math.cos(a) * R * 0.82, P2.z + Math.sin(a) * R * 0.82), 0, 0, dark); } for (let k = 1; k <= 14; k++) face.t(c0, k + 1, k); geos.push(face.geo()); }
+    }
+    const merged = U.mergeGeometries(geos.map(g => { const q = g.index ? g : g; for (const k of Object.keys(q.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) q.deleteAttribute(k); return q; }));
+    merged.computeBoundingSphere(); return merged;
+  }
+  return { build, lite };
 })();

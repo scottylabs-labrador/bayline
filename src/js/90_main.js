@@ -231,6 +231,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof Globe !== 'undefined') safeFrame('globe', () => Globe.update(Env.camera));
     if (typeof Airports !== 'undefined') safeFrame('airports', () => Airports.update(Env.camera));
     if (typeof Weather !== 'undefined' && World.started) safeFrame('weather', () => Weather.update(dt));
+    if (typeof Traffic !== 'undefined' && World.started) safeFrame('live-traffic', () => Traffic.update(dt));
     if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
     if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
@@ -255,7 +256,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
   function safeFrameR(name, f) { if (errs[name] > 20) return false; try { return f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); return false; } }
-  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+  window.__bayline = { Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
     Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();
