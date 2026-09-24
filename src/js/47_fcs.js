@@ -12,6 +12,7 @@ const FCS = (() => {
   const D = Math.PI / 180, G = 9.80665, KT = 0.514444, FTM = 0.3048;
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const wrap = (a) => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
+  const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
   function create(ac, type) {
     const S = ac.spec, V = type.v, heavy = S.mass > 30000, fighter = S.fbw === 'fighter' || S.fbw === 'aerobatic', ga = !S.retract && S.mass < 8000;
@@ -19,7 +20,7 @@ const FCS = (() => {
     const E = {};
     const f = {
       assist: 'full', pil: { pitch: 0, roll: 0, yaw: 0, thr: 0 },
-      gammaHold: 0, phiHold: 0, thetaHold: null, air: 0, flare: false, law: 'ground', hdgHold: null,
+      gammaHold: 0, phiHold: 0, thetaHold: null, air: 0, flare: false, law: 'ground', hdgHold: null, altHold: null, att: null, hover: false,
       ap: { on: false, hdg: null, alt: null, vs: null, spd: null, athr: false, appr: false, rwy: null, mode: '', thrI: 0.5, gs: false, loc: false, flare: false, retard: false },
       autoSpoilers: true, autoBrake: 0, events: [],
       airStart(gamma) { f.air = 5; f.law = 'flight'; f.gammaHold = gamma; f.phiHold = 0; f.srs = false; f.wasGround = false; f.wasAir = true; },
@@ -50,15 +51,17 @@ const FCS = (() => {
         // glide path to the aiming point
         const toAim = -(along) + (R.aim || 300);
         const hGp = R.elev + Math.tan(3 * D) * Math.max(toAim, 0) + (ac.spec.cgHeight || 0);   // the glide path meets the runway at the aiming point
-        if (A.loc && alt < hGp + 60 && toAim > 0) A.gs = true;
+        // before the glide path: level at its height over the intercept fix (14 km out), so it is captured from below
+        if (!A.gs) { const gsAtIF = R.elev + Math.tan(3 * D) * (14000 + (R.aim || 300)) + (ac.spec.cgHeight || 0) - 40; A.alt = Math.min(A.alt !== null ? A.alt : alt, Math.max(gsAtIF, alt - 2000)); if (A.alt < gsAtIF) A.alt = gsAtIF; }
+        if (A.loc && toAim > 0 && (alt < hGp + 60 || toAim < 16000)) A.gs = true;               // from below, or from above when close in
         if (A.gs) {
           const gsV = Math.hypot(ac.vel.x, ac.vel.z);
-          vsCmd = -gsV * Math.tan(3 * D) + clamp((hGp - alt) * 0.15, -3, 3);
+          vsCmd = -gsV * Math.tan(3 * D) + clamp((hGp - alt) * 0.15, -4.5, 3);                   // (steeper to rejoin from above)
           // flare (sink rate proportional to height) and retard
           const ra = o.agl;
           if (ra < 16 && !o.onGround) A.flare = true;
           if (A.flare) vsCmd = Math.max(vsCmd, -Math.max(0.4, ra / 3.6));
-          if (ra < 7 && A.athr) A.retard = true;
+          if (ra < (ac.spec.retardH || 7) && A.athr) A.retard = true;               // (the delta: power on until just above the runway)
         } else if (A.alt !== null) vsCmd = clamp((A.alt - alt) * 0.08, -12, 12);
         if (o.onGround) { A.on = false; A.appr = false; A.athr = false; f.events.push('AUTOLAND COMPLETE'); }
       } else if (A.nav && A.navFn) {
@@ -100,11 +103,89 @@ const FCS = (() => {
     }
     f.athr = athr;
 
+    // ---------------------------------------------------------------- helicopter (assisted): attitude command with auto-level,
+    // hover hold (drift nulled), vertical speed command on the collective with altitude hold and gentle arrivals,
+    // yaw rate on the pedals with heading hold and turn coordination
+    function preHeli(dt) {
+      const o = ac.out, c = ac.ctl, P = f.pil; FDM.euler(ac.q, E);
+      f.air = !o.onGround ? f.air + dt : 0; f.law = o.onGround ? 'ground' : 'flight';
+      if (f.assist === 'direct') { c.coll = clamp(c.thr, 0, 1); c.elev = P.pitch; c.ail = P.roll; c.rud = P.yaw; f.law = 'direct'; return; }
+      // collective: climb / descend with W / S, hold the altitude when released
+      const pc = P.coll || 0, vsIn = pc > 0.05 ? pc * 5 : pc < -0.05 ? pc * 4 : null;
+      if (vsIn !== null) f.altHold = null; else if (f.altHold === null && f.air > 1.5) f.altHold = ac.pos.y;
+      let vsCmd = vsIn !== null ? vsIn : f.altHold !== null ? clamp((f.altHold - ac.pos.y) * 0.8, -3, 3) : (o.onGround ? -1 : 0);
+      if (vsCmd < 0 && !o.onGround) vsCmd = Math.max(vsCmd, -(0.35 + Math.max(0, o.agl) * 0.22));
+      if (f.ap.on && vsIn !== null) f.ap.alt = null;                                  // the pilot's collective takes over the height
+      else if (f.ap.on && f.ap.alt !== null) vsCmd = clamp((f.ap.alt - ac.pos.y) * 0.3, -5, 5);
+      if (f.ap.on && o.onGround && c.coll < 0.2) f.ap.on = false;
+      const az = f.lastVy === undefined ? 0 : (ac.vel.y - f.lastVy) / dt; f.lastVy = ac.vel.y;
+      const azCmd = clamp((vsCmd - ac.vel.y) * 1.3, -4, 4);
+      if (c.coll === undefined) c.coll = 0.1;
+      if (o.onGround && vsCmd <= 0) c.coll = Math.max(0, c.coll - dt * 0.4);
+      else c.coll = clamp(c.coll + clamp((azCmd - az) / Math.max(o.Bcoll || 10, 1) * 0.08, -dt * 0.8, dt * 0.8), 0, 1);
+      // attitude, each axis on its own: stick = pitch / bank. Released: hold the speed it had (a hover if it was slow
+      // or going backwards) through the attitude that gives the wanted acceleration against the fuselage drag, plus a
+      // slow integrator. Laterally everything is relative to the trim bank that balances the tail rotor's side force:
+      // released, null the drift over the ground in a hover, the sideslip in forward flight
+      const gs = Math.hypot(ac.vel.x, ac.vel.z), ch = Math.cos(E.hdg), sh = Math.sin(E.hdg);
+      const uh = ac.vel.x * sh - ac.vel.z * ch, vh = ac.vel.x * ch + ac.vel.z * sh;          // forward / right ground speeds
+      const pIn = Math.abs(P.pitch) > 0.03, rIn = Math.abs(P.roll) > 0.03, H = S.heli;
+      const ttr = H.trMax * ac.surf.rud * (o.rho / 1.225) * ac.rotor.rpm ** 2; f.ttr = (f.ttr || 0) + (ttr - (f.ttr || 0)) * Math.min(1, dt / 0.6);
+      const phTrim = o.onGround ? 0 : Math.atan(clamp(f.ttr / (ac.mass * G), -0.15, 0.15));
+      // autopilot: heading (or direct to a field: the bearing, then slowing into a hover over it), speed, altitude
+      const A = f.ap, apOn = A.on && !o.onGround; let apHdg = null, apU = null;
+      if (apOn) {
+        const headwind = o.tas - uh;
+        if (A.nav && A.navFn) {
+          const nv = A.navFn(ac.pos); A.hdg = ((nv.brg % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+          const floor = nv.elev + 500 * FTM; if (A.alt === null || nv.dist < 2500) A.alt = nv.dist < 2500 ? floor : Math.max(A.alt, floor);
+          apU = Math.min(Math.max(0, (A.spd || 110) * KT - headwind), Math.sqrt(Math.max(0, nv.dist - 40) * 1.1));
+          if (nv.dist < 120 && gs < 4 && !A.arrived) { A.arrived = true; A.nav = null; A.navFn = null; A.spd = 0; apU = 0; if (A.onArrive) A.onArrive(); }
+        } else if (A.spd !== null) apU = Math.max(0, A.spd * KT - headwind);
+        apHdg = A.hdg;
+        if (apU !== null && !pIn) { if (!f.att) f.att = { u: apU, i: 0, j: 0 }; f.att.u = apU < 3 ? 0 : apU; }
+      }
+      let th, ph;
+      if (pIn) { th = P.pitch * 20 * D; f.att = null; }
+      else {
+        if (!f.att) f.att = { u: uh > 12 ? uh : 0, i: 0, j: 0 };
+        const A = f.att, ax = clamp((A.u - uh) * 0.45, -2.5, 2.5), drag = 0.35 * o.rho * H.f * uh * Math.abs(uh) / ac.mass;   // (~70 % of the fuselage drag: the stabiliser and blowback carry the rest)
+        A.i = clamp(A.i - (A.u - uh) * dt * 0.004, -0.12, 0.12);
+        th = clamp(-Math.atan((ax + drag) / G) + A.i, -18 * D, 16 * D);
+      }
+      // lateral: in a hover the bank nulls the drift over the ground; in forward flight wings "level" (the trim bank),
+      // the pedals keep the sideslip out and a bank turns; blended between 12 and 20 m/s over the ground
+      const fw = sstep(12, 20, gs); if (!f.lat) f.lat = { j: 0 };
+      if (rIn) { ph = phTrim + P.roll * 35 * D; f.lat.j *= 1 - Math.min(1, dt); }
+      else {
+        f.lat.j = clamp(f.lat.j - vh * dt * 0.01 * (1 - fw), -0.1, 0.1);
+        ph = phTrim + (1 - fw) * clamp(Math.atan(clamp(-vh * 0.5, -2, 2) / G) + f.lat.j, -14 * D, 14 * D);
+        if (apHdg !== null) { const trk = Math.atan2(ac.vel.x, -ac.vel.z); ph += fw * clamp(wrap(apHdg - (gs > 5 ? trk : E.hdg)) * 1.4, -22 * D, 22 * D); }
+      }
+      if (o.onGround && c.coll < 0.3) { th = E.pitch; ph = E.roll; }
+      const pCmd = clamp(wrap(ph - E.roll) * 3, -S.pMax, S.pMax), qCmd = clamp((th - E.pitch) * 3, -S.qMax, S.qMax);
+      c.ail = clamp(ac.surf.ail + (8 * (pCmd - ac.omega.x) - ac.omegaDot.x) / Math.max(o.B.p, 1e-3) * 0.4, -1, 1);
+      c.elev = clamp(ac.surf.elev + (6 * (qCmd - ac.omega.y) - ac.omegaDot.y) / Math.max(o.B.q, 1e-3) * 0.4, -1, 1);
+      // yaw: pedals = yaw rate; released: hold the heading (hover) or coordinate the turn (forward flight)
+      let rCmd;
+      if (Math.abs(P.yaw) > 0.03) { rCmd = P.yaw * 0.8; f.hdgHold = null; }
+      else {
+        if (f.hdgHold === null || fw > 0.5) f.hdgHold = E.hdg;
+        if (apHdg !== null && fw < 0.5) f.hdgHold = apHdg;
+        const rFwd = (G / Math.max(gs, 1)) * Math.sin(E.roll - phTrim) + 1.5 * (o.beta || 0), rHov = clamp(wrap(f.hdgHold - E.hdg) * 1.5, -0.6, 0.6);
+        rCmd = fw * rFwd + (1 - fw) * rHov;
+      }
+      c.rud = clamp(ac.surf.rud + (4 * (rCmd - ac.omega.z) - ac.omegaDot.z) / Math.max(o.B.r, 1e-3) * 0.4, -1, 1);
+      if (o.onGround && c.coll < 0.25) c.rud *= 0.5;
+    }
+
     // ---------------------------------------------------------------- inner loops (every substep)
     function pre(a, dt) {
+      if (S.heli) return preHeli(dt);
       const o = ac.out, c = ac.ctl, P = f.pil; FDM.euler(ac.q, E);
       const tas = Math.max(o.tas, 25), cp = Math.cos(E.roll), sp = Math.sin(E.roll);
       const gam = flightPath(); const airborne = !o.onGround;
+      const gdot = f.gPrev === undefined ? 0 : (gam - f.gPrev) / dt; f.gPrev = gam; f.gdot = (f.gdot || 0) + (gdot - (f.gdot || 0)) * Math.min(1, dt * 8);   // flight-path rate (flare damping)
       f.air = airborne ? f.air + dt : 0;
       // nose-wheel steering: full at taxi speed, a few degrees at takeoff speed (rudder takes over)
       const gs = o.gs; c.steer = clamp(P.yaw, -1, 1) * (gs < 6 ? 1 : gs > 30 ? 0.08 : 1 - 0.92 * (gs - 6) / 24);
@@ -112,7 +193,7 @@ const FCS = (() => {
         c.elev = P.pitch; c.ail = P.roll; c.rud = P.yaw; f.law = 'direct';
         return;
       }
-      const law = f.air > 0.8 && o.agl > 1.5 ? 'flight' : 'ground';
+      const law = f.air > 0.8 && (o.agl > 1.5 || f.law === 'flight') ? 'flight' : 'ground';     // (flight law until the wheels are down: no switch in the flare)
       if (law === 'flight' && f.law !== 'flight') { f.gammaHold = gam; f.phiHold = 0; f.thetaHold = null; f.srs = f.wasGround && o.gs > 20; }
       if (law === 'ground') f.wasGround = true; else if (f.air > 3) f.wasGround = false;
       f.law = law;
@@ -146,9 +227,9 @@ const FCS = (() => {
       else if (flareZone && f.assist === 'full') {
         // auto-flare: sink rate proportional to height, a gentle arrival
         const vsC = Math.max(o.vs, -Math.max(0.4, o.agl / 3.4)), gC = Math.asin(clamp(vsC / tas, -0.3, 0.3)); f.flare = true;
-        qCmd = qTurn + K.gam * (gC - gam) * 2.4; f.gammaHold = gam;
+        qCmd = qTurn + K.gam * (gC - gam) * 2.6 - f.gdot * 1.0; f.gammaHold = gam;
       }
-      else qCmd = qTurn + K.gam * (f.gammaHold - gam) * (f.ap.on && f.ap.flare ? 2.4 : 1);
+      else qCmd = qTurn + (f.ap.on && f.ap.flare ? K.gam * (f.gammaHold - gam) * 2.6 - f.gdot * 1.0 : K.gam * (f.gammaHold - gam));   // (the flare: damped by the path's rate, no balloon)
       if (law === 'flight') {
         // protections: load factor, angle of attack, pitch attitude, overspeed
         const nMax = S.nMax, nMin = fighter ? -3 : -1;
@@ -159,6 +240,7 @@ const FCS = (() => {
         if (!fighter) { if (E.pitch > 30 * D) qCmd = Math.min(qCmd, (30 * D - E.pitch) * 2); if (E.pitch < -15 * D) qCmd = Math.max(qCmd, (-15 * D - E.pitch) * 2); }
         const vmo = (V.mo || 999) * KT; if (o.cas > vmo + 6 * KT || o.mach > (V.mmo || 9) + 0.01) qCmd = Math.max(qCmd, 1.5 * D);
       }
+      if (law === 'flight' && o.agl < 12 && ((f.ap.on && f.ap.flare) || f.flare)) qCmd = Math.max(qCmd, -1.5 * D);   // little nose-down in the flare
       f.info.qCmd = qCmd;
       const qdot = K.q * (qCmd - ac.omega.y);
       if (o.B.q > 1e-4) c.elev = clamp(ac.surf.elev + (qdot - ac.omegaDot.y) / o.B.q * 0.5, -1, 1); else c.elev = P.pitch;
@@ -166,8 +248,11 @@ const FCS = (() => {
       if (law === 'ground') {
         c.rud = P.yaw;
         // assisted: hold the runway heading on the takeoff and landing roll while the pedals are free (rudder + steering)
-        if (f.assist === 'full' && o.gs > 4 && Math.abs(P.yaw) < 0.05) {
+        const roll = f.ap.on && f.ap.appr && f.ap.rwy && f.wasAir;                       // autoland rollout: along the centreline
+        if (roll && o.gs < 25 * KT) { f.ap.on = false; f.ap.appr = false; f.ap.athr = false; f.ap.gs = f.ap.loc = f.ap.flare = f.ap.retard = false; f.events.push('AUTOLAND COMPLETE'); }
+        if ((f.assist === 'full' || roll) && o.gs > 4 && Math.abs(P.yaw) < 0.05) {
           if (f.hdgHold === null) f.hdgHold = E.hdg;
+          if (roll) { const R = f.ap.rwy, cross = -(ac.pos.x - R.x) * R.uz + (ac.pos.z - R.z) * R.ux; f.hdgHold = Math.atan2(R.ux, -R.uz) + clamp(-cross * 0.005, -0.07, 0.07); }
           const e = wrap(f.hdgHold - E.hdg), cmd = clamp(e * 4 - ac.omega.z * 1.6, -1, 1);
           c.rud = cmd; c.steer = cmd * (gs < 6 ? 0.6 : gs > 30 ? 0.08 : 0.6 - 0.52 * (gs - 6) / 24);
         } else f.hdgHold = null;

@@ -59,7 +59,13 @@ const FSound = (() => {
     ramp(v.cabin.frequency, inside ? (T.model.kind === 'ga' ? 1400 : 900) : clamp(18000 - d * 3, 1200, 18000), 0.2);
     const E = ac.eng, nAvg = E.reduce((s, e) => s + clamp((e.n - 0.2) / 0.8, 0, 1.05), 0) / E.length, on = E.some(e => e.n > 0.1), kind = T.fdm.engines[0].type;
     const count = Math.sqrt(E.length);
-    if (kind === 'fan') {
+    if (T.fdm.heli) {           // rotor: blade slap at the blade-pass frequency over the turbine whine
+      const rpm = ac.rotor ? ac.rotor.rpm : 0, bp = 3 * 6.5 * rpm, load = ac.rotor ? Math.min(1.3, ac.rotor.T / 20000) : 0;
+      ramp(n.pist.frequency, bp * dop, 0.05); ramp(n.pistF.frequency, 180 + 200 * load); ramp(n.pistG.gain, rpm * (0.1 + 0.12 * load));
+      ramp(n.prop.frequency, bp * 2 * dop, 0.05); ramp(n.propF.frequency, 90 * dop); ramp(n.propG.gain, rpm * 0.05);
+      ramp(n.whine.frequency, 5200 * rpm * dop, 0.1); ramp(n.whine2.frequency, 7400 * rpm * dop, 0.1); ramp(n.whineF.frequency, 6000 * rpm * dop); ramp(n.whineG.gain, rpm * 0.012);
+      ramp(n.roarG.gain, 0.03 * rpm); ramp(n.roarF.frequency, 500); ramp(n.sawG.gain, 0); ramp(n.rumbleG.gain, 0.06 * rpm * load); ramp(n.abG.gain, 0);
+    } else if (kind === 'fan') {
       const fan = 0.22 + 0.78 * nAvg, rear = inside ? 1 : 0.6 + 0.4 * clamp(-pc.dot(new THREE.Vector3(1, 0, 0).applyQuaternion(ac.q)) / Math.max(d, 1), -1, 1);
       ramp(n.roarF.frequency, (350 + 900 * fan) * dop); ramp(n.roarG.gain, 0.08 * count * fan * fan * (0.7 + 0.5 * rear));
       const bpf = (T.fdm.engines[0].fast ? 2600 : 1850) * fan;

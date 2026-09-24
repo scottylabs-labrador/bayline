@@ -61,6 +61,7 @@ const WorldTiles = (() => {
       const buf = new Uint8Array(await r.arrayBuffer()), t = rd(buf); const layers = {};
       while (t.p < t.len) { const k = t.varint(); if ((k >> 3) === 3) { const L = layer(t.bytes()); layers[L.name] = L; } else t.skip(k & 7); }
       const P = [], N = [], C = [], A = [];  // building positions / normals / colours / aux (x: kind 0 wall 1 roof 2 apron 3 taxi, y: height of floor band)
+      const FM = [], FP = [];                 // footprints for the physics: [x0, z0, x1, z1, top, first point, points] + the rings
       const ext = (layers.building || layers.aeroway || { extent: 4096 }).extent;
       const toM = (x, y) => [(x / ext - 0.5) * mx, (y / ext - 0.5) * my];   // metres from the tile centre (x east, y south)
       const hAt = (x, y) => { const u = Math.max(0, Math.min(16, x / ext * 16)), v = Math.max(0, Math.min(16, y / ext * 16)), i = Math.min(15, u | 0), j = Math.min(15, v | 0), a = u - i, b = v - j;
@@ -84,6 +85,8 @@ const WorldTiles = (() => {
             push(a[0], y0, a[1], nx, 0, nz, col, 0, h0); push(b[0], y1, b[1], nx, 0, nz, col, 0, h0); push(b[0], y0, b[1], nx, 0, nz, col, 0, h0);
             push(a[0], y0, a[1], nx, 0, nz, col, 0, h0); push(a[0], y1, a[1], nx, 0, nz, col, 0, h0); push(b[0], y1, b[1], nx, 0, nz, col, 0, h0);
           }
+          { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const q of pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
+            FM.push(x0, z0, x1, z1, y1, FP.length / 2, pts.length); for (const q of pts) FP.push(q[0], q[1]); }
           const rc = [col[0] * 0.8, col[1] * 0.8, col[2] * 0.8];
           for (const [i, j, k] of earclip(pts)) { const a = pts[i], b = pts[j], c = pts[k]; push(a[0], y1, a[1], 0, 1, 0, rc, 1, 0); push(c[0], y1, c[1], 0, 1, 0, rc, 1, 0); push(b[0], y1, b[1], 0, 1, 0, rc, 1, 0); }
           nb++;
@@ -108,8 +111,8 @@ const WorldTiles = (() => {
         }
       }
       const f32 = (a) => new Float32Array(a);
-      const out = { id, b: { p: f32(P), n: f32(N), c: f32(C), a: f32(A) }, q: { p: f32(Q), n: f32(QN), c: f32(QC), a: f32(QA) }, nb };
-      postMessage(out, [out.b.p.buffer, out.b.n.buffer, out.b.c.buffer, out.b.a.buffer, out.q.p.buffer, out.q.n.buffer, out.q.c.buffer, out.q.a.buffer]);
+      const out = { id, b: { p: f32(P), n: f32(N), c: f32(C), a: f32(A) }, q: { p: f32(Q), n: f32(QN), c: f32(QC), a: f32(QA) }, f: { m: f32(FM), p: f32(FP) }, nb };
+      postMessage(out, [out.b.p.buffer, out.b.n.buffer, out.b.c.buffer, out.b.a.buffer, out.q.p.buffer, out.q.n.buffer, out.q.c.buffer, out.q.a.buffer, out.f.m.buffer, out.f.p.buffer]);
     } catch (err) { postMessage({ id, error: String(err) }); }
   };`;
   // ---------------------------------------------------------------- materials
@@ -172,6 +175,7 @@ const WorldTiles = (() => {
     if (!mat) { mat = materials(); aeroMat = materials(); aeroMat.polygonOffset = true; aeroMat.polygonOffsetFactor = -2; aeroMat.polygonOffsetUnits = -4; }
     if (d.b.p.length) { t.mesh = new THREE.Mesh(geo(d.b), mat); t.mesh.castShadow = true; t.mesh.receiveShadow = true; t.mesh.matrixAutoUpdate = false; t.mesh.layers.enable(1); group.add(t.mesh); stats.tris += d.b.p.length / 9; }
     if (d.q.p.length) { t.aero = new THREE.Mesh(geo(d.q), aeroMat); t.aero.receiveShadow = true; t.aero.matrixAutoUpdate = false; t.aero.layers.enable(1); t.aero.renderOrder = -2; group.add(t.aero); }
+    t.fm = d.f.m; t.fp = d.f.p;
     t.state = 2; t.mlatB = Globe.frame.mlat; t.mlonB = Globe.frame.mlon; t.fid = -1; place(t); stats.tiles++;
   }
   function place(t) {    // position / stretch in the current frame (like globe nodes)
@@ -200,5 +204,21 @@ const WorldTiles = (() => {
     for (const t of tiles.values()) { if (t.state === 2) place(t); }
     if ((frameNo & 63) === 0) for (const t of [...tiles.values()]) if (frameNo - t.used > 600 && t.state !== 1) drop(t);
   }
-  return { update, group, stats, get enabled() { return enabled; }, set enabled(v) { enabled = !!v; if (!v) group.visible = false; } };
+  // building footprints near a point (world coordinates, absolute roof heights): the flight physics lands on and hits them
+  function buildingsNear(x, z, r, out = []) {
+    for (const t of tiles.values()) {
+      if (t.state !== 2 || !t.fm || !t.fm.length) continue;
+      const c = Globe.ll2w(t.lat, t.lon), sx = Globe.frame.mlon / t.mlon, sz = Globe.frame.mlat / t.mlat, lx = (x - c.x) / sx, lz = (z - c.z) / sz;
+      if (Math.abs(lx) > t.mx / 2 + r || Math.abs(lz) > t.my / 2 + r) continue;
+      const M = t.fm, Q = t.fp;
+      for (let i = 0; i < M.length; i += 7) {
+        if (M[i + 2] < lx - r || M[i] > lx + r || M[i + 3] < lz - r || M[i + 1] > lz + r) continue;
+        const s0 = M[i + 5], n = M[i + 6], pts = new Float32Array(n * 2);
+        for (let k = 0; k < n; k++) { pts[k * 2] = c.x + Q[(s0 + k) * 2] * sx; pts[k * 2 + 1] = c.z + Q[(s0 + k) * 2 + 1] * sz; }
+        out.push({ pts, top: M[i + 4] });
+      }
+    }
+    return out;
+  }
+  return { update, group, stats, buildingsNear, get enabled() { return enabled; }, set enabled(v) { enabled = !!v; if (!v) group.visible = false; } };
 })();

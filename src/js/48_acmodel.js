@@ -171,6 +171,15 @@ const ACModel = (() => {
         return { top, bot, hw };
       };
     }
+    if (m.kind === 'heli') {        // a rounded cabin pod tapering into the tail boom
+      const W = F.w / 2, H = F.h / 2, yc0 = -F.zc, pod = F.pod, bw = F.boomW / 2, bh = F.boomH / 2, byc = -F.boomZ;
+      return (s) => {
+        if (s < 1.5) { const t = s / 1.5, k = Math.sqrt(1 - (1 - t) ** 2); return { hw: W * (0.25 + 0.75 * k), top: yc0 + H * (-0.2 + 1.2 * Math.pow(k, 0.8)), bot: yc0 - H * (0.3 + 0.7 * k) }; }
+        if (s < pod) return { hw: W, top: yc0 + H, bot: yc0 - H * (1 - 0.3 * sstep(pod - 1.4, pod, s)) };
+        if (s < pod + 1.8) { const u = sstep(0, 1, (s - pod) / 1.8); return { hw: W + (bw - W) * u, top: yc0 + H + (byc + bh - yc0 - H) * u, bot: yc0 - 0.7 * H + (byc - bh - yc0 + 0.7 * H) * u }; }
+        const u = (s - pod - 1.8) / Math.max(0.1, L - pod - 1.8); return { hw: bw * (1 - 0.3 * u), top: byc + bh * (1 - 0.2 * u), bot: byc - bh * (1 - 0.2 * u) };
+      };
+    }
     // fighter: radome, canopy fairing, intake trunk and the aft body to the nozzle
     const W = F.w / 2, H = F.h / 2, yc0 = -F.zc;
     return (s) => {
@@ -213,6 +222,7 @@ const ACModel = (() => {
     jet: [{ az: [-75, 36], el: [-19, 15], post: 0.06 }, { az: [40, 82], el: [-14, 13] }, { az: [86, 116], el: [-12, 11] }],
     ga: [{ az: [-80, 56], el: [-9, 34], post: 0.025 }, { az: [60, 128], el: [-30, 24] }, { az: [132, 165], el: [-20, 14] }],
     fighter: [{ az: [-180, 180], el: [-30, 90] }],
+    heli: [{ az: [-135, 125], el: [-62, 52], post: 0.02 }],
   };
   const MW = 2048, MH = 512;
   function windowMask(m, pt, eyeM) {       // Uint8Array MW x MH: 1 where a cockpit window is
@@ -230,7 +240,7 @@ const ACModel = (() => {
   }
   function livery(type, m, prof, pt, eyeM) {
     const kind = m.kind, L = m.L, lv = m.livery;
-    const W = kind === 'ga' ? 2048 : kind === 'fighter' ? 2048 : 4096, H = W / 4, ppm = W / L;
+    const W = kind === 'jet' ? 4096 : 2048, H = W / 4, ppm = W / L;
     const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
     const cv = mk(), g = cv.getContext('2d'), ce = document.createElement('canvas'); ce.width = W / 2; ce.height = H / 2; const ge = ce.getContext('2d');
     const cm = document.createElement('canvas'); cm.width = MW; cm.height = MH; const gm = cm.getContext('2d');
@@ -278,7 +288,7 @@ const ACModel = (() => {
         g.fillText(lv.reg, X(L - F.tailLen * 0.62, r), Yc(vOf(L - F.tailLen * 0.62, yAxis + 0.2), r));
         g.restore();
       });
-    } else if (kind === 'ga') {
+    } else if (kind === 'ga' || kind === 'heli') {
       const s0 = 1.5;
       both(r => {
         g.fillStyle = lv.stripe; rect(g, 0.3, L - 0.3, 0.3, 0.335, r); g.fillStyle = lv.stripe2; rect(g, 0.3, L - 0.5, 0.345, 0.365, r);
@@ -378,9 +388,6 @@ const ACModel = (() => {
 
     // ---- wings
     const w = m.wing, surfs = [];
-    if (w.flap) surfs.push({ y0: w.flap[0], y1: w.flap[1], cf: w.flap[2], kind: 'flap' });
-    if (w.ail) surfs.push({ y0: w.ail[0], y1: w.ail[1], cf: w.ail[2], kind: 'ail' });
-    const wr = surface(w, surfs, { color: wingCol, spoilers: w.spoil, metal: m.kind === 'jet' ? '#c4cad1' : wingCol, noMetal: m.kind !== 'jet' });
     const hingePart = (p, side, mat) => {
       const pivot = new THREE.Group(); const g = p.gb.geo(); const A = p.a.clone(), B = p.b.clone();
       let geo = g; if (side < 0) { geo = mirrorZ(g); A.z = -A.z; B.z = -B.z; }
@@ -388,6 +395,11 @@ const ACModel = (() => {
       const me = new THREE.Mesh(geo, mat); me.castShadow = true; me.receiveShadow = true; if (p.twoSided) me.material = mat; pivot.add(me); root.add(pivot);
       return { pivot, axis: B.clone().sub(A).normalize(), side, kind: p.kind, base: pivot.position.clone(), c: p.c || 1, cd: p.cd ? p.cd.clone() : new V3(-1, 0, 0), ud: p.ud ? p.ud.clone() : new V3(0, 1, 0) };
     };
+    let wr = null;
+    if (w) {
+    if (w.flap) surfs.push({ y0: w.flap[0], y1: w.flap[1], cf: w.flap[2], kind: 'flap' });
+    if (w.ail) surfs.push({ y0: w.ail[0], y1: w.ail[1], cf: w.ail[2], kind: 'ail' });
+    wr = surface(w, surfs, { color: wingCol, spoilers: w.spoil, metal: m.kind === 'jet' ? '#c4cad1' : wingCol, noMetal: m.kind !== 'jet' });
     for (const side of [1, -1]) {
       addMesh(side > 0 ? wr.gb.geo() : mirrorZ(wr.gb.geo()), M.wing);
       for (const p of wr.parts) { const h = hingePart(p, side, M.wing); (p.kind === 'flap' ? parts.flap : p.kind === 'ail' ? parts.ail : parts.spoil).push(h); }
@@ -418,15 +430,46 @@ const ACModel = (() => {
         const a = gb.v(pts[0], 0, 0, col), b = gb.v(pts[1], 0, 0, col), c = gb.v(pts[2], 0, 0, col); side > 0 ? gb.t(a, b, c) : gb.t(a, c, b); side > 0 ? gb.t(a, c, b) : gb.t(a, b, c);
         addMesh(gb, M.wing); }
     }
+    }
+    // ---- helicopter: rotors, skids, the engine deck
+    const rot = { main: null, tail: null };
+    if (m.rotor) {
+      const R = m.rotor, top = fz.prof(m.nose - R.x).top;
+      const deck = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.6, 6, 12), M.nacelle.clone()); deck.material.vertexColors = false; deck.material.color.set(m.livery.base);
+      deck.rotation.z = Math.PI / 2; deck.position.set(R.x - 0.6, top + 0.12, 0); deck.castShadow = true; root.add(deck);
+      const hubY = -R.z, mast = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, hubY - top, 10), M.grey); mast.position.set(R.x, (hubY + top) / 2, 0); root.add(mast);
+      const g2 = new THREE.Group(); g2.position.set(R.x, hubY, 0); root.add(g2);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 0.22, 16), M.dark); g2.add(hub);
+      const blades = new THREE.Group(); g2.add(blades);
+      const bm = M.dark.clone(); bm.transparent = true;                  // (the blades fade into the disc as they spin up)
+      for (let k = 0; k < R.blades; k++) { const bg = new THREE.BoxGeometry(R.R, 0.05, R.chord); bg.translate(R.R / 2 + 0.2, 0.08, 0); const b = new THREE.Mesh(bg, bm); b.rotation.y = k * Math.PI * 2 / R.blades; b.castShadow = true; blades.add(b); }
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(R.R + 0.2, 64), new THREE.MeshBasicMaterial({ color: 0x1a1d21, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      disc.rotation.x = -Math.PI / 2; disc.position.y = 0.08; g2.add(disc);
+      rot.main = { g: g2, blades, disc, bm };
+      const TR = m.tailRotor, g3 = new THREE.Group(); g3.position.copy(P(TR.x, TR.y, TR.z)); root.add(g3);
+      const tb = new THREE.Group(); g3.add(tb);
+      for (let k = 0; k < TR.blades; k++) { const bg = new THREE.BoxGeometry(0.16, TR.R, 0.03); bg.translate(0, TR.R / 2, 0); const b = new THREE.Mesh(bg, M.dark); b.rotation.z = k * Math.PI * 2 / TR.blades; tb.add(b); }
+      const td = new THREE.Mesh(new THREE.CircleGeometry(TR.R, 32), new THREE.MeshBasicMaterial({ color: 0x1a1d21, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })); g3.add(td);
+      rot.tail = { g: g3, blades: tb, disc: td };
+    }
+    if (m.skids) {
+      const K2 = m.skids, len = K2.x0 - K2.x1, tube = new THREE.CylinderGeometry(0.045, 0.045, len, 10); tube.rotateZ(Math.PI / 2);
+      for (const sd of [1, -1]) {
+        const sk = new THREE.Mesh(tube, M.grey); sk.position.copy(P((K2.x0 + K2.x1) / 2, sd * K2.y, K2.z)); sk.castShadow = true; root.add(sk);
+        const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.5, 8), M.grey); tip.position.copy(P(K2.x0 + 0.18, sd * K2.y, K2.z - 0.16)); tip.rotation.z = -0.9; root.add(tip);
+        for (const cx of [K2.x0 - 0.5, K2.x1 + 0.6]) { const a = P(cx, sd * K2.y, K2.z), b = P(cx, sd * 0.55, K2.z - 0.75); const cr = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, a.distanceTo(b), 8), M.grey);
+          cr.position.copy(a).add(b).multiplyScalar(0.5); cr.quaternion.setFromUnitVectors(new V3(0, 1, 0), b.clone().sub(a).normalize()); cr.castShadow = true; root.add(cr); }
+      }
+    }
     // ---- tails
-    const ht = m.htail, hsurf = ht && !ht.allMoving ? [{ y0: ht.y0 || 0.4, y1: ht.span, cf: ht.elev, kind: 'elev' }] : [];
+    const ht = m.htail, hsurf = ht && !ht.allMoving && ht.elev > 0.01 ? [{ y0: ht.y0 || 0.4, y1: ht.span, cf: ht.elev, kind: 'elev' }] : [];
     const hr = ht ? surface({ ...ht, y0: ht.y0 || (m.kind === 'jet' ? m.fus.d * 0.18 : 0.2), tt: ht.t, twist: 0, cam: 0 }, hsurf, { color: m.kind === 'jet' ? (ht.color || '#dfe3e8') : wingCol, noMetal: m.kind !== 'jet' }) : null;
     if (ht) for (const side of [1, -1]) {
       if (ht.allMoving) { const pv = new THREE.Group(); const g = side > 0 ? hr.gb.geo() : mirrorZ(hr.gb.geo()); const hx = ht.x - ht.c0 * 0.35; g.translate(-hx, 0, 0); pv.position.set(hx, 0, 0); const me = new THREE.Mesh(g, M.wing); me.castShadow = true; pv.add(me); root.add(pv); parts.elev.push({ pivot: pv, axis: new V3(0, 0, 1), side: 1, kind: 'stab' }); }
       else { addMesh(side > 0 ? hr.gb.geo() : mirrorZ(hr.gb.geo()), M.wing); for (const p of hr.parts) parts.elev.push(hingePart(p, side, M.wing)); }
     }
     const vt = m.vtail;
-    const vr = surface({ x: vt.x, y0: 0, span: vt.h, c0: vt.c0, c1: vt.c1, sweep: vt.sweep, z: vt.z, t: vt.t, tt: vt.t, cam: 0 }, [{ y0: vt.h * 0.06, y1: vt.h * 0.96, cf: vt.rud, kind: 'rud' }], { vertical: true, noMetal: true });
+    const vr = surface({ x: vt.x, y0: 0, span: vt.h, c0: vt.c0, c1: vt.c1, sweep: vt.sweep, z: vt.z, t: vt.t, tt: vt.t, cam: 0 }, vt.rud > 0.01 ? [{ y0: vt.h * 0.06, y1: vt.h * 0.96, cf: vt.rud, kind: 'rud' }] : [], { vertical: true, noMetal: true });
     addMesh(vr.gb.geo(), M.fin); for (const p of vr.parts) parts.rud.push(hingePart(p, 1, M.fin));
     if (vt.dorsal) {   // dorsal fin fillet
       const gb = new GB(); const col = [1, 1, 1];
@@ -519,6 +562,7 @@ const ACModel = (() => {
     // ---- landing gear
     const legsSpec = f.gear, gr = [];
     legsSpec.forEach((L, i) => {
+      if (L.skid) { gr.push({ skid: true }); return; }
       const pivot = new THREE.Group(), leg = new THREE.Group(); root.add(pivot); pivot.add(leg);
       const top = P(L.x, L.y, L.z - (m.kind === 'ga' ? 0.75 : Math.min(2.6, L.z * 0.62)));
       const wheelC = P(L.x, L.y, L.z - L.r);
@@ -541,18 +585,20 @@ const ACModel = (() => {
     });
 
     // ---- lights: nav (red left, green right), white tail, strobes, beacons, landing / taxi, logo
-    const tipY = w.span, tipP = (side) => { const s = wr.sec(tipY); return new V3(s.o.x - s.c * 0.3, s.o.y + 0.05, side * (tipY + 0.1)); };
-    lamps.navL = lamp(0xff2a1a, 0.9); lamps.navL.position.copy(tipP(-1));
-    lamps.navR = lamp(0x22ff66, 0.9); lamps.navR.position.copy(tipP(1));
+    const tipP = w ? (side) => { const s = wr.sec(w.span); return new V3(s.o.x - s.c * 0.3, s.o.y + 0.05, side * (w.span + 0.1)); }
+      : (side) => P(m.htail.x - m.htail.c0 * 0.5, side * (m.htail.span + 0.05), m.htail.z);
+    const lz = w ? 1 : 0.45;       // (a helicopter: small lamps, no strobes on the stabiliser)
+    lamps.navL = lamp(0xff2a1a, 0.9 * lz); lamps.navL.position.copy(tipP(-1));
+    lamps.navR = lamp(0x22ff66, 0.9 * lz); lamps.navR.position.copy(tipP(1));
     lamps.tail = lamp(0xffffff, 0.8); lamps.tail.position.set(m.nose - m.L - 0.05, -(m.kind === 'jet' ? m.fus.zc : 0) + 0.35, 0);
     lamps.strobeL = lamp(0xffffff, 3.2); lamps.strobeL.position.copy(tipP(-1)); lamps.strobeR = lamp(0xffffff, 3.2); lamps.strobeR.position.copy(tipP(1));
     const topY = fz.prof(m.L * 0.45).top, botY = fz.prof(m.L * 0.45).bot;
-    lamps.beaconT = lamp(0xff1a0a, 1.6); lamps.beaconT.position.set(m.nose - m.L * 0.45, topY + 0.15, 0);
-    lamps.beaconB = lamp(0xff1a0a, 1.6); lamps.beaconB.position.set(m.nose - m.L * 0.42, botY - 0.15, 0);
-    const landX = m.kind === 'ga' ? w.x - 0.05 : w.x - 1.2, landZ = m.kind === 'ga' ? 2.0 : Math.max(2.2, w.y0 + 1.2);
-    const landSz = m.kind === 'ga' ? 1.1 : 2.4;
-    lamps.landL = lamp(0xfff4e0, landSz); lamps.landL.position.copy(P(landX, -landZ, (m.kind === 'ga' ? w.z : w.z + 0.2)));
-    lamps.landR = lamp(0xfff4e0, landSz); lamps.landR.position.copy(P(landX, landZ, (m.kind === 'ga' ? w.z : w.z + 0.2)));
+    lamps.beaconT = lamp(0xff1a0a, 1.6 * lz); lamps.beaconT.position.set(m.nose - m.L * 0.45, topY + 0.15, 0);
+    lamps.beaconB = lamp(0xff1a0a, 1.6 * lz); lamps.beaconB.position.set(m.nose - m.L * 0.42, botY - 0.15, 0);
+    const landX = !w ? m.nose - 0.9 : m.kind === 'ga' ? w.x - 0.05 : w.x - 1.2, landZ = !w ? 0.3 : m.kind === 'ga' ? 2.0 : Math.max(2.2, w.y0 + 1.2);
+    const landSz = m.kind === 'ga' ? 1.1 : !w ? 1.0 : 2.4;
+    lamps.landL = lamp(0xfff4e0, landSz); lamps.landL.position.copy(P(landX, -landZ, !w ? 0.85 : (m.kind === 'ga' ? w.z : w.z + 0.2)));
+    lamps.landR = lamp(0xfff4e0, landSz); lamps.landR.position.copy(P(landX, landZ, !w ? 0.85 : (m.kind === 'ga' ? w.z : w.z + 0.2)));
     for (const k in lamps) { lamps[k].visible = false; root.add(lamps[k]); }
     const spot = new THREE.SpotLight(0xfff1dc, 0, m.kind === 'ga' ? 420 : 900, 13 * D, 0.55, 1.4); spot.castShadow = false;
     spot.position.copy(P(m.nose - 3, 0, (m.kind === 'jet' ? m.fus.zc + 1 : 0.8))); spot.target.position.copy(P(m.nose + 200, 0, 40)); root.add(spot, spot.target);
@@ -583,7 +629,7 @@ const ACModel = (() => {
     const floor = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, pw * 1.3), new THREE.MeshStandardMaterial({ color: 0x24282d, roughness: 0.95 })); floor.position.copy(eye).add(new V3(0.2, -1.05, -m.cockpit.y)); inside.add(floor);
 
     const tmpQ = new THREE.Quaternion(), fanAng = [];
-    let beaconT = 0, strobeT = 0, wheelAng = [];
+    let beaconT = 0, strobeT = 0, wheelAng = [], rotAng = 0;
     function update(ac, dt, env = {}) {
       const night = env.night || 0, s = ac.surf, fl = f.flaps, nF = fl.length - 1;
       // control surfaces
@@ -595,7 +641,7 @@ const ACModel = (() => {
         if (m.kind === 'jet') p.pivot.position.copy(p.base).addScaledVector(p.cd.clone().setZ(0), p.c * 0.12 * ext).addScaledVector(new V3(0, -1, 0), p.c * 0.02 * ext);
       }
       const ailDeg = -s.ail * f.maxAil / D;                    // right aileron: TE up for roll right
-      const elevonDeg = w.elevon ? -(s.elev * f.maxElev + ac.ctl.trim * f.maxElev * 0.5) / D * 0.8 : 0;   // deltas: elevons move together for pitch
+      const elevonDeg = w && w.elevon ? -(s.elev * f.maxElev + ac.ctl.trim * f.maxElev * 0.5) / D * 0.8 : 0;   // deltas: elevons move together for pitch
       for (const p of parts.ail) p.pivot.quaternion.setFromAxisAngle(p.axis, p.side * ((p.side > 0 ? ailDeg : -ailDeg) * 0.6 + elevonDeg) * D + (m.kind === 'fighter' ? p.side * flapDeg * D : 0));
       const rollSp = Math.max(0, Math.abs(s.ail) - 0.25) * 0.8;
       for (const p of parts.spoil) {
@@ -608,6 +654,7 @@ const ACModel = (() => {
       // gear: fold with the gear position, compress, spin, steer
       const gp = ac.gearPos, vgs = ac.out.gs;
       gr.forEach((g, i) => {
+        if (g.skid) return;
         const L = ac.legs[i]; const fold = g.fixed ? 0 : (1 - gp) * Math.PI / 2 * 0.98;
         g.pivot.quaternion.setFromAxisAngle(g.foldAxis, g.foldSign * fold);
         g.pivot.visible = g.fixed || gp > 0.02;
@@ -628,6 +675,13 @@ const ACModel = (() => {
         if (sp.kind === 'fan') { if (sp.axis === 'x') sp.o.rotation.x = a; else sp.o.rotation.y = a; }
         else { sp.o.rotation.x = a; const n = ac.eng[sp.eng].n; sp.o.visible = n < 0.35; sp.disc.material.opacity = clamp((n - 0.22) * 1.4, 0, 0.32); }
       }
+      // rotors: spinning (a strobe-friendly visual rate), the disc blurring in, the main rotor tilting with the cyclic
+      if (rot.main && ac.rotor) {
+        const rpm = ac.rotor.rpm, fast = sstep(0.35, 0.9, rpm); rotAng += dt * rpm * 23; rot.main.blades.rotation.y = -rotAng; rot.main.disc.material.opacity = 0.2 * fast;
+        rot.main.bm.opacity = 1 - 0.72 * fast; rot.main.bm.depthWrite = fast < 0.5;
+        rot.main.g.rotation.set(ac.rotor.b1 * 1.4, 0, -ac.rotor.a1 * 1.4);
+        rot.tail.blades.rotation.z = rotAng * 4.3; rot.tail.disc.material.opacity = 0.25 * sstep(0.4, 1, rpm);
+      }
       // lights
       beaconT += dt; strobeT += dt;
       const eng1 = ac.eng.some(e => e.n > 0.25), airborne = !ac.out.onGround;
@@ -635,7 +689,7 @@ const ACModel = (() => {
       lit(lamps.navL, true); lit(lamps.navR, true); lit(lamps.tail, true);
       const bOn = eng1 && (beaconT % 1.1) < 0.12; lit(lamps.beaconT, bOn); lit(lamps.beaconB, bOn && (beaconT % 1.1) < 0.1);
       const sOn = (airborne || ac.out.gs > 20) && ((strobeT % 1.25) < 0.05 || ((strobeT % 1.25) > 0.14 && (strobeT % 1.25) < 0.19));
-      lit(lamps.strobeL, sOn); lit(lamps.strobeR, sOn);
+      lit(lamps.strobeL, sOn && !!w); lit(lamps.strobeR, sOn && !!w);
       const landOn = (ac.gearPos > 0.5 && ac.pos.y - ac.out.gnd < 3000) || ac.out.gs > 25 && !airborne;
       lit(lamps.landL, landOn, 0.6 + night); lit(lamps.landR, landOn, 0.6 + night);
       spot.intensity = landOn ? 30000 * night * (m.kind === 'ga' ? 0.25 : 1) : 0;
@@ -664,7 +718,10 @@ const ACModel = (() => {
     }
     geos.push(g0);
     const w = m.wing, wc = m.kind === 'jet' ? '#d9dde2' : m.livery.base;
-    const wr = surface(w, [], { color: wc, metal: '#c4cad1', noMetal: m.kind !== 'jet' }); const wg = wr.gb.geo(); geos.push(wg, mirrorZ(wg));
+    if (w) { const wr = surface(w, [], { color: wc, metal: '#c4cad1', noMetal: m.kind !== 'jet' }); const wg = wr.gb.geo(); geos.push(wg, mirrorZ(wg)); }
+    if (m.rotor) for (const a of [0, Math.PI / 3, -Math.PI / 3]) { const gb = new GB(), R = m.rotor.R, hy = -m.rotor.z, cc = [0.12, 0.13, 0.15];
+      const c2 = Math.cos(a), s2 = Math.sin(a), pts = [[-R, -0.17], [R, -0.17], [R, 0.17], [-R, 0.17]].map(([x, z]) => new V3(m.rotor.x + x * c2 - z * s2, hy, x * s2 + z * c2));
+      const i0 = gb.v(pts[0], 0, 0, cc), i1 = gb.v(pts[1], 0, 0, cc), i2 = gb.v(pts[2], 0, 0, cc), i3 = gb.v(pts[3], 0, 0, cc); gb.q(i0, i3, i2, i1); gb.q(i0, i1, i2, i3); geos.push(gb.geo()); }
     const ht = m.htail; if (ht) { const hr = surface({ ...ht, y0: ht.y0 || (m.kind === 'jet' ? F.d * 0.18 : 0.2), tt: ht.t, twist: 0, cam: 0 }, [], { color: m.kind === 'jet' ? '#dfe3e8' : wc, noMetal: true });
     const hg = hr.gb.geo(); geos.push(hg, mirrorZ(hg)); }
     const vt = m.vtail, vr = surface({ x: vt.x, y0: 0, span: vt.h, c0: vt.c0, c1: vt.c1, sweep: vt.sweep, z: vt.z, t: vt.t, tt: vt.t, cam: 0 }, [], { vertical: true, noMetal: true, color: m.livery.tail });

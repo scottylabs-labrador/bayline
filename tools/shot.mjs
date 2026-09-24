@@ -26,9 +26,9 @@ let wsUrl = null;
 const t0 = Date.now();
 while (!wsUrl && Date.now() - t0 < 20000) {
   const f = join(prof, 'DevToolsActivePort');
-  if (existsSync(f)) { const [port] = readFileSync(f, 'utf8').split('\n'); 
-    const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-    const pg = list.find(t => t.type === 'page'); if (pg) wsUrl = pg.webSocketDebuggerUrl; }
+  if (existsSync(f)) { const [port] = readFileSync(f, 'utf8').split('\n');     // (the file can exist before the port is written)
+    if (+port > 0) try { const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+      const pg = list.find(t => t.type === 'page'); if (pg) wsUrl = pg.webSocketDebuggerUrl; } catch {} }
   if (!wsUrl) await new Promise(r => setTimeout(r, 100));
 }
 if (!wsUrl) { console.error('chrome did not start'); chrome.kill(); process.exit(2); }

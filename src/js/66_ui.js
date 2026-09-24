@@ -16,7 +16,7 @@ const UI = (() => {
       ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['P', 'Photo mode (hide the interface)'], ['K', 'Weather: auto · clear · fog · cloudy · haze'], ['L', 'Copy a link to this view'], ['Esc', 'Release mouse / close'],
       ['Driving: W / S', 'Power / brake notches (W also closes the doors)'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Q', 'Reverser (when stopped)'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot'],
       ['Flying: ↑ ↓ ← →', 'Pitch (↓ = nose up) and roll'], ['W / S', 'Throttle (Shift: faster; past 100 % = afterburner)'], ['A / D', 'Rudder · nose-wheel steering'], ['F / R', 'Flaps extend / retract'], ['G', 'Landing gear'], ['Space · B', 'Wheel brakes · parking brake'], ['T', 'Thrust reverse (on the ground)'], ['Z', 'Speed brakes'],
-      ['Y · U', 'Autopilot · autothrottle'], ['I', 'Approach: capture the runway ahead and autoland'], ['[ ] , . ; \'', 'Heading · altitude · speed targets'], ['C · 1-5 · Tab', 'Cameras: cockpit, chase, orbit, tower, flyby'], ['X', 'Handling: assisted · fly-by-wire · direct'], ['Home / End', 'Trim (direct handling)'], ['M', 'World map: click an airport to fly there direct, a live aircraft to join it'], ['N / Shift+N', 'Sim rate ×1-×16 (cruise, autopilot on)'], ['Esc', 'Flight menu']];
+      ['Y · U', 'Autopilot · autothrottle'], ['I', 'Approach: capture the runway ahead and autoland'], ['[ ] , . ; \'', 'Heading · altitude · speed targets'], ['C · 1-5 · Tab', 'Cameras: cockpit, chase, orbit, tower, flyby'], ['X', 'Handling: assisted · fly-by-wire · direct'], ['Home / End', 'Trim (direct handling)'], ['M', 'World map: click an airport to fly there direct, a live aircraft to join it'], ['N / Shift+N', 'Sim rate ×1-×16 (cruise, autopilot on)'], ['L (flying)', 'Copy a link that puts a friend in your aircraft, right here'], ['Helicopter: W / S', 'Climb / descend (released: hold the height); let go of the stick and it holds its speed, hovers when slow'], ['Esc', 'Flight menu']];
     el.keys.innerHTML = K.map(([k, v]) => `<div><span>${v}</span><kbd>${k}</kbd></div>`).join('');
     initMap();
     // touch joystick: drives the same WASD keys the keyboard does (walk, fly, onboard)
@@ -229,7 +229,7 @@ const UI = (() => {
       const tr = Player.focusTrain(); let sub = '';
       if (tr) { const ns = tr.plan && tr.seg ? tr.trip.stops[Sim.nextStopK(tr.plan, tr.seg)] : null; sub = `${Sim.routeShort(tr.trip)} ${tr.trip.id} → ${(Sim.TT.names[Sim.TT.stations[(tr.trip.stops[tr.trip.stops.length - 1] || [0])[0]]] || '')} · ${Math.round(tr.v / Sim.MPH)} mph${ns ? ' · next ' + Sim.TT.names[Sim.TT.stations[ns[0]]] : ''}`; }
       else sub = `${Sim.running.length} trains running · ${Env.serviceDay().kind === 'wkday' ? 'weekday' : 'weekend'} timetable`;
-      el.hsub.textContent = away ? (subFn ? subFn() || '' : '') : sub;
+      el.hsub.textContent = away || (typeof Flight !== 'undefined' && Flight.active) ? (subFn ? subFn() || '' : '') : sub;
       const names = { cab: 'Cab', onboard: 'Onboard', chase: 'Chase', trackside: 'Trackside', heli: 'Helicopter', walk: 'On foot', fly: 'Flying', orbit: 'Overview' };
       el.hmode.textContent = typeof Flight !== 'undefined' && Flight.active ? 'Flying · ' + Flight.type.short : (Sim.drive ? 'Driving · ' : '') + (names[Player.mode] || Player.mode);
       el.hspeed.textContent = Env.time.live && Env.time.scale === 1 ? 'Live' : (Env.time.scale + '×');

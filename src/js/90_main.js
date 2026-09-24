@@ -98,6 +98,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
   if (hash.get('drive')) { const p = Sim.planById(hash.get('drive')); if (p) Game.startDrive(p, { auto: hash.has('autopilot') }); }
   if (hash.get('fly') && typeof Flight !== 'undefined') { if (!started) start('explore'); Flight.fromHash(hash.get('fly')).catch(e => console.error('fly', e)); }
+  if (hash.get('flyat') && typeof Flight !== 'undefined') { if (!started) start('explore'); Flight.fromFlyAt(hash.get('flyat')).catch(e => console.error('flyat', e)); }
   const hfly = $('hfly'); if (hfly) hfly.addEventListener('click', () => { if (typeof Flight !== 'undefined') { if (Flight.active) FHud.menu(true); else FHud.setup(true); } });
 
   // ---------- keyboard ----------
@@ -124,6 +125,9 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (c === 'Digit0') { Env.goLive(); UI.toast('Live time'); return; }
       let i = scales.indexOf(Env.time.scale); if (i < 0) i = 0; i = U.clamp(i + (c === 'Equal' ? 1 : -1), 0, scales.length - 1); Env.time.scale = scales[i]; if (scales[i] !== 1) Env.time.live = false; UI.toast('Time ×' + scales[i]); return; }
     if (c === 'KeyP') { document.body.classList.toggle('photo'); return; }
+    if (c === 'KeyL' && typeof Flight !== 'undefined' && Flight.active) {   // flying: a link that puts a friend in this aircraft, here
+      const url = Flight.shareLink(); (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => UI.toast('Link to this flight copied: whoever opens it flies from right here'), () => UI.toast(url, 8)); return;
+    }
     if (c === 'KeyL') {   // copy a link to this exact view (clock, weather, camera)
       const cp = Env.camera.position, ll = Geo.w2ll(cp.x, cp.z), d = Env.camera.getWorldDirection(new THREE.Vector3());
       const sec = Env.time.sec, hh = String(Math.floor(sec / 3600)).padStart(2, '0'), mm = String(Math.floor(sec / 60) % 60).padStart(2, '0');
@@ -259,7 +263,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
   function safeFrameR(name, f) { if (errs[name] > 20) return false; try { return f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); return false; } }
-  window.__bayline = { FMissions: typeof FMissions !== "undefined" ? FMissions : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+  window.__bayline = { FMissions: typeof FMissions !== "undefined" ? FMissions : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
     Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();

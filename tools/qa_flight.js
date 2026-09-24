@@ -14,6 +14,22 @@ let fails = 0;
 for (const T of AIRCRAFT.list) {
   if (only && T.id !== only) continue;
   const log = (m) => console.log(T.short.padEnd(8), m);
+  if (T.fdm.heli) {       // helicopter: lift off, hold, fly forward, come back to a hover, land
+    const ac = FDM.create(T.fdm), f = FCS.create(ac, T); env.pre = f.pre; const E = {};
+    ac.place({ x: 0, y: 0, z: 0, hdg: 0, onGround: true }); ac.settle(env);
+    const run = (secs, fn) => { for (let t = 0; t < secs; t += 1 / 60) { if (fn) fn(t); ac.step(1 / 60, env); if (ac.out.crashed) return false; } return true; };
+    let ok = run(8, () => { f.pil.coll = 1; });
+    const y1 = ac.pos.y; ok = ok && run(10, () => { f.pil.coll = 0; }); ac.euler(E);
+    log(`hover: climbed to ${(y1 / FT).toFixed(0)} ft, held ${(ac.pos.y / FT).toFixed(0)} ft (drift ${Math.hypot(ac.pos.x, ac.pos.z).toFixed(1)} m), collective ${ac.ctl.coll.toFixed(2)}, torque ${(ac.out.torque * 100).toFixed(0)}%`);
+    ok = ok && run(30, () => { f.pil.pitch = -0.6; }); ac.euler(E);
+    log(`forward: ${(Math.hypot(ac.vel.x, ac.vel.z) / KT).toFixed(0)} kt at ${(ac.pos.y / FT).toFixed(0)} ft, pitch ${(E.pitch / D).toFixed(1)}, torque ${(ac.out.torque * 100).toFixed(0)}%`);
+    ok = ok && run(40, () => { f.pil.pitch = Math.hypot(ac.vel.x, ac.vel.z) > 10 * KT ? 0.5 : 0; }) && run(15, () => { f.pil.pitch = 0; });   // quick stop, then let go
+    log(`back to a hover: ${(Math.hypot(ac.vel.x, ac.vel.z) / KT).toFixed(1)} kt`);
+    let td = null; ok = ok && run(60, () => { f.pil.coll = -1; if (!td && ac.out.onGround) td = -ac.out.vs; });
+    log(`landing: ${td !== null ? 'touchdown ' + (td / FT * 60).toFixed(0) + ' fpm' : 'no touchdown'} ${ac.out.crashed ? 'CRASH ' + ac.out.crashed : ''}`);
+    if (!ok || td === null) fails++;
+    continue;
+  }
   // ---- takeoff and climb
   { const ac = FDM.create(T.fdm), f = FCS.create(ac, T); env.pre = f.pre;
     const nF = T.fdm.flaps.length - 1, toFlap = Math.min(nF, T.id === 'c172' || T.id === 'dhc6' || T.id === 'dc3' || T.id === 'b350' ? 1 : T.id === 'f16' ? 0 : T.id === 'a320' || T.id === 'a388' ? 2 : 3);

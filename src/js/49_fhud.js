@@ -163,13 +163,13 @@ const FHud = (() => {
     const nF = Math.round(ac.flapPos), vfe = nF > 0 && T.v.fe ? T.v.fe[nF - 1] : null, vmaxEff = Math.min(vmax, vfe || 999, ac.gearPos > 0.1 && T.v.le ? T.v.le : 999);
     const vs1 = AIRCRAFT.vstall(T, ac.mass, Math.min(nF, T.fdm.flaps.length - 1)) * Math.sqrt(Math.max(0.5, o.nz));
     const yOf = (v) => cy - (v - kt) * ppk;
-    g.fillStyle = COL.red; g.fillRect(tx + tw - 7 * s, yOf(vs1), 5 * s, S * 2);                 // stall
-    g.fillStyle = COL.amber; g.fillRect(tx + tw - 7 * s, yOf(vs1 * 1.13), 5 * s, (vs1 * 0.13) * ppk);
+    if (!T.fdm.heli) { g.fillStyle = COL.red; g.fillRect(tx + tw - 7 * s, yOf(vs1), 5 * s, S * 2);                 // stall
+      g.fillStyle = COL.amber; g.fillRect(tx + tw - 7 * s, yOf(vs1 * 1.13), 5 * s, (vs1 * 0.13) * ppk); }
     for (let y = yOf(vmaxEff); y > cy - half - 20; y -= 8 * s) { g.fillStyle = COL.red; g.fillRect(tx + tw - 7 * s, y - 4 * s, 5 * s, 4 * s); }
     g.strokeStyle = COL.white; g.lineWidth = 1.4 * s;
     for (let v = Math.floor((kt - 40) / 5) * 5; v <= kt + 40; v += 5) { if (v < 0) continue; const y = yOf(v); g.beginPath(); g.moveTo(tx + tw - 2, y); g.lineTo(tx + tw - (v % 10 ? 7 : 12) * s, y); g.stroke(); if (v % 20 === 0) txt(String(v), tx + tw - 18 * s, y, 12 * s, COL.white, 'right'); }
     if (A.spd !== null && (A.athr || A.on)) { const y = clamp(yOf(A.spd), cy - half + 4, cy + half - 4); g.fillStyle = COL.mag; g.beginPath(); g.moveTo(tx + tw, y); g.lineTo(tx + tw - 9 * s, y - 6 * s); g.lineTo(tx + tw - 9 * s, y + 6 * s); g.fill(); }
-    const vr = F.cfg && F.cfg.vref; if (vr) { const y = yOf(vr); g.strokeStyle = COL.green; g.beginPath(); g.moveTo(tx + tw - 14 * s, y); g.lineTo(tx + tw, y); g.stroke(); }
+    const vr = F.cfg && !T.fdm.heli && F.cfg.vref; if (vr) { const y = yOf(vr); g.strokeStyle = COL.green; g.beginPath(); g.moveTo(tx + tw - 14 * s, y); g.lineTo(tx + tw, y); g.stroke(); }
     g.restore();
     if (Math.abs(trendKt) > 1) { g.strokeStyle = COL.green; g.lineWidth = 2 * s; const y2 = cy - clamp(trendKt, -40, 40) * ppk; g.beginPath(); g.moveTo(tx + tw + 3 * s, cy); g.lineTo(tx + tw + 3 * s, y2); g.stroke(); }
     rr(tx - 2 * s, cy - 13 * s, tw + 4 * s, 26 * s, 4 * s, '#000', COL.white); txt(String(Math.round(kt)), tx + tw / 2, cy, 17 * s, kt < vs1 * 1.1 ? COL.amber : COL.white);
@@ -209,9 +209,9 @@ const FHud = (() => {
       const fy = cy - half - 30 * s, fw = S + tw + aw + vw, x0 = cx - (S + tw + aw) / 2 - 8 * s;
       rr(x0, fy - 12 * s, fw + 16 * s, 24 * s, 5 * s, COL.box);
       const cols = [
-        A.athr ? (A.retard ? 'RETARD' : 'SPEED') : ac.ctl.thr >= 0.98 ? (ac.ctl.thr > 1 ? 'MAX AB' : 'TOGA') : ac.ctl.thr < 0.02 ? 'IDLE' : 'MAN THR',
-        A.on ? (A.flare ? 'FLARE' : A.gs ? 'G/S' : A.appr ? (A.alt !== null ? 'ALT  G/S' : 'G/S') : A.vs !== null && A.alt !== null && Math.abs(A.alt - ac.pos.y) > 60 ? 'V/S' : 'ALT') : F.fcs.flare ? 'FLARE' : F.fcs.law === 'flight' ? 'FPA' : '',
-        A.on ? (A.appr ? (A.loc ? 'LOC' : 'HDG  LOC') : A.nav ? 'NAV ' + A.nav.ident : 'HDG') : '',
+        T.fdm.heli ? (A.on && A.spd !== null ? 'SPD ' + A.spd : '') : A.athr ? (A.retard ? 'RETARD' : 'SPEED') : ac.ctl.thr >= 0.98 ? (ac.ctl.thr > 1 ? 'MAX AB' : 'TOGA') : ac.ctl.thr < 0.02 ? 'IDLE' : 'MAN THR',
+        T.fdm.heli ? (A.on && A.alt !== null ? 'ALT' : F.fcs.altHold !== null ? 'ALT HOLD' : 'V/S') : A.on ? (A.flare ? 'FLARE' : A.gs ? 'G/S' : A.appr ? (A.alt !== null ? 'ALT  G/S' : 'G/S') : A.vs !== null && A.alt !== null && Math.abs(A.alt - ac.pos.y) > 60 ? 'V/S' : 'ALT') : F.fcs.flare ? 'FLARE' : F.fcs.law === 'flight' ? 'FPA' : '',
+        T.fdm.heli ? (A.on && A.nav ? 'NAV ' + A.nav.ident : F.fcs.att && F.fcs.att.u === 0 ? 'HOVER' : A.on ? 'HDG' : F.fcs.att ? 'SPD HOLD' : 'ATT') : A.on ? (A.appr ? (A.loc ? 'LOC' : 'HDG  LOC') : A.nav ? 'NAV ' + A.nav.ident : 'HDG') : '',
         A.on ? 'AP' : '', ({ full: 'ASSIST', fbw: 'FBW', direct: 'DIRECT' })[F.fcs.assist],
       ];
       cols.forEach((t, i) => txt(t, x0 + 8 * s + (i + 0.5) * (fw / 5), fy, 11.5 * s, i === 0 ? (A.athr ? COL.green : COL.white) : i === 3 ? COL.white : i === 4 ? COL.cyan : COL.green));
@@ -222,21 +222,22 @@ const FHud = (() => {
   function systems(F, x, y, s) {
     const ac = F.ac, T = F.type, o = ac.out, c = ac.ctl, n = ac.eng.length;
     const w = Math.max(170, 60 + n * 52) * s, h = 150 * s; rr(x - w, y - h, w, h, 8 * s, COL.box);
-    const prop = T.fdm.engines[0].type === 'prop';
+    const prop = T.fdm.engines[0].type === 'prop', heli = !!T.fdm.heli;
     ac.eng.forEach((e, i) => {
       const cx = x - w + 36 * s + i * 52 * s, cy = y - h + 42 * s, r = 20 * s, v = clamp((e.n - 0.2) / 0.8, 0, 1.05);
       g.strokeStyle = COL.line; g.lineWidth = 5 * s; g.beginPath(); g.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25); g.stroke();
       g.strokeStyle = c.rev && o.onGround ? COL.amber : COL.green; g.beginPath(); g.arc(cx, cy, r, Math.PI * 0.75, Math.PI * (0.75 + 1.5 * Math.min(1, v))); g.stroke();
       const lev = Math.PI * (0.75 + 1.5 * clamp(c.thr, 0, 1)); g.fillStyle = COL.cyan; g.beginPath(); g.arc(cx + Math.cos(lev) * (r + 6 * s), cy + Math.sin(lev) * (r + 6 * s), 2.6 * s, 0, 7); g.fill();
-      txt(prop ? String(Math.round(600 + 2100 * v)) : (20 + v * 80).toFixed(1), cx, cy + 2 * s, 10.5 * s);
-      txt(c.rev && o.onGround ? 'REV' : c.thr > 1.001 ? 'AB' : prop ? 'RPM' : 'N1', cx, cy + r + 8 * s, 9.5 * s, c.rev && o.onGround ? COL.amber : c.thr > 1.001 ? COL.amber : COL.white);
+      txt(heli ? Math.round((o.torque || 0) * 100) + '%' : prop ? String(Math.round(600 + 2100 * v)) : (20 + v * 80).toFixed(1), cx, cy + 2 * s, 10.5 * s, heli && o.torque > 1 ? COL.amber : COL.white);
+      txt(heli ? 'TQ' : c.rev && o.onGround ? 'REV' : c.thr > 1.001 ? 'AB' : prop ? 'RPM' : 'N1', cx, cy + r + 8 * s, 9.5 * s, c.rev && o.onGround ? COL.amber : c.thr > 1.001 ? COL.amber : COL.white);
     });
     const fl = T.fdm.flaps, fi = Math.round(c.flaps), moving = Math.abs(ac.flapPos - c.flaps) > 0.02;
-    txt('FLAPS', x - w + 12 * s, y - 52 * s, 11 * s, COL.white, 'left', 'mono', 500); txt(fl[fi].label, x - w + 66 * s, y - 52 * s, 12 * s, moving ? COL.amber : COL.green, 'left');
+    if (heli) { txt('NR', x - w + 12 * s, y - 52 * s, 11 * s, COL.white, 'left', 'mono', 500); txt(Math.round((ac.rotor ? ac.rotor.rpm : 0) * 100) + '%', x - w + 66 * s, y - 52 * s, 12 * s, COL.green, 'left'); txt('COLL', x - w + 12 * s, y - 33 * s, 11 * s, COL.white, 'left', 'mono', 500); txt(Math.round((c.coll || 0) * 100) + '%', x - w + 66 * s, y - 33 * s, 12 * s, COL.cyan, 'left'); }
+    else txt('FLAPS', x - w + 12 * s, y - 52 * s, 11 * s, COL.white, 'left', 'mono', 500), txt(fl[fi].label, x - w + 66 * s, y - 52 * s, 12 * s, moving ? COL.amber : COL.green, 'left');
     if (T.fdm.retract) { const gp = ac.gearPos; const col = gp > 0.99 ? COL.green : gp < 0.01 ? null : COL.red; txt('GEAR', x - w + 12 * s, y - 33 * s, 11 * s, COL.white, 'left', 'mono', 500);
       if (col) for (let k = 0; k < 3; k++) rr(x - w + 66 * s + k * 20 * s, y - 40 * s, 16 * s, 14 * s, 2 * s, col === COL.green ? 'rgba(62,240,138,.25)' : 'rgba(255,59,48,.3)', col); else txt('UP', x - w + 66 * s, y - 33 * s, 12 * s, COL.white, 'left'); }
     const tags = [];
-    if (ac.spoilerPos > 0.05) tags.push(['SPD BRK', COL.amber]); if (c.park) tags.push(['PARK BRK', COL.amber]); else if (c.brake > 0.05) tags.push(['BRAKES', COL.amber]);
+    if (ac.spoilerPos > 0.05) tags.push(['SPD BRK', COL.amber]); if (c.park && !T.fdm.heli) tags.push(['PARK BRK', COL.amber]); else if (c.brake > 0.05) tags.push(['BRAKES', COL.amber]);
     if (F.fcs.assist === 'direct' && Math.abs(c.trim) > 0.01) tags.push(['TRIM ' + (c.trim > 0 ? 'UP ' : 'DN ') + Math.round(Math.abs(c.trim) * 100), COL.cyan]);
     tags.forEach(([t, col], i) => txt(t, x - w + 12 * s + (i % 2) * (w / 2), y - 14 * s, 10.5 * s, col, 'left'));
   }
@@ -280,6 +281,7 @@ const FHud = (() => {
     if (o.agl / FT < 2500) txt(Math.max(0, Math.round(o.agl / FT)) + ' R', cx + dx, cy + 44 * s, 12 * s, col);
     txt(String(Math.round(F.euler.hdg / D) % 360 || 360).padStart(3, '0'), cx, cy - H * 0.3, 14 * s, col);
     const fl = F.type.fdm.flaps[Math.round(ac.ctl.flaps)].label, thr = Math.round(ac.ctl.thr * 100);
+    if (F.type.fdm.heli) { txt(`TQ ${Math.round((o.torque || 0) * 100)}%  ·  NR ${Math.round((ac.rotor ? ac.rotor.rpm : 0) * 100)}%${A.on ? '  ·  AP' + (A.nav ? ' ' + A.nav.ident : '') : ''}`, cx, cy - H * 0.3 + 22 * s, 11 * s, col); return; }
     txt(`THR ${thr}%  ·  FLAPS ${fl}${F.type.fdm.retract ? '  ·  GEAR ' + (ac.gearPos > 0.99 ? 'DN' : ac.gearPos < 0.01 ? 'UP' : '···') : ''}${A.on ? '  ·  AP' : ''}${A.athr ? '  ·  A/THR ' + A.spd : ''}`, cx, cy - H * 0.3 + 22 * s, 11 * s, col);
   }
 
@@ -303,7 +305,7 @@ const FHud = (() => {
       const s = 0.95; pg.fillStyle = '#050608'; for (const x of [18, 356, 684]) pg.fillRect(x, 16, 318, 352);
       pfd(F, 18 + 159, 16 + 170, s * 0.78, { noFma: false });
       nd(F, 356 + 159, 16 + 176, 150);
-      pfd(F, 684 + 159, 16 + 170, s * 0.78, { noFma: true });
+      if (T.fdm.heli) vemd(F, 684, 16, 318, 352); else pfd(F, 684 + 159, 16 + 170, s * 0.78, { noFma: true });
     }
     g = save; W = sW; H = sH;
     P.tex.needsUpdate = true;
@@ -341,6 +343,24 @@ const FHud = (() => {
     txt(String(Math.round(E.hdg / D) % 360).padStart(3, '0') + '°', cx, cy - R + 4, 14, COL.white);
     txt('GS ' + Math.round(ac.out.gs / KT) + '  TAS ' + Math.round(ac.out.tas / KT), cx - R + 4, cy - R - 8, 11, COL.white, 'left');
     txt('20 NM', cx + R - 4, cy - R - 8, 11, COL.cyan, 'right');
+  }
+  function vemd(F, x, y, w, h) {    // helicopter engine display: torque and rotor speed arcs, turbine temperature, fuel, collective
+    const ac = F.ac, o = ac.out, R = ac.rotor || { rpm: 0 }, pg = g, tq = (o.torque || 0) * 100, nr = R.rpm * 100;
+    pg.fillStyle = '#050608'; pg.fillRect(x, y, w, h);
+    const arc = (cx, cy, r, v, lo, hi, amber, red, label, val) => {
+      const a0 = Math.PI * 0.8, span = Math.PI * 1.4, ang = (t) => a0 + span * clamp((t - lo) / (hi - lo), 0, 1);
+      pg.lineWidth = 9; pg.strokeStyle = '#2a8f4a'; pg.beginPath(); pg.arc(cx, cy, r, ang(lo), ang(amber)); pg.stroke();
+      pg.strokeStyle = '#d9a400'; pg.beginPath(); pg.arc(cx, cy, r, ang(amber), ang(red)); pg.stroke();
+      pg.strokeStyle = '#d22'; pg.beginPath(); pg.arc(cx, cy, r, ang(red), ang(hi)); pg.stroke();
+      const a = ang(v); pg.strokeStyle = '#fff'; pg.lineWidth = 4; pg.beginPath(); pg.moveTo(cx, cy); pg.lineTo(cx + Math.cos(a) * (r - 4), cy + Math.sin(a) * (r - 4)); pg.stroke();
+      txt(label, cx, cy + r * 0.55, 13, '#aaa', 'center', 'mono', 500); txt(val, cx, cy + r * 0.95, 17, v > red ? COL.red : v > amber ? COL.amber : COL.green);
+    };
+    arc(x + 82, y + 92, 62, tq, 0, 120, 100, 110, 'TQ %', tq.toFixed(0));
+    arc(x + w - 82, y + 92, 62, nr, 0, 120, 104, 108, 'NR %', nr.toFixed(0));
+    const t4 = 380 + 440 * clamp(o.torque || 0, 0, 1.3) * (ac.eng[0].n > 0.3 ? 1 : 0.3);
+    const rows = [['T4', Math.round(t4) + ' °C', t4 > 830 ? COL.amber : COL.green], ['COLL', Math.round((ac.ctl.coll || 0) * 100) + ' %', COL.cyan],
+      ['FUEL', Math.round(100 - Math.min(60, F.flightTime / 60 * 0.9)) + ' %', COL.green], ['OAT', Math.round(15 - ac.pos.y * 0.0065) + ' °C', COL.white]];
+    rows.forEach(([k, v, c2], i) => { txt(k, x + 28, y + 212 + i * 34, 15, '#aaa', 'left', 'mono', 500); txt(v, x + w - 28, y + 212 + i * 34, 17, c2, 'right'); });
   }
   function gauges(F) {       // the Cessna's six-pack and tachometer
     const ac = F.ac, o = ac.out, E = F.euler, pg = g;
@@ -385,7 +405,7 @@ const FHud = (() => {
     if (!cockpit) { if (small) pfd(F, W / 2, 128 + 95 * s * 0.72, s * 0.72, { noFma: true }); else pfd(F, W / 2, H - 175 * s, s); }
     else hudData(F, s);
     if (!small) { systems(F, W - 16, H - 16, s); info(F, 16, H - 16 - 104 * s, s); }
-    warnings(F, s, dt);
+    if (F.replaying) { rr(W / 2 - 70 * s, 70 * s, 140 * s, 28 * s, 6 * s, 'rgba(200,30,20,.8)'); txt('● REPLAY', W / 2, 84 * s, 14 * s, '#fff'); } else warnings(F, s, dt);
     fcuUpdate(F, dt);
     if (touchEl && !touchEl.hidden && Flight.input.touch.thr === null) { const th = touchEl.querySelector('.thr'), tk = th.firstElementChild; tk.style.top = ((1 - Math.min(1, F.ac.ctl.thr)) * (th.clientHeight - 26)) + 'px'; }
     if (typeof FMissions !== 'undefined') FMissions.hudMarker(g, W, H, projectPos);
@@ -482,7 +502,7 @@ const FHud = (() => {
       menuEl = document.createElement('div'); menuEl.className = 'fov'; menuEl.hidden = true;
       menuEl.innerHTML = `<div class="card panel" style="width:min(520px,92vw)"><div class="kicker">Paused</div><h2 id="fm-title">Flight</h2>
         <div style="display:grid;gap:8px"><button class="btn primary" data-a="resume">Resume</button><button class="btn" data-a="restart">Restart this flight</button><button class="btn" data-a="new">New flight…</button>
-        <button class="btn" data-a="assist">Handling: <span id="fm-assist"></span></button><button class="btn" data-a="exit">Leave the aircraft (explore)</button></div>
+        <button class="btn" data-a="assist">Handling: <span id="fm-assist"></span></button><button class="btn" data-replay>▶ Replay the last 2 minutes</button><button class="btn" data-a="exit">Leave the aircraft (explore)</button></div>
         <p class="fnote">Keys: arrows pitch / roll · A / D rudder (steer on the ground) · W / S throttle (Shift: faster) · T reverse · F / R flaps · G gear · Space brakes · B parking brake · Z speed brakes · Y autopilot · U autothrottle · I approach (autoland) · [ ] heading · , . altitude · ; ' speed · C / 1-5 cameras · drag to look · wheel to zoom · X handling · Home / End trim (direct)</p></div>`;
       document.body.appendChild(menuEl);
       menuEl.addEventListener('click', (e) => { const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a;
@@ -497,7 +517,7 @@ const FHud = (() => {
     if (!crashEl) {
       crashEl = document.createElement('div'); crashEl.className = 'fov'; crashEl.hidden = true;
       crashEl.innerHTML = `<div class="card panel" style="width:min(520px,92vw)"><div class="kicker" style="color:#ff5a4a">Crashed</div><h2 id="fc-why"></h2><p id="fc-info" style="color:var(--ink-dim)"></p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-a="restart">Try again</button><button class="btn" data-a="new">New flight…</button><button class="btn" data-a="exit">Explore</button></div></div>`;
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-a="restart">Try again</button><button class="btn" data-replay>▶ Replay</button><button class="btn" data-a="new">New flight…</button><button class="btn" data-a="exit">Explore</button></div></div>`;
       document.body.appendChild(crashEl);
       crashEl.addEventListener('click', (e) => { const b = e.target.closest('[data-a]'); if (!b) return; crashEl.hidden = true; const a = b.dataset.a; if (a === 'restart') Flight.restart(); if (a === 'new') setup(true); if (a === 'exit') Flight.stop(); });
     }
@@ -533,5 +553,6 @@ const FHud = (() => {
   }
 
   function pick(a) { sel.apt = a; sel.rw = ''; renderSetup(); }
-  return { init, show, draw, note, setup, menu, menuOpen, crash, pick, get shown() { return shown; } };
+  function hideCrash() { if (crashEl) crashEl.hidden = true; }
+  return { init, show, draw, note, setup, menu, menuOpen, crash, pick, hideCrash, get shown() { return shown; } };
 })();

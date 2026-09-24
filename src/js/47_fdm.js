@@ -102,6 +102,50 @@ const FDM = (() => {
       flOut.dCL = a.dCL + (b.dCL - a.dCL) * t; flOut.dCLmax = a.dCLmax + (b.dCLmax - a.dCLmax) * t; flOut.dCD = a.dCD + (b.dCD - a.dCD) * t; flOut.dCm = a.dCm + (b.dCm - a.dCm) * t;
       return flOut;
     }
+    // ---------------------------------------------------------------- helicopter: main rotor, tail rotor, fuselage
+    // Thrust from the collective (with translational lift, the climb / descent inflow, vortex ring state and ground
+    // effect), limited by engine power (the rotor droops); the disc tilts with the cyclic (lagging ~0.1 s) and blows
+    // back with forward speed; hub stiffness and rotor damping; torque reaction countered by the tail rotor (pedals);
+    // fuselage drag, a vertical fin and a horizontal stabiliser for weathervane and pitch stability at speed.
+    st.rotor = { a1: 0, b1: 0, T: 0, P: 0, vrs: 0, coll: 0, rpm: 1 };
+    function heliForces(dt, atm, V, u, v, w, qbar, gnd) {
+      const H = S.heli, c = st.ctl, out = st.out, R = st.rotor, A = Math.PI * H.R * H.R;
+      const coll = clamp(c.coll !== undefined ? c.coll : c.thr, 0, 1); R.coll = coll;
+      const on = st.eng[0].on; st.eng[0].n += ((on ? 1 : 0) - st.eng[0].n) * Math.min(1, dt / 4); R.rpm = st.eng[0].n;
+      const T0 = H.Tmax * (0.06 + 0.94 * coll) * atm.sigma * R.rpm * R.rpm;
+      const vh = Math.sqrt(Math.max(T0, 1) / (2 * atm.rho * A)), Vh = Math.hypot(u, v), climb = -w;
+      const etl = 1 + 0.16 * sstep(0.4 * vh, 1.7 * vh, Vh);
+      const climbF = 1 - 0.38 * clamp(climb / vh, -0.5, 1.2);
+      const vrs = sstep(0.45, 1.0, -climb / vh) * (1 - sstep(0.6 * vh, 1.3 * vh, Vh)); R.vrs = vrs;
+      const hR = st.pos.y + H.h - gnd.h, ige = 1 + 0.14 * (1 - sstep(0.25 * H.R, 1.6 * H.R, hR));
+      let T = T0 * etl * climbF * (1 - 0.35 * vrs) * ige;
+      // power: induced (Glauert) + climb + profile + parasite; the engine limits it and the rotor droops
+      const vi = Math.sqrt(Math.max(0, Math.sqrt(Vh ** 4 / 4 + vh ** 4) - Vh * Vh / 2));
+      const P = T * (vi + Math.max(0, climb)) + H.P0 * atm.sigma + 0.5 * atm.rho * H.f * V * V * V, Pa = H.power * Math.pow(atm.sigma, 0.8) * R.rpm;
+      if (P > Pa) T *= Math.pow(Pa / P, 0.9);
+      R.T = T; R.P = P / Math.max(1, H.power); out.torque = Math.min(1.5, P / Math.max(1, H.power));
+      // disc tilt: cyclic command, blowback with speed, a short flapping lag
+      const a1t = -st.surf.elev * H.tilt - H.blow * u, b1t = st.surf.ail * H.tilt + H.blow * 0.5 * v;
+      R.a1 += (a1t - R.a1) * Math.min(1, dt / 0.1); R.b1 += (b1t - R.b1) * Math.min(1, dt / 0.1);
+      const Tx = T * Math.sin(R.a1), Ty = T * Math.sin(R.b1), Tz = -T * Math.cos(R.a1) * Math.cos(R.b1);
+      // fuselage drag (forward, side and vertical areas), tail rotor side force
+      const Q = P * 0.92 / (H.omega * Math.max(0.3, R.rpm)), Ttr = H.trMax * clamp(st.surf.rud, -1, 1) * atm.sigma * R.rpm * R.rpm;
+      const q2 = 0.5 * atm.rho;
+      let fx = Tx - q2 * H.f * u * Math.abs(u), fy = Ty - q2 * H.fside * v * Math.abs(v) - Ttr, fz = Tz - q2 * H.fvert * w * Math.abs(w);
+      // moments: thrust at the hub (above the CG), hub stiffness, rotor damping, torque, tail rotor, fin and stabiliser
+      const K = H.Khub, p = st.omega.x, qq = st.omega.y, r = st.omega.z;
+      let mx = H.h * Ty + K * R.b1 - H.Kp * p;
+      let my = -H.h * Tx - K * R.a1 - H.Kq * qq;
+      let mz = -Q + Ttr * H.trArm - H.Kr * r;
+      const beta = Math.atan2(v, Math.max(Math.abs(u), 1)), alph = Math.atan2(w, Math.max(Math.abs(u), 1));
+      mz += qbar * H.fin * H.trArm * Math.sin(beta) * sstep(5, 25, V);
+      my += -qbar * H.stab * H.trArm * Math.sin(alph) * sstep(5, 25, V);
+      // vortex ring: buffeting
+      if (vrs > 0.05) { mx += vrs * T * 0.02 * Math.sin(st.t * 7.1); my += vrs * T * 0.02 * Math.sin(st.t * 5.3 + 1); }
+      // control power for the flight control laws (angular acceleration per unit cyclic / pedal)
+      out.B.p = (H.h * T + K) * H.tilt / I.x; out.B.q = (H.h * T + K) * H.tilt / I.y; out.B.r = H.trMax * atm.sigma * H.trArm / I.z; out.Bcoll = H.Tmax * 0.94 * atm.sigma / st.mass;
+      return [fx, fy, fz, mx, my, mz];
+    }
     function step(dt, env) {
       const c = st.ctl, out = st.out;
       if (env.pre) env.pre(st, dt);
@@ -130,6 +174,9 @@ const FDM = (() => {
       out.agl = st.pos.y - S.cgHeight - gnd.h;
       const hw = Math.max(st.pos.y - gnd.h - (S.wingZ || 0), 0.2) / S.b, ge = (16 * hw) ** 2 / (1 + (16 * hw) ** 2);
 
+      let fx, fy, fz, mx, my, mz, thrust = 0;
+      if (S.heli) { const h = heliForces(dt, atm, V, u, v, w, qbar, gnd); fx = h[0]; fy = h[1]; fz = h[2]; mx = h[3]; my = h[4]; mz = h[5]; out.stall = 0; out.CL = 0; out.aS = 0.5; }
+      else {
       // lift: linear to the stall, then blended into a flat plate; flaps add lift and raise the maximum
       const de = st.surf.elev * S.maxElev + c.trim * S.maxElev * 0.5, da = st.surf.ail * S.maxAil, dr = st.surf.rud * S.maxRud;
       const CL0 = S.CL0 + fl.dCL, CLmax = S.CLmax + fl.dCLmax;
@@ -158,11 +205,10 @@ const FDM = (() => {
       out.qbar = qbar; out.B.p = qS * S.b * S.Clda * S.maxAil * eff / I.x; out.B.q = qS * S.c * S.Cmde * S.maxElev * eff / I.y; out.B.r = qS * S.b * S.Cndr * S.maxRud * eff / I.z;
       // forces in body axes (lift and drag act in the stability axes)
       const L = qS * CL, Dg = qS * CD, Y = qS * CY, ca = Math.cos(alpha), sa = Math.sin(alpha);
-      const fx = L * sa - Dg * ca, fy = Y, fz = -L * ca - Dg * sa;
-      let mx = qS * S.b * Cl, my = qS * S.c * Cm, mz = qS * S.b * Cn;
+      fx = L * sa - Dg * ca; fy = Y; fz = -L * ca - Dg * sa;
+      mx = qS * S.b * Cl; my = qS * S.c * Cm; mz = qS * S.b * Cn;
 
       // engines (each at its own position: power pitches low-slung engines nose up, one engine out yaws)
-      let thrust = 0;
       for (let i = 0; i < st.eng.length; i++) {
         const e = st.eng[i], E = S.engines[i];
         const want = !e.on ? 0 : c.rev && out.onGround ? (E.type === 'prop' ? 0 : 0.78) : clamp(c.thr, 0, 1);
@@ -193,6 +239,7 @@ const FDM = (() => {
         my += E.z * T; mz += -E.y * T;
         if (E.type === 'prop') mz -= T * (S.pfactor || 0);
       }
+      }
       out.thrust = thrust;
 
       // world force: aero + thrust (rotated), gravity
@@ -211,6 +258,7 @@ const FDM = (() => {
         if (pen <= 0) { g.comp = 0; g.was = false; continue; }
         cv.crossVectors(wW, arm).add(st.vel);                                        // contact point velocity
         const vy = cv.y;
+        if (!g.was && pen > Math.max(1.2, g.maxComp * 3) && !out.crashed) out.crashed = gh.roof ? 'building' : 'terrain';   // met the side of something, not its top
         if (!g.was) { g.was = true; if (!out.touch || vy < out.touch.vy) out.touch = { vy, gs: Math.hypot(st.vel.x, st.vel.z), x: px, z: pz, y: gh.h, leg: gi, main: !g.nose }; }
         g.contact = true; g.comp = Math.min(pen, g.maxComp); wow = true;
         if (gh.water && !S.floats) out.crashed = out.crashed || 'water';
@@ -223,7 +271,7 @@ const FDM = (() => {
         const lx = -uz, lz = ux;
         const vLong = cv.x * ux + cv.z * uz, vLat = cv.x * lx + cv.z * lz;
         const side = g.y < 0 ? c.brakeL : g.y > 0 ? c.brakeR : 0;
-        const brake = g.brake ? Math.max(c.brake, c.park, side) : 0;
+        const brake = g.skid ? 0.75 : g.brake ? Math.max(c.brake, c.park, side) : 0;
         const mu = (gh.soft ? 0.06 : 0.018) + brake * (gh.soft ? 0.32 : gh.wet ? 0.35 : 0.6);
         const fLong = -Math.tanh(vLong / (brake > 0.5 ? 0.06 : 0.3)) * mu * Fn;
         const fLat = -clamp(vLat * g.corner, -0.8, 0.8) * Fn;
@@ -243,7 +291,8 @@ const FDM = (() => {
         const sp2 = Math.hypot(cv.x, cv.z);
         if (sp.kind === 'tail') { out.tailStrike = true; if (cv.y < -3.5 && !out.crashed) out.crashed = 'tail'; }
         else if (sp.kind === 'belly') { if (cv.y < -4 && !out.crashed) out.crashed = 'belly'; }
-        else if (!out.crashed && (sp2 > 8 || cv.y < -2.5)) out.crashed = gh.water ? 'water' : sp.kind === 'tip' ? 'wingtip' : sp.kind === 'prop' ? 'prop' : sp.kind === 'nacelle' ? 'engine' : 'terrain';
+        else if (sp.kind === 'rotor') { if (!out.crashed && st.rotor.rpm > 0.3) out.crashed = 'rotor'; }
+        else if (!out.crashed && (sp2 > 8 || cv.y < -2.5)) out.crashed = gh.roof && pen > 1 ? 'building' : gh.water ? 'water' : sp.kind === 'tip' ? 'wingtip' : sp.kind === 'prop' ? 'prop' : sp.kind === 'nacelle' ? 'engine' : 'terrain';
         // contact force + sliding friction (belly landings, scrapes)
         const Fn = Math.max(0, st.mass * G * 3 * pen - st.mass * 1.2 * cv.y);
         const hs = Math.max(sp2, 0.01), fr = 0.45 * Fn;

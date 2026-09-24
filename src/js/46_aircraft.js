@@ -266,7 +266,7 @@ const AIRCRAFT = (() => {
         gearLayout: { comp: 0.3, stroke: 0.6, zeta: 0.75, steer: 60,
           nose: { x: 19.5, z: 5.3, r: 0.48, wheels: 2 }, main: [{ x: -3.0, y: -3.85, z: 5.3, r: 0.6, wheels: 4 }, { x: -3.0, y: 3.85, z: 5.3, r: 0.6, wheels: 4 }] },
         strike: [[-25, 0, -0.5, 'tail'], [-14, -12.8, 1.3, 'tip'], [-14, 12.8, 1.3, 'tip'], [-15, -5.4, 1.8, 'nacelle'], [-15, 5.4, 1.8, 'nacelle'], [30, 0, 1.2, 'nose'], [0, 0, 1.6, 'belly']],
-        Ixx: 1.5e6, Iyy: 1.28e7, Izz: 1.4e7, gearVmax: 4.6, nMax: 2.5, qMax: 4 * D, pMax: 20 * D, alphaMax: 17 * D, fbw: 'airbus', toPitch: 13 },
+        Ixx: 1.5e6, Iyy: 1.28e7, Izz: 1.4e7, gearVmax: 4.6, nMax: 2.5, qMax: 4 * D, pMax: 20 * D, alphaMax: 17 * D, fbw: 'airbus', toPitch: 13, retardH: 2.5 },
       model: {
         kind: 'jet', L: 61.66, nose: 32.7, fus: { d: 2.88, h: 3.32, zc: 0.1, noseLen: 9, tailLen: 12, tailUp: 0.5, pointy: true },
         wing: { x: 10.7, y0: 1.44, span: 12.8, c0: 27.7, c1: 3.0, sweep: 63, dih: 0, z: 1.5, t: 0.035, tt: 0.03, twist: 0, cam: 0.012,
@@ -401,12 +401,41 @@ const AIRCRAFT = (() => {
         canopy: { x: -0.3, z: -0.55, len: 2.3, w: 0.44, h: 0.52 },
         livery: { base: '#f4f4f2', stripe: '#b3261e', stripe2: '#1d3557', tail: '#b3261e', reg: 'N330BL' } },
     },
+    // ------------------------------------------------------------------ Airbus H125 (AS350 B3)
+    { id: 'h125', name: 'Airbus H125 Écureuil', short: 'H125', maker: 'Airbus Helicopters', cat: 'Helicopter',
+      blurb: 'The helicopter that landed on Everest: one 950 shp Arriel turbine, three blades. Hover over the Golden Gate, land on a rooftop.',
+      facts: ['Rotor 10.7 m', '952 shp turbine', 'Cruise 130 kt', 'Hovers'],
+      v: { r: 0, ref: 60, app: 60, cruise: 120, fe: [], mo: 155, mmo: 0.3, ceil: 20000, cruiseAlt: 1500 },
+      fdm: {
+        heli: { R: 5.345, omega: 40.8, Tmax: 32000, power: 690000, P0: 110000, h: 1.8, tilt: 0.24, blow: 0.0009, Khub: 11000, Kp: 4000, Kq: 8000, Kr: 2500,
+          trArm: 6.4, trMax: 3600, f: 2.0, fside: 7, fvert: 12, fin: 2.6, stab: 1.8 },
+        mass: 1900, S: 89.75, b: 10.69, c: 0.35, e: 0.8, CD0: 0.03, CL0: 0, CLa: 5, CLmax: 1.4, CLq: 0, CLde: 0, Cm0: 0, Cma: 0, Cmq: 0, Cmde: 0,
+        CYb: 0, CYdr: 0, Clb: 0, Clp: 0, Clr: 0, Clda: 0, Cldr: 0, Cnb: 0, Cnp: 0, Cnr: 0, Cnda: 0, Cndr: 0,
+        maxElev: 1, maxAil: 1, maxRud: 1,
+        flaps: [F('—', 0, 0, 0, 0, 0)], flapTime: 1, retract: false, gearTime: 1, gearCD: 0, spoilerCL: 0, spoilerCD: 0, mcrit: 0.8, CDwave: 0,
+        engines: [{ type: 'turboshaft', power: 690000, x: 0, y: 0, z: -1.2 }],
+        thrustLine: 0, wingZ: -1.8,
+        gearLayout: { comp: 0.05, stroke: 0.15, zeta: 0.9, steer: 0, skids: [[1.3, -1.1], [1.3, 1.1], [-1.2, -1.1], [-1.2, 1.1]], z: 1.4,
+          nose: { x: 1.3, z: 1.4 }, main: [{ x: -1.2, y: -1.1, z: 1.4 }, { x: -1.2, y: 1.1, z: 1.4 }] },
+        strike: [[5.3, 0, -1.8, 'rotor'], [-5.3, 0, -1.8, 'rotor'], [0, -5.3, -1.8, 'rotor'], [0, 5.3, -1.8, 'rotor'], [-7.6, 0, 0.3, 'tail'], [2.4, 0, 0.9, 'nose'], [0, 0, 1.0, 'belly']],
+        Ixx: 1700, Iyy: 5500, Izz: 4700, gearVmax: 3.0, nMax: 3.0, qMax: 30 * D, pMax: 60 * D, alphaMax: 60 * D, fbw: 'heli' },
+      model: {
+        kind: 'heli', L: 10.93, nose: 3.1, fus: { w: 1.87, h: 1.9, zc: -0.15, pod: 4.4, boomW: 0.36, boomH: 0.42, boomZ: -0.45 },
+        wing: null,
+        htail: { x: -5.9, span: 1.55, c0: 0.62, c1: 0.5, sweep: 0, dih: 0, z: -0.3, t: 0.12, elev: 0, y0: 0.15 },
+        vtail: { x: -7.0, h: 1.35, c0: 1.05, c1: 0.6, sweep: 32, z: -0.4, t: 0.1, rud: 0.001 },
+        rotor: { R: 5.345, blades: 3, x: 0.1, z: -1.8, chord: 0.35 }, tailRotor: { R: 0.93, blades: 2, x: -7.55, y: -0.32, z: -0.95 },
+        skids: { x0: 1.9, x1: -1.7, y: 1.1, z: 1.4 },
+        engines: [], gear: {}, cockpit: { x: 1.75, z: -0.4, y: 0.42, style: 'heli' }, windows: { style: 'heli' },
+        livery: { base: '#f4f4f2', stripe: '#b3261e', stripe2: '#1d3557', tail: '#b3261e', reg: 'N125BL' } },
+    },
   ];
   const byId = {};
   for (const a of list) {
     const f = a.fdm;
     f.AR = f.b * f.b / f.S;
-    f.gear = gearLegs(f.mass, f.gearLayout);
+    f.gear = f.gearLayout.skids ? f.gearLayout.skids.map(([x, y]) => { const F2 = f.mass * G / 4, k = F2 / f.gearLayout.comp; return { x, y, z: f.gearLayout.z, k, c: 2 * 0.9 * Math.sqrt(k * F2 / G), maxComp: f.gearLayout.stroke, corner: 5, skid: true, brake: true, r: 0.05, wheels: 0 }; })
+      : gearLegs(f.mass, f.gearLayout);
     f.strike = f.strike.map(s => ({ x: s[0], y: s[1], z: s[2], kind: s[3] }));
     // CG height above the ground at rest (gear at static compression)
     f.cgHeight = f.gearLayout.main[0].z - f.gearLayout.comp;

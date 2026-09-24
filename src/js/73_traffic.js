@@ -18,13 +18,13 @@ const Traffic = (() => {
     B752: ['b738', 47.3], B753: ['b738', 54.4], B712: ['b738', 37.8], MD82: ['b738', 45], MD83: ['b738', 45], MD88: ['b738', 45], MD90: ['b738', 46.5],
     CRJ2: ['b738', 26.8], CRJ7: ['b738', 32.3], CRJ9: ['b738', 36.4], CRJX: ['b738', 39.1], E135: ['b738', 26.3], E145: ['b738', 29.9], E170: ['b738', 29.9], E75L: ['b738', 31.7], E75S: ['b738', 31.7], E190: ['b738', 36.2], E195: ['b738', 38.7], E290: ['b738', 36.3], E295: ['b738', 41.5],
     AT43: ['dhc6', 22.7], AT45: ['dhc6', 22.7], AT72: ['dhc6', 27.2], AT75: ['dhc6', 27.2], AT76: ['dhc6', 27.2], DH8A: ['dhc6', 22.3], DH8B: ['dhc6', 22.3], DH8C: ['dhc6', 25.7], DH8D: ['dhc6', 32.8], DHC6: ['dhc6', 15.8], SF34: ['b350', 19.7], B190: ['b350', 17.6],
-    BE20: ['b350', 13.3], BE30: ['b350', 14.2], B350: ['b350', 14.2], BE9L: ['b350', 10.8], PC12: ['b350', 14.4], C208: ['dhc6', 11.5], DC3: ['dc3', 19.7], CONC: ['conc', 61.7], E300: ['e330', 6.95], E330: ['e330', 6.95], EXTR: ['e330', 6.95], PTS2: ['e330', 5.7],
+    BE20: ['b350', 13.3], BE30: ['b350', 14.2], B350: ['b350', 14.2], BE9L: ['b350', 10.8], PC12: ['b350', 14.4], C208: ['dhc6', 11.5], DC3: ['dc3', 19.7], CONC: ['conc', 61.7], AS50: ['h125', 10.9], AS55: ['h125', 11.4], EC30: ['h125', 10.8], EC35: ['h125', 10.2], EC45: ['h125', 10.2], B06: ['h125', 9.5], B407: ['h125', 10.6], R44: ['h125', 8.9], R22: ['h125', 8.8], S76: ['h125', 13.2], A139: ['h125', 13.8], E300: ['e330', 6.95], E330: ['e330', 6.95], EXTR: ['e330', 6.95], PTS2: ['e330', 5.7],
     B788: ['b789', 56.7], B789: ['b789', 62.8], B78X: ['b789', 68.3], B762: ['b789', 48.5], B763: ['b789', 54.9], B764: ['b789', 61.4], B772: ['b789', 63.7], B77L: ['b789', 63.7], B773: ['b789', 73.9], B77W: ['b789', 73.9], B778: ['b789', 70.9], B779: ['b789', 76.7],
     A306: ['b789', 54.1], A310: ['b789', 46.7], A332: ['b789', 58.8], A333: ['b789', 63.7], A338: ['b789', 58.8], A339: ['b789', 63.7], A359: ['b789', 66.8], A35K: ['b789', 73.8], MD11: ['b789', 61.6], DC10: ['b789', 55.5], IL96: ['b789', 55.3],
     B741: ['b744', 70.6], B742: ['b744', 70.6], B743: ['b744', 70.6], B744: ['b744', 70.6], B748: ['b744', 76.3], B74S: ['b744', 56.3], A388: ['a388', 72.7], A342: ['b744', 59.4], A343: ['b744', 63.7], A345: ['b744', 67.9], A346: ['b744', 75.4], A124: ['b744', 69.1], C5M: ['b744', 75.3], IL76: ['b744', 46.6],
     F16: ['f16', 15.1], F18: ['f16', 17.1], F18S: ['f16', 18.3], F35: ['f16', 15.7], F15: ['f16', 19.4], F22: ['f16', 18.9], EUFI: ['f16', 15.9], RFAL: ['f16', 15.3], GRIF: ['f16', 14.1], A10: ['f16', 16.3], T38: ['f16', 14.1], HAWK: ['f16', 11.9], M346: ['f16', 11.5],
   };
-  const LEN = { a320: 37.57, b738: 39.5, b789: 62.8, b744: 70.6, c172: 8.28, f16: 15.06, a388: 72.72, conc: 61.66, b350: 14.22, dhc6: 15.77, dc3: 19.66, e330: 6.95 };
+  const LEN = { a320: 37.57, b738: 39.5, b789: 62.8, b744: 70.6, c172: 8.28, f16: 15.06, a388: 72.72, conc: 61.66, b350: 14.22, dhc6: 15.77, dc3: 19.66, e330: 6.95, h125: 10.93 };
   function classify(t, cat) {
     if (t === 'TWR' || t === 'GND' || t === 'GRND' || t === 'SERV' || t === 'EMER' || (!t && !cat)) return null;   // ground stations and vehicles
     const e = TYPES[t]; if (e) return { cls: e[0], scale: e[1] / LEN[e[0]] };
@@ -34,7 +34,8 @@ const Traffic = (() => {
     if (cat === 'A4') return { cls: 'b738', scale: 1.15 };
     if (cat === 'A5') return { cls: 'b789', scale: 1.05 };
     if (cat === 'A6') return { cls: 'f16', scale: 1 };
-    if (cat === 'A7' || cat === 'B2' || cat === 'C1' || cat === 'C2' || cat === 'C3') return null;   // rotorcraft, balloons, vehicles
+    if (cat === 'A7') return { cls: 'h125', scale: 1 };                                            // rotorcraft
+    if (cat === 'B2' || cat === 'C1' || cat === 'C2' || cat === 'C3') return null;                 // balloons, vehicles
     return { cls: /^[A-Z]\d{2}/.test(t || '') ? 'c172' : 'a320', scale: 1 };
   }
 
@@ -90,7 +91,7 @@ const Traffic = (() => {
   }
 
   // ---------------------------------------------------------------- drawing
-  const CLASSES = ['a320', 'b738', 'b789', 'b744', 'c172', 'f16', 'a388', 'conc', 'b350', 'dhc6', 'dc3', 'e330'];
+  const CLASSES = ['a320', 'b738', 'b789', 'b744', 'c172', 'f16', 'a388', 'conc', 'b350', 'dhc6', 'dc3', 'e330', 'h125'];
   function initMeshes() {
     meshes = {};
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.15 });
@@ -155,12 +156,13 @@ const Traffic = (() => {
       sc.setScalar(t.scale); m4.compose(t.pos, tq, sc); m.setMatrixAt(counts[t.cls]++, m4);
       // lights (world positions from the model's tips)
       if (nl + 7 <= aP.count && d < 80000) {
-        const mdl = AIRCRAFT.byId[t.cls].model, span = mdl.wing.span * t.scale, Lh = mdl.L * t.scale, ph = now / 1000 + t.phase;
+        const mdl = AIRCRAFT.byId[t.cls].model, Lh = mdl.L * t.scale, ph = now / 1000 + t.phase;
+        const span = (mdl.wing ? mdl.wing.span : mdl.htail ? mdl.htail.span : 1.5) * t.scale, wx = mdl.wing ? -mdl.wing.span * 0.3 : -Lh * 0.62;   // wing tips (a helicopter: the stabiliser's)
         const put = (lx, ly, lz, r, g, b, I, size) => { tv.set(lx, ly, lz).multiplyScalar(1).applyQuaternion(tq).add(t.pos); aP.setXYZW(nl, tv.x, tv.y, tv.z, size); aC.setXYZW(nl, r, g, b, I); nl++; };
-        put(-mdl.wing.span * 0.3, 0, -span, 1, 0.08, 0.04, 1.4, 0.9);
-        put(-mdl.wing.span * 0.3, 0, span, 0.1, 1, 0.3, 1.4, 0.9);
+        put(wx, 0, -span, 1, 0.08, 0.04, 1.4, 0.9);
+        put(wx, 0, span, 0.1, 1, 0.3, 1.4, 0.9);
         put(-Lh * 0.5, 0.3, 0, 1, 1, 1, 0.9, 0.7);
-        const strobe = (ph % 1.3) < 0.06 || ((ph % 1.3) > 0.16 && (ph % 1.3) < 0.2) ? 5 : 0; if (strobe && !f.ground) { put(-mdl.wing.span * 0.3, 0, -span, 1, 1, 1, strobe, 2.4); put(-mdl.wing.span * 0.3, 0, span, 1, 1, 1, strobe, 2.4); }
+        const strobe = (ph % 1.3) < 0.06 || ((ph % 1.3) > 0.16 && (ph % 1.3) < 0.2) ? 5 : 0; if (strobe && !f.ground) { put(wx, 0, -span, 1, 1, 1, strobe, 2.4); put(wx, 0, span, 1, 1, 1, strobe, 2.4); }
         if ((ph % 1.1) < 0.12) put(0, 2 * t.scale, 0, 1, 0.08, 0.03, 3, 1.4);
         const alt = t.pos.y - (typeof Player !== 'undefined' ? Player.groundAt(t.pos.x, t.pos.z) : 0);
         if (!f.ground && alt < 3000 && nl < aP.count) put(mdl.L * 0.35, -1, 0, 1, 0.95, 0.85, 4, 3.2);
