@@ -419,7 +419,7 @@ float skyFogDensity(vec3 p) {
     const ymd = Env.serviceDay().ymd;
     if (ymd !== weather.ymd) { Object.assign(weather, dailyWeather(ymd), { ymd }); }
     const kind = st.weather || 'auto'; let wFog = weather.fog, wClouds = weather.clouds, wCirrus = weather.cirrus, wHaze = weather.haze;
-    if (kind === 'auto' && live) { wClouds = live.clouds; wCirrus = live.cirrus; wHaze = live.haze; }
+    if (kind === 'auto' && live) { wClouds = live.clouds; wCirrus = live.cirrus; wHaze = live.haze; if (live.fog !== undefined) wFog = live.fog; }
     if (kind === 'clear') { wFog = 0; wClouds = 0.05; wCirrus = 0.15; wHaze = 1.2; }
     else if (kind === 'fog') { wFog = 1; wHaze = Math.max(wHaze, 2.5); }
     else if (kind === 'cloudy') { wClouds = 0.72; wCirrus = 0.5; wHaze = Math.max(wHaze, 2.6); }

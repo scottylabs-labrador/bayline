@@ -119,6 +119,7 @@ const Flight = (() => {
     UI.setStripOff(false); UI.setPlaceFn(null); UI.setSubFn(null);
     if (was && !keepCamera) { const p = Env.camera.position; Player.fly.x = p.x; Player.fly.y = p.y; Player.fly.z = p.z; Player.setMode('fly'); }
     if (was) emit('stop');
+    if (!keepCamera && typeof FMissions !== 'undefined') FMissions.clear();
   }
 
   // ---------------------------------------------------------------- the frame moves: carry the aircraft and cameras over
@@ -440,6 +441,7 @@ const Flight = (() => {
       FDM.euler(ac.q, E);
       callout.tick();
       for (const ev of fcs.events.splice(0)) UI.toast(ev, 3);
+      if (typeof FMissions !== 'undefined') FMissions.update(dt);
     }
     warn.tick(dt);
     Env.state.shadowTarget = ac.out.agl > 250 ? { pos: ac.pos, size: Math.max(30, Math.max(T.model.L, T.fdm.b) * 0.75) } : null;
@@ -451,7 +453,11 @@ const Flight = (() => {
     return true;
   }
   const listeners = []; const on = (f) => listeners.push(f); const emit = (e, d) => { for (const f of listeners) f(e, d); };
-  function restart() { if (cfg) start({ ...cfg, rw: cfg.rw, end: cfg.end }); }
+  function restart() { if (typeof FMissions !== 'undefined' && FMissions.active) { FMissions.start(FMissions.active.m.id); return; } if (cfg) start({ ...cfg, rw: cfg.rw, end: cfg.end }); }
+  function crashWith(why) {        // a crash found outside the physics (a bridge deck, a cable)
+    if (crashed || !ac) return; crashed = { why, t: flightTime, vs: ac.out.vs, gs: ac.out.gs };
+    if (typeof FSound !== 'undefined') FSound.crash(); if (typeof FHud !== 'undefined') FHud.crash(why, crashed); emit('crash', crashed);
+  }
   function init() { initFrameHook(); }
   // hash: #fly=a320,KSFO,28R,final
   function fromHash(s) {
@@ -461,7 +467,7 @@ const Flight = (() => {
   const api = {
     init, start, stop, update, restart, fromHash, on, input, cam, warn, prefs,
     get active() { return active; }, get loading() { return loading; }, get ac() { return ac; }, get fcs() { return fcs; }, get type() { return T; }, get model() { return model; }, get cfg() { return cfg; },
-    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
+    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
   };
   return api;
 })();

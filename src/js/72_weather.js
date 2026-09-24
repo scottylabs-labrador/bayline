@@ -51,7 +51,8 @@ const Weather = (() => {
     const flying = typeof Flight !== 'undefined' && Flight.active, away = typeof Globe !== 'undefined' && !Globe.frame.bay;
     if (!now || !(flying || away) || !enabled) { Sky.setLive(null); return; }
     const haze = U.clamp(26000 / Math.max(now.vis, 600), 1.15, 9);
-    Sky.setLive({ clouds: U.clamp(now.low * 0.85 + now.mid * 0.35, 0, 0.92), cirrus: U.clamp(now.high * 0.8, 0, 0.85), haze, base: now.base,
+    const fog = now.low > 0.5 && now.base - now.elev < 700 ? U.clamp(now.low * 1.2 - 0.35, 0, 1) : now.vis < 1500 ? 0.9 : 0;   // a low overcast on the coast is the marine layer
+    Sky.setLive({ clouds: U.clamp(now.low * 0.85 + now.mid * 0.35, 0, 0.92), cirrus: U.clamp(now.high * 0.8, 0, 0.85), haze, base: now.base, fog,
       windDir: now.wind.d, windSpeed: Math.max(2, now.aloft[0] ? now.aloft[0].s : now.wind.s) });
   }
   function update(dt) {

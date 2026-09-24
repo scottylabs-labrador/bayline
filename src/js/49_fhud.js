@@ -50,7 +50,7 @@ const FHud = (() => {
   body.photo #fcu{display:none!important}
   @media (max-width:1320px) and (min-width:761px){#fcu{top:74px}}
   @media (max-width:760px){#fcu{top:auto;bottom:250px;transform:translateX(-50%) scale(.82);transform-origin:bottom center} #fcu .g.hide-s{display:none}}
-  @media (max-width:760px){.fgrid{grid-template-columns:1fr 1fr} .fres{grid-template-columns:1fr}}
+  @media (max-width:760px){.fgrid{grid-template-columns:1fr 1fr!important} .fres{grid-template-columns:1fr}}
   `;
   function init() {
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -254,6 +254,7 @@ const FHud = (() => {
   // ---------------------------------------------------------------- conformal HUD (cockpit view)
   const pv = new THREE.Vector3();
   function project(dir) { const c = Env.camera; pv.copy(c.position).addScaledVector(dir, 1000).project(c); return pv.z < 1 ? [(pv.x + 1) / 2 * W, (1 - pv.y) / 2 * H] : null; }
+  function projectPos(p) { const c = Env.camera; pv.copy(p).project(c); return pv.z < 1 && pv.z > -1 ? [(pv.x + 1) / 2 * W, (1 - pv.y) / 2 * H] : null; }
   function hud(F, s) {
     const ac = F.ac, E = F.euler; g.save(); g.strokeStyle = 'rgba(80,255,140,.85)'; g.fillStyle = 'rgba(80,255,140,.85)'; g.lineWidth = 1.6 * s;
     const dir = (hd, el) => new THREE.Vector3(Math.sin(hd) * Math.cos(el), Math.sin(el), -Math.cos(hd) * Math.cos(el));
@@ -371,6 +372,7 @@ const FHud = (() => {
     if (!small) { systems(F, W - 16, H - 16, s); info(F, 16, H - 16 - 104 * s, s); }
     warnings(F, s, dt);
     fcuUpdate(F, dt);
+    if (typeof FMissions !== 'undefined') FMissions.hudMarker(g, W, H, projectPos);
     // the panel texture ~12 times a second while in the cockpit
     if (cockpit) { panelT -= dt; if (panelT <= 0) { panelT = 0.08; panel(F); } }
   }
@@ -393,6 +395,8 @@ const FHud = (() => {
   function buildSetup() {
     setupEl = document.createElement('div'); setupEl.className = 'fov'; setupEl.id = 'flightsetup'; setupEl.hidden = true;
     setupEl.innerHTML = `<div class="card panel"><button class="close" data-x>×</button><div class="kicker">Bayline Flight · any airport on Earth</div><h2>Where do you want to fly?</h2>
+      <div class="kicker" style="margin:4px 0 8px;color:var(--ink-faint)">Challenges</div><div class="fgrid" id="fs-ch" style="grid-template-columns:repeat(4,1fr)"></div>
+      <div class="kicker" style="margin:16px 0 8px;color:var(--ink-faint)">Or free flight: pick an aircraft</div>
       <div class="fgrid" id="fs-types"></div>
       <div class="frow" style="margin-top:14px"><label>Airport</label><input class="fsearch" id="fs-q" placeholder="ICAO, IATA, city or name: KSFO, LHR, Innsbruck, Lukla…" autocomplete="off" spellcheck="false"></div>
       <div class="fres" id="fs-res"></div>
@@ -421,6 +425,9 @@ const FHud = (() => {
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function renderSetup() {
     if (!setupEl) return;
+    const ch = setupEl.querySelector('#fs-ch');
+    if (typeof FMissions !== 'undefined') { ch.innerHTML = FMissions.list.map(m => `<button class="fcard" data-m="${m.id}"><b>${m.title}</b><small>${m.sub}</small>${FMissions.best[m.id] ? `<div class="facts">best ${FMissions.best[m.id]}</div>` : ''}</button>`).join('');
+      ch.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { setup(false); if (typeof World !== 'undefined' && !World.started && window.__bayline) window.__bayline.start('fly'); Flight.prefs.assist = sel.assist; FMissions.start(b.dataset.m).catch(e => console.error(e)); }); }
     const types = setupEl.querySelector('#fs-types');
     types.innerHTML = AIRCRAFT.list.map(a => `<button class="fcard ${sel.type === a.id ? 'on' : ''}" data-id="${a.id}"><b>${a.name}</b><small>${a.cat} · ${a.blurb}</small><div class="facts">${a.facts.join(' · ')}</div></button>`).join('');
     types.querySelectorAll('.fcard').forEach(b => b.onclick = () => { sel.type = b.dataset.id; renderSetup(); });
@@ -445,6 +452,7 @@ const FHud = (() => {
     if (typeof World !== 'undefined' && !World.started && window.__bayline) window.__bayline.start('fly');
     Flight.prefs.assist = sel.assist;
     UI.toast('Preparing ' + sel.apt.ident + '…', 3);
+    if (typeof FMissions !== 'undefined') FMissions.clear();
     Flight.start({ type: sel.type, apt: sel.apt, rwIdent: sel.rw || null, pos: sel.pos, time, assist: sel.assist }).catch(e => { console.error(e); UI.toast('Could not start: ' + e.message); });
   }
   function goldenHour(a) {   // local hour ~1 h before sunset (from the sun position at the airport, sampled)
