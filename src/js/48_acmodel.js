@@ -173,9 +173,9 @@ const ACModel = (() => {
   function build(type) {
     const q = quality, m = type.model, f = type.fdm, jet = m.kind === 'jet';
     const root = new THREE.Group(); root.name = 'aircraft-' + type.id;
-    const G = geometry(type, q), { H, rig, B, env, parts, ths, droop, cockpit } = G;
-    const T = ACLivery.get(type, H, q, G.pf); ACLivery.keep(type, q);
-    const M = materials(T, m, q);
+    const t0 = performance.now(), G = geometry(type, q), { H, rig, B, env, parts, ths, droop, cockpit } = G;
+    const t1 = performance.now(), T = ACLivery.get(type, H, q, G.pf); ACLivery.keep(type, q);
+    const t2 = performance.now(), M = materials(T, m, q);
     if (cockpit) Object.assign(M, cockpit.materials(T));
     const size = Math.max(m.L, f.b || 0, m.rotor ? m.rotor.R * 2 : 0), sphere = new THREE.Sphere(new V3(0, 0, 0), size * 0.62 + 2);
     rig.build();
@@ -184,7 +184,11 @@ const ACModel = (() => {
     if (cockpit) cockpit.attach(root, meshes);
     for (const k in env.lamps) root.add(env.lamps[k]);
     if (env.spot) root.add(env.spot, env.spot.target);
-    const stats = { vertices: B.vertices, bones: rig.bones.length, meshes: meshes.length, quality: q };
+    // (texture memory, mipmaps included: the canvases' sizes)
+    const texs = new Set(); for (const k in M) for (const t of ['map', 'roughnessMap', 'metalnessMap', 'clearcoatMap', 'emissiveMap', 'normalMap']) if (M[k] && M[k][t]) texs.add(M[k][t]);
+    let texBytes = 0; for (const t of texs) if (t.image && t.image.width) texBytes += t.image.width * t.image.height * 4 * (t.generateMipmaps === false ? 1 : 4 / 3);
+    const stats = { vertices: B.vertices, bones: rig.bones.length, meshes: meshes.length, quality: q, textureMB: Math.round(texBytes / 1048576),
+      ms: { geometry: Math.round(t1 - t0), textures: Math.round(t2 - t1), meshes: Math.round(performance.now() - t2) } };
 
     // ---------------------------------------------------------------- animation
     const nF = f.flaps.length - 1, st = { flapDeg: 0, slatDeg: 0, flex: 0, flexV: 0, night: 0, inside: false, wasInside: false, t: 0 };

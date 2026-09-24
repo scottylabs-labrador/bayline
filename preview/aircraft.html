@@ -161,7 +161,7 @@
     renderer.render(scene, camera); frames++;
     if (frames === 3 || frames % 30 === 0) {
       const info = renderer.info.render;
-      window.__stats = { type: T.id, buildMs: Math.round(buildMs), calls: info.calls, tris: info.triangles, geos: renderer.info.memory.geometries, texs: renderer.info.memory.textures };
+      window.__stats = { type: T.id, buildMs: Math.round(buildMs), calls: info.calls, tris: info.triangles, geos: renderer.info.memory.geometries, texs: renderer.info.memory.textures, textureMB: model.stats ? model.stats.textureMB : undefined, ms: model.stats ? model.stats.ms : undefined };
       hud.textContent = `${T.name}  ${BASE ? '(baseline)' : '(aircraft-v2' + (P.q ? ' ' + P.q : '') + ')'}\nview ${V} · ${TOD}\nbuild ${Math.round(buildMs)} ms · ${info.calls} calls · ${(info.triangles / 1000).toFixed(0)}k tris`;
     }
     if (frames === 20) window.__ready = true;

@@ -18,8 +18,9 @@ const ACCockpit = (() => {
   // one atlas per style: grey panels ruled into modules with push-buttons, toggles, knobs and labels; the emissive
   // twin lights the labels at night
   const atlases = {};
-  function panelAtlas(style) {
-    if (atlases[style]) return atlases[style];
+  function panelAtlas(style, q) {
+    const key = style + q; if (atlases[key]) return atlases[key];
+    // (drawn at 1024 and scaled: 512 below 'high', the emissive twin at half size)
     const S = 1024, c = document.createElement('canvas'), e = document.createElement('canvas'); c.width = c.height = e.width = e.height = S;
     const g = c.getContext('2d'), ge = e.getContext('2d');
     const base = style === 'airbus' ? '#5d6a74' : style === 'boeing' ? '#40454b' : '#2c2e31';
@@ -42,11 +43,12 @@ const ACCockpit = (() => {
     for (let y = 520; y < S - 8; y += 124) for (let x = 8; x < 500; x += 244) module(x, y, 236, 118);
     g.fillStyle = '#26282b'; g.fillRect(512, 512, 512, 512);
     for (let y = 530; y < S - 8; y += 124) for (let x = 520; x < S - 8; x += 250) module(x, y, 242, 118);
-    const t = new THREE.CanvasTexture(c), te = new THREE.CanvasTexture(e);
+    const scaled = (src, n) => { if (n === src.width) return src; const d = document.createElement('canvas'); d.width = d.height = n; d.getContext('2d').drawImage(src, 0, 0, n, n); return d; };
+    const t = new THREE.CanvasTexture(scaled(c, q >= 2 ? 1024 : 512)), te = new THREE.CanvasTexture(scaled(e, q >= 2 ? 512 : 256));
     for (const x of [t, te]) { x.colorSpace = THREE.SRGBColorSpace; x.anisotropy = 8; x.flipY = false; }
-    atlases[style] = { map: t, emis: te };
+    atlases[key] = { map: t, emis: te };
     t.userData.shared = te.userData.shared = true;
-    return atlases[style];
+    return atlases[key];
   }
 
   // ---------------------------------------------------------------- the shell
@@ -119,7 +121,7 @@ const ACCockpit = (() => {
     let fcu = null;
     const ewd = ewdCanvas();
     const bones = {};
-    const PA = panelAtlas(style);
+    const PA = panelAtlas(style, q);
     // UV helpers: a display region of the panel canvas (k = 0, 1, 2), an atlas region of the panels texture
     const reg = (k) => { const x0 = [18, 356, 684][k] / 1024, y0 = 16 / 384, w = 318 / 1024, h = 352 / 384; return (u, v) => [x0 + w * u, y0 + h * v]; };
     const area = (x0, y0, w, h) => (u, v) => [x0 + w * u, y0 + h * v];

@@ -66,25 +66,26 @@ const ACLivery = (() => {
   function tile(q) {
     const N = [0, 512, 1024, 1024, 2048][q]; if (!N) return null;
     if (tiles[N]) return tiles[N];
-    const h = new Float32Array(N * N), k = N / 2;          // px per metre
-    const line = (v, w) => Math.max(0, 1 - Math.abs(v) / w);
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-      const x = i / k, y = j / k;      // metres in the tile
-      const dxB = Math.min(x, 2 - x), dyL = Math.min(y % 1, 1 - (y % 1));
-      let v = 0;
-      v -= 0.9 * line(dxB * k, 1.3) + 0.7 * line(dyL * k, 1.1);               // joints: grooves
-      const fx = (x % 0.5), dF = Math.min(fx, 0.5 - fx), ry = (y % 0.025) - 0.0125;
-      const riv = (d) => Math.max(0, 1 - (d * k) * (d * k) / 2.2);
-      v += 0.45 * riv(Math.hypot(dF, ry)) * (dF * k < 2.5 ? 1 : 0);          // frame rivets: domes
-      const fy = (y % 0.25), dS = Math.min(fy, 0.25 - fy), rx = (x % 0.03) - 0.015;
-      v += 0.22 * riv(Math.hypot(dS, rx)) * (dS * k < 2.5 ? 1 : 0);          // stringer rivets
-      h[j * N + i] = v;
-    }
+    // the height field: the joints are 1D profiles (butt joints at the tile's x edges, lap joints every metre in y),
+    // the rivets small domes stamped along the frames (every 0.5 m in x, 25 mm apart) and the stringers (every 0.25 m
+    // in y, 30 mm apart)
+    const k = N / 2, h = new Float32Array(N * N), gx = new Float32Array(N), gy = new Float32Array(N);
+    const line = (d, w) => Math.max(0, 1 - Math.abs(d) / w);
+    for (let i = 0; i < N; i++) { const x = i / k, y = i / k; gx[i] = -0.9 * line(Math.min(x, 2 - x) * k, 1.3); gy[i] = -0.7 * line(Math.min(y % 1, 1 - (y % 1)) * k, 1.1); }
+    for (let j = 0; j < N; j++) { const o = j * N, g = gy[j]; for (let i = 0; i < N; i++) h[o + i] = gx[i] + g; }
+    const R = 3, dome = [];
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const r2 = dx * dx + dy * dy; if (r2 <= R * R) dome.push(dx, dy, Math.max(0, 1 - r2 / 2.2)); }
+    const stamp = (cx, cy, a) => { const x0 = Math.round(cx), y0 = Math.round(cy); for (let n = 0; n < dome.length; n += 3) { const x = (x0 + dome[n] + N) % N, y = (y0 + dome[n + 1] + N) % N; h[y * N + x] += a * dome[n + 2]; } };
+    for (let fx = 0; fx < 2; fx += 0.5) for (let y = 0.0125; y < 2; y += 0.025) stamp(fx * k, y * k, 0.45);
+    for (let sy = 0; sy < 2; sy += 0.25) for (let x = 0.015; x < 2; x += 0.03) stamp(x * k, sy * k, 0.22);
     const c = canvas(N, N), g = c.getContext('2d'), img = g.createImageData(N, N), d = img.data, s = 2.2;
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-      const hx = h[j * N + ((i + 1) % N)] - h[j * N + ((i + N - 1) % N)], hy = h[((j + 1) % N) * N + i] - h[((j + N - 1) % N) * N + i];
-      let nx = -hx * s, ny = -hy * s, nz = 1; const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
-      const o = (j * N + i) * 4; d[o] = (nx * 0.5 + 0.5) * 255; d[o + 1] = (ny * 0.5 + 0.5) * 255; d[o + 2] = (nz * 0.5 + 0.5) * 255; d[o + 3] = 255;
+    for (let j = 0; j < N; j++) {
+      const up = ((j + 1) % N) * N, dn = ((j + N - 1) % N) * N, o = j * N;
+      for (let i = 0; i < N; i++) {
+        const hx = h[o + ((i + 1) % N)] - h[o + ((i + N - 1) % N)], hy = h[up + i] - h[dn + i];
+        const nx = -hx * s, ny = -hy * s, l = 1 / Math.sqrt(nx * nx + ny * ny + 1), p = (o + i) * 4;
+        d[p] = (nx * l * 0.5 + 0.5) * 255; d[p + 1] = (ny * l * 0.5 + 0.5) * 255; d[p + 2] = (l * 0.5 + 0.5) * 255; d[p + 3] = 255;
+      }
     }
     g.putImageData(img, 0, 0);
     const t = tex(c, false, { repeat: true, channel: 1, aniso: 8 }); t.repeat.set(0.5, 0.5);      // (uv1 is in metres; one tile = 2 m)
@@ -280,7 +281,7 @@ const ACLivery = (() => {
   // fin atlas: the fin's right and left sides (planar side views), the winglets' outboard and inboard faces
   const FIN_R = { r: [0, 0, 0.5, 0.75], l: [0.5, 0, 0.5, 0.75], wo: [0, 0.76, 0.5, 0.24], wi: [0.5, 0.76, 0.5, 0.24] };
   function wingAtlas(type, pf, q) {
-    const m = type.model, lv = m.livery, S = [512, 1024, 2048, 2048, 4096][q], c = canvas(S, S), co = canvas(S / 2, S / 2), g = c.getContext('2d'), go = co.getContext('2d');
+    const m = type.model, lv = m.livery, S = [512, 1024, 1024, 2048, 2048][q], c = canvas(S, S), co = canvas(S / 2, S / 2), g = c.getContext('2d'), go = co.getContext('2d');
     const jet = m.kind === 'jet', paint = jet ? (lv.wing || '#d2d6db') : (m.kind === 'fighter' ? lv.base : lv.base);
     g.fillStyle = paint; g.fillRect(0, 0, S, S);
     go.fillStyle = m.kind === 'fighter' ? 'rgb(0,150,20)' : jet ? 'rgb(150,110,15)' : 'rgb(255,95,0)'; go.fillRect(0, 0, S / 2, S / 2);
@@ -306,7 +307,7 @@ const ACLivery = (() => {
 
   // ---------------------------------------------------------------- fin atlas (planar side views) + winglets
   function finAtlas(type, pf, q) {
-    const m = type.model, lv = m.livery, S = [512, 1024, 1024, 2048, 2048][q], c = canvas(S, S), g = c.getContext('2d'), ce = canvas(S / 2, S / 2), ge = ce.getContext('2d');
+    const m = type.model, lv = m.livery, S = [512, 1024, 1024, 1024, 2048][q], c = canvas(S, S), g = c.getContext('2d'), ce = canvas(S / 2, S / 2), ge = ce.getContext('2d');
     const kind = m.kind, col = kind === 'jet' ? lv.tail : lv.tail || lv.base;
     g.fillStyle = col; g.fillRect(0, 0, S, S);
     const f = pf.fin, R = FIN_R;
@@ -338,7 +339,7 @@ const ACLivery = (() => {
   // u = around (0..1), v = along the cowl (0 = the lip): a tail-colour band behind the lip, the emblem each side;
   // the spinner region (u 0..1, v .8..1) carries the white swirl
   function nacelleAtlas(type, q) {
-    const m = type.model, lv = m.livery, S = [256, 512, 1024, 1024, 2048][q], c = canvas(S, S), g = c.getContext('2d');
+    const m = type.model, lv = m.livery, S = [256, 512, 512, 1024, 2048][q], c = canvas(S, S), g = c.getContext('2d');
     g.fillStyle = lv.nacelle || lv.base; g.fillRect(0, 0, S, S);
     if (m.kind === 'jet') {
       // v = 0.75 x (distance aft of the lip / nacelle length), u = the angle around from the top: a ring behind
@@ -360,7 +361,8 @@ const ACLivery = (() => {
     let e = cache.get(key);
     if (!e) {
       const lv = type.model.livery;
-      e = { key, fus: fuselage(type, H, q), wing: wingAtlas(type, pf, q), fin: finAtlas(type, pf, q), nac: nacelleAtlas(type, q), pal: palette(lv), tile: tile(q) };
+      const ms = {}, time = (k, f) => { const t = performance.now(), r = f(); ms[k] = Math.round(performance.now() - t); return r; };     // (e.ms: what each took)
+      e = { key, ms, fus: time('fus', () => fuselage(type, H, q)), wing: time('wing', () => wingAtlas(type, pf, q)), fin: time('fin', () => finAtlas(type, pf, q)), nac: time('nac', () => nacelleAtlas(type, q)), pal: time('pal', () => palette(lv)), tile: time('tile', () => tile(q)) };
       cache.set(key, e);
     }
     return e;
