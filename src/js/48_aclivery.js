@@ -110,9 +110,19 @@ const ACLivery = (() => {
   // ---------------------------------------------------------------- the fuselage
   // Canvas layout (flipY off): rows 0 .. H/2 = the left side (crown at the top, keel at the middle), rows H/2 .. H =
   // the right side; x runs nose -> tail on the left side and tail -> nose on the right, so both read normally.
+  // (a gutter of GUT rows between the two halves, filled with their edge rows: the left keel and the right crown
+  // meet in the middle of the canvas, and filtering must not mix them)
+  const GUT = 0.008, vOf = (th, right) => (right ? 0.5 + GUT : GUT) + (0.5 - 2 * GUT) * th / Math.PI;
   function uvBodyFor(H) {
     const L = H.L, P2 = Math.PI * 2;
-    return (s, th) => (th <= Math.PI + 1e-9 ? [1 - s / L, 0.5 + 0.5 * th / Math.PI] : [s / L, 0.5 * (P2 - th) / Math.PI]);
+    // (right: which half the vertex belongs to; on the keel and the crown lines both halves meet, and each must keep
+    // its own side of the canvas)
+    return (s, th, right) => ((right === undefined ? th <= Math.PI : right) ? [1 - s / L, vOf(Math.min(th, Math.PI), true)] : [s / L, vOf(Math.min(Math.PI, P2 - th), false)]);
+  }
+  function fillGutters(c) {
+    const g = c.getContext('2d'), W = c.width, H = c.height, k = Math.max(1, Math.round(GUT * H));
+    for (const [src, y0, y1] of [[k, 0, k], [H / 2 - k - 1, H / 2 - k, H / 2], [H / 2 + k, H / 2, H / 2 + k], [H - k - 1, H - k, H]])
+      g.drawImage(c, 0, src, W, 1, 0, y0, W, y1 - y0);
   }
   // the livery's layout as heights along the fuselage (model y at station s): the canvas painter below and the
   // traffic models' vertex colours (colorAt) use the same design
@@ -157,7 +167,7 @@ const ACLivery = (() => {
     go.fillStyle = bare ? 'rgb(90,70,255)' : 'rgb(255,92,0)'; go.fillRect(0, 0, W / 2, Hc / 2);    // clearcoat, roughness, metalness
     ge.fillStyle = '#000'; ge.fillRect(0, 0, W / 2, Hc / 2);
     // canvas coordinates: X(s, right), Y(th in 0..pi, right)
-    const X = (s, r) => (r ? (1 - s / L) : s / L) * W, Yth = (th, r) => (r ? 0.5 + 0.5 * th / Math.PI : 0.5 * th / Math.PI) * Hc;
+    const X = (s, r) => (r ? (1 - s / L) : s / L) * W, Yth = (th, r) => vOf(th, r) * Hc;
     const thAt = (s, y) => H.thAt(clamp(s, 0, L), y);
     const Y = (s, y, r) => Yth(thAt(s, y), r);
     const sides = [false, true];
@@ -174,7 +184,7 @@ const ACLivery = (() => {
     // arc length per radian of section angle at a station and height (for undistorted titles)
     const arcSpeed = (s, y) => { const th = thAt(s, y), a = new THREE.Vector3(), b = new THREE.Vector3(); H.pt(s, th - 0.01, a); H.pt(s, th + 0.01, b); return a.distanceTo(b) / 0.02; };
     const textAt = (ctx, sc, txt, s, y, hM, color, weight = 700, spacing = 0, italic = false) => {
-      const sy = (Hc / 2 / Math.PI) / arcSpeed(s, y) / ppm;      // vertical canvas px per horizontal px
+      const sy = (Hc * (0.5 - 2 * GUT) / Math.PI) / arcSpeed(s, y) / ppm;      // vertical canvas px per horizontal px
       for (const r of sides) {
         ctx.save(); ctx.translate(X(s, r) * sc, Y(s, y, r) * sc); ctx.scale(1, sy);
         ctx.font = `${italic ? 'italic ' : ''}${weight} ${Math.round(hM * ppm * sc)}px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color;
@@ -222,8 +232,8 @@ const ACLivery = (() => {
         }
         // cargo doors on the lower fuselage (outlines), the radome line, service panels
         g.strokeStyle = 'rgba(40,46,54,.35)'; g.lineWidth = Math.max(1, ppm * 0.012);
-        for (const f of [0.34, 0.72]) { const s = L * f, top = yc0 - Rh * 0.35, bot = top - Math.min(1.7, F.h * 0.4);
-          for (const r of sides) { const w = Math.min(1.8, F.h * 0.44) * ppm; g.beginPath(); g.roundRect(X(s, r) - w / 2, Y(s, top, r), w, Y(s, bot, r) - Y(s, top, r), w * 0.06); g.stroke(); } }
+        for (const f of [0.3, 0.7]) { const s = L * f, top = yc0 - Rh * 0.3, bot = top - Math.min(1.25, F.h * 0.3);     // (cargo doors: right side)
+          const w = Math.min(1.8, F.h * 0.44) * ppm; g.beginPath(); g.roundRect(X(s, true) - w / 2, Y(s, top, true), w, Y(s, bot, true) - Y(s, top, true), w * 0.06); g.stroke(); }
         for (const r of sides) { g.beginPath(); for (let th = 0.05; th < Math.PI - 0.05; th += 0.05) { const s = NL * 0.28; const x = X(s, r), y = Yth(th, r); th < 0.1 ? g.moveTo(x, y) : g.lineTo(x, y); } g.stroke(); }
         // titles and the registration
         const tH = clamp(F.h * 0.21, 0.28, 1.35), tS = NL + (L - NL - TL) * 0.12 + tH * 3.2;
@@ -259,9 +269,10 @@ const ACLivery = (() => {
         go.fillStyle = 'rgb(0,150,20)'; go.fillRect(0, 0, W / 2, Hc / 2);   // matte, no clearcoat
       }
     };
-    draw();
+    const paint = () => { draw(); for (const c of [ca, co, ce]) fillGutters(c); };
+    paint();
     const T = { map: tex(ca, true, { aniso: 8 }), orm: tex(co, false), emis: tex(ce, true) };
-    if (!fontReady() && document.fonts && document.fonts.ready) document.fonts.ready.then(() => { try { draw(); T.map.needsUpdate = true; } catch (e) {} });
+    if (!fontReady() && document.fonts && document.fonts.ready) document.fonts.ready.then(() => { try { paint(); T.map.needsUpdate = true; T.orm.needsUpdate = true; T.emis.needsUpdate = true; } catch (e) {} });
     return T;
   }
 

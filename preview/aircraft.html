@@ -20,6 +20,7 @@
 //   #type=a320&view=34f|34r|side|front|top|below|nose|engine|gear|mgear|ngear|tail|tip|chase|flyby|cockpit|turn
 //    &tod=day|golden|night&gear=1&flaps=max|<notch>&spoil=0..1&ail=-1..1&elev=..&rud=..&n1=0..1&rev=1&q=<quality>
 //    &base=1 (the models as they are on main, from dist/baseline/)  &clean=1 (no text)  &spin=1 (turntable)
+//    &cam=x,y,z&at=x,y,z&fov=deg (a free camera, model axes)
 (async () => {
   const P = {};
   for (const kv of location.hash.slice(1).split('&')) if (kv) { const [k, v] = kv.split('='); P[k] = v === undefined ? '1' : decodeURIComponent(v); }
@@ -97,7 +98,7 @@
   ac.gearPos = P.gear === '0' ? 0 : P.gear ? +P.gear : 1;
   ac.flapPos = P.flaps === 'max' ? nF : P.flaps ? Math.min(nF, +P.flaps) : 0; ac.ctl.flaps = Math.round(ac.flapPos);
   ac.spoilerPos = +(P.spoil || 0); ac.surf.ail = +(P.ail || 0); ac.surf.elev = +(P.elev || 0); ac.surf.rud = +(P.rud || 0);
-  ac.ctl.rev = P.rev ? 1 : 0; ac.ctl.thr = +(P.thr || 0.3);
+  ac.ctl.rev = P.rev && P.rev !== '0' ? 1 : 0; ac.ctl.thr = +(P.thr || 0.3);
   for (const e of ac.eng) e.n = P.n1 !== undefined ? +P.n1 : 0.25;
   if (ac.rotor) ac.rotor.rpm = P.n1 !== undefined ? +P.n1 : 1;
   ac.out.onGround = !P.air; ac.out.gs = P.air ? 80 : 0; ac.out.cas = P.air ? 80 : 0; ac.pos.y = P.air ? 900 : 0; ac.out.gnd = 0; ac.out.nz = +(P.nz || 1);
@@ -145,6 +146,9 @@
   else if (V === 'cockpitd') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(10, -4.2, 0)); fov = 62; camera.near = 0.03; }
   else if (V === 'cockpits') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(2, -2.5, 9)); fov = 70; camera.near = 0.03; }
   else if (V === 'turn') { at(size * 0.8, size * 0.25, -size * 0.8); }
+  // any camera: #cam=x,y,z&at=x,y,z&fov=deg (model axes: x forward, y up, z right; metres from the CG)
+  if (P.cam) { const c = P.cam.split(',').map(Number); camera.position.set(c[0], c[1], c[2]); if (P.at) { const t = P.at.split(',').map(Number); look.set(t[0], t[1], t[2]); } }
+  if (P.fov) fov = +P.fov;
   camera.fov = fov; camera.updateProjectionMatrix(); camera.lookAt(look);
 
   // ---------------------------------------------------------------- loop

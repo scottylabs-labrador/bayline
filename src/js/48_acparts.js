@@ -394,17 +394,33 @@ const ACParts = (() => {
       else { const fr = ws.frame(Math.abs(L.y), { cd: new V3(), ud: new V3() }); topY = fr.ly - 0.05; }
       if (m.kind === 'ga' && !tail && !nose && m.wing && m.wing.high) topY = keelY + 0.15;
       topY = Math.max(topY, wc.y + r * 1.6);
+      // retraction: the nose and body gear fold forward (or aft) into the fuselage, the wing gear sideways into the
+      // belly (the trunnion height inside the wing, the angle and the strut shortening chosen so the wheels stow in
+      // the belly fairing), twins' mains forward into the nacelles
+      const sd = L.y >= 0 ? 1 : -1, bodyGear = !nose && jet && Math.abs(L.y) < (m.fus.d || 2) * 0.45;
+      const twin0 = nW === 2, bogie0 = nW >= 4, tw0 = r * (jet ? 0.62 : 0.55);
+      let axis, ang, shorten = 0, sideways = false, S2 = null;
+      if (nose && !tail) { axis = Z1.clone(); ang = (m.kind === 'fighter' || ctx.type.id === 'b350' ? -1 : 1) * 96 * D; }
+      else if (bodyGear) { axis = Z1.clone(); ang = (m.gear && m.gear.bodyAft ? -1 : 1) * 92 * D; }
+      else if (m.kind === 'ga' || ctx.type.id === 'b350' || ctx.type.id === 'dc3') { axis = Z1.clone(); ang = 88 * D; }
+      else {
+        axis = X1.clone(); sideways = true;
+        const rc0 = (nose ? 0.055 : 0.085) * Math.sqrt(Math.max(0.3, r / 0.4)) * (jet ? 1.35 : 0.9);
+        S2 = fixed ? { a: 88, sh: 0, lift: 0 } : stowSide(H, ctx.type.id + '/' + i, new V3(wc.x, topY, wc.z), wc, r, twin0 || bogie0 ? rc0 * 0.9 + tw0 + 0.03 : tw0 / 2, bogie0 ? r * 1.125 : 0, sd, keelY);
+        topY += S2.lift; ang = sd * S2.a * D; shorten = S2.sh;
+      }
       const top = new V3(wc.x, topY, wc.z), Ls = top.y - wc.y;
       const rc = (nose ? 0.055 : 0.085) * Math.sqrt(Math.max(0.3, r / 0.4)) * (jet ? 1.35 : 0.9), rp = rc * 0.7;
       // bones: the leg (retracts about the trunnion), the piston (slides; steers on the nose gear), the axles
       const legB = rig.add(0, top.x, top.y, top.z);
       const pisB = rig.add(legB, wc.x, wc.y + r * 0.1, wc.z);
-      const style = m.gear && m.gear.style;
+      const style = m.gear;
       const bogie = nW >= 4, twin = nW === 2;
       // strut (upper cylinder), piston
       const gp = jet ? pal('gearPaint') : pal('gearGrey');
       parts.bind(legB); parts.pal = gp;
       const cylBot = wc.y + Ls * 0.34 + (bogie ? r * 0.3 : 0), spring = m.kind === 'ga' && !nose && !tail && fixed;
+      const tw = r * (jet ? 0.62 : 0.55), gap = rc * 0.9 + tw / 2 + 0.03;
       if (!spring) parts.cyl(new V3(top.x, top.y + 0.2, top.z), new V3(top.x, cylBot, top.z), rc, rc * 1.05, seg, true);
       if (!fixed && !tail && !nose && jet) {     // side stay: a brace from the strut to the structure outboard / aft
         const b0 = new V3(top.x, lerp(top.y, cylBot, 0.55), top.z), b1 = new V3(top.x - 0.25, top.y + 0.1, top.z + Math.sign(L.y || 1) * Ls * 0.45);
@@ -427,10 +443,9 @@ const ACParts = (() => {
       parts.bind(linkUp); parts.cyl(new V3(wc.x + rc * 1.2, cylBot + 0.02, wc.z), apex0, rc * 0.28, rc * 0.28, 6, true);
       parts.bind(linkLo); parts.cyl(apex0, new V3(wc.x + rc * 1.2, wc.y + r * 0.25, wc.z), rc * 0.28, rc * 0.28, 6, true);
       // axle(s) and wheels
-      const tw = r * (jet ? 0.62 : 0.55), gap = rc * 0.9 + tw / 2 + 0.03;
       const axles = [];
       if (bogie) {
-        const beamB = rig.add(pisB, wc.x, wc.y, wc.z), nAx = style === 'six' && Math.abs(L.y) < 3 ? 3 : 2, pitch = r * 2.25;
+        const beamB = rig.add(pisB, wc.x, wc.y, wc.z), nAx = style && style.body6 && Math.abs(L.y) < 3 ? 3 : 2, pitch = r * 2.25;
         parts.bind(beamB); parts.pal = gp;
         parts.cyl(new V3(wc.x + pitch * (nAx - 1) / 2 + r * 0.3, wc.y, wc.z), new V3(wc.x - pitch * (nAx - 1) / 2 - r * 0.3, wc.y, wc.z), rc * 0.6, rc * 0.6, seg, true);
         for (let k = 0; k < nAx; k++) { const ax = wc.x + pitch * ((nAx - 1) / 2 - k); axles.push({ c: new V3(ax, wc.y, wc.z), parent: beamB }); }
@@ -449,23 +464,21 @@ const ACParts = (() => {
         parts.bind(pisB); parts.pal = pal('base');
         parts.at(mat4(new V3(wc.x - r * 0.15, wc.y + r * 0.05, wc.z), null, new V3(1, r * 1.25, tw * 1.25)), () => parts.lathe([[r * 1.6, 0.001], [r * 1.3, 0.55], [r * 0.4, 0.98], [-r * 1.2, 0.75], [-r * 2.1, 0.001]], seg, {}));
       }
-      // doors: a leg door on the strut (mains of the jets), the nose gear's doors on the fuselage
+      let stowed = null;
+      const hasDoors = !fixed && (m.gear && m.gear.doors !== undefined ? !!m.gear.doors : jet || m.kind === 'fighter');
+      if (sideways) { const Lh = top.y - wc.y - shorten; stowed = new V3(wc.x, top.y - Lh * Math.cos(S2.a * D), top.z - sd * Lh * Math.sin(S2.a * D)); }
+      // doors: a leg door on the strut (the jets' mains), the bay doors over the stowed wheels (they open for the
+      // transit), the nose gear's doors (the forward pair closes behind the wheels, the aft pair stays open with the leg)
       let doors = [];
-      if (!fixed && jet && !nose) {
+      if (!fixed && jet && !nose && !bodyGear) {
         parts.bind(legB); parts.pal = pal('belly');
-        const zO = Math.sign(L.y || 1) * (rc + 0.04);
+        const zO = sd * (rc + 0.04);
         parts.box(top.x, lerp(top.y, cylBot, 0.5), top.z + zO, Math.max(0.5, r * 1.5), (top.y - cylBot) * 0.9, 0.035);
       }
-      if (!fixed && nose && jet) doors = noseDoors(ctx, env, wc, r, nW, keelY);
+      if (hasDoors && stowed) doors = bellyDoors(ctx, stowed, r, bogie ? r * 1.125 * ((style && style.body6 && Math.abs(L.y) < 3) ? 2 : 1) : 0, sd);
+      if (hasDoors && (nose || bodyGear)) doors = keelDoors(ctx, wc, r, nW, keelY, Ls, ang > 0 ? 1 : -1, nose ? 0 : L.y);
       parts.pal = null; parts.bind(0);
-      // retraction axis and sense
-      let axis, ang;
-      const body = style && style.body ? style.body : 'fwd';
-      if (nose && !tail) { axis = Z1.clone(); ang = (m.kind === 'fighter' || ctx.type.id === 'b350' ? -1 : 1) * 96 * D; }
-      else if (!nose && Math.abs(L.y) < (m.fus.d || 2) * 0.45 && jet) { axis = Z1.clone(); ang = (body === 'aft' ? -1 : 1) * 92 * D; }
-      else if (m.kind === 'ga' || ctx.type.id === 'b350' || ctx.type.id === 'dc3') { axis = Z1.clone(); ang = 88 * D; }
-      else { axis = X1.clone(); ang = (L.y >= 0 ? 1 : -1) * 88 * D; }
-      out.push({ i, legB, pisB, linkUp, linkLo, axles, nose, fixed, axis, ang, r, doors, steer: nose ? (L.steer || 0) : 0, Ls, apex0, cylBot, wc: wc.clone() });
+      out.push({ i, legB, pisB, linkUp, linkLo, axles, nose, fixed, axis, ang, r, doors, hide: hasDoors, shorten, steer: nose ? (L.steer || 0) : 0, Ls, apex0, cylBot, wc: wc.clone() });
     });
     // animation: retraction (doors open, leg moves, doors close), compression, torque links, steering, wheel spin
     const legs2 = out.filter(g => g.legB !== undefined);
@@ -478,7 +491,8 @@ const ACParts = (() => {
       for (const g of legs2) {
         const L = ac.legs[g.i], comp = L ? L.comp || 0 : 0, lb = rig.bone(g.legB), pb = rig.bone(g.pisB);
         lb.quaternion.setFromAxisAngle(g.axis, g.fixed ? 0 : g.ang * legT);
-        pb.position.copy(pb.userData.rest); pb.position.y += comp;
+        lb.scale.setScalar(g.hide && gp < 0.004 ? 0.001 : 1);                      // (stowed behind closed doors)
+        pb.position.copy(pb.userData.rest); pb.position.y += comp + g.shorten * sstep(0.1, 0.5, legT);
         if (g.nose) pb.quaternion.setFromAxisAngle(Y1, -(ac.ctl.steer || 0) * g.steer * (gp > 0.9 ? 1 : 0));
         // torque links: keep the apex joint as the piston rises (upper link pivots down, lower up)
         const h = Math.max(0.05, g.apex0.y - (g.wc.y + g.r * 0.25)), dx = g.apex0.x - (g.wc.x + 0) ;
@@ -486,7 +500,7 @@ const ACParts = (() => {
         rig.bone(g.linkUp).quaternion.setFromAxisAngle(Z1, -a2 * 1.2); rig.bone(g.linkLo).quaternion.setFromAxisAngle(Z1, a2 * 1.2); void h;
         const spin = L && L.contact ? vgs / g.r : 0;
         for (const A of g.axles) { const b = rig.bone(A.bone); A.ang = ((A.ang || 0) - spin * dt) % (Math.PI * 2); if (!(L && L.contact)) A.ang *= 0.995; b.quaternion.setFromAxisAngle(Z1, A.ang); }
-        for (const d of g.doors) { const b = rig.bone(d.bone); b.quaternion.setFromAxisAngle(d.axis, d.ang * (d.leg ? 1 - legT : doorT)); }
+        for (const d of g.doors) { const b = rig.bone(d.bone); b.quaternion.setFromAxisAngle(d.axis, d.ang * (d.open === 'down' ? sstep(0, 0.1, gp) : doorT)); }
       }
       for (const g of bog) {        // bogies: level on the ground, toe-up when unloaded
         const L = ac.legs[g.i], b = rig.bone(g.beamB); const tilt = L && L.contact ? 0 : 9 * D;
@@ -508,18 +522,62 @@ const ACParts = (() => {
     });
     mb.pal = null;
   }
-  function noseDoors(ctx, env, wc, r, nW, keelY) {
-    const { rig, pal, H, B } = ctx, m = ctx.type.model, parts = B.mb('parts'), s0 = m.nose - wc.x - r * 1.4, s1 = m.nose - wc.x + r * 1.6;
-    const doors = [];
-    for (const sd of [1, -1]) {
-      const th0 = Math.PI - 0.02, th1 = Math.PI - Math.min(0.6, (r * (nW > 1 ? 2.2 : 1.3) + 0.1) / Math.max(0.5, H.sec(s0).a));
-      const hp = new V3(); H.pt((s0 + s1) / 2, th1, hp); if (sd < 0) hp.z = -hp.z;
-      const b = rig.add(0, hp.x, hp.y, hp.z);
-      parts.bind(b); parts.pal = pal('belly'); parts.mirror = sd < 0;
-      const poly = [[s0, th1], [s1, th1], [s1, th0], [s0, th0]];
-      ACFrame.paint(H, parts, [{ poly: ACGeo.ccw(poly) }], 0.01, 0.2);
-      parts.mirror = false;
-      doors.push({ bone: b, axis: new V3(-1, 0, 0), ang: sd * 85 * D });
+  // how a sideways-folding main leg stows its wheels in the belly: the trunnion's height inside the wing (0-0.45 m
+  // above its lower surface), the fold angle (60-115 degrees) and the strut shortening (0-0.4 m) that put the wheels
+  // inside the fuselage and its belly fairing, as low and as far inboard as they go; cached per type and leg
+  const stowCache = new Map();
+  function stowSide(H, key, top, wc, r, ext, half, sd, keelY) {
+    if (stowCache.has(key)) return stowCache.get(key);
+    let best = null;
+    for (let lift = 0; lift <= 0.4501; lift += 0.15) for (let sh = 0; sh <= 0.4001; sh += 0.2) for (let a = 60; a <= 115.01; a += 5) {
+      const th = a * D, L = top.y + lift - wc.y - sh, cy = top.y + lift - L * Math.cos(th), cz = top.z - sd * L * Math.sin(th);
+      // the stowed wheels: a disc of radius r tilted by (90 - a) degrees, 'ext' thick along the axle
+      const tilt = (90 - a) * D, ca = Math.cos(tilt), sa = Math.sin(tilt);
+      let bad = sd * cz - r * 0.5 < 0.06 ? 20 : 0;            // (not across the centre line)
+      for (const dx of [-half - r * 0.9, -half, 0, half, half + r * 0.9]) for (const dz of [-r * 0.9, 0, r * 0.9]) for (const dy of [-ext, ext]) {
+        // a point on the tyre: across the disc (dz) and along the axle (dy), in the tilted frame
+        const x = wc.x + dx, s = H.nose - x, py = cy + dy * ca - sd * dz * sa * 0, pz = cz + dz * ca + sd * dy * sa;
+        if (s < 0 || s > H.L) { bad++; continue; }
+        if (!H.polar(s, py - Math.abs(dz) * sa, pz).inside) bad++;
+      }
+      const score = bad + sh * 1.5 + lift * 1.2 + Math.max(0, cy - keelY) * 0.35 + Math.abs(cz) * 0.15;
+      if (!best || score < best.score) best = { a, sh, lift, score };
+    }
+    stowCache.set(key, best); return best;
+  }
+  // a door as a patch of the fuselage skin (s, th), on its own bone at the hinge line, opening by ang about axis
+  function hullDoor(ctx, poly, hinge, side, axis, ang, open) {
+    const { rig, pal, H, B } = ctx, parts = B.mb('parts'), hp = hinge.clone(); if (side < 0) hp.z = -hp.z;
+    const b = rig.add(0, hp.x, hp.y, hp.z);
+    parts.bind(b); parts.pal = pal('belly'); parts.mirror = side < 0;
+    ACFrame.paint(H, parts, [{ poly: ACGeo.ccw(poly) }], 0.012, 0.25);
+    parts.mirror = false; parts.pal = null; parts.bind(0);
+    return { bone: b, axis, ang, open };
+  }
+  // the main gear bay door under a stowed wheel set: hinged at its inboard edge, the outboard edge swinging down
+  function bellyDoors(ctx, c, r, half, sd) {
+    const H = ctx.H, s0 = H.nose - (c.x + half + r * 1.08), s1 = H.nose - (c.x - half - r * 1.08), sm = (s0 + s1) / 2;
+    const thC = H.polar(sm, c.y - r * 0.6, Math.abs(c.z)).th, rad = Math.max(0.5, H.sec(sm).a), dth = (r * 1.1) / rad;
+    const thIn = Math.min(Math.PI - 0.01, thC + dth), thOut = thC - dth;
+    const hinge = new V3(); H.pt(sm, thIn, hinge);
+    return [hullDoor(ctx, [[s0, thOut], [s1, thOut], [s1, thIn], [s0, thIn]], hinge, sd, X1.clone(), sd * 82 * D, 'transit')];
+  }
+  // doors along the keel for the nose gear and the body gear: the bay runs from the leg forward (or aft) over the
+  // stowed wheels; hinged at the outer edges; the part over the wheels closes when the gear is down, the part at the
+  // leg stays open
+  function keelDoors(ctx, wc, r, nW, keelY, Ls, dir, y0) {
+    const { H } = ctx, m = ctx.type.model, sW = m.nose - wc.x, sLeg = sW + dir * r * 0.5, sFar = sW - dir * (Ls + r * 1.15), sMid = sW - dir * r * 0.9;
+    const doors = [], zc = Math.abs(y0), wid = r * (nW > 1 ? 2.3 : 1.4) + 0.1;
+    for (const sd of zc ? [Math.sign(y0)] : [1, -1]) for (const [sa, sb, open] of [[sFar, sMid, 'transit'], [sMid, sLeg, 'down']]) {
+      const s0 = Math.min(sa, sb), s1 = Math.max(sa, sb), rad = Math.max(0.5, H.sec((s0 + s1) / 2).a);
+      if (zc) {   // a body gear bay: one door beside the keel, hinged outboard
+        const thC = H.polar((s0 + s1) / 2, keelY + 0.05, zc).th, dth = wid / 2 / rad, thIn = Math.min(Math.PI - 0.005, thC + dth), thOut = thC - dth;
+        const hinge = new V3(); H.pt((s0 + s1) / 2, thOut, hinge);
+        doors.push(hullDoor(ctx, [[s0, thOut], [s1, thOut], [s1, thIn], [s0, thIn]], hinge, sd, new V3(-1, 0, 0), sd * 88 * D, open));
+      } else {    // the nose bay: a pair of doors meeting on the keel, hinged at their outer edges
+        const th0 = Math.PI - 0.004, th1 = Math.PI - Math.min(0.6, (wid / 2 + 0.05) / rad), hinge = new V3(); H.pt((s0 + s1) / 2, th1, hinge);
+        doors.push(hullDoor(ctx, [[s0, th1], [s1, th1], [s1, th0], [s0, th0]], hinge, sd, new V3(-1, 0, 0), sd * 85 * D, open));
+      }
     }
     return doors;
   }

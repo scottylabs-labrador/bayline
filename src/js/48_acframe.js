@@ -99,11 +99,12 @@ const ACFrame = (() => {
       const fTop = spl(N.top), fBot = spl(N.bot), fWid = spl(N.wid), fWy = spl(N.wy), fEu = spl(N.eu);
       const tTop = spl(T.top), tBot = spl(T.bot), tWid = spl(T.wid);
       // the wing-body fairing: along the wing root chord, sized to reach the wing root
-      const w = m.wing, fair = w && !w.high ? (() => {
+      // (its lower half turns boxier and deeper: the main wheel wells are in it)
+      const w = m.wing, fair = w && !w.high && !F.noFair ? (() => {
         const xLE = w.x, c0 = w.c0, s0 = nose - xLE - c0 * 0.18, s1 = nose - xLE + c0 * 1.3, yRoot = -w.z;
         const cth = clamp((yRoot - yc0) / Rh, -0.97, 0.97), th0 = Math.acos(cth), have = Rw * Math.sin(th0);
         const need = Math.max(0, (w.y0 || 0) + 0.06 - have);
-        return { s0, s1, th0, out: need + Rw * (F.fair || 0.035), keel: Rh * (F.fairKeel !== undefined ? F.fairKeel : 0.05) };
+        return { s0, s1, th0, out: need + Rw * (F.fair || 0.035), keel: Rh * (F.fairKeel !== undefined ? F.fairKeel : 0.07), box: F.fairBox || 2.7 };
       })() : null;
       H.fair = fair;
       const hump = F.hump;
@@ -125,7 +126,7 @@ const ACFrame = (() => {
         }
         if (fair && s > fair.s0 - 3 && s < fair.s1 + 5) {
           const k = sstep(fair.s0 - 3, fair.s0 + 1.2, s) * (1 - sstep(fair.s1 - 1.5, fair.s1 + 5, s));
-          sec.fb = fair.out * k; sec.fk = fair.keel * k; sec.th0 = fair.th0;
+          sec.fb = fair.out * k; sec.fk = fair.keel * k; sec.th0 = fair.th0; sec.ed = 2 + (fair.box - 2) * k;
         }
         return sec;
       };
@@ -309,7 +310,7 @@ const ACFrame = (() => {
       const ths = []; for (let k = 0; k <= nAround / 2; k++) ths.push(right ? Math.PI * k / (nAround / 2) : Math.PI + Math.PI * k / (nAround / 2));
       mb.skin = ctx.skin || null; if (!ctx.skin) mb.bind(0);
       mb.surface(S, ths, (s, th, out) => H.pt(s, th, out), { eu: 2e-4, ev: 1e-4, pole: new V3(1, 0, 0),
-        uv: (s, th) => { const [u, v] = ctx.uvBody(s, th); return [u, v, s / tile, arc(s, right ? th : 2 * Math.PI - th) / tile]; } });
+        uv: (s, th) => { const [u, v] = ctx.uvBody(s, th, right); return [u, v, s / tile, arc(s, right ? th : 2 * Math.PI - th) / tile]; } });
     };
     half(true); half(false);
     mb.skin = null; mb.bind(0);
@@ -700,13 +701,14 @@ const ACFrame = (() => {
         const y = a + (b - a) * (k + 0.5) / nF, fr = ws.frame(y, { cd: new V3(), ud: new V3() }), c = fr.c;
         const flap = flaps.find(p => y >= p.y0 && y <= p.y1) || flaps[0];
         const lowY = (x) => ws.P(y, ACGeo.qAt(clamp(x, 0.001, 0.999), -1), new V3());
-        const depth = c * 0.085, wd = c * 0.045, x0 = 0.5, x1 = 1.3, xh = 0.9;
+        const depth = c * 0.09, wd = c * 0.042, x0 = 0.45, x1 = 1.22, xh = 0.9;
+        // the canoe's section: an ellipse hanging from the lower surface; the nose rounded, the tail tapering to a blunt end
         const body = (u, v, out) => {
-          const xc = lerp(x0, x1, u), base = lowY(Math.min(xc, 0.999)), yb = base.y + (xc > 1 ? (xc - 1) * c * 0.1 : 0);
-          const prof = Math.pow(Math.sin(Math.PI * Math.min(1, u * 1.05)), 0.55) * (1 - 0.35 * u), a2 = v * Math.PI * 2;
-          const hh = depth * prof, ww = wd * Math.pow(Math.sin(Math.PI * Math.min(1, 0.05 + u)), 0.4);
-          const x = fr.lx + fr.cd.x * xc * c;
-          return out.set(x, yb + 0.06 - hh * 0.5 + Math.cos(a2) * (hh * 0.5 + 0.06), y + Math.sin(a2) * ww);
+          const xc = lerp(x0, x1, u), base = lowY(Math.min(xc, 0.999)), yb = base.y + (xc > 1 ? (xc - 1) * c * 0.08 : 0);
+          const nose = u < 0.16 ? Math.sqrt(1 - Math.pow(1 - u / 0.16, 2)) : 1, tail = u > 0.55 ? 1 - 0.72 * Math.pow((u - 0.55) / 0.45, 1.3) : 1;
+          const hh = depth * nose * tail + 0.03, ww = wd * nose * (0.3 + 0.7 * tail) + 0.012, a2 = v * Math.PI * 2;
+          const x = fr.lx + fr.cd.x * xc * c + (u >= 0.999 ? -0.02 : 0);
+          return out.set(x, yb + 0.05 - hh * 0.5 + Math.cos(a2) * (hh * 0.5 + 0.05), y + Math.sin(a2) * ww);
         };
         const uH = (xh - x0) / (x1 - x0);
         mb.mirror = side < 0;
@@ -714,6 +716,9 @@ const ACFrame = (() => {
         const uvz = (u, v, i, j, p) => [0.02, 0.49, p.x, p.y];
         mb.bind(fb); mb.surface(G.linSpace(0, uH, Math.ceil(nu * uH)), G.linSpace(0, 1, nv), body, { eu: 1e-4, ev: 1e-4, uv: uvz });
         mb.bind(flap.bone); mb.surface(G.linSpace(uH, 1, Math.ceil(nu * (1 - uH)) + 1), G.linSpace(0, 1, nv), body, { eu: 1e-4, ev: 1e-4, uv: uvz });
+        // end caps: the blunt tail (on the flap) and the nose
+        const cap = (u0, flip) => mb.surface([0, 1], G.linSpace(0, 1, nv), (k, v, out) => { body(u0, v, out); const c0 = body(u0, 0, new V3()).lerp(body(u0, 0.5, new V3()), 0.5); return out.lerp(c0, k); }, { eu: 1e-4, ev: 1e-4, flip, uv: uvz });
+        cap(1, false); mb.bind(fb); cap(0, true);
         mb.mirror = false; mb.bind(0);
       }
     }

@@ -216,7 +216,8 @@ const ACModel = (() => {
       for (const p of parts.rud) rot(p, s.rud * f.maxRud);
       // wing flex: the tips rise with the lift (a damped spring, so gusts and touchdowns bounce them)
       if (w) {
-        const lift = f.S ? (out.qbar || 0) * f.S * (out.CL || 0) / ((ac.mass || f.mass) * G9) : 1;
+        // (the lift in weights from the flight model; without it, the load factor in the air)
+        const lift = out.qbar > 1 && out.CL ? out.qbar * f.S * out.CL / ((ac.mass || f.mass) * G9) : out.onGround ? 0 : (out.nz || 1);
         const target = tipFlex * clamp(lift, -1, 3.5);
         st.flexV += ((target - st.flex) * 38 - st.flexV * 5.5) * dt; st.flex += st.flexV * dt;
         for (const ws of env.wings) {
