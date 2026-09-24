@@ -125,6 +125,7 @@ const Traffic = (() => {
     lights = new THREE.Mesh(geo, lm); lights.frustumCulled = false; lights.renderOrder = 7; lights.layers.enable(1); group.add(lights);
     Env.scene.add(group);
   }
+  const photo = () => typeof document !== 'undefined' && document.body.classList.contains('photo');
   function labelSprite(t) {
     const c = document.createElement('canvas'); c.width = 320; c.height = 64; const g = c.getContext('2d');
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
@@ -172,9 +173,9 @@ const Traffic = (() => {
     for (const c of CLASSES) { meshes[c].count = counts[c]; meshes[c].instanceMatrix.needsUpdate = true; }
     lights.geometry.instanceCount = nl; aP.needsUpdate = true; aC.needsUpdate = true;
     // callsign labels on the closest few
-    near.sort((a, b) => a.d - b.d); const keep = new Set(near.slice(0, 10).map(n => n.t));
+    near.sort((a, b) => a.d - b.d); const keep = new Set(photo() ? [] : near.slice(0, 10).map(n => n.t));   // (photo mode: no labels)
     for (const t of targets.values()) if (!keep.has(t) && t.label) removeLabel(t);
-    for (const { t, d } of near.slice(0, 10)) {
+    for (const { t, d } of near.slice(0, keep.size)) {
       if (!t.label) t.label = labelSprite(t);
       const altFt = t.onGround ? 'GND' : Math.round(t.pos.y / FT / 100) * 100 + ' ft';
       const txt = `${t.cs || t.reg || t.hex.toUpperCase()}  ${t.type}  ${altFt}  ${Math.round(t.fix.gs / KT)} kt`;

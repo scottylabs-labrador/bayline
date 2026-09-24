@@ -50,7 +50,7 @@ const Precip = (() => {
     });
     mesh = new THREE.Mesh(g, mat); mesh.frustumCulled = false; mesh.renderOrder = 6; mesh.layers.enable(1);
     Env.scene.add(mesh);
-    flashEl = document.createElement('div');
+    flashEl = document.createElement('div'); flashEl.id = 'wflash';
     flashEl.style.cssText = 'position:fixed;inset:0;pointer-events:none;background:#dfe6ff;opacity:0;mix-blend-mode:screen;z-index:3;transition:none';
     document.body.appendChild(flashEl);
   }
@@ -77,7 +77,7 @@ const Precip = (() => {
   // drops on the windshield (cockpit view only): they bead and trickle when slow, streak up and outward at speed
   function windshield(dt, on, rate, kt) {
     if (!drops) {
-      const cv = document.createElement('canvas'); cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2';
+      const cv = document.createElement('canvas'); cv.id = 'wdrops'; cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2';
       document.body.appendChild(cv); drops = { cv, g: cv.getContext('2d'), list: [], w: 0, h: 0 };
     }
     const D = drops, dpr = Math.min(2, window.devicePixelRatio || 1), W = innerWidth, H = innerHeight;

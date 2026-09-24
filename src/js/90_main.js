@@ -86,6 +86,16 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     else { if (Player.mode === 'heli') Player.setMode('chase'); UI.toast('Explore: 1–8 change the view · M map · B departures · J missions · H help', 7); }
   }
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => start(b.dataset.go)));
+  // the trailer (published to the data volume as trailer/): a button on the title card once it exists, played in an overlay
+  { const btn = $('trailerbtn'), box = $('trailer'), vid = $('trailervid');
+    const D = window.BAYLINE_DATA || hash.get('data') || './data/v2/', SRC = D + 'trailer/bayline_trailer.mp4';
+    if (btn && box && vid) {
+      fetch(SRC, { method: 'HEAD' }).then(r => { if (r.ok) { btn.hidden = false; vid.poster = D + 'trailer/poster.jpg'; } }).catch(() => {});
+      const close = () => { vid.pause(); box.hidden = true; };
+      btn.addEventListener('click', () => { if (!vid.getAttribute('src')) vid.src = SRC; box.hidden = false; vid.currentTime = 0; vid.play().catch(() => {}); });
+      box.addEventListener('click', (e) => { if (e.target === box || e.target.classList.contains('x')) close(); });
+      window.addEventListener('keydown', (e) => { if (!box.hidden && e.key === 'Escape') { close(); e.stopPropagation(); e.preventDefault(); } }, true);
+    } }
   if (hash.has('auto')) { start('explore'); } else title.hidden = false;
   if (['auto', 'clear', 'fog', 'cloudy', 'haze', 'rain', 'storm', 'snow'].includes(hash.get('w')) && Env.state) { Env.state.weather = hash.get('w'); wxc.forEach(c => c.classList.toggle('on', c.dataset.w === hash.get('w'))); }   // #w=fog etc.
   if (hash.get('at')) { const st = Track.byId[hash.get('at')]; if (st) Player.teleportToStation(Stations.list[st.idx], +(hash.get('dir') || 1)); }
@@ -212,14 +222,22 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   let sLast = -1;
   function streamUi() { const n = Stream.stats.active + Stream.stats.queued; if (n !== sLast) { sLast = n; sbar.style.opacity = n > 0 ? 1 : 0; sbar.style.width = Math.min(100, 12 + n * 1.5) + '%'; } }
   const envArg = { night: 0, time: 0, camPos: Env.camera.position };
+  // deterministic capture (trailer tooling, tools/capture.mjs): frames are stepped at a fixed rate by the harness,
+  // quality tiers stay put, and an optional camera hook places the camera just before each render
+  const capture = { on: false, dt: 1 / 30, t: 0, cam: null, before: null };
+  function stepFrame(n = 1) { for (let i = 0; i < n; i++) { if (capture.before) capture.before(capture.t, capture.dt); tick(capture.dt); capture.t += capture.dt; } }
   function frame(now) {
     requestAnimationFrame(frame);
     let dt = (now - last) / 1000; last = now; if (dt > 0.1) dt = 0.1; if (dt <= 0) return;
+    if (capture.on) return;
     // automatic quality tiers: resolution, terrain detail and post effects follow the frame time
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 2.5) { const avg = fpsAcc / fpsN; fpsAcc = 0; fpsN = 0;
       if (qForced >= 0) {} else if (avg > 0.026 && tier < TIERS.length - 1) { tier++; applyTier(); } else if (avg < 0.0135 && tier > 0) { calm++; if (calm >= 4) { calm = 0; tier--; applyTier(); } } else calm = 0; }
     streamUi();
+    tick(dt);
+  }
+  function tick(dt) {
     const camP = Env.camera.position;
     // the Bay's afternoon sea breeze: calm mornings, gusty 2–6 PM, easing at night (trees, flags, water)
     { const h = Env.time.sec / 3600; U.uWind.value = 0.18 + 0.5 * Math.exp(-((h - 16) ** 2) / 8) + 0.06 * Math.sin(U.uTime.value * 0.37) * Math.sin(U.uTime.value * 0.11); }
@@ -227,6 +245,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Sim.update(dt, camP);
     Game.update(Env.time.paused ? 0 : dt * Env.time.scale);
     if (!(typeof Flight !== 'undefined' && Flight.active && safeFrameR('flight', () => Flight.update(dt)))) Player.update(dt);
+    // capture mode: the shot's camera, placed before the world picks its detail (terrain LOD and culling, streaming) for it
+    if (capture.on && capture.cam) safeFrame('capture-cam', () => { capture.cam(capture.t, Env.camera, dt); Env.camera.updateMatrixWorld(); });
     // the frame follows the camera around the planet; outside the Bay only the planet-wide layer draws and updates
     if (typeof Globe !== 'undefined') safeFrame('rebase', () => { if (Globe.maybeRebase(Env.camera.position)) UI.toast(Globe.frame.bay ? 'Back over the Bay' : 'Leaving the Bay: the world beyond is live satellite imagery', 4); });
     const bay = typeof Globe === 'undefined' || Globe.frame.bay;
@@ -259,13 +279,34 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Avatars.update();
     if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
+    draw(dt);
+  }
+  function draw(dt) {
     if (typeof Post !== 'undefined' && Post.render && Post.enabled !== false && !postBroken) { try { Post.render(dt); } catch (e) { postBroken = true; console.error('post', e); Env.renderer.setRenderTarget(null); Env.renderer.render(Env.scene, Env.camera); } }
     else Env.renderer.render(Env.scene, Env.camera);
   }
+  // capture: let the world catch up with the camera without advancing time (level of detail, tile requests and the
+  // incremental builders run; nothing moves), then draw the frame again. Resolves with what was still loading.
+  capture.settle = (maxMs) => new Promise((res) => {
+    const t0 = performance.now(), cam = Env.camera, cp = cam.position;
+    const pass = () => {
+      const bay = typeof Globe === 'undefined' || Globe.frame.bay;
+      if (bay) Terrain.update(cam);
+      if (typeof Globe !== 'undefined') safeFrame('globe', () => Globe.update(cam));
+      if (typeof Airports !== 'undefined') safeFrame('airports', () => Airports.update(cam));
+      if (typeof WorldTiles !== 'undefined') safeFrame('worldtiles', () => WorldTiles.update(cam));
+      if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => Towns.update(cp, envArg));
+      if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(0, envArg));
+      if (bay && typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
+      const busy = Stream.stats.active + Stream.stats.queued + (typeof Globe !== 'undefined' ? Globe.stats.loading : 0);
+      if (busy === 0 || performance.now() - t0 > maxMs) { draw(0); res(busy); } else setTimeout(pass, 40);
+    };
+    pass();
+  });
   let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
   function safeFrameR(name, f) { if (errs[name] > 20) return false; try { return f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); return false; } }
-  window.__bayline = { FMissions: typeof FMissions !== "undefined" ? FMissions : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+  window.__bayline = { capture, stepFrame, Landmarks: typeof Landmarks !== 'undefined' ? Landmarks : null, FMissions: typeof FMissions !== "undefined" ? FMissions : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
     Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();

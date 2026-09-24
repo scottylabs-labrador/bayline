@@ -72,6 +72,14 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 #title .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 #title .foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:18px;color:var(--ink-faint);font-size:12px}
 #title .foot a{color:var(--ink-dim)}
+#title .krow{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.chip.play{border-color:rgba(224,64,47,.6);background:rgba(224,64,47,.14);color:var(--ink);font-weight:600}
+.chip.play:hover{background:rgba(224,64,47,.28)}
+#trailer{position:fixed;inset:0;z-index:60;display:grid;place-items:center;background:rgba(5,6,8,.88);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#trailer[hidden]{display:none}
+#trailer .tv{position:relative;width:min(1280px,94vw,calc((100vh - 120px) * 16 / 9));aspect-ratio:16/9}
+#trailer video{width:100%;height:100%;display:block;background:#000;border-radius:10px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+#trailer .x{position:absolute;top:-46px;right:0;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.08);color:var(--ink);font-size:22px;line-height:1}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#666;margin-right:6px;vertical-align:1px}
 .dot.on{background:var(--green);box-shadow:0 0 10px var(--green)}
 
@@ -148,7 +156,7 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 </div></div>
 
 <div id="title" hidden><div class="card panel">
-  <div class="kicker">An unofficial Peninsula rail simulator</div>
+  <div class="krow"><div class="kicker">An unofficial Peninsula rail &amp; flight simulator</div><button class="chip play" id="trailerbtn" hidden>&#9654;&#xFE0E; Watch the trailer</button></div>
   <h1>Bay<span>line</span></h1>
   <p class="lede">Ride, drive and explore a photoreal replica of the 124&nbsp;km commuter line from 4th&nbsp;&amp;&nbsp;King to Gilroy: all 31 stations, the real timetable running live, real aerial photography, every building and tree along the line, from the tunnels under Potrero Hill to the garlic fields of South County. Then take to the air: fly real aircraft types from any of 28,000 airports on Earth.</p>
   <div class="modes">
@@ -178,6 +186,7 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
   </div>
   <div class="foot"><span>Unofficial. Not affiliated with Caltrain or the Peninsula Corridor Joint Powers Board. Timetable: GTFS feed. Imagery: USDA NAIP via USGS; EOxCloudless (cloudless.eox.at) by EOX IT Services GmbH, contains modified Copernicus Sentinel data 2025. Map data © OpenStreetMap contributors. Terrain: AWS Terrain Tiles (USGS 3DEP, SRTM, GMTED2010, ETOPO1 and others). Airports: OurAirports. Night lights: NASA GIBS / VIIRS Black Marble. Weather: Open-Meteo (CC BY 4.0). Live traffic: adsb.lol (ODbL). World buildings and airport surfaces: OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors. Aircraft types named for identification only; not affiliated with any manufacturer or airline.</span><span>Press <kbd>H</kbd> for controls</span></div>
 </div></div>
+<div id="trailer" hidden><div class="tv"><video id="trailervid" controls playsinline preload="none"></video><button class="x" aria-label="Close the trailer">&times;</button></div></div>
 
 <div id="hud" hidden>
   <div class="tl panel"><div class="clock" id="hclock">--:--</div><div class="where" id="hwhere">—</div><div class="sub" id="hsub"></div></div>
