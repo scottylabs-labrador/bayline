@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bayline · Aircraft preview</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9cc6e6; }
+  canvas { display: block; }
+  #hud { position: fixed; left: 12px; top: 10px; font: 12px/1.45 ui-monospace, Menlo, monospace; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.8); pointer-events: none; white-space: pre; }
+  body.clean #hud { display: none; }
+</style>
+</head>
+<body>
+<div id="hud"></div>
+<script>
+// Aircraft review harness: one type, one camera preset, one light, one pose, rendered like the game (log depth, ACES,
+// PMREM sky reflections, soft shadows) for before/after contact sheets.
+//   #type=a320&view=34f|34r|side|front|top|below|nose|engine|gear|mgear|ngear|tail|tip|chase|flyby|cockpit|turn
+//    &tod=day|golden|night&gear=1&flaps=max|<notch>&spoil=0..1&ail=-1..1&elev=..&rud=..&n1=0..1&rev=1&q=<quality>
+//    &base=1 (the models as they are on main, from dist/baseline/)  &clean=1 (no text)  &spin=1 (turntable)
+//    &cam=x,y,z&at=x,y,z&fov=deg (a free camera, model axes)
+(async () => {
+  const P = {};
+  for (const kv of location.hash.slice(1).split('&')) if (kv) { const [k, v] = kv.split('='); P[k] = v === undefined ? '1' : decodeURIComponent(v); }
+  addEventListener('hashchange', () => location.reload());
+  if (P.clean) document.body.classList.add('clean');
+  const BASE = !!+P.base;
+  const load = (src) => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src)); document.head.appendChild(s); });
+  // the model modules load in the build's order (48_ac*.js sort before 48_acmodel.js); ones not written yet are skipped
+  const AC = ['48_acgeo.js', '48_acframe.js', '48_aclivery.js', '48_acparts.js', '48_accockpit.js'];
+  const have = BASE ? [] : (await Promise.all(AC.map(async n => ((await fetch('../src/js/' + n, { method: 'HEAD' })).ok ? '../src/js/' + n : null)))).filter(Boolean);
+  const mods = BASE ? ['../src/js/00_util.js', '../dist/baseline/46_aircraft.js', '../src/js/47_fcs.js', '../src/js/47_fdm.js', '../dist/baseline/48_acmodel.js']
+    : ['../src/js/00_util.js', '../src/js/46_aircraft.js', '../src/js/47_fcs.js', '../src/js/47_fdm.js', ...have, '../src/js/48_acmodel.js'];
+  await load('../vendor/three.min.js');
+  for (const m of mods) await load(m);
+  try { await Promise.race([document.fonts.load('700 64px "Barlow Condensed"'), new Promise(r => setTimeout(r, 2500))]); } catch (e) {}
+
+  const V3 = THREE.Vector3, D = Math.PI / 180;
+  const T = AIRCRAFT.byId[P.type || 'a320'], m = T.model, f = T.fdm;
+  const TOD = P.tod || 'day', NIGHT = TOD === 'night' ? 1 : 0;
+  if (!BASE && ACModel.setQuality) ACModel.setQuality(P.q || 'high');
+
+  // ---------------------------------------------------------------- renderer (the engine's settings)
+  const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio)); renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = NIGHT ? 1.5 : TOD === 'golden' ? 0.95 : 0.9;
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.03, 60000);
+  U.uNight.value = NIGHT;
+
+  // ---------------------------------------------------------------- sky, image-based light, sun
+  const SKY = NIGHT ? { top: 0x050a1a, hor: 0x1c2640, bot: 0x05060a, sun: 0x000000 }
+    : TOD === 'golden' ? { top: 0x3a64a8, hor: 0xf2b27a, bot: 0x6b5a48, sun: 0xffd09a } : { top: 0x3f86cf, hor: 0xd7e6f0, bot: 0x9a8f7c, sun: 0xfff6e8 };
+  const sunEl = TOD === 'golden' ? 7 : 42, sunAz = TOD === 'golden' ? 212 : 225;           // azimuth from the nose, degrees
+  const sunDir = new V3(Math.cos(sunEl * D) * Math.cos(sunAz * D), Math.sin(sunEl * D), Math.cos(sunEl * D) * Math.sin(sunAz * D)).normalize();
+  function skyMesh(radius, withSun) {
+    const g = new THREE.SphereGeometry(radius, 64, 32), p = g.attributes.position, col = new Float32Array(p.count * 3);
+    const top = new THREE.Color(SKY.top), hor = new THREE.Color(SKY.hor), bot = new THREE.Color(SKY.bot), sc = new THREE.Color(SKY.sun), c = new THREE.Color(), n = new V3();
+    for (let i = 0; i < p.count; i++) { n.set(p.getX(i), p.getY(i), p.getZ(i)).normalize(); const y = n.y;
+      if (y >= 0) c.copy(hor).lerp(top, Math.pow(y, 0.45)); else c.copy(hor).lerp(bot, Math.min(1, -y * 6));
+      if (withSun && !NIGHT) { const k = Math.max(0, n.dot(sunDir)); c.lerp(sc, Math.pow(k, 60) * 0.95 + Math.pow(k, 6) * (TOD === 'golden' ? 0.35 : 0.12)); }
+      col.set([c.r, c.g, c.b], i * 3); }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, depthWrite: false, toneMapped: false }));
+  }
+  const sky = skyMesh(40000, true); sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
+  { const es = new THREE.Scene(); es.add(skyMesh(100, true));
+    if (!NIGHT) { const sd = new THREE.Mesh(new THREE.SphereGeometry(4, 16, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(SKY.sun).multiplyScalar(TOD === 'golden' ? 12 : 30) })); sd.position.copy(sunDir).multiplyScalar(90); es.add(sd); }
+    const gr = new THREE.Mesh(new THREE.CircleGeometry(95, 32), new THREE.MeshBasicMaterial({ color: NIGHT ? 0x05060a : 0x6d6a64 })); gr.rotation.x = -Math.PI / 2; gr.position.y = -3; es.add(gr);
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02, 0.1, 200).texture; }
+  const size = Math.max(m.L, f.b), sun = new THREE.DirectionalLight(new THREE.Color(SKY.sun), NIGHT ? 0 : TOD === 'golden' ? 2.6 : 3.0);
+  sun.position.copy(sunDir).multiplyScalar(size * 3); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.02;
+  const sc = sun.shadow.camera; sc.left = sc.bottom = -size * 0.75; sc.right = sc.top = size * 0.75; sc.near = 1; sc.far = size * 8; scene.add(sun, sun.target);
+  const hemi = new THREE.HemisphereLight(NIGHT ? 0x2a3656 : 0xbfd8ff, NIGHT ? 0x0c0c10 : 0x6a5a3a, NIGHT ? 0.12 : TOD === 'golden' ? 0.4 : 0.6); scene.add(hemi);
+  if (NIGHT) { const moon = new THREE.DirectionalLight(0x9fb4ff, 0.18); moon.position.set(-size, size * 2, size); scene.add(moon); }
+
+  // ---------------------------------------------------------------- the apron under the aircraft
+  const gy = -(f.cgHeight || 1);
+  { const c = document.createElement('canvas'); c.width = c.height = 1024; const g = c.getContext('2d');
+    g.fillStyle = NIGHT ? '#1a1b1d' : '#8d8a84'; g.fillRect(0, 0, 1024, 1024);
+    for (let i = 0; i < 26000; i++) { const v = (Math.random() * 40 - 20) | 0; g.fillStyle = `rgba(${128 + v},${126 + v},${122 + v},0.25)`; g.fillRect(Math.random() * 1024, Math.random() * 1024, 2, 2); }
+    g.strokeStyle = 'rgba(40,40,40,.55)'; g.lineWidth = 3; for (let k = 0; k <= 1024; k += 128) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, 1024); g.moveTo(0, k); g.lineTo(1024, k); g.stroke(); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(200, 200); t.anisotropy = 16; t.colorSpace = THREE.SRGBColorSpace;
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), new THREE.MeshStandardMaterial({ map: t, roughness: 0.92 }));
+    ground.rotation.x = -Math.PI / 2; ground.position.y = gy; ground.receiveShadow = true; if (!P.air) scene.add(ground);
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(1600, 0.3), new THREE.MeshStandardMaterial({ color: 0xe8c23a, roughness: 0.7 })); line.rotation.x = -Math.PI / 2; line.position.y = gy + 0.01; if (!P.air) scene.add(line); }
+
+  // ---------------------------------------------------------------- the aircraft and its state
+  const t0 = performance.now();
+  const model = ACModel.build(T); scene.add(model.root); window.__model = model;
+  const buildMs = performance.now() - t0;
+  const ac = FDM.create(f); ac.place({ x: 0, y: 100, z: 0, hdg: 0, onGround: !P.air, flaps: 0, gear: 1 });
+  const nF = f.flaps.length - 1;
+  ac.gearPos = P.gear === '0' ? 0 : P.gear ? +P.gear : 1;
+  ac.flapPos = P.flaps === 'max' ? nF : P.flaps ? Math.min(nF, +P.flaps) : 0; ac.ctl.flaps = Math.round(ac.flapPos);
+  ac.spoilerPos = +(P.spoil || 0); ac.surf.ail = +(P.ail || 0); ac.surf.elev = +(P.elev || 0); ac.surf.rud = +(P.rud || 0);
+  ac.ctl.rev = P.rev && P.rev !== '0' ? 1 : 0; ac.ctl.thr = +(P.thr || 0.3);
+  for (const e of ac.eng) e.n = P.n1 !== undefined ? +P.n1 : 0.25;
+  if (ac.rotor) ac.rotor.rpm = P.n1 !== undefined ? +P.n1 : 1;
+  ac.out.onGround = !P.air; ac.out.gs = P.air ? 80 : 0; ac.out.cas = P.air ? 80 : 0; ac.pos.y = P.air ? 900 : 0; ac.out.gnd = 0; ac.out.nz = +(P.nz || 1);
+  for (const L of ac.legs) { L.comp = P.air ? 0 : (f.gearLayout.comp || 0.1); L.contact = !P.air; }
+  const inside = /^cockpit/.test(P.view || '') || P.inside === '1';
+  window.__h = { renderer, scene, camera, model, ac };        // (for timing from tools)
+  for (let i = 0; i < 90; i++) model.update(ac, 1 / 30, { night: NIGHT, inside });
+  // (the game's HUD draws the instruments; here a stand-in: horizon, tapes, a map ring, so the displays read)
+  if (model.panel && model.panel.canvas) {
+    const g = model.panel.canvas.getContext('2d'); g.fillStyle = '#16191d'; g.fillRect(0, 0, 1024, 384);
+    for (const [k, x] of [[0, 18], [1, 356], [2, 684]]) {
+      g.fillStyle = '#050608'; g.fillRect(x, 16, 318, 352);
+      if (k !== 1) { g.fillStyle = '#2d6fb0'; g.fillRect(x + 60, 60, 200, 130); g.fillStyle = '#8a5a2b'; g.fillRect(x + 60, 190, 200, 130); g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 60, 190); g.lineTo(x + 260, 190); g.stroke();
+        g.fillStyle = '#2b2f36'; g.fillRect(x + 10, 60, 44, 260); g.fillRect(x + 266, 60, 44, 260); g.fillStyle = '#f2c21b'; g.fillRect(x + 125, 186, 70, 8); }
+      else { g.strokeStyle = '#e8e8e8'; g.lineWidth = 2; g.beginPath(); g.arc(x + 159, 250, 120, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); g.strokeStyle = '#3fd0ff'; g.beginPath(); g.moveTo(x + 100, 150); g.lineTo(x + 200, 280); g.stroke(); g.strokeStyle = '#ff5ad0'; g.beginPath(); g.moveTo(x + 159, 250); g.lineTo(x + 170, 60); g.stroke(); }
+    }
+    model.panel.tex.needsUpdate = true;
+    if (model.fcu) { const f2 = model.fcu.canvas.getContext('2d'); f2.fillStyle = '#2b2f35'; f2.fillRect(0, 0, 1024, 96); for (const x of [20, 190, 610, 780]) { f2.fillStyle = '#0a0b0d'; f2.fillRect(x, 30, 150, 46); f2.fillStyle = '#ffb347'; f2.font = '700 30px monospace'; f2.fillText('250', x + 40, 64); } model.fcu.tex.needsUpdate = true; }
+  }
+
+  // ---------------------------------------------------------------- camera presets
+  const Pm = (x, y, z) => new V3(x, -z, y);                  // spec FRD -> model axes
+  const eng0 = m.engines && m.engines[0] ? Pm(m.engines[0].x, m.engines[0].y, m.engines[0].z) : new V3(m.nose - 1, 0, 0);
+  const engD = m.engines && m.engines[0] ? (m.engines[0].d || 1.5) : 1.5;
+  const leg = f.gear.find(g => !g.nose && g.y < 0) || f.gear[0], gearC = Pm(leg.x, leg.y, leg.z - (leg.r || 0.4));
+  const tipZ = -(m.wing ? m.wing.span : 2), tipX = m.wing ? m.wing.x - Math.tan(m.wing.sweep * D) * (m.wing.span - (m.wing.y0 || 0)) - m.wing.c1 * 0.5 : 0;
+  const tail = new V3(m.vtail.x - m.vtail.c0 * 0.4, -m.vtail.z + m.vtail.h * 0.45, 0);
+  const V = P.view || '34f', look = new V3(0, 0, 0); let fov = 34;
+  const at = (x, y, z) => camera.position.set(x, y, z);
+  if (V === '34f') { at(size * 0.78, size * 0.22, -size * 0.72); look.set(size * 0.02, -size * 0.02, 0); }
+  else if (V === '34r') { at(-size * 0.8, size * 0.3, size * 0.7); }
+  else if (V === 'side') { at(0, size * 0.02, -size * 2.3); fov = 24; look.set(0, -size * 0.02, 0); }
+  else if (V === 'front') { at(size * 2.2, size * 0.02, 0); fov = 24; }
+  else if (V === 'top') { at(0.01, size * 2.4, 0); fov = 24; camera.up.set(1, 0, 0); }
+  else if (V === 'below') { at(size * 0.35, -size * 0.9, -size * 0.55); look.set(0, gy * 0.5, 0); }
+  else if (V === 'nose') { at(m.nose + size * 0.06, size * 0.03, -size * 0.1); look.set(m.nose - size * 0.08, size * 0.01, 0); fov = 38; }
+  else if (V === 'engine') { at(eng0.x + engD * 3.2, eng0.y + engD * 0.3, eng0.z - engD * 2.6); look.copy(eng0).add(new V3(-engD * 0.4, 0, 0)); fov = 36; }
+  else if (V === 'mgear') { at(gearC.x + leg.r * 1.5, gearC.y + leg.r * 1.2, gearC.z - leg.r * 9); look.copy(gearC).add(new V3(0, leg.r * 1.6, 0)); fov = 42; }
+  else if (V === 'ngear') { const n = f.gear[0], c = Pm(n.x, n.y, n.z - (n.r || 0.4)); at(c.x + n.r * 7, c.y + n.r * 1.5, c.z - n.r * 6); look.copy(c).add(new V3(0, n.r * 1.8, 0)); fov = 42; }
+  else if (V === 'gear') { at(gearC.x + 3.2 * leg.r * 2, gearC.y + 0.2, gearC.z - leg.r * 9); look.copy(gearC).add(new V3(0, leg.r * 1.4, 0)); fov = 40; }
+  else if (V === 'tail') { at(tail.x - size * 0.25, tail.y + size * 0.1, -size * 0.28); look.copy(tail); fov = 36; }
+  else if (V === 'tip') { at(tipX + size * 0.12, -m.wing?.z + size * 0.05 || 0, tipZ - size * 0.08); look.set(tipX, -(m.wing ? m.wing.z : 0) + size * 0.02, tipZ + size * 0.02); fov = 38; }
+  else if (V === 'chase') { const d = size * 1.05 + 8; at(-d * Math.cos(0.12), d * Math.sin(0.12) + size * 0.08, 0); look.set(0, size * 0.08, 0); fov = 60; }
+  else if (V === 'flyby') { at(size * 0.55, size * 0.03, -size * 1.25); fov = 30; }
+  else if (V === 'cockpit') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(10, -0.9, 0)); fov = 62; camera.near = 0.03; }
+  else if (V === 'cockpitd') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(10, -4.2, 0)); fov = 62; camera.near = 0.03; }
+  else if (V === 'cockpits') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(2, -2.5, 9)); fov = 70; camera.near = 0.03; }
+  else if (V === 'turn') { at(size * 0.8, size * 0.25, -size * 0.8); }
+  // any camera: #cam=x,y,z&at=x,y,z&fov=deg (model axes: x forward, y up, z right; metres from the CG)
+  if (P.cam) { const c = P.cam.split(',').map(Number); camera.position.set(c[0], c[1], c[2]); if (P.at) { const t = P.at.split(',').map(Number); look.set(t[0], t[1], t[2]); } }
+  if (P.fov) fov = +P.fov;
+  camera.fov = fov; camera.updateProjectionMatrix(); camera.lookAt(look);
+
+  // ---------------------------------------------------------------- loop
+  const hud = document.getElementById('hud'); let frames = 0, last = performance.now();
+  function frame() {
+    const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now; U.uTime.value += dt;
+    if (P.spin || V === 'turn') { const a = U.uTime.value * 0.25; camera.position.set(Math.cos(a) * size * 1.1, size * 0.25, Math.sin(a) * size * 1.1); camera.lookAt(0, 0, 0); }
+    model.update(ac, dt, { night: NIGHT, inside });
+    renderer.render(scene, camera); frames++;
+    if (frames === 3 || frames % 30 === 0) {
+      const info = renderer.info.render;
+      window.__stats = { type: T.id, buildMs: Math.round(buildMs), calls: info.calls, tris: info.triangles, geos: renderer.info.memory.geometries, texs: renderer.info.memory.textures, textureMB: model.stats ? model.stats.textureMB : undefined, ms: model.stats ? model.stats.ms : undefined };
+      hud.textContent = `${T.name}  ${BASE ? '(baseline)' : '(aircraft-v2' + (P.q ? ' ' + P.q : '') + ')'}\nview ${V} · ${TOD}\nbuild ${Math.round(buildMs)} ms · ${info.calls} calls · ${(info.triangles / 1000).toFixed(0)}k tris`;
+    }
+    if (frames === 20) window.__ready = true;
+    requestAnimationFrame(frame);
+  }
+  frame();
+})().catch(e => { document.getElementById('hud').textContent = 'ERROR ' + (e && e.stack || e); console.error(e); window.__ready = true; });
+</script>
+</body>
+</html>
