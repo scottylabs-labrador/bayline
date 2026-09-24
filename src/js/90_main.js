@@ -240,6 +240,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof Towns !== 'undefined' && Towns.setQuality) safe('towns', () => Towns.setQuality(T.post));
     if (typeof GroundCover !== 'undefined' && GroundCover.setQuality) safe('groundcover', () => GroundCover.setQuality(T.post));
     if (typeof SunShade !== 'undefined') safe('sunshade', () => SunShade.setQuality(T.post));
+    if (typeof ACModel !== 'undefined' && ACModel.setQuality) safe('acmodel', () => ACModel.setQuality(T.name));
     window.dispatchEvent(new Event('resize'));
     gfxUi();
   }
