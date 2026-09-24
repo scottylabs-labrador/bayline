@@ -17,7 +17,7 @@
 <script>
 // Aircraft review harness: one type, one camera preset, one light, one pose, rendered like the game (log depth, ACES,
 // PMREM sky reflections, soft shadows) for before/after contact sheets.
-//   #type=a320&view=34f|34r|side|front|top|below|nose|engine|gear|tail|tip|chase|flyby|cockpit|turn
+//   #type=a320&view=34f|34r|side|front|top|below|nose|engine|gear|mgear|ngear|tail|tip|chase|flyby|cockpit|turn
 //    &tod=day|golden|night&gear=1&flaps=max|<notch>&spoil=0..1&ail=-1..1&elev=..&rud=..&n1=0..1&rev=1&q=<quality>
 //    &base=1 (the models as they are on main, from dist/baseline/)  &clean=1 (no text)  &spin=1 (turntable)
 (async () => {
@@ -28,7 +28,7 @@
   const BASE = !!+P.base;
   const load = (src) => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error(src)); document.head.appendChild(s); });
   // the model modules load in the build's order (48_ac*.js sort before 48_acmodel.js); ones not written yet are skipped
-  const AC = ['48_acgeo.js', '48_aclivery.js', '48_accockpit.js', '48_acparts.js'];
+  const AC = ['48_acgeo.js', '48_acframe.js', '48_aclivery.js', '48_acparts.js', '48_accockpit.js'];
   const have = BASE ? [] : (await Promise.all(AC.map(async n => ((await fetch('../src/js/' + n, { method: 'HEAD' })).ok ? '../src/js/' + n : null)))).filter(Boolean);
   const mods = BASE ? ['../src/js/00_util.js', '../dist/baseline/46_aircraft.js', '../src/js/47_fcs.js', '../src/js/47_fdm.js', '../dist/baseline/48_acmodel.js']
     : ['../src/js/00_util.js', '../src/js/46_aircraft.js', '../src/js/47_fcs.js', '../src/js/47_fdm.js', ...have, '../src/js/48_acmodel.js'];
@@ -102,8 +102,20 @@
   if (ac.rotor) ac.rotor.rpm = P.n1 !== undefined ? +P.n1 : 1;
   ac.out.onGround = !P.air; ac.out.gs = P.air ? 80 : 0; ac.out.cas = P.air ? 80 : 0; ac.pos.y = P.air ? 900 : 0; ac.out.gnd = 0; ac.out.nz = +(P.nz || 1);
   for (const L of ac.legs) { L.comp = P.air ? 0 : (f.gearLayout.comp || 0.1); L.contact = !P.air; }
-  const inside = P.view === 'cockpit';
+  const inside = /^cockpit/.test(P.view || '');
   for (let i = 0; i < 90; i++) model.update(ac, 1 / 30, { night: NIGHT, inside });
+  // (the game's HUD draws the instruments; here a stand-in: horizon, tapes, a map ring, so the displays read)
+  if (model.panel && model.panel.canvas) {
+    const g = model.panel.canvas.getContext('2d'); g.fillStyle = '#16191d'; g.fillRect(0, 0, 1024, 384);
+    for (const [k, x] of [[0, 18], [1, 356], [2, 684]]) {
+      g.fillStyle = '#050608'; g.fillRect(x, 16, 318, 352);
+      if (k !== 1) { g.fillStyle = '#2d6fb0'; g.fillRect(x + 60, 60, 200, 130); g.fillStyle = '#8a5a2b'; g.fillRect(x + 60, 190, 200, 130); g.strokeStyle = '#fff'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + 60, 190); g.lineTo(x + 260, 190); g.stroke();
+        g.fillStyle = '#2b2f36'; g.fillRect(x + 10, 60, 44, 260); g.fillRect(x + 266, 60, 44, 260); g.fillStyle = '#f2c21b'; g.fillRect(x + 125, 186, 70, 8); }
+      else { g.strokeStyle = '#e8e8e8'; g.lineWidth = 2; g.beginPath(); g.arc(x + 159, 250, 120, Math.PI * 1.15, Math.PI * 1.85); g.stroke(); g.strokeStyle = '#3fd0ff'; g.beginPath(); g.moveTo(x + 100, 150); g.lineTo(x + 200, 280); g.stroke(); g.strokeStyle = '#ff5ad0'; g.beginPath(); g.moveTo(x + 159, 250); g.lineTo(x + 170, 60); g.stroke(); }
+    }
+    model.panel.tex.needsUpdate = true;
+    if (model.fcu) { const f2 = model.fcu.canvas.getContext('2d'); f2.fillStyle = '#2b2f35'; f2.fillRect(0, 0, 1024, 96); for (const x of [20, 190, 610, 780]) { f2.fillStyle = '#0a0b0d'; f2.fillRect(x, 30, 150, 46); f2.fillStyle = '#ffb347'; f2.font = '700 30px monospace'; f2.fillText('250', x + 40, 64); } model.fcu.tex.needsUpdate = true; }
+  }
 
   // ---------------------------------------------------------------- camera presets
   const Pm = (x, y, z) => new V3(x, -z, y);                  // spec FRD -> model axes
@@ -122,12 +134,16 @@
   else if (V === 'below') { at(size * 0.35, -size * 0.9, -size * 0.55); look.set(0, gy * 0.5, 0); }
   else if (V === 'nose') { at(m.nose + size * 0.06, size * 0.03, -size * 0.1); look.set(m.nose - size * 0.08, size * 0.01, 0); fov = 38; }
   else if (V === 'engine') { at(eng0.x + engD * 3.2, eng0.y + engD * 0.3, eng0.z - engD * 2.6); look.copy(eng0).add(new V3(-engD * 0.4, 0, 0)); fov = 36; }
+  else if (V === 'mgear') { at(gearC.x + leg.r * 1.5, gearC.y + leg.r * 1.2, gearC.z - leg.r * 9); look.copy(gearC).add(new V3(0, leg.r * 1.6, 0)); fov = 42; }
+  else if (V === 'ngear') { const n = f.gear[0], c = Pm(n.x, n.y, n.z - (n.r || 0.4)); at(c.x + n.r * 7, c.y + n.r * 1.5, c.z - n.r * 6); look.copy(c).add(new V3(0, n.r * 1.8, 0)); fov = 42; }
   else if (V === 'gear') { at(gearC.x + 3.2 * leg.r * 2, gearC.y + 0.2, gearC.z - leg.r * 9); look.copy(gearC).add(new V3(0, leg.r * 1.4, 0)); fov = 40; }
   else if (V === 'tail') { at(tail.x - size * 0.25, tail.y + size * 0.1, -size * 0.28); look.copy(tail); fov = 36; }
   else if (V === 'tip') { at(tipX + size * 0.12, -m.wing?.z + size * 0.05 || 0, tipZ - size * 0.08); look.set(tipX, -(m.wing ? m.wing.z : 0) + size * 0.02, tipZ + size * 0.02); fov = 38; }
   else if (V === 'chase') { const d = size * 1.05 + 8; at(-d * Math.cos(0.12), d * Math.sin(0.12) + size * 0.08, 0); look.set(0, size * 0.08, 0); fov = 60; }
   else if (V === 'flyby') { at(size * 0.55, size * 0.03, -size * 1.25); fov = 30; }
   else if (V === 'cockpit') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(10, -0.9, 0)); fov = 62; camera.near = 0.03; }
+  else if (V === 'cockpitd') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(10, -4.2, 0)); fov = 62; camera.near = 0.03; }
+  else if (V === 'cockpits') { camera.position.copy(model.eye); look.copy(model.eye).add(new V3(2, -2.5, 9)); fov = 70; camera.near = 0.03; }
   else if (V === 'turn') { at(size * 0.8, size * 0.25, -size * 0.8); }
   camera.fov = fov; camera.updateProjectionMatrix(); camera.lookAt(look);
 
