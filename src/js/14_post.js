@@ -120,9 +120,11 @@ const Post = (() => {
           float t = (float(k) + jit) / float(uSteps); t *= t;
           vec2 o = om * max(t * rpx, float(k) + 1.0) * uTexel;
           vec3 sa = vp(uv0 + o) - P, sb = vp(uv0 - o) - P;
-          float la = length(sa), lb = length(sb);
-          hc0 = max(hc0, mix(-1.0, dot(sa, V) / max(la, 1e-4), clamp((R - la) * fm, 0.0, 1.0)));
-          hc1 = max(hc1, mix(-1.0, dot(sb, V) / max(lb, 1e-4), clamp((R - lb) * fm, 0.0, 1.0)));
+          // thin-occluder compensation (XeGTAO): the depth difference counts 2x toward the falloff distance, so blades of
+          // grass and leaf cards in front of a pixel shade it far less than a wall at the same screen offset would
+          float la = length(vec3(sa.xy, sa.z * 2.0)), lb = length(vec3(sb.xy, sb.z * 2.0));
+          hc0 = max(hc0, mix(-1.0, dot(sa, V) / max(length(sa), 1e-4), clamp((R - la) * fm, 0.0, 1.0)));
+          hc1 = max(hc1, mix(-1.0, dot(sb, V) / max(length(sb), 1e-4), clamp((R - lb) * fm, 0.0, 1.0)));
         }
         float h0 = -facos(hc1), h1 = facos(hc0);
         h0 = n + clamp(h0 - n, -1.5707963, 1.5707963); h1 = n + clamp(h1 - n, -1.5707963, 1.5707963);
@@ -191,9 +193,9 @@ const Post = (() => {
       gl_FragColor = vec4(L, T);
     }`);
   const compMat = mk(Object.assign({
-    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 }, uTimeS: U.uTime,
+    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 }, uTimeS: U.uTime, uExpo: { value: 1 },
   }, cam, Sky.uniforms), Sky.glsl + Sky.glslFx + CAMGLSL + /* glsl */`
-    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO, uShowAO; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
+    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO, uShowAO, uExpo; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
     #ifdef BL_SSR
     uniform float uTimeS;
     float ssrH(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -233,14 +235,18 @@ const Post = (() => {
       return ws > 0.0 ? s / ws : 1.0;
     }
     void main() {
-      vec3 col = texture2D(tScene, vUv).rgb;
+      vec4 sc = texture2D(tScene, vUv); vec3 col = sc.rgb;   // alpha 0 = thin geometry (leaves, grass blades)
       float d = texture2D(tDepth, vUv).r; bool sky = d >= 0.99999;
       vec3 vr = viewRay(vUv); float tS = sky ? 1e9 : depthW(d) * length(vr);
       vec3 rd = normalize(mat3(uCamWorld) * vr), ro = uCamPos;
       float mu = dot(rd, uSkySunDir);
       if (!sky) {
         if (uShowAO > 0.5) { gl_FragColor = vec4(vec3(uUseAO > 0.5 ? aoUp(vUv, d) : 1.0) * 0.18, 1.0); return; }   // (QA: Post.debug.showAO)
-        if (uUseAO > 0.5) col *= aoUp(vUv, d);
+        // AO occludes sky and bounce light, not the sun: bright, directly lit pixels keep most of their light
+        // (and thin cards would pile up far too much of it on each other)
+        if (uUseAO > 0.5) { float ao = aoUp(vUv, d), lx = dot(col, vec3(0.2126, 0.7152, 0.0722)) * uExpo;
+          ao = mix(ao, 1.0, (1.0 - clamp(sc.a, 0.0, 1.0)) * 0.75);
+          col *= mix(ao, 1.0, 0.65 * smoothstep(0.08, 0.5, lx)); }
         vec3 wp = ro + rd * tS;
         #ifdef BL_SSR
         // open water sits at sea level (the terrain draws it at y = 0): a pixel within ~0.4 m of it, seen from above,
@@ -394,7 +400,8 @@ const Post = (() => {
       fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; pass(fogMat, rtFog);
       // 4. composite -> HDR
       compMat.uniforms.tScene.value = rtScene.texture; compMat.uniforms.tDepth.value = depth; compMat.uniforms.tAO.value = rtAO[0].texture;
-      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uShowAO.value = debug.showAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
+      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uShowAO.value = debug.showAO ? 1 : 0;
+      compMat.uniforms.uExpo.value = Env.state.exposure || 1; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
       pass(compMat, rtHDR);
       // 5. bloom
       const exposure = Env.state.exposure || 1, night = U.uNight.value;

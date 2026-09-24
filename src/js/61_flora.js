@@ -730,7 +730,10 @@ const Flora = (() => {
     if (!opts.depth) {
       fs = fs.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0'))
         .replace('#include <lights_physical_pars_fragment>', '#include <lights_physical_pars_fragment>\n' + FOL_TRANSLUCENT)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(0.86, 0.62, vFolLeaf);');
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(0.86, 0.62, vFolLeaf);')
+        // scene alpha 0 marks leaves (vFolLeaf) as thin for Post, which spares them most of the screen-space AO that
+        // thin cards would otherwise pile on each other; bark stays solid
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n gl_FragColor.a = 1.0 - vFolLeaf;');
     }
     sh.vertexShader = vs; sh.fragmentShader = fs;
   }
@@ -822,7 +825,8 @@ const Flora = (() => {
           float lod = max(0.0, 0.5 * log2(max(dot(dFdx(vImpUv * ${IC}.0), dFdx(vImpUv * ${IC}.0)), dot(dFdy(vImpUv * ${IC}.0), dFdy(vImpUv * ${IC}.0)))));
           it.a *= 1.0 + lod * 0.3;
           vec3 tint = mix(vec3(0.86, 0.9, 0.84), vec3(1.12, 1.08, 1.0), vImpTint);
-          diffuseColor *= vec4(it.rgb * tint, it.a);`);
+          diffuseColor *= vec4(it.rgb * tint, it.a);`)
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n gl_FragColor.a = 0.0;');   // thin (see patchFoliage)
     };
     m.customProgramCacheKey = () => 'flora-far';
     uImp.uMidF.value = Array.from(MIDF);
