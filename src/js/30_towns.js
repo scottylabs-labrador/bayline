@@ -241,7 +241,10 @@ const Towns = (() => {
         uniform vec4 uImgX0; uniform vec4 uImgX1; uniform vec4 uImgX2; uniform vec4 uImgX3; uniform float uImgSRGB;
         vec3 gEmit = vec3(0.0); float gPhoto = 0.0;
         vec3 tSrgb(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
-        float tHash3(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }`)
+        float tHash3(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
+        float tH2(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+        float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(tH2(i), tH2(i + vec2(1, 0)), f.x), mix(tH2(i + vec2(0, 1)), tH2(i + vec2(1, 1)), f.x), f.y); }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
       {
         vec2 wp = vWP.xz; vec2 wdx = dFdx(wp), wdy = dFdy(wp);                 // derivatives in uniform control flow
@@ -250,19 +253,70 @@ const Towns = (() => {
         float surf = floor(vB.x + 0.5);
         if (surf > 0.5 && surf < 2.5) {                                      // ---- roofs
           vec3 base = diffuseColor.rgb;
-          float slot = floor(vB.y + 0.5);
+          float slot = floor(vB.y + 0.5), rmat = floor(vB.z + 0.5), rs = vB.w;
           vec4 xf = slot < 0.5 ? uImgX0 : slot < 1.5 ? uImgX1 : slot < 2.5 ? uImgX2 : uImgX3;
+          float fwr = max(length(wdx), length(wdy)) + 1e-4;                  // metres per pixel on the roof
+          float mag = 0.0;
           if (surf < 1.5 && xf.w > 0.5) {
             vec2 uv = clamp((wp - xf.xy) / xf.z, vec2(0.0015), vec2(0.9985)), gx = wdx / xf.z, gy = wdy / xf.z;
             vec3 ph = slot < 0.5 ? textureGrad(uImg0, uv, gx, gy).rgb : slot < 1.5 ? textureGrad(uImg1, uv, gx, gy).rgb : slot < 2.5 ? textureGrad(uImg2, uv, gx, gy).rgb : textureGrad(uImg3, uv, gx, gy).rgb;
+            // near the camera the photo is magnified into blur: keep only its tone (a ~3 m average) under the material
+            mag = smoothstep(1.4, 4.0, (xf.z / 1024.0) / fwr);
+            if (mag > 0.01) {
+              vec2 gL = vec2(3.0 / xf.z, 0.0);
+              vec3 pl = slot < 0.5 ? textureGrad(uImg0, uv, gL, gL.yx).rgb : slot < 1.5 ? textureGrad(uImg1, uv, gL, gL.yx).rgb : slot < 2.5 ? textureGrad(uImg2, uv, gL, gL.yx).rgb : textureGrad(uImg3, uv, gL, gL.yx).rgb;
+              ph = mix(ph, pl, mag * 0.85);
+            }
             if (uImgSRGB > 0.5) ph = tSrgb(ph);
-            float g = textureGrad(uFac, vec3(wp * 0.35, ${FL.roof}.0), wdx * 0.35, wdy * 0.35).r;
-            base = ph * (0.93 + 0.14 * (g - 0.5));
+            base = ph;
             gPhoto = 1.0;
-          } else {
-            float g = textureGrad(uFac, vec3(wp * 0.35, ${FL.roof}.0), wdx * 0.35, wdy * 0.35).r;
-            base *= 0.78 + 0.44 * g;
+          } else mag = 1.0;
+          // the roof's own material, resolved down to centimetres near the camera and fading as it shrinks below a pixel:
+          // courses run across the slope of a pitched roof, and along the building's long axis on a flat one
+          vec3 nWd = normalize((vec4(normalize(vNormal), 0.0) * viewMatrix).xyz);
+          float sl = length(nWd.xz), ang = vWin.x * 0.0001 - 3.1415927;
+          vec2 ax = sl > 0.12 ? nWd.xz / sl : vec2(cos(ang), sin(ang));
+          vec2 rq = vec2(dot(wp, vec2(-ax.y, ax.x)), dot(wp, ax));
+          if (sl > 0.12) rq.y /= max(nWd.y, 0.3);                          // courses are spaced along the slope itself
+          float h1 = tHash3(vec3(floor(wp * 0.1), rs)), grain = textureGrad(uFac, vec3(wp * 0.35, ${FL.roof}.0), wdx * 0.35, wdy * 0.35).r;
+          float fine = 1.0 - smoothstep(0.02, 0.09, fwr), mid = 1.0 - smoothstep(0.08, 0.35, fwr);
+          float m = 0.93 + 0.14 * (grain - 0.5);
+          if (rmat < 1.5) {                                // membrane: sheets with welded seams, dirt, ponding stains
+            float W = rmat < 0.5 ? 3.0 : 2.4, sd = abs(fract(rq.y / W) - 0.5) * W;
+            m *= 1.0 + 0.07 * smoothstep(W * 0.5 - 0.06 - fwr, W * 0.5 - 0.03, sd) * mid;
+            m *= 1.0 - 0.1 * smoothstep(0.62, 0.8, tn(wp * 0.13 + rs)) * mid - 0.05 * (tn(wp * 0.6) - 0.5) * mid;
+          } else if (rmat < 2.5) {                         // gravel ballast
+            float st = tHash3(vec3(floor(wp * 22.0), rs)), st2 = tHash3(vec3(floor(wp * 9.0 + 0.5), rs + 1.0));
+            m *= 1.0 + ((st - 0.5) * 0.34 * fine + (st2 - 0.5) * 0.16 * mid) + 0.08 * (tn(wp * 0.21) - 0.5);
+          } else if (rmat < 3.5) {                         // bitumen / modified: 1 m rolls, granules, patches
+            float sd = abs(fract(rq.y / 0.95) - 0.5) * 0.95;
+            m *= 1.0 - 0.1 * smoothstep(0.43 - fwr, 0.46, sd) * mid + (tHash3(vec3(floor(wp * 30.0), rs)) - 0.5) * 0.16 * fine;
+            m *= 1.0 - 0.12 * smoothstep(0.66, 0.72, tn(wp * 0.17 + rs * 3.0)) * mid;
+          } else if (rmat < 4.5) {                         // standing-seam metal: ribs every 0.46 m with a lit edge and a shadow
+            float u = fract(rq.x / 0.46) * 0.46;
+            m *= 1.0 + (0.16 * (1.0 - smoothstep(0.0, 0.025 + fwr, u)) - 0.1 * (1.0 - smoothstep(0.0, 0.03 + fwr, abs(u - 0.05)))) * mid;
+            m *= 0.96 + 0.08 * tn(vec2(rq.x / 0.46, rq.y * 0.05) + rs);
+          } else if (rmat < 5.5) {                         // asphalt shingles: 14 cm courses, 90 cm tabs, staggered
+            float cy = rq.y / 0.14, row = floor(cy), cyf = fract(cy), tab = floor(rq.x / 0.9 + row * 0.5);
+            float tv = tHash3(vec3(tab, row, rs));
+            m *= mix(1.0, (0.8 + 0.34 * tv) * (1.0 - 0.28 * (1.0 - smoothstep(0.0, 0.18 + fwr / 0.14, cyf))), fine);
+            m *= mix(1.0, 0.94 + 0.12 * h1, mid);
+          } else if (rmat < 6.5) {                         // clay barrel tile: 33 cm courses, 24 cm barrels, terracotta variation
+            float cy = rq.y / 0.33, row = floor(cy), cyf = fract(cy), bx = rq.x / 0.24;
+            float barrel = 0.78 + 0.3 * sin(fract(bx) * 6.2832) , tv = tHash3(vec3(floor(bx), row, rs));
+            m *= mix(1.0, barrel * (0.84 + 0.3 * tv) * (1.0 - 0.3 * (1.0 - smoothstep(0.0, 0.12 + fwr / 0.33, cyf))), fine);
+            m *= mix(1.0, 0.93 + 0.14 * h1, mid);
+          } else {                                          // slate / concrete tile: 30 cm courses of 30 cm tiles
+            float cy = rq.y / 0.3, row = floor(cy), tile = floor(rq.x / 0.3 + row * 0.5), tv = tHash3(vec3(tile, row, rs));
+            m *= mix(1.0, (0.86 + 0.26 * tv) * (1.0 - 0.25 * (1.0 - smoothstep(0.0, 0.12 + fwr / 0.3, fract(cy)))), fine);
           }
+          // skylights and vents on big flat roofs (a sparse grid, one per ~6 m cell in some cells)
+          if (sl < 0.12 && rmat < 3.5) {
+            vec2 cc = floor(wp / 6.0), cf = fract(wp / 6.0) - 0.5; float kv = tHash3(vec3(cc, rs + 5.0));
+            if (kv < 0.12) { vec2 hs = vec2(0.14 + 0.1 * fract(kv * 17.0), 0.1 + 0.08 * fract(kv * 29.0)); float in1 = step(abs(cf.x), hs.x) * step(abs(cf.y), hs.y);
+              m = mix(m, 0.35, in1 * mid); }
+          }
+          base *= mix(1.0, m, mag);
           diffuseColor.rgb = base;
         } else if (vWin.w > 0.5 || surf > 2.5) {                             // ---- facades
           float style = floor(vWin.y + 0.5), fh = max(2.4, vWin.x * 0.01), seed = vWin.z, eave = vWin.w * 0.02;
@@ -451,7 +505,7 @@ const Towns = (() => {
   function makeBldMat(u) {
     const m = new THREE.MeshLambertMaterial({ vertexColors: true });
     m.onBeforeCompile = sh => bldShader(sh, u);
-    m.customProgramCacheKey = () => 'towns-bld-v5';
+    m.customProgramCacheKey = () => 'towns-bld-v6';
     m.userData.u = u;
     return m;
   }
@@ -899,6 +953,7 @@ const Towns = (() => {
   function polyArea(P, n) { let s = 0; for (let i = 0; i < n; i++) { const j = (i + 1) % n; s += P[i * 2] * P[j * 2 + 1] - P[j * 2] * P[i * 2 + 1]; } return s / 2; }
   function rgbFrom565(v) { return new THREE.Color().setRGB(((v >> 11) & 31) / 31, ((v >> 5) & 63) / 63, (v & 31) / 31, THREE.SRGBColorSpace); }
   // Pick facade style, material, floor height and colours for one OSM building (deterministic per building).
+  const RM = { white: 0, grey: 1, gravel: 2, bitumen: 3, metal: 4, shingle: 5, clay: 6, slate: 7 };
   function lookOf(b, region, r1, r2, r3, area) {
     const kind = b.kind, tall = b.h > 30, glassy = !!(b.flags & 16), vict = !!(b.flags & 32), hasFront = !!(b.flags & 4);
     let style = 1, fh = 3.1, mat = b.mat || 0, wall, roofC;
@@ -939,7 +994,15 @@ const Towns = (() => {
     if (b.roofc) roofC = rgbFrom565(b.roofc);
     else if (pitched) roofC = (region >= 2 && r3 < 0.35 ? pick(PAL.roofTile, r3 * 2.7) : pick(PAL.roofComp, r3 * 3.1)).clone();
     else roofC = (r3 < 0.5 ? COL.roofMembrane : COL.roofGravel).clone().multiplyScalar(0.88 + r2 * 0.2);
-    return { style, fh, mat, wall, roofC, pitched };
+    // roof material (drawn up close by the building shader): RM.membrane white TPO, grey EPDM, gravel ballast, bitumen,
+    // standing-seam metal, asphalt shingles, clay (Spanish) tile, slate / concrete tile
+    const r4 = U.hash2(Math.floor(r1 * 7919), Math.floor(r3 * 104729));
+    let roofMat;
+    if (pitched) roofMat = region >= 2 && r3 < 0.35 ? RM.clay : kind === 3 || kind === 5 ? RM.metal : r4 < 0.12 ? RM.slate : RM.shingle;
+    else if (kind === 3) roofMat = r4 < 0.55 ? RM.metal : r4 < 0.8 ? RM.white : RM.bitumen;
+    else if (kind === 0 || kind === 1) roofMat = r4 < 0.45 ? RM.bitumen : r4 < 0.75 ? RM.gravel : RM.grey;
+    else roofMat = r4 < 0.42 ? RM.white : r4 < 0.64 ? RM.gravel : r4 < 0.82 ? RM.grey : RM.bitumen;
+    return { style, fh, mat, wall, roofC, pitched, roofMat };
   }
   // footprint -> walls (+ street-facing wall flag), flat or pitched roof (photo-textured when low), details when hi
   function buildingInto(tb, b, T, hf, ri, hi, photoOk) {
@@ -978,18 +1041,20 @@ const Towns = (() => {
       const bb = [surf, slot, L.mat, Lw >= 127.5 ? 255 : Math.round(Lw * 2)];
       bquad(tb, [ax, yb, az], [bx, yb, bz], [bx, topY, bz], [ax, topY, az], L.wall, win, bb, 0, Lw, yb - base, topY - base);
     }
-    const roofB = [photo, slot, 0, 0], noWin = [0, 0, 0, 0];
+    const ob = obb(P, n), rAng = ob ? Math.atan2(ob.h0 >= ob.h1 ? ob.uz : ob.ux, ob.h0 >= ob.h1 ? ob.ux : -ob.uz) : 0;
+    const roofB = [photo, slot, L.roofMat, seed & 255], noWin = [0, 0, 0, 0], roofWin = [Math.round((rAng + Math.PI) * 10000), 0, 0, 0];
+    if (hi && !isPart) facadeGeometry(tb, b, P, n, L, region, base, eave, topY, parapet, win, slot, seed, !!box);
     if (!box) {
       const contour = []; for (let i = 0; i < n; i++) contour.push(new THREE.Vector2(P[i * 2], P[i * 2 + 1]));
       let faces = null; try { faces = THREE.ShapeUtils.triangulateShape(contour, []); } catch (err) { faces = null; }
       if (faces) for (const f of faces) {
         const V = f.map(k => [contour[k].x, ye, contour[k].y]);
         const cr = (V[1][0] - V[0][0]) * (V[2][2] - V[0][2]) - (V[1][2] - V[0][2]) * (V[2][0] - V[0][0]);
-        if (cr < 0) btri(tb, V[0], V[1], V[2], L.roofC, noWin, roofB); else btri(tb, V[0], V[2], V[1], L.roofC, noWin, roofB);
+        if (cr < 0) btri(tb, V[0], V[1], V[2], L.roofC, roofWin, roofB); else btri(tb, V[0], V[2], V[1], L.roofC, roofWin, roofB);
       }
       if (parapet > 0) {                        // inner face + top of the parapet so it reads as a lip from above
         let mx = 0, mz = 0; for (let i = 0; i < n; i++) { mx += P[i * 2]; mz += P[i * 2 + 1]; } mx /= n; mz /= n;
-        const lip = L.wall.clone().multiplyScalar(0.86), capB = [2, slot, 0, 0];
+        const lip = L.wall.clone().multiplyScalar(0.86), capB = [2, slot, RM.metal, 0];
         for (let i = 0; i < n; i++) {
           const j = (i + 1) % n; const ax = P[i * 2], az = P[i * 2 + 1], bx = P[j * 2], bz = P[j * 2 + 1];
           const k = Math.min(0.35, 0.35 / Math.max(1, Math.hypot(ax - mx, az - mz)) * 1);
@@ -998,8 +1063,8 @@ const Towns = (() => {
           btriUp(tb, [ax, topY, az], [bx, topY, bz], [ib[0], topY, ib[1]], lip, noWin, capB); btriUp(tb, [ax, topY, az], [ib[0], topY, ib[1]], [ia[0], topY, ia[1]], lip, noWin, capB);
         }
         const bx0 = obb(P, n);
-        if (bx0 && area > 300 && !(photo === 1)) {       // rooftop units (photo roofs already show the real ones)
-          const units = Math.min(6, 1 + Math.floor(area / 900));
+        if (bx0 && area > 300) {                         // rooftop units (photo roofs: fewer, the photo shows some)
+          const units = Math.min(6, 1 + Math.floor(area / (photo === 1 ? 1400 : 900)));
           for (let u = 0; u < units; u++) {
             const s0 = (U.hash2(ri + u * 13, seedBase) - 0.5) * bx0.h0 * 1.2, s1 = (U.hash2(seedBase + u * 7, ri) - 0.5) * bx0.h1 * 1.2;
             const x = bx0.cx + s0 * bx0.ux - s1 * bx0.uz, z = bx0.cz + s0 * bx0.uz + s1 * bx0.ux;
@@ -1008,6 +1073,7 @@ const Towns = (() => {
           }
         }
       }
+      if (hi && !isPart) roofClutter(tb, b, P, n, L, region, ye + parapet * 0, area, seed, ri, seedBase);
     } else {
       const ov = 0.45, longIs0 = box.h0 >= box.h1;
       const ax = longIs0 ? [box.ux, box.uz] : [-box.uz, box.ux], bxv = longIs0 ? [-box.uz, box.ux] : [box.ux, box.uz];
@@ -1015,7 +1081,7 @@ const Towns = (() => {
       const P3 = (s, t, y) => [box.cx + ax[0] * s + bxv[0] * t, y, box.cz + ax[1] * s + bxv[1] * t];
       const y0 = ye, y1 = ye + rh, rc = L.roofC;
       const up = (a, b2, c2) => ((b2[0] - a[0]) * (c2[2] - a[2]) - (b2[2] - a[2]) * (c2[0] - a[0])) < 0;
-      const addTri = (a, b2, c2) => { if (up(a, b2, c2)) btri(tb, a, b2, c2, rc, noWin, roofB); else btri(tb, a, c2, b2, rc, noWin, roofB); };
+      const addTri = (a, b2, c2) => { if (up(a, b2, c2)) btri(tb, a, b2, c2, rc, roofWin, roofB); else btri(tb, a, c2, b2, rc, roofWin, roofB); };
       const gableEnd = (g0, g1, g2) => { const w0 = [0, 0, 0, 0]; btri(tb, g0, g1, g2, L.wall, w0, [0, slot, L.mat, 0]); btri(tb, g0, g2, g1, L.wall, w0, [0, slot, L.mat, 0]); };
       if (b.roof === 1) {
         const r0 = P3(-A, 0, y1), r1_ = P3(A, 0, y1);
@@ -1037,11 +1103,100 @@ const Towns = (() => {
     }
     return 1;
   }
+  // ---- geometry that makes a building more than a box (detail level 2): a cornice at the eave of walk-ups, civic and
+  // mixed-use buildings (the same ones the facade shader paints one on), awnings over shop fronts on the street side,
+  // and San Francisco's bay windows on Victorian fronts. Outward normal of a CCW footprint edge a->b = (dz, -dx).
+  const AWN = ['#24492f', '#5a1f22', '#1f2c46', '#2a2a2a', '#8a6a3a', '#7a2a1c', '#35505a'].map(C);
+  function facadeGeometry(tb, b, P, n, L, region, base, eave, topY, parapet, win, slot, seed, pitched) {
+    const style = L.style, hA = (seed * 0.0137 + 0.21) % 1, hB = (seed * 0.0291 + 0.57) % 1, hC = (seed * 0.0719 + 0.13) % 1;
+    const noWin = [0, 0, 0, 0], plain = [0, 0, 0, 0];
+    const nrm = []; for (let i = 0; i < n; i++) { const j = (i + 1) % n, dx = P[j * 2] - P[i * 2], dz = P[j * 2 + 1] - P[i * 2 + 1], l = Math.hypot(dx, dz) || 1; nrm.push([dz / l, -dx / l]); }
+    // cornice: a mitred band 0.35-0.6 m out, 0.45-0.7 m tall, under the eave (lit top, dark soffit)
+    if (!pitched && (style === 1 || style === 4 || style === 6 || style === 7) && hC > 0.4 && eave > 5 && eave < 70) {
+      const off = 0.35 + 0.25 * hA, hh = 0.45 + 0.25 * hB, y1 = topY, y0 = topY - hh;
+      const col = L.wall.clone().lerp(C('#efece4'), 0.72);
+      const O = [];
+      for (let i = 0; i < n; i++) { const a = nrm[(i + n - 1) % n], c = nrm[i]; let mx = a[0] + c[0], mz = a[1] + c[1]; const ml = Math.hypot(mx, mz) || 1; mx /= ml; mz /= ml;
+        const k = off / Math.max(0.4, mx * c[0] + mz * c[1]); O.push([P[i * 2] + mx * k, P[i * 2 + 1] + mz * k]); }
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n; if (Math.hypot(P[j * 2] - P[i * 2], P[j * 2 + 1] - P[i * 2 + 1]) < 0.3) continue;
+        const Wi = [P[i * 2], P[i * 2 + 1]], Wj = [P[j * 2], P[j * 2 + 1]], Oi = O[i], Oj = O[j];
+        bquad(tb, [Oi[0], y0, Oi[1]], [Oj[0], y0, Oj[1]], [Oj[0], y1, Oj[1]], [Oi[0], y1, Oi[1]], col, noWin, plain, 0, 1, 0, 1);            // front
+        btri(tb, [Wi[0], y0, Wi[1]], [Oi[0], y0, Oi[1]], [Oj[0], y0, Oj[1]], col.clone().multiplyScalar(0.9), noWin, plain);             // soffit (down)
+        btri(tb, [Wi[0], y0, Wi[1]], [Oj[0], y0, Oj[1]], [Wj[0], y0, Wj[1]], col.clone().multiplyScalar(0.9), noWin, plain);
+        btriUp(tb, [Wi[0], y1, Wi[1]], [Oi[0], y1, Oi[1]], [Oj[0], y1, Oj[1]], col, noWin, plain);                                        // top
+        btriUp(tb, [Wi[0], y1, Wi[1]], [Oj[0], y1, Oj[1]], [Wj[0], y1, Wj[1]], col, noWin, plain);
+      }
+    }
+    const fe = b.front, hasFront = fe !== undefined && fe < n && (b.flags & 4);
+    if (!hasFront) return;
+    const i = fe, j = (fe + 1) % n, ax = P[i * 2], az = P[i * 2 + 1], bx = P[j * 2], bz = P[j * 2 + 1];
+    const Lf = Math.hypot(bx - ax, bz - az); if (Lf < 3) return;
+    const ux = (bx - ax) / Lf, uz = (bz - az) / Lf, nx = uz, nz = -ux;
+    const at = (t, o, y) => [ax + ux * t + nx * o, y, az + uz * t + nz * o];
+    // awning over the shop front: sloped fabric 1.3 m out, a valance at its edge
+    if (style === 4 && Lf > 3.5) {
+      const gf = Math.max(L.fh, 4.4), ya = base + Math.min(gf, 4.4) - 0.55, col = AWN[Math.floor(hB * AWN.length)];
+      const segs = Math.max(1, Math.round(Lf / 9));
+      for (let s = 0; s < segs; s++) {
+        const t0 = s * Lf / segs + 0.35, t1 = (s + 1) * Lf / segs - 0.35; if (t1 - t0 < 1.5) continue;
+        const c = s % 2 && hA > 0.5 ? AWN[Math.floor(hA * AWN.length)] : col;
+        bquad(tb, at(t0, 0.02, ya + 0.35), at(t1, 0.02, ya + 0.35), at(t1, 1.3, ya - 0.1), at(t0, 1.3, ya - 0.1), c, noWin, plain, 0, 1, 0, 1);   // (faces up-out)
+        bquad(tb, at(t0, 1.3, ya - 0.1), at(t1, 1.3, ya - 0.1), at(t1, 0.02, ya + 0.35), at(t0, 0.02, ya + 0.35), c.clone().multiplyScalar(0.55), noWin, plain, 0, 1, 0, 1);   // underside
+        bquad(tb, at(t0, 1.3, ya - 0.36), at(t1, 1.3, ya - 0.36), at(t1, 1.3, ya - 0.1), at(t0, 1.3, ya - 0.1), c, noWin, plain, 0, 1, 0, 1);    // valance
+        bquad(tb, at(t1, 1.3, ya - 0.36), at(t0, 1.3, ya - 0.36), at(t0, 1.3, ya - 0.1), at(t1, 1.3, ya - 0.1), c.clone().multiplyScalar(0.5), noWin, plain, 0, 1, 0, 1);
+      }
+    }
+    // San Francisco bay windows: angled three-sided bays from the second floor up (Victorians and walk-ups)
+    if (region === 0 && ((b.flags & 32) || (style === 1 && hA > 0.5)) && eave > 6.5 && Lf > 4.5) {
+      const nb = Math.min(3, Math.max(1, Math.floor(Lf / 5.2))), y0 = base + Math.max(2.7, L.fh * 0.95), y1 = eave - 0.35;
+      if (y1 - y0 < 2.4) return;
+      const bayWin = [win[0], style === 1 ? 1 : 6, win[2], win[3]];
+      const trim = L.wall.clone().lerp(C('#efece4'), 0.6);
+      for (let k = 0; k < nb; k++) {
+        const tc = (k + 0.5) * Lf / nb, d = 0.65, wf = 1.05, wb = 1.7;          // centre, depth, half front, half base
+        const p0 = at(tc - wb, 0, 0), p1 = at(tc - wf, d, 0), p2 = at(tc + wf, d, 0), p3 = at(tc + wb, 0, 0);
+        const faces = [[p0, p1], [p1, p2], [p2, p3]];
+        for (const [A, B] of faces) {
+          const lw = Math.hypot(B[0] - A[0], B[2] - A[2]);
+          bquad(tb, [A[0], y0, A[2]], [B[0], y0, B[2]], [B[0], y1, B[2]], [A[0], y1, A[2]], L.wall, bayWin, [0, slot, L.mat, Math.round(lw * 2)], 0, lw, y0 - base, y1 - base);
+        }
+        for (const [y, up] of [[y1, true], [y0, false]]) {                          // cap and soffit
+          const q = [p0, p1, p2, p3].map(v => [v[0], y, v[2]]);
+          if (up) { btriUp(tb, q[0], q[1], q[2], trim, noWin, plain); btriUp(tb, q[0], q[2], q[3], trim, noWin, plain); }
+          else { btri(tb, q[0], q[1], q[2], trim.clone().multiplyScalar(0.8), noWin, plain); btri(tb, q[0], q[2], q[3], trim.clone().multiplyScalar(0.8), noWin, plain); }
+        }
+      }
+    }
+  }
+  // ---- roof clutter on flat roofs (detail level 2): stair / elevator bulkheads, and San Francisco's wooden water tanks
+  function roofClutter(tb, b, P, n, L, region, ye, area, seed, ri, seedBase) {
+    const ob = obb(P, n); if (!ob || area < 120) return;
+    const h1 = U.hash2(ri * 5 + 1, seedBase + 3), h2 = U.hash2(seedBase + 11, ri * 3 + 7), rot = Math.atan2(ob.uz, ob.ux);
+    const inside = (s, t) => [ob.cx + s * ob.ux - t * ob.uz, ob.cz + s * ob.uz + t * ob.ux];
+    if ((b.kind === 1 || b.kind === 2 || b.kind === 4) && b.h > 11 && h1 < 0.6) {            // bulkhead: a small box with a door
+      const [x, z] = inside((h2 - 0.5) * ob.h0, (h1 - 0.3) * ob.h1 * 0.8);
+      bbox(tb, x, ye + 1.4, z, 3.2, 2.8, 2.6, rot, L.wall.clone().multiplyScalar(0.92));
+    }
+    if (region === 0 && (b.kind === 1 || b.kind === 2) && b.h > 12 && b.h < 48 && area > 250 && h2 < 0.3) {   // water tank
+      const [x, z] = inside((h1 < 0.5 ? -1 : 1) * Math.max(0, ob.h0 - 3.2), (h2 < 0.15 ? -1 : 1) * Math.max(0, ob.h1 - 3.2));
+      const r = 1.6 + 0.6 * h1, th = 3.2 + 0.8 * h2, legs = 2.2, wood = C('#6e5a44').lerp(C('#8f8a80'), h1), steel = C('#3b3d40');
+      for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) bbox(tb, x + sx * r * 0.62, ye + legs / 2, z + sz * r * 0.62, 0.22, legs, 0.22, 0, steel);
+      const N = 12, yA = ye + legs, yB = yA + th, noWin = [0, 0, 0, 0], plain = [0, 0, 0, 0];
+      for (let k = 0; k < N; k++) {
+        const a0 = k / N * Math.PI * 2, a1 = (k + 1) / N * Math.PI * 2;
+        const A = [x + Math.cos(a0) * r, yA, z + Math.sin(a0) * r], B = [x + Math.cos(a1) * r, yA, z + Math.sin(a1) * r];
+        bquad(tb, [A[0], yA, A[2]], [B[0], yA, B[2]], [B[0], yB, B[2]], [A[0], yB, A[2]], wood.clone().multiplyScalar(0.9 + 0.2 * ((k * 7) % 3) / 2), noWin, plain, 0, 1, 0, 1);
+        btri(tb, [B[0], yB, B[2]], [A[0], yB, A[2]], [x, yB + r * 0.45, z], wood.clone().multiplyScalar(0.8), noWin, plain);   // conical roof
+        btri(tb, [A[0], yA, A[2]], [B[0], yA, B[2]], [x, yA, z], wood.clone().multiplyScalar(0.5), noWin, plain);              // bottom
+      }
+    }
+  }
   function bbox(tb, x, y, z, sx, sy, sz, rot, col) {       // axis box rotated about Y (rooftop units)
     const c = Math.cos(rot), s = Math.sin(rot), hx = sx / 2, hy = sy / 2, hz = sz / 2;
     const Pt = (dx, dy, dz) => [x + dx * c + dz * s, y + dy, z - dx * s + dz * c];
     const v = [Pt(-hx, -hy, -hz), Pt(hx, -hy, -hz), Pt(hx, hy, -hz), Pt(-hx, hy, -hz), Pt(-hx, -hy, hz), Pt(hx, -hy, hz), Pt(hx, hy, hz), Pt(-hx, hy, hz)];
-    const w0 = [0, 0, 0, 0], bw = [0, 0, 3, 0], bt = [2, 0, 0, 0];
+    const w0 = [0, 0, 0, 0], bw = [0, 0, 3, 0], bt = [2, 0, RM.metal, 0];
     bquad(tb, v[0], v[1], v[2], v[3], col, w0, bw, 0, sx, 0, sy); bquad(tb, v[5], v[4], v[7], v[6], col, w0, bw, 0, sx, 0, sy);
     bquad(tb, v[4], v[0], v[3], v[7], col, w0, bw, 0, sz, 0, sy); bquad(tb, v[1], v[5], v[6], v[2], col, w0, bw, 0, sz, 0, sy);
     bquad(tb, v[3], v[2], v[6], v[7], col, w0, bt, 0, 1, 0, 1);
