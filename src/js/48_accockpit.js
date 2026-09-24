@@ -366,7 +366,8 @@ const ACCockpit = (() => {
     }
     const inMeshes = [];
     function attach(root, meshes) {
-      for (const me of meshes) if (['cabin', 'screens', 'fcu', 'panels', 'ewd'].includes(me.name)) { root.remove(me); group.add(me); inMeshes.push(me); me.castShadow = false; }
+      // (the sun's shadows fall across the interior from 'high' up)
+      for (const me of meshes) if (['cabin', 'screens', 'fcu', 'panels', 'ewd'].includes(me.name)) { root.remove(me); group.add(me); inMeshes.push(me); me.castShadow = false; me.receiveShadow = q >= 2 && (me.name === 'cabin' || me.name === 'panels'); }
       root.add(group);
     }
     let ewdT = 0;

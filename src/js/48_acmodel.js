@@ -256,9 +256,12 @@ const ACModel = (() => {
       M.fin.emissiveIntensity = st.night * (jet ? 0.55 : 0);
       rig.update();
     }
+    // (the livery's textures stay cached with their canvases for a restart, but their GPU copies are freed: three.js
+    // uploads a disposed texture again the next time it is used)
     function dispose() {
       for (const me of meshes) me.geometry.dispose();
       for (const k in M) if (M[k] && M[k].dispose) M[k].dispose();
+      for (const t of texs) t.dispose();
       if (rig.skeleton) rig.skeleton.dispose();
       if (cockpit) cockpit.dispose();
       for (const k in env.lamps) { const l = env.lamps[k]; if (l.material) l.material.dispose(); }
