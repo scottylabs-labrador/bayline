@@ -277,6 +277,10 @@ const Towns = (() => {
           wall *= 0.78 + 0.22 * smoothstep(-0.2, 2.4, q.y);              // grime at the base
           vec3 outc = wall;
           float colW = style == 3.0 ? 1.5 : style == 2.0 ? 2.7 : style == 5.0 ? 6.0 : style == 6.0 ? 1.9 : style == 8.0 ? 3.8 : style == 9.0 ? 8.0 : 3.1;
+          // per-building variety from the seed: window size, spacing and pairing; spandrels, string courses, plinth, cornice
+          float hA = fract(seed * 0.0137 + 0.21), hB = fract(seed * 0.0291 + 0.57), hC = fract(seed * 0.0719 + 0.13), hD = fract(seed * 0.0431 + 0.77);
+          bool punched = style == 1.0 || style == 6.0 || style == 7.0 || style == 8.0 || style == 4.0;
+          if (punched || style == 2.0) colW *= mix(0.86, 1.24, hC);
           float cw = longWall ? colW : segL / max(1.0, floor(segL / colW + 0.5));
           if (style > 0.5 && q.y > 0.0 && q.y < eave - 0.3) {
             float gf = (style == 4.0 || style == 7.0) ? max(fh, 4.4) : fh;
@@ -285,7 +289,18 @@ const Towns = (() => {
               : style == 5.0 ? ${FL.clerestory}.0 : style == 6.0 ? ${FL.sash}.0 : style == 7.0 ? ${FL.civic}.0 : style == 8.0 ? ${FL.house}.0 : ${FL.garage}.0;
             vec2 sc = vec2(1.0 / cw, 1.0 / (gfl ? gf : fh));
             vec2 fuv = vec2(q.x, gfl ? q.y : q.y - gf) * sc;
-            vec4 f = textureGrad(uFac, vec3(fuv, lay), qdx * sc, qdy * sc);
+            // this building's windows: the cell's uv scaled about the window centre (wider/narrower, taller/shorter), and in
+            // some buildings paired two by two; gradients scaled to match, so mipmapping stays exact
+            bool pw = punched && !(style == 4.0 && gfl);
+            float wLo = style == 6.0 ? 0.22 : style == 7.0 ? 0.18 : style == 8.0 ? 0.36 : style == 2.0 ? 0.34 : 0.30;
+            float wHi = style == 6.0 ? 0.88 : style == 7.0 ? 0.88 : style == 8.0 ? 0.80 : style == 2.0 ? 0.84 : 0.86;
+            vec2 wsc = pw ? vec2(mix(0.7, 1.32, hA), mix(0.86, 1.14, hB)) : style == 2.0 ? vec2(1.0, mix(0.8, 1.22, hB)) : vec2(1.0);
+            vec2 cellI = floor(fuv), cu = fuv - cellI;
+            float pairX = pw && hC < 0.3 ? (mod(cellI.x, 2.0) < 0.5 ? 0.13 : -0.13) : 0.0;
+            vec2 wCtr = vec2(0.5 + pairX, 0.5 * (wLo + wHi));
+            vec2 cu2 = clamp((cu - wCtr) / wsc + vec2(0.5, wCtr.y), vec2(0.004), vec2(0.996));
+            vec2 fuvW = cellI + cu2, gsc = sc / wsc;
+            vec4 f = textureGrad(uFac, vec3(fuvW, lay), qdx * gsc, qdy * gsc);
             float glassM = f.g;
             if (style == 8.0) glassM *= step(0.4, tHash3(vec3(floor(fuv.x), floor(q.y / fh), seed)));   // houses: irregular windows
             vec3 trimC = (style == 2.0 || style == 3.0 || style == 4.0 || style == 5.0) ? vec3(0.22, 0.23, 0.24) : mix(wall, vec3(0.94, 0.93, 0.89), 0.72);
@@ -299,12 +314,22 @@ const Towns = (() => {
                 vec3 V = normalize(-vViewPosition);
                 vec3 vt = vec3(dot(V, Tw), dot(V, Bw), abs(dot(V, normalize(vNormal))));
                 vec2 off = -vt.xy / max(vt.z, 0.2) * 0.13;
-                float g2 = textureGrad(uFac, vec3(fuv + off * sc, lay), qdx * sc, qdy * sc).g;
+                float g2 = textureGrad(uFac, vec3(fuvW + off * gsc, lay), qdx * gsc, qdy * gsc).g;
                 rev = clamp(glassM - g2, 0.0, 1.0) * (1.0 - smoothstep(110.0, 160.0, dcam));
               }
             }
             float glassV = max(glassM - rev, 0.0);
             outc = mix(wall, trimC, f.b) * mix(0.14, 1.0, f.a);
+            {
+              float fy = gfl ? q.y : q.y - gf, dFl = abs(fy - fh * floor(fy / fh + 0.5));
+              // string courses at the floor lines (older walk-ups, civic buildings)
+              if ((style == 1.0 || style == 6.0 || style == 7.0 || (style == 4.0 && !gfl)) && hD < 0.45) outc = mix(outc, trimC * 0.96, (1.0 - smoothstep(0.1, 0.17, dFl)) * 0.85);
+              // office spandrels: dark ribbon bands or pale precast panels between the window strips
+              if (style == 2.0 && hD < 0.6) { float band = 1.0 - step(wLo * wsc.y, cu.y) * step(cu.y, 1.0 - (1.0 - wHi) * wsc.y);
+                outc = mix(outc, hD < 0.3 ? vec3(0.13, 0.14, 0.16) : mix(wall, vec3(0.86, 0.85, 0.8), 0.6), band * 0.8); }
+              // a darker base on multi-storey buildings (stone, tile or paint)
+              if (eave > 2.2 * fh && hA > 0.55 && q.y < min(gf, 4.2) && !(style == 4.0 && gfl)) outc *= mix(0.62, 0.8, hB);
+            }
             float fres = 0.12;
             vec3 sky = mix(vec3(0.30, 0.40, 0.50), vec3(0.62, 0.72, 0.82), fres) * (1.0 - 0.92 * uNight);
             #ifdef BAYLINE_SKY
@@ -315,6 +340,13 @@ const Towns = (() => {
             #endif
             float cell = tHash3(vec3(floor(fuv.x), floor(q.y / fh), seed));
             vec3 glass = (style == 3.0 ? mix(vec3(0.10, 0.14, 0.17), wall * 0.45, 0.35) : vec3(0.07, 0.09, 0.11) + vec3(0.04, 0.05, 0.06) * cell);
+            // lived-in windows: blinds lowered to a random height, curtains in a few colours (not on curtain walls or shops)
+            if (style != 3.0 && !(style == 4.0 && gfl) && style != 5.0) {
+              float wy = clamp((cu2.y - wLo) / (wHi - wLo), 0.0, 1.0), kb = fract(cell * 31.7);
+              vec3 fab = kb < 0.22 ? vec3(0.62, 0.6, 0.55) : kb < 0.3 ? vec3(0.48, 0.32, 0.24) : kb < 0.36 ? vec3(0.3, 0.36, 0.42) : vec3(0.7, 0.66, 0.58);
+              float cov = kb < 0.45 ? step(1.0 - fract(cell * 7.9) * 0.85, wy) : 0.0;
+              glass = mix(glass, fab * (0.55 + 0.25 * fract(cell * 3.3)), cov * (1.0 - smoothstep(60.0, 140.0, dcam)));
+            }
             outc = mix(outc, glass, glassM);
             outc = mix(outc, mix(wall, trimC, 0.35) * 0.6, rev);                // the reveal, in its own shade
             // coated curtain walls mirror the sky strongly; ordinary windows less, both rising with Fresnel
@@ -350,6 +382,11 @@ const Towns = (() => {
             }
           }
           outc *= 1.0 + 0.09 * step(eave - 0.06, q.y);                    // parapet coping
+          if ((style == 1.0 || style == 6.0 || style == 7.0 || style == 4.0) && hC > 0.4) {   // cornice: a lit band over its own shadow
+            float cz = eave - q.y;
+            outc = mix(outc, mix(wall, vec3(0.93, 0.92, 0.88), 0.55), step(0.0, cz) * (1.0 - step(0.42, cz)) * 0.7);
+            outc *= 1.0 - 0.38 * step(0.42, cz) * (1.0 - smoothstep(0.42, 0.75, cz));
+          }
           diffuseColor.rgb = outc;
         }
       }`)
@@ -365,7 +402,7 @@ const Towns = (() => {
   function makeBldMat(u) {
     const m = new THREE.MeshLambertMaterial({ vertexColors: true });
     m.onBeforeCompile = sh => bldShader(sh, u);
-    m.customProgramCacheKey = () => 'towns-bld-v3';
+    m.customProgramCacheKey = () => 'towns-bld-v4';
     m.userData.u = u;
     return m;
   }
@@ -1454,7 +1491,7 @@ const Towns = (() => {
     const ok = () => { if (t.state === 'ground') t.state = 'ready'; };
     if (!t.sky && hasTerrain() && typeof Terrain.ensure === 'function') {
       t.state = 'ground';
-      try { Promise.resolve(Terrain.ensure(t.ox - 15, t.oz - 15, t.ox + TILE + 15, t.oz + TILE + 15)).then(ok, ok); setTimeout(ok, 9000); } catch (e) { t.state = 'ready'; }
+      try { Promise.resolve(Terrain.ensure(t.ox - 15, t.oz - 15, t.ox + TILE + 15, t.oz + TILE + 15, 3, 7)).then(ok, ok); setTimeout(ok, 9000); } catch (e) { t.state = 'ready'; }
     } else t.state = 'ready';
   }
   function unload(t, map) {
@@ -1468,7 +1505,7 @@ const Towns = (() => {
   const _jobs = [];
   let scanX = 1e9, scanZ = 1e9, scanR = 0, imgClock = 0;
   let qR = 1;
-  function setQuality(name) { qR = { high: 1, medium: 0.72, low: 0.5 }[name] || 1; scanR = 0; }
+  function setQuality(name) { qR = { ultraplus: 1.35, high: 1, medium: 0.72, low: 0.5 }[name] || 1; scanR = 0; }
   function update(camPos, env) {
     if (!ready) return;
     const t0 = now(); const budget = (env && env.budgetMs) || BUDGET_MS; deadline = t0 + budget;
@@ -1492,7 +1529,8 @@ const Towns = (() => {
     }
     // full tiles: state machine, wanted levels (hysteresis on the way down), unloading
     // shadows: only tiles that can overlap the sun's shadow box cast or receive (the box follows the camera; see Env)
-    const shR = ((typeof Env !== 'undefined' && Env.state && Env.state.shadowSize) || SHADOW_R / 2.2) * 2.2 + 150;
+    // (Ultra+ adds a far sun cascade: Env.state.shadowReach, so tiles out to it cast too)
+    const shR = Math.max(((typeof Env !== 'undefined' && Env.state && Env.state.shadowSize) || SHADOW_R / 2.2) * 2.2 + 150, (typeof Env !== 'undefined' && Env.state && Env.state.shadowReach) || 0);
     _jobs.length = 0;
     for (const t of [...tiles.values()]) {
       const d = t.dist = tileDist(t, camPos);

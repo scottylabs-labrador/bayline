@@ -19,7 +19,9 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     await step(0.58, 'Reading the timetable…');
     await Sim.init();
     const keepOut = (x, z) => { const L = World.landmarks; if (!L) return false; for (const l of L.list) { const r = l.radius || 0; if (r > 0 && Math.abs(x - l.x) < r && Math.abs(z - l.z) < r && Math.hypot(x - l.x, z - l.z) < r) return true; } return false; };
-    const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.h(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), isWater: (x, z) => Terrain.isWater(x, z), keepOut,
+    // groundY = the base surface (L7): streets, buildings, landmarks and road traffic are built on it, and the lidar
+    // detail layer is held at zero under them, so they meet the drawn ground exactly whatever has streamed
+    const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.hBase(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), isWater: (x, z) => Terrain.isWater(x, z), keepOut,
       stationList: Stations.list.map(s => ({ id: s.id, name: s.name, x: s.x, z: s.z, s: s.s })) };
     if (typeof Towns !== 'undefined') { await step(0.64, 'Raising the towns…'); await safeA('towns', async () => { await Towns.init(ctx); Env.scene.add(Towns.group); }); }
     if (typeof Landmarks !== 'undefined') { await step(0.8, 'Placing landmarks…'); World.landmarks = safe('landmarks', () => { const L = Landmarks.stream ? Landmarks.stream(ctx) : Landmarks.build(ctx); Env.scene.add(L.group); return L; }); }
@@ -205,19 +207,59 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
 
   // ---------- main loop ----------
-  let last = performance.now(), fpsAcc = 0, fpsN = 0, calm = 0;
-  const TIERS = [ { name: 'ultra', dpr: 2, lod: 4.8, post: 'high' }, { name: 'high', dpr: 1.5, lod: 4.2, post: 'high' }, { name: 'medium', dpr: 1.25, lod: 3.4, post: 'medium' }, { name: 'low', dpr: 1, lod: 2.6, post: 'low' } ];
-  let tier = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 3 : 1;
-  // #q=ultra|high|medium|low forces a quality tier and turns the automatic tiering off
-  const qForced = TIERS.findIndex(t => t.name === hash.get('q')); if (qForced >= 0) tier = qForced;
+  let last = performance.now(), fpsAcc = 0, fpsN = 0, calm = 0, slow = 0;
+  // Quality tiers. lod = the terrain's split threshold (T/d > lod: LOWER refines more). Auto (the default) moves between
+  // ultra and low on frame time; the Graphics setting (Gfx.pref: title card, help overlay) or #q=<name> pins a tier.
+  // Ultra+ is never picked automatically: it needs WebGPU and a passing GPU benchmark (Gfx.probe), renders at up to 2x
+  // (8.3 MP cap, so it also supersamples dpr-1 screens) and drops back to ultra if frames stay slow.
+  const TIERS = [ { name: 'ultraplus', dpr: 2, lod: 3.2, post: 'ultraplus', ss: 8.3e6 }, { name: 'ultra', dpr: 2, lod: 3.6, post: 'high' }, { name: 'high', dpr: 1.5, lod: 4.2, post: 'high' },
+    { name: 'medium', dpr: 1.25, lod: 4.8, post: 'medium' }, { name: 'low', dpr: 1, lod: 5.6, post: 'low' } ];
+  const TI = (name) => TIERS.findIndex(t => t.name === name), AUTO_TOP = TI('ultra');
+  const mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  let tier = mobile ? TI('low') : TI('high');
+  // #q=ultraplus|ultra|high|medium|low forces a tier (automatic tiering off); #q=ultraplus! skips the Ultra+ benchmark (QA)
+  const qHash = (hash.get('q') || '').replace('!', ''), qSkipProbe = (hash.get('q') || '').endsWith('!');
+  const qForced = TI(qHash);
+  let pinned = qForced >= 0 || (Gfx.pref !== 'auto' && TI(Gfx.pref) >= 0);
+  if (qForced >= 0) tier = qForced; else if (pinned) tier = TI(Gfx.pref);
+  if (TIERS[tier].name === 'ultraplus' && !qSkipProbe) tier = TI('ultra');      // until the probe says yes (below)
+  // Ultra+ renders at up to 2x (8.3 MP cap: supersampling on dpr-1 screens) and scales that down to 1.0 to hold ~30 fps
+  // (dynamic resolution: drs 1 = the cap); only if frames stay slow at 1.0 does it step down to ultra
+  let drs = 1;
+  function renderScale(T) {
+    if (!T.ss) return Math.min(T.dpr, devicePixelRatio);
+    const css = Math.max(1, window.innerWidth * window.innerHeight);
+    const top = Math.max(Math.min(T.dpr, devicePixelRatio), Math.min(T.dpr, Math.sqrt(T.ss / css)));
+    return Math.max(1, Math.round(top * drs * 20) / 20);
+  }
   function applyTier() {
-    const T = TIERS[tier]; Env.renderer.setPixelRatio(Math.min(T.dpr, devicePixelRatio)); Terrain.lodFactor.value = T.lod;
+    const T = TIERS[tier]; Env.renderer.setPixelRatio(renderScale(T)); Terrain.lodFactor.value = T.lod;
+    if (Terrain.setFine) safe('terrain', () => Terrain.setFine(T.name === 'ultraplus'));
     if (typeof Post !== 'undefined' && Post.setQuality) safe('post', () => Post.setQuality(T.post));
     if (typeof Flora !== 'undefined' && Flora.setQuality) safe('flora', () => Flora.setQuality(T.post));
     if (typeof Towns !== 'undefined' && Towns.setQuality) safe('towns', () => Towns.setQuality(T.post));
+    if (typeof GroundCover !== 'undefined' && GroundCover.setQuality) safe('groundcover', () => GroundCover.setQuality(T.post));
+    if (typeof SunShade !== 'undefined') safe('sunshade', () => SunShade.setQuality(T.post));
     window.dispatchEvent(new Event('resize'));
+    gfxUi();
+  }
+  // the Graphics chip rows (title card, help overlay)
+  function gfxUi() { const cur = pinned ? TIERS[tier].name : 'auto'; for (const id of ['gfxchips', 'gfxchips2']) Gfx.renderChips($(id), cur, pickGfx); }
+  async function pickGfx(p) {
+    if (p === 'auto') { Gfx.setPref('auto'); pinned = qForced >= 0; calm = 0; if (tier === TI('ultraplus')) tier = TI('ultra'); applyTier(); return; }
+    if (p === 'ultraplus') {
+      Gfx.renderChips($('gfxchips'), 'ultraplus', pickGfx); UI.toast('Testing your GPU for Ultra+…', 3);
+      const r = await Gfx.probe();
+      if (!r.ok) { UI.toast(r.reason, 6); gfxUi(); return; }
+    }
+    Gfx.setPref(p); pinned = true; tier = TI(p); slow = 0; applyTier();
+    if (p === 'ultraplus') UI.toast('Ultra+ on: WebGPU terrain lighting, far shadows, lidar-resolution ground', 5);
   }
   applyTier();
+  // Ultra+ asked for (saved choice or #q=ultraplus): switch once the (cached) probe passes; meanwhile ultra
+  if ((qHash === 'ultraplus' || (qForced < 0 && Gfx.pref === 'ultraplus')) && !qSkipProbe) {
+    Gfx.probe().then(r => { if (r.ok) { tier = TI('ultraplus'); applyTier(); } else { console.warn('Ultra+ unavailable:', r.reason); if (World.started) UI.toast(r.reason, 6); gfxUi(); } });
+  }                                   // (otherwise nothing runs on WebGPU until the player picks Ultra+)
   const sbar = document.getElementById('streambar');
   let sLast = -1;
   function streamUi() { const n = Stream.stats.active + Stream.stats.queued; if (n !== sLast) { sLast = n; sbar.style.opacity = n > 0 ? 1 : 0; sbar.style.width = Math.min(100, 12 + n * 1.5) + '%'; } }
@@ -230,10 +272,17 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     requestAnimationFrame(frame);
     let dt = (now - last) / 1000; last = now; if (dt > 0.1) dt = 0.1; if (dt <= 0) return;
     if (capture.on) return;
+    if (Gfx.benchmarking) { fpsAcc = 0; fpsN = 0; return; }     // (the Ultra+ GPU test needs the GPU to itself)
     // automatic quality tiers: resolution, terrain detail and post effects follow the frame time
     fpsAcc += dt; fpsN++;
     if (fpsAcc > 2.5) { const avg = fpsAcc / fpsN; fpsAcc = 0; fpsN = 0;
-      if (qForced >= 0) {} else if (avg > 0.026 && tier < TIERS.length - 1) { tier++; applyTier(); } else if (avg < 0.0135 && tier > 0) { calm++; if (calm >= 4) { calm = 0; tier--; applyTier(); } } else calm = 0; }
+      if (TIERS[tier].name === 'ultraplus') {           // Ultra+: resolution first, then the watchdog (two slow windows at 1.0x -> ultra)
+        const px = Env.renderer.getPixelRatio();
+        if (avg > 0.031 && px > 1.001) { drs = Math.max(0.3, drs * Math.max(0.7, Math.sqrt(0.028 / avg))); Env.renderer.setPixelRatio(renderScale(TIERS[tier])); window.dispatchEvent(new Event('resize')); slow = 0; }
+        else if (avg < 0.021 && drs < 1) { drs = Math.min(1, drs * 1.08); Env.renderer.setPixelRatio(renderScale(TIERS[tier])); window.dispatchEvent(new Event('resize')); }
+        else if (avg > 0.034 && World.started && qForced < 0) { if (++slow >= 2) { slow = 0; drs = 1; tier = TI('ultra'); applyTier(); UI.toast(`Ultra+ turned off: ${Math.round(avg * 1000)} ms per frame. Ultra keeps the frame rate up.`, 6); } } else slow = 0; }
+      else if (qForced >= 0 || pinned) {}
+      else if (avg > 0.026 && tier < TIERS.length - 1) { tier++; applyTier(); } else if (avg < 0.0135 && tier > AUTO_TOP) { calm++; if (calm >= 4) { calm = 0; tier--; applyTier(); } } else calm = 0; }
     streamUi();
     tick(dt);
   }
@@ -242,6 +291,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     // the Bay's afternoon sea breeze: calm mornings, gusty 2–6 PM, easing at night (trees, flags, water)
     { const h = Env.time.sec / 3600; U.uWind.value = 0.18 + 0.5 * Math.exp(-((h - 16) ** 2) / 8) + 0.06 * Math.sin(U.uTime.value * 0.37) * Math.sin(U.uTime.value * 0.11); }
     Env.update(dt, camP);
+    if (typeof SunShade !== 'undefined') safeFrame('sunshade', () => SunShade.update(dt, camP));
     Sim.update(dt, camP);
     Game.update(Env.time.paused ? 0 : dt * Env.time.scale);
     if (!(typeof Flight !== 'undefined' && Flight.active && safeFrameR('flight', () => Flight.update(dt)))) Player.update(dt);
@@ -307,6 +357,6 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
   function safeFrameR(name, f) { if (errs[name] > 20) return false; try { return f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); return false; } }
   window.__bayline = { capture, stepFrame, Landmarks: typeof Landmarks !== 'undefined' ? Landmarks : null, FMissions: typeof FMissions !== "undefined" ? FMissions : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
-    Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Post: typeof Post !== 'undefined' ? Post : null };
+    Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Post: typeof Post !== 'undefined' ? Post : null, Gfx: typeof Gfx !== 'undefined' ? Gfx : null, SunShade: typeof SunShade !== 'undefined' ? SunShade : null };
   requestAnimationFrame(frame);
 })();

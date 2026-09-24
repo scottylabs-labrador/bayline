@@ -12,6 +12,8 @@ import os, sys, re, mimetypes, threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# served trees: the checkout, plus whatever data/pub (or data/) links to (git worktrees share the main checkout's data)
+ALLOWED = sorted({os.path.realpath(p) for p in (ROOT, os.path.join(ROOT, 'data'), os.path.join(ROOT, 'data', 'pub'))})
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
 mimetypes.add_type('application/octet-stream', '.bin')
 mimetypes.add_type('application/javascript', '.js')
@@ -56,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
             if not head: self.wfile.write(body)
             return
         fp = os.path.realpath(resolve(self.path))
-        if not fp.startswith(os.path.realpath(ROOT)) or not os.path.isfile(fp):
+        if not any(fp.startswith(a + os.sep) for a in ALLOWED) or not os.path.isfile(fp):
             body = b'not found\n'
             self.send_response(404); self.send_header('Content-Type', 'text/plain'); self.send_header('Content-Length', str(len(body))); self.end_headers()
             if not head: self.wfile.write(body)

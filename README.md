@@ -68,7 +68,8 @@ handling (assisted, fly-by-wire, direct) · `Esc` menu. Gamepads and touch work 
 Link options (after `#`, joined with `&`): `fly=a320,KSFO,28R,final` starts a flight (type, airport, runway, `runway`|`final`|`air`), `t=17:30` sets the clock, `at=palo_alto` starts at a station
 (`cam=orbit&dist=400` orbits it), `ll=37.8045,-122.4705,265,-0.78,-0.03` flies the camera to a viewpoint (lat, lon, altitude m, yaw,
 pitch), `w=clear|fog|cloudy|haze` sets the weather, `q=ultra|high|medium|low` forces a
-quality tier (the default adapts to your GPU), `auto` skips the title screen. Example (the Golden Gate towers in the evening fog
+quality tier (the default adapts to your GPU; `q=ultraplus` asks for Ultra+ after the GPU test, `q=ultraplus!` skips
+the test), `h9=0` / `mat=0` / `t2=0` turn off the lidar, ground-material and tree-height layers, `auto` skips the title screen. Example (the Golden Gate towers in the evening fog
 river): `https://bayline.sheltie.scottylabs.org/#auto&t=18:20&w=fog&ll=37.8045,-122.4705,265,-0.78,-0.03`.
 
 ## How it's built (v2: streamed photoreal)
@@ -91,7 +92,21 @@ in parallel, on demand, around the camera, from `/data/v2/` on the same host.
   slope map (LEAN mapping), so the sun glitter widens with distance and gusts drift across the Bay.
 - **Buildings:** every OpenStreetMap building near the line, across San Francisco and on the East Bay shore, streamed in 800 m
   tiles, with real heights and roof shapes, and roofs textured from the same photograph.
-- **Trees:** individual crowns detected in the imagery, so every tree stands where the photo shows it.
+- **Trees:** individual crowns detected in the imagery, so every tree stands where the photo shows it, with its
+  height measured by a 1 m canopy height model (Meta / WRI), plus the trees the photo misses; beyond the imagery
+  tiles, the wooded hills (Woodside, Crystal Springs, the Santa Cruz Mountains) are planted from the same model.
+- **Lidar ground:** USGS 3DEP 1 m bare-earth lidar adds the fine relief (street grades, terraced lots, levees, cut slopes,
+  ravines) on top of the carved terrain, streamed at 1.6 m near the camera; roads, track and platforms keep their surface.
+- **Ground materials:** every 1.6 m of ground is classified (lawn, dry grass, scrub, leaf litter, soil, gravel, asphalt,
+  paving, roof, sand, marsh...) from the photo's near-infrared and OpenStreetMap, so up close the ground is drawn as what
+  it is, and grass only grows where there is grass.
+- **Facades:** each building gets its own window sizes, spacing and pairing, blinds and curtains, string courses,
+  spandrels, a base and a cornice.
+- **Graphics setting:** Auto, Low, Medium, High, Ultra and **Ultra+**. Ultra+ is offered when WebGPU is available and a
+  quick GPU benchmark passes: WebGPU computes terrain shadows (hills shading valleys at sunrise and sunset, and
+  everything in them) and sky visibility, a far shadow cascade lets buildings and trees cast shadows kilometres out,
+  the lidar ground gets full-resolution meshes, and the frame is supersampled with dynamic resolution. The
+  renderer stays WebGL2.
 - **Light:** a physically based sky and atmosphere, the marine layer, and an HDR post pipeline
   (SSAO, aerial perspective, bloom, ACES grading). Building glass reflects the real sky.
 - **Life on the Bay:** sailboats off Crissy Field and Coyote Point, ferries from the Ferry Building, container
@@ -131,6 +146,9 @@ python3 tools/bake_tiles.py                                        # NAIP imager
 python3 tools/sr_tiles.py                                          # GPU super-resolution of the near-track imagery (L9)
 python3 tools/sr_l8.py                                             # GPU upgrade of every L8 tile to 1024 px
 python3 tools/fetch_osm.py && python3 tools/bake_towns.py          # buildings and roads -> data/pub/v2/tiles/b
+python3 tools/bake_lidar.py all                                    # USGS 3DEP lidar detail -> tiles/h9
+python3 tools/bake_materials.py all                                # ground materials -> tiles/mat
+python3 tools/bake_trees2.py all                                   # canopy heights + hill forests -> tiles/t2
 sh tools/publish_data.sh                                           # rsync data/pub/v2 to the server volume
 ```
 
@@ -230,6 +248,9 @@ game **and** a small realtime backend.
   © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, ODbL.
 - Terrain: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen; USGS 3DEP and others).
 - Aerial imagery: USDA National Agriculture Imagery Program (NAIP), via USGS The National Map (public domain).
+- Lidar terrain detail: USGS 3D Elevation Program (3DEP) 1 m bare-earth DEM, via The National Map (public domain).
+- Tree heights: Meta and World Resources Institute, *Global Canopy Height Map* (Tolan et al. 2024), CC BY 4.0,
+  via AWS Open Data (`s3://dataforgood-fb-data/forests/v1/`).
 - World elevation: AWS Terrain Tiles (USGS 3DEP, SRTM, GMTED2010, ETOPO1 and others). World imagery:
   EOxCloudless 2025 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025, CC BY-NC-SA 4.0).
 - Night lights: NASA GIBS / VIIRS Black Marble (public domain). Airports: [OurAirports](https://ourairports.com/data/) (public domain).

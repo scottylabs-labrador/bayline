@@ -2,12 +2,13 @@
 // texture -> SSAO (half res, bilateral) -> marine-layer raymarch (half res) -> composite (AO, cloud shadows, aerial
 // perspective, cloud deck, cirrus, fog) -> bloom mip chain -> ACES + grading + vignette + grain -> screen (+FXAA on low).
 //   Post.render(dt)                         call instead of renderer.render(scene, camera)
-//   Post.setQuality('high'|'medium'|'low')  Post.quality
+//   Post.setQuality('ultraplus'|'high'|'medium'|'low')  Post.quality
 //   Post.enabled = false                    plain renderer.render (with the renderer's own ACES tone mapping)
 //   Post.stats                              { calls, triangles } of the last frame (all passes)
 const Post = (() => {
   const R = Env.renderer, scene = Env.scene, camera = Env.camera;
   const QUALITY = {
+    ultraplus: { samples: 4, ao: 16, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014 },
     high:   { samples: 4, ao: 12, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016 },
     medium: { samples: 2, ao: 8,  fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012 },
     low:    { samples: 0, ao: 0,  fogSteps: 8,  fogScale: 0.25, bloom: 4, fxaa: true, shadow: 2048, grain: 0.0 },

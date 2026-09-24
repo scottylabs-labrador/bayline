@@ -1971,7 +1971,7 @@ const Landmarks = (() => {
           if (best) {
             busy = true; best._state = 1; const r = Math.max(350, best.radius * 1.6);
             const go = () => { try { make(best); } finally { busy = false; } };
-            if (typeof Terrain !== 'undefined' && Terrain.ensure) Terrain.ensure(best.x - r, best.z - r, best.x + r, best.z + r, 4).then(go, go); else go();
+            if (typeof Terrain !== 'undefined' && Terrain.ensure) Terrain.ensure(best.x - r, best.z - r, best.x + r, best.z + r, 4, 7).then(go, go); else go();
           }
         }
         for (const e of entries) { const dx = e.x - cx, dz = e.z - cz; e.grp.visible = dx * dx + dz * dz < e.vis2; }
