@@ -130,16 +130,20 @@ const ACModel = (() => {
   }
 
   // ---------------------------------------------------------------- materials
-  function materials(T, m) {
-    const tile = T.tile, ns = new THREE.Vector2(0.45, 0.45);
+  // (the clear-coated physical material, roughly twice the shading of the standard one, on the fuselage and the fin at
+  // every level; on the wings, nacelles and small parts only at 'ultra' and above)
+  function materials(T, m, q) {
+    const tile = T.tile, ns = new THREE.Vector2(0.45, 0.45), rich = q >= 3;
     const phys = (o) => new THREE.MeshPhysicalMaterial(Object.assign({ roughness: 1, metalness: 1, clearcoat: 1, clearcoatRoughness: 0.12 }, o));
+    const std = (o) => { const c = Object.assign({ roughness: 1, metalness: 1 }, o); delete c.clearcoat; delete c.clearcoatMap; delete c.clearcoatRoughness; return new THREE.MeshStandardMaterial(c); };
+    const mat = (o) => (rich ? phys(o) : std(o));
     const matte = m.kind === 'fighter';
     const M = {
       body: phys({ map: T.fus.map, roughnessMap: T.fus.orm, metalnessMap: T.fus.orm, clearcoatMap: T.fus.orm, emissiveMap: T.fus.emis, emissive: 0xffffff, emissiveIntensity: 0, normalMap: tile, normalScale: ns }),
-      wing: phys({ map: T.wing.map, roughnessMap: T.wing.orm, metalnessMap: T.wing.orm, clearcoatMap: T.wing.orm, normalMap: tile, normalScale: ns }),
+      wing: mat({ map: T.wing.map, roughnessMap: T.wing.orm, metalnessMap: T.wing.orm, clearcoatMap: T.wing.orm, normalMap: tile, normalScale: ns }),
       fin: phys({ map: T.fin.map, emissiveMap: T.fin.emis, emissive: 0xffffff, emissiveIntensity: 0, roughness: matte ? 0.6 : 0.36, metalness: 0.02, clearcoat: matte ? 0 : 1, normalMap: tile, normalScale: ns }),
-      nac: phys({ map: T.nac.map, roughness: matte ? 0.6 : 0.34, metalness: 0.04, clearcoat: matte ? 0 : 1, normalMap: tile, normalScale: ns }),
-      parts: phys({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, clearcoatMap: T.pal.orm, clearcoatRoughness: 0.15 }),
+      nac: mat({ map: T.nac.map, roughness: matte ? 0.6 : 0.34, metalness: 0.04, clearcoat: matte ? 0 : 1, normalMap: tile, normalScale: ns }),
+      parts: mat({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, clearcoatMap: T.pal.orm, clearcoatRoughness: 0.15 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x0b1015, roughness: 0.03, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.4 }),
       canopy: new THREE.MeshPhysicalMaterial({ color: m.kind === 'fighter' ? 0x4a3f22 : 0x8fa3b5, roughness: 0.04, metalness: 0.2, transparent: true, opacity: 0.34, depthWrite: false, envMapIntensity: 1.6, side: THREE.DoubleSide }),
       disc: new THREE.MeshBasicMaterial({ map: discTexture(), color: 0x2a2d31, transparent: true, opacity: 0, depthWrite: false }),
@@ -171,7 +175,7 @@ const ACModel = (() => {
     const root = new THREE.Group(); root.name = 'aircraft-' + type.id;
     const G = geometry(type, q), { H, rig, B, env, parts, ths, droop, cockpit } = G;
     const T = ACLivery.get(type, H, q, G.pf); ACLivery.keep(type, q);
-    const M = materials(T, m);
+    const M = materials(T, m, q);
     if (cockpit) Object.assign(M, cockpit.materials(T));
     const size = Math.max(m.L, f.b || 0, m.rotor ? m.rotor.R * 2 : 0), sphere = new THREE.Sphere(new V3(0, 0, 0), size * 0.62 + 2);
     rig.build();

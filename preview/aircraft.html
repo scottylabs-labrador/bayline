@@ -104,6 +104,7 @@
   ac.out.onGround = !P.air; ac.out.gs = P.air ? 80 : 0; ac.out.cas = P.air ? 80 : 0; ac.pos.y = P.air ? 900 : 0; ac.out.gnd = 0; ac.out.nz = +(P.nz || 1);
   for (const L of ac.legs) { L.comp = P.air ? 0 : (f.gearLayout.comp || 0.1); L.contact = !P.air; }
   const inside = /^cockpit/.test(P.view || '');
+  window.__h = { renderer, scene, camera, model, ac };        // (for timing from tools)
   for (let i = 0; i < 90; i++) model.update(ac, 1 / 30, { night: NIGHT, inside });
   // (the game's HUD draws the instruments; here a stand-in: horizon, tapes, a map ring, so the displays read)
   if (model.panel && model.panel.canvas) {
