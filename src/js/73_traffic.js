@@ -26,6 +26,7 @@ const Traffic = (() => {
   };
   const LEN = { a320: 37.57, b738: 39.5, b789: 62.8, b744: 70.6, c172: 8.28, f16: 15.06, a388: 72.72, conc: 61.66, b350: 14.22, dhc6: 15.77, dc3: 19.66, e330: 6.95 };
   function classify(t, cat) {
+    if (t === 'TWR' || t === 'GND' || t === 'GRND' || t === 'SERV' || t === 'EMER' || (!t && !cat)) return null;   // ground stations and vehicles
     const e = TYPES[t]; if (e) return { cls: e[0], scale: e[1] / LEN[e[0]] };
     if (cat === 'A1' || cat === 'B1' || cat === 'B4') return { cls: 'c172', scale: 1.05 };
     if (cat === 'A2') return { cls: 'c172', scale: 1.7 };
