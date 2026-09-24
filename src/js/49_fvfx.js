@@ -149,7 +149,7 @@ const FVfx = (() => {
     if (!beams || !F.model) return;
     const lit = F.model.lamps.landL.visible, night = U.uNight ? U.uNight.value : 0;
     const wet = typeof Precip !== 'undefined' ? Precip.state.rate : 0, fog = Env.state && Env.state.wx ? Env.state.wx.fog || 0 : 0;
-    const I = lit ? Math.min(0.5, 0.05 + night * 0.16 + wet * 0.22 + fog * 0.1) * (F.cam.mode === 'cockpit' ? 0.5 : 1) : 0;
+    const I = lit ? Math.min(0.5, night * 0.21 + wet * 0.22 + fog * 0.1) * (F.cam.mode === 'cockpit' ? 0.5 : 1) : 0;
     beams.mat.uniforms.uI.value = I; for (const b of beams) b.visible = I > 0.005;
   }
 
