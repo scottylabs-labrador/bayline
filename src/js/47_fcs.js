@@ -138,9 +138,17 @@ const FCS = (() => {
         const headwind = o.tas - uh;
         if (A.nav && A.navFn) {
           const nv = A.navFn(ac.pos); A.hdg = ((nv.brg % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-          const floor = nv.elev + 500 * FTM; if (A.alt === null || nv.dist < 2500) A.alt = nv.dist < 2500 ? floor : Math.max(A.alt, floor);
-          apU = Math.min(Math.max(0, (A.spd || 110) * KT - headwind), Math.sqrt(Math.max(0, nv.dist - 40) * 1.1));
-          if (nv.dist < 120 && gs < 4 && !A.arrived) { A.arrived = true; A.nav = null; A.navFn = null; A.spd = 0; apU = 0; if (A.onArrive) A.onArrive(); }
+          if (nv.alt !== undefined) A.alt = nv.alt;                                // (a route point with its own height)
+          else { const floor = nv.elev + 500 * FTM; if (A.alt === null || nv.dist < 2500) A.alt = nv.dist < 2500 ? floor : Math.max(A.alt, floor); }
+          if (nv.flyby) {                                                           // fly-by: on to the next point once near it, or once it is abeam and we cannot turn onto it
+            apU = Math.max(0, (A.spd || 90) * KT - headwind);
+            const Rt = gs * gs / (G * Math.tan(28 * D)), trk = Math.atan2(ac.vel.x, -ac.vel.z), behind = Math.cos(wrap(nv.brg - trk)) < 0.2;
+            if ((nv.dist < Math.max(220, 0.8 * Rt) || (behind && nv.dist < 2.2 * Rt)) && A.onArrive) A.onArrive();
+          }
+          else {
+            apU = Math.min(Math.max(0, (A.spd || 110) * KT - headwind), Math.sqrt(Math.max(0, nv.dist - 40) * 1.1));
+            if (nv.dist < 120 && gs < 4 && !A.arrived) { A.arrived = true; A.nav = null; A.navFn = null; A.spd = 0; apU = 0; if (A.onArrive) A.onArrive(); }
+          }
         } else if (A.spd !== null) apU = Math.max(0, A.spd * KT - headwind);
         apHdg = A.hdg;
         // position hold (over a field on arrival, or where the autopilot was engaged in a hover): ground speeds toward the point
@@ -165,7 +173,7 @@ const FCS = (() => {
         const ve = vh - vRef;                                                     // (the lateral speed wanted: none, or toward a held point)
         f.lat.j = clamp(f.lat.j - ve * dt * 0.01 * (1 - fw), -0.1, 0.1);
         ph = phTrim + (1 - fw) * clamp(Math.atan(clamp(-ve * 0.5, -2, 2) / G) + f.lat.j, -14 * D, 14 * D);
-        if (apHdg !== null) { const trk = Math.atan2(ac.vel.x, -ac.vel.z); ph += fw * clamp(wrap(apHdg - (gs > 5 ? trk : E.hdg)) * 1.4, -22 * D, 22 * D); }
+        if (apHdg !== null) { const trk = Math.atan2(ac.vel.x, -ac.vel.z); ph += fw * clamp(wrap(apHdg - (gs > 5 ? trk : E.hdg)) * 1.4, -28 * D, 28 * D); }
       }
       if (o.onGround && c.coll < 0.3) { th = E.pitch; ph = E.roll; }
       const pCmd = clamp(wrap(ph - E.roll) * 3, -S.pMax, S.pMax), qCmd = clamp((th - E.pitch) * 3, -S.qMax, S.qMax);

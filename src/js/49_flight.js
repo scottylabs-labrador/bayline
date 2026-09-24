@@ -131,7 +131,7 @@ const Flight = (() => {
       active = true; paused = false; crashed = null; landed = null; airTime = 0; flightTime = 0; maxAgl = 0; gLast = null; warn.clear(); callout.reset();
       if (typeof FMap !== 'undefined') FMap.trail.length = 0;
       rec.buf.length = 0; rec.t = 0; rec.last = -1; replay = null;
-      input.reset(); cam.mode = prefs.cam || 'chase'; cam.reset();
+      input.reset(); atc.reset(); cam.mode = prefs.cam || 'chase'; cam.reset();
       FDM.euler(ac.q, E); placeModel(); updateCamera(0.016, true);
       prefs.type = T.id; prefs.apt = a.ident; savePrefs();
       if (typeof FHud !== 'undefined') FHud.show(true);
@@ -261,6 +261,35 @@ const Flight = (() => {
     return { update, reset, keys, touch, press };
   })();
   function say(what, v) { if (typeof FHud !== 'undefined') FHud.note(what + ' ' + v); }
+  // ---------------------------------------------------------------- the tower: clearances in standard phraseology
+  // (take off, land, welcome, hand-off to departure) with the real wind and the real runway; spoken and shown
+  const atc = {
+    cs: '', said: {},
+    digits(s) { return String(s).split('').map(c => ({ 0: 'zero', 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'fife', 6: 'six', 7: 'seven', 8: 'eight', 9: 'niner', L: 'left', R: 'right', C: 'center' })[c] || '').filter(Boolean).join(' '); },
+    wind() { const kt = Math.round(wind.length() / KT); if (kt < 3) return 'wind calm'; const from = ((Math.round(Math.atan2(-wind.x, wind.z) / D / 10) * 10) % 360 + 360) % 360 || 360; return `wind ${this.digits(String(from).padStart(3, '0'))} at ${this.digits(kt)}`; },
+    tower(a) { const n = (a.city || a.name || '').replace(/ ?\(.*\)/, '').replace(/ (International|Intl\.?|Regional|Municipal|County)?\s*Airport.*$/i, '').trim(); return (n || a.ident) + (a.type < 2 ? ' tower' : ' traffic'); },
+    speak(k, text, shown) { if (this.said[k]) return; this.said[k] = true; UI.toast('📻 ' + shown, 6); if (typeof FSound !== 'undefined' && FSound.atc) FSound.atc(text); },
+    reset() { this.said = {}; this.cs = 'Bayline ' + (100 + Math.floor(Math.random() * 900)); this.t = 0; this.cleared = null; },
+    csSpoken() { return 'Bayline ' + this.digits(this.cs.slice(8)); },
+    tick(dt) {
+      if (!ac || !cfg || crashed || replay) return; this.t += dt; const o = ac.out, a = cfg.apt;
+      // on the runway: cleared for takeoff (a helicopter: for departure)
+      if (cfg.pos === 'runway' && this.t > 4 && o.onGround) this.speak('to', `${this.csSpoken()}, ${this.tower(a)}, ${this.wind()}, runway ${this.digits(cfg.e.ident)}, cleared for ${T.fdm.heli ? 'departure' : 'takeoff'}.`, `${this.tower(a)}: ${this.cs}, runway ${cfg.e.ident}, cleared for ${T.fdm.heli ? 'departure' : 'takeoff'}`);
+      // climbing away: over to departure
+      if (this.said.to && !o.onGround && o.agl > 2500 * FT && !T.fdm.heli) this.speak('dep', `${this.csSpoken()}, contact departure. Good day.`, `${this.tower(a)}: ${this.cs}, contact departure, good day`);
+      // on final (any runway ahead within 6 nm, below 2,000 ft, gear down): cleared to land
+      if ((this.t % 1) < dt && !o.onGround && o.agl < 2000 * FT && !T.fdm.heli && (!T.fdm.retract || ac.gearPos > 0.9) && !this.said.land) {
+        const A = fcs.ap; let r = A.appr && A.rwy ? { a: A.rwyApt, ident: A.rwy.ident, d: Math.hypot(ac.pos.x - A.rwy.x, ac.pos.z - A.rwy.z) } : null;
+        if (!r) { const b = findApproach(); if (b) { const e = Airports.runwayEnd(b.a, b.rw, b.end); r = { a: b.a, ident: e.ident, d: Math.hypot(ac.pos.x - e.x, ac.pos.z - e.z) }; } }
+        if (r && r.a && r.d < 6 * NM) { this.cleared = r; this.speak('land', `${this.csSpoken()}, ${this.tower(r.a)}, ${this.wind()}, runway ${this.digits(r.ident)}, cleared to land.`, `${this.tower(r.a)}: ${this.cs}, runway ${r.ident}, cleared to land`); }
+      }
+      // down and slow: welcome
+      if (landed && o.onGround && o.gs < 25 * KT && !this.said.welcome && flightTime - landed.t > 2) {
+        const ll = Globe.w2ll(ac.pos.x, ac.pos.z), n = Airports.nearest(ll.lat, ll.lon, null, 8000), ap = n && n.apt;
+        if (ap) this.speak('welcome', `${this.csSpoken()}, welcome to ${ap.city || ap.name}. ${T.fdm.heli ? 'Shut down at your discretion.' : 'Vacate when able, taxi to the ramp.'}`, `${this.tower(ap)}: ${this.cs}, welcome to ${ap.city || ap.name}`);
+      }
+    },
+  };
   function toggleAP() {
     const A = fcs.ap;
     if (A.on) { A.on = false; A.appr = false; warn.flash('AUTOPILOT OFF'); if (typeof FSound !== 'undefined') FSound.apOff(); return; }
@@ -286,7 +315,7 @@ const Flight = (() => {
     for (const n of Airports.near(ll.lat, ll.lon, 45000)) for (const rw of n.apt.runways) { if (rw.approx || rw.surf === 2) continue;
       for (const end of [0, 1]) { const e = Airports.runwayEnd(n.apt, rw, end); const dx = e.x - ac.pos.x, dz = e.z - ac.pos.z, d = Math.hypot(dx, dz);
         const brg = Math.atan2(dx, -dz), align = Math.cos(wrap(e.hdg * D - E.hdg)), toward = Math.cos(wrap(brg - E.hdg));
-        const s = align * 2 + toward - d / 20000 + (rw.L > 1800 ? 0.3 : 0) + (T.fdm.retract && rw.L < 1200 ? -3 : 0);
+        const s = align * 2 + toward - d / 20000 + (rw.L > 1800 ? 0.3 : 0) + (T.fdm.retract && rw.L < 1200 ? -3 : 0) + (cfg && cfg.apt === n.apt && cfg.rw === rw && cfg.end === end ? 1 : 0);   // (the runway we set out for wins a tie)
         if (align > 0.3 && toward > 0.2 && s > bs) { bs = s; best = { a: n.apt, rw, end }; } } }
     return best;
   }
@@ -341,7 +370,7 @@ const Flight = (() => {
   const cam = {
     mode: 'chase', yaw: 0, pitch: 0.12, dist: 0, zoom: 1, look: { yaw: 0, pitch: 0 }, pos: new V3(), tower: null, flyby: null, smoothYaw: null, smoothPitch: 0, fov: 60, towerApt: null,
     MODES: ['cockpit', 'chase', 'orbit', 'tower', 'flyby'],
-    set(m) { this.mode = m; this.look.yaw = 0; this.look.pitch = m === 'cockpit' ? -0.06 : 0; if (m === 'tower') this.tower = null; if (m === 'flyby') this.flyby = null; prefs.cam = m; savePrefs(); FHud && FHud.note({ cockpit: 'Cockpit', chase: 'Chase', orbit: 'Orbit', tower: 'Tower', flyby: 'Flyby' }[m] + ' camera'); },
+    set(m, auto) { this.mode = m; this.look.yaw = 0; this.look.pitch = m === 'cockpit' ? -0.06 : 0; if (m === 'tower') this.tower = null; if (m === 'flyby') this.flyby = null; if (!auto) { prefs.cam = m; savePrefs(); this.userSet = performance.now(); } FHud && FHud.note({ cockpit: 'Cockpit', chase: 'Chase', orbit: 'Orbit', tower: 'Tower', flyby: 'Flyby' }[m] + ' camera'); },
     cycle(d) { const i = this.MODES.indexOf(this.mode); this.set(this.MODES[(i + d + this.MODES.length) % this.MODES.length]); },
     reset() { this.yaw = 0; this.pitch = 0.12; this.zoom = 1; this.smoothYaw = null; this.tower = null; this.flyby = null; this.look.yaw = 0; this.look.pitch = this.mode === 'cockpit' ? -0.06 : 0; },
   };
@@ -572,7 +601,7 @@ const Flight = (() => {
       callout.tick();
       for (const ev of fcs.events.splice(0)) UI.toast(ev, 3);
       if (typeof FMissions !== 'undefined') FMissions.update(dt);
-      autoConfig();
+      autoConfig(); atc.tick(dt);
     }
     warn.tick(dt);
     Env.state.shadowTarget = ac.out.agl > 250 ? { pos: ac.pos, size: Math.max(30, Math.max(T.model.L, T.fdm.b) * 0.75) } : null;
@@ -638,7 +667,7 @@ const Flight = (() => {
   const api = {
     init, start, stop, update, restart, fromHash, on, input, cam, warn, prefs,
     get active() { return active; }, get loading() { return loading; }, get ac() { return ac; }, get fcs() { return fcs; }, get type() { return T; }, get model() { return model; }, get cfg() { return cfg; },
-    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, joinTraffic, directTo, shareLink, fromFlyAt, startReplay, stopReplay, get replaying() { return !!replay; }, get simRate() { return simRate; }, get roofs() { return roofs; }, roofAt, heliAirStart, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
+    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, joinTraffic, directTo, shareLink, fromFlyAt, startReplay, stopReplay, get replaying() { return !!replay; }, get simRate() { return simRate; }, get roofs() { return roofs; }, roofAt, heliAirStart, get callsign() { return atc.cs; }, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
   };
   return api;
 })();

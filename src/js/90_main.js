@@ -87,7 +87,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => start(b.dataset.go)));
   if (hash.has('auto')) { start('explore'); } else title.hidden = false;
-  if (['auto', 'clear', 'fog', 'cloudy', 'haze'].includes(hash.get('w')) && Env.state) { Env.state.weather = hash.get('w'); wxc.forEach(c => c.classList.toggle('on', c.dataset.w === hash.get('w'))); }   // #w=fog etc.
+  if (['auto', 'clear', 'fog', 'cloudy', 'haze', 'rain', 'storm', 'snow'].includes(hash.get('w')) && Env.state) { Env.state.weather = hash.get('w'); wxc.forEach(c => c.classList.toggle('on', c.dataset.w === hash.get('w'))); }   // #w=fog etc.
   if (hash.get('at')) { const st = Track.byId[hash.get('at')]; if (st) Player.teleportToStation(Stations.list[st.idx], +(hash.get('dir') || 1)); }
   if (hash.get('cam')) { const m = hash.get('cam'); const atSt = Track.byId[hash.get('at')]; if (m === 'orbit' && atSt) { const st = Stations.list[atSt.idx]; Player.setMode('orbit', { target: { x: st.x, y: st.y, z: st.z }, dist: +(hash.get('dist') || 300) }); } else Player.setMode(m); }
   if (hash.get('s')) { const f = {}; Track.frame(+hash.get('s'), f); Player.setMode('orbit', { target: { x: f.x, y: f.y, z: f.z }, dist: +(hash.get('dist') || 120) }); if (hash.get('yaw')) Player.orbit.yaw = +hash.get('yaw'); if (hash.get('pitch')) Player.orbit.pitch = +hash.get('pitch'); }
@@ -137,7 +137,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => UI.toast('Link to this view copied'), () => UI.toast(url, 8));
       return;
     }
-    if (c === 'KeyK' && Env.state) { const W = ['auto', 'clear', 'fog', 'cloudy', 'haze']; const i = (W.indexOf(Env.state.weather || 'auto') + 1) % W.length; Env.state.weather = W[i]; UI.toast('Weather: ' + ({ auto: "today's forecast", clear: 'clear skies', fog: 'the marine layer rolls in', cloudy: 'clouds', haze: 'hazy' })[W[i]]); return; }
+    if (c === 'KeyK' && Env.state) { const W = ['auto', 'clear', 'fog', 'cloudy', 'haze', 'rain', 'storm', 'snow']; const i = (W.indexOf(Env.state.weather || 'auto') + 1) % W.length; Env.state.weather = W[i]; UI.toast('Weather: ' + ({ auto: typeof Flight !== 'undefined' && Flight.active ? 'the real weather here' : "today's forecast", clear: 'clear skies', fog: 'the marine layer rolls in', cloudy: 'clouds', haze: 'hazy', rain: 'rain', storm: 'thunderstorms', snow: 'snow (in the Bay, imagine it)' })[W[i]]); return; }
     if (c === 'KeyV' && typeof Sound !== 'undefined') { Sound.setMuted(!Sound.muted); UI.toast(Sound.muted ? 'Sound off' : 'Sound on'); return; }
   });
   Game.on((ev, d) => { if (ev === 'toast') UI.toast(d, 4); if (ev === 'score' && d.msg) UI.toast((d.pts > 0 ? '+' : '') + Math.round(d.pts) + '  ' + d.msg, 2.6); if (ev === 'result') UI.showResult(d); });
@@ -239,6 +239,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof Traffic !== 'undefined' && World.started) safeFrame('live-traffic', () => Traffic.update(dt));
     if (typeof FMap !== 'undefined' && World.started) safeFrame('fmap', () => FMap.update(dt));
     if (typeof WorldTiles !== 'undefined' && World.started) safeFrame('worldtiles', () => WorldTiles.update(Env.camera));
+    if (typeof Precip !== 'undefined' && World.started) safeFrame('precip', () => Precip.update(dt));
     if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
     if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
@@ -263,7 +264,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   let postBroken = false;
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
   function safeFrameR(name, f) { if (errs[name] > 20) return false; try { return f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); return false; } }
-  window.__bayline = { FMissions: typeof FMissions !== "undefined" ? FMissions : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
-    Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Post: typeof Post !== 'undefined' ? Post : null };
+  window.__bayline = { FMissions: typeof FMissions !== "undefined" ? FMissions : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+    Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, Post: typeof Post !== 'undefined' ? Post : null };
   requestAnimationFrame(frame);
 })();

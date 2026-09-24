@@ -407,7 +407,16 @@ const FHud = (() => {
     if (!small) { systems(F, W - 16, H - 16, s); info(F, 16, H - 16 - 104 * s, s); }
     if (F.replaying) { rr(W / 2 - 70 * s, 70 * s, 140 * s, 28 * s, 6 * s, 'rgba(200,30,20,.8)'); txt('● REPLAY', W / 2, 84 * s, 14 * s, '#fff'); } else warnings(F, s, dt);
     fcuUpdate(F, dt);
-    if (touchEl && !touchEl.hidden && Flight.input.touch.thr === null) { const th = touchEl.querySelector('.thr'), tk = th.firstElementChild; tk.style.top = ((1 - Math.min(1, F.ac.ctl.thr)) * (th.clientHeight - 26)) + 'px'; }
+    if (touchEl && !touchEl.hidden) {
+      const heli = !!F.type.fdm.heli;
+      if (touchEl.dataset.type !== F.type.id) {        // a helicopter has no gear, flaps, brakes or ILS approach to press
+        touchEl.dataset.type = F.type.id;
+        touchEl.querySelectorAll('[data-k=KeyG],[data-k=KeyF],[data-k=KeyR],[data-k=Space],[data-k=KeyI]').forEach(b => { b.hidden = heli; });
+        const ap = touchEl.querySelector('[data-k=KeyY]'); if (ap) ap.textContent = heli ? 'HOLD' : 'AP';
+      }
+      // the lever shows the throttle; a helicopter's collective lever springs back to the middle (hold the height)
+      if (Flight.input.touch.thr === null) { const th = touchEl.querySelector('.thr'), tk = th.firstElementChild; tk.style.top = ((1 - (heli ? 0.5 : Math.min(1, F.ac.ctl.thr))) * (th.clientHeight - 26)) + 'px'; }
+    }
     if (typeof FMissions !== 'undefined') FMissions.hudMarker(g, W, H, projectPos);
     // the panel texture ~12 times a second while in the cockpit
     if (cockpit) { panelT -= dt; if (panelT <= 0) { panelT = 0.08; panel(F); } }

@@ -24,6 +24,11 @@ const FMissions = (() => {
       air: { lat: 37.7952, lon: -122.3868, alt: 330, hdg: 235, kt: 0 }, pad: { lat: 37.789775, lon: -122.396914, r: 16, minY: 290, y: 306, name: 'the Salesforce Tower roof' } },
     { id: 'gg-tower', title: 'Tower top', sub: 'H125 in the Golden Gate: land on top of the south tower, 227 m above the water. Mind the wind.', type: 'h125', goal: 'pad',
       air: { lat: 37.8175, lon: -122.4700, alt: 250, hdg: 205, kt: 0 }, pad: { lat: 37.8140144, lon: -122.477891, r: 16, minY: 215, y: 227, name: 'the south tower' } },
+    { id: 'sf-tour', title: 'San Francisco by helicopter', sub: 'Sit back: the autopilot flies an H125 past the ballpark, the bridges, the towers, Alcatraz and the Golden Gate. Take the controls any time.', type: 'h125', goal: 'tour',
+      air: { lat: 37.7700, lon: -122.3790, alt: 150, hdg: 340, kt: 60 },
+      route: [[37.7783, -122.3880, 150, 'Oracle Park'], [37.7930, -122.3810, 230, 'Bay Bridge (West Span)'], [37.7962, -122.3925, 160, 'Ferry Building'], [37.7898, -122.3990, 390, 'Salesforce Tower'],
+        [37.7948, -122.4050, 330, 'Transamerica Pyramid'], [37.8030, -122.4070, 230, 'Coit Tower'], [37.8255, -122.4200, 160, 'Alcatraz Island'], [37.8175, -122.4700, 300, 'Golden Gate Bridge'],
+        [37.8130, -122.4870, 300, null], [37.7765, -122.4345, 220, 'Painted Ladies'], [37.7555, -122.4470, 520, 'Sutro Tower'], [37.7690, -122.3890, 170, 'Chase Center']] },
     { id: 'f16-bay', title: 'Fast and low', sub: 'F-16C over the Bay at 500 kt. Afterburner past 100 % throttle. Try not to break the sound barrier over the city.', type: 'f16', goal: 'free',
       air: { lat: 37.60, lon: -122.25, alt: 600, hdg: 330, kt: 420 } },
   ];
@@ -53,6 +58,7 @@ const FMissions = (() => {
     }
     if (m.goal === 'gates') buildRings(m.gates);
     if (m.goal === 'pad') buildPad(m.pad);
+    if (m.goal === 'tour') startTour(m);
     UI.toast(m.title + ': ' + m.sub, 8);
   }
   function goldenHour(a) { const lat = a.lat * D, doy = (Date.now() / 864e5) % 365.25, decl = -23.44 * D * Math.cos(2 * Math.PI * (doy + 10) / 365.25);
@@ -95,6 +101,30 @@ const FMissions = (() => {
     if (y === null) y = Math.max(Flight.groundFn(w.x, w.z).h, pad.P.y || 0); pad.y = y; pad.grp.position.set(w.x, pad.y + 0.6, w.z);   // (exact once the roof is in the collision cache)
   }
   function clearPad() { if (!pad) return; Env.scene.remove(pad.grp); pad.grp.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); pad = null; }
+  // ---------------------------------------------------------------- guided tour: the autopilot flies the route, each landmark introduces itself
+  function startTour(m) {
+    const A = Flight.fcs.ap; cur.wp = 0; cur.camT = performance.now();
+    A.on = true; A.spd = 90; A.holdFn = null; A.arrived = false; A.appr = false;
+    const go = () => {
+      const w = m.route[cur.wp]; if (!w) return;
+      A.nav = { ident: w[3] ? w[3].replace(/ \(.*\)/, '') : 'ROUTE' };
+      A.navFn = (p) => { const ll = Globe.w2ll(p.x, p.z); return { brg: Airports.bearing(ll.lat, ll.lon, w[0], w[1]) * D, dist: Airports.hav(ll.lat, ll.lon, w[0], w[1]), elev: 0, alt: w[2], flyby: true }; };
+    };
+    A.onArrive = () => {
+      const w = m.route[cur.wp]; if (!w) return;
+      const L = typeof World !== 'undefined' && World.landmarks && w[3] ? World.landmarks.list.find(l => l.name === w[3]) : null;
+      if (L) { UI.toast(`${L.name}: ${L.blurb}`, 9); FHud.note(L.name); }
+      cur.wp++;
+      if (!(Flight.cam.userSet > cur.camT)) Flight.cam.set(cur.wp % 3 === 1 ? 'flyby' : 'chase', true);   // (a cinematic cut, unless the pilot picked a camera)
+      if (cur.wp >= m.route.length) { A.nav = null; A.navFn = null; const ll = Globe.w2ll(Flight.ac.pos.x, Flight.ac.pos.z); A.holdFn = () => Globe.ll2w(ll.lat, ll.lon); A.spd = 0; finishTour(); return; }
+      go();
+    };
+    go();
+  }
+  function finishTour() {
+    if (!cur || cur.done) return; cur.done = true; record(cur.m.id, 100);
+    UI.showResult({ kicker: 'Tour complete', title: cur.m.title, score: 100, grade: 'Thanks for flying Bayline Air', lines: [`${cur.m.route.filter(w => w[3]).length} landmarks in <b>${Math.floor(cur.t / 60)}:${String(Math.round(cur.t % 60)).padStart(2, '0')}</b>`, 'Hovering over Mission Bay. W / S to climb or let down; the stick is yours'] });
+  }
   // ---------------------------------------------------------------- per frame
   const GG = { n: [37.8255026, -122.4792332], s: [37.8140144, -122.477891] };
   function update(dt) {
@@ -146,6 +176,7 @@ const FMissions = (() => {
         } else UI.toast(`Down ${dist > 999 ? (dist / 1000).toFixed(1) + ' km' : Math.round(dist) + ' m'} from ${m.pad.name}. Lift off (W) and try again`, 6), setTimeout(() => { if (cur && cur.m === m) cur.done = false; }, 4000);
       }
     }
+    if (m.goal === 'tour' && !cur.done && !Flight.fcs.ap.on && cur.t > 3) { cur.done = true; UI.toast('You have the controls. Tour paused: the map (M) or the menu for another flight', 6); }
     if (m.goal === 'land' && !cur.done && Flight.landed && Flight.landed.shown) {
       cur.done = true; const sc = Flight.landed.score; record(m.id, sc);
     }

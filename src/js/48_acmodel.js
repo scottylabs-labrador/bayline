@@ -630,8 +630,26 @@ const ACModel = (() => {
 
     const tmpQ = new THREE.Quaternion(), fanAng = [];
     let beaconT = 0, strobeT = 0, wheelAng = [], rotAng = 0;
+    // a droop nose (Concorde): the section ahead of the windshield hinges down about its bottom edge
+    let droop = null;
+    if (m.droop) {
+      const pos = fz.geo.attributes.position, nrm = fz.geo.attributes.normal, hs = m.droop, idx = [];
+      for (let i = 0; i < pos.count; i++) if (m.nose - pos.getX(i) < hs + 0.02) idx.push(i);
+      droop = { idx, p0: idx.map(i => [pos.getX(i), pos.getY(i)]), n0: idx.map(i => [nrm.getX(i), nrm.getY(i)]), hx: m.nose - hs, hy: fz.prof(hs).bot, ang: 0, shown: -1 };
+    }
+    function setDroop(deg) {
+      if (!droop || Math.abs(deg - droop.shown) < 0.05) return; droop.shown = deg;
+      const pos = fz.geo.attributes.position, nrm = fz.geo.attributes.normal, c = Math.cos(deg * D), sn = Math.sin(deg * D);
+      droop.idx.forEach((i, k) => { const [x, y] = droop.p0[k], dx = x - droop.hx, dy = y - droop.hy, [nx, ny] = droop.n0[k];
+        pos.setXY(i, droop.hx + dx * c + dy * sn, droop.hy - dx * sn + dy * c); nrm.setXY(i, nx * c + ny * sn, -nx * sn + ny * c); });
+      pos.needsUpdate = true; nrm.needsUpdate = true;
+    }
     function update(ac, dt, env = {}) {
       const night = env.night || 0, s = ac.surf, fl = f.flaps, nF = fl.length - 1;
+      if (droop) {        // 5 degrees to taxi and take off, 12.5 with the gear down to land, up above 270 kt
+        const kt = ac.out.cas / 0.514444, want = ac.out.onGround ? (kt > 100 && ac.ctl.thr < 0.3 ? 12.5 : 5) : ac.gearPos > 0.5 ? 12.5 : kt < 270 ? 5 : 0;
+        droop.ang += clamp(want - droop.ang, -dt * 2.5, dt * 2.5); setDroop(droop.ang);
+      }
       // control surfaces
       const fp = clamp(ac.flapPos, 0, nF), fi = Math.min(Math.floor(fp), Math.max(0, nF - 1)), ft = nF ? fp - fi : 0;
       const flapDeg = nF ? fl[fi].deg + (fl[Math.min(fi + 1, nF)].deg - fl[fi].deg) * ft : 0;

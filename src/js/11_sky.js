@@ -424,6 +424,8 @@ float skyFogDensity(vec3 p) {
     else if (kind === 'fog') { wFog = 1; wHaze = Math.max(wHaze, 2.5); }
     else if (kind === 'cloudy') { wClouds = 0.72; wCirrus = 0.5; wHaze = Math.max(wHaze, 2.6); }
     else if (kind === 'haze') { wHaze = 5; }
+    else if (kind === 'rain' || kind === 'snow') { wClouds = 0.9; wCirrus = 0.35; wHaze = Math.max(wHaze, 3.8); wFog = Math.min(wFog, 0.3); }
+    else if (kind === 'storm') { wClouds = 0.97; wCirrus = 0.5; wHaze = Math.max(wHaze, 4.6); wFog = Math.min(wFog, 0.2); }
     weather.kind = kind; st.wx = { fog: wFog, clouds: wClouds, cirrus: wCirrus, haze: wHaze };
     const bMs = MIE_BASE * wHaze, bMe = bMs / 0.9;
     uniforms.uSkyBMs.value = bMs; uniforms.uSkyBMe.value = bMe;
@@ -436,7 +438,11 @@ float skyFogDensity(vec3 p) {
     const lum = 0.2126 * Ts[0] + 0.7152 * Ts[1] + 0.0722 * Ts[2];
     const mx = Math.max(Ts[0], Ts[1], Ts[2], 1e-6);
     sunLight.color.setRGB(Ts[0] / mx, Ts[1] / mx, Ts[2] / mx);
-    sunLight.intensity = SUN_SCENE * up * Math.min(1, lum / 0.82) * (0.95 + 0.05 * wHaze / 2.2);
+    // under a heavy overcast the sun is mostly hidden (not above the deck: the base is ~1 km thick at most here)
+    const deck = (kind === 'auto' && live && live.base ? live.base : kind === 'rain' || kind === 'snow' ? 900 : kind === 'storm' ? 700 : 1650);
+    const overcast = U.smooth(0.55, 0.95, wClouds) * (1 - U.smooth(deck + 300, deck + 1100, camPos.y));
+    st.overcast = overcast;
+    sunLight.intensity = SUN_SCENE * up * Math.min(1, lum / 0.82) * (0.95 + 0.05 * wHaze / 2.2) * (1 - 0.82 * overcast);
     uniforms.uSkySunColor.value.set(Ts[0] * SUN_SCENE * up, Ts[1] * SUN_SCENE * up, Ts[2] * SUN_SCENE * up);
     // sky fill: average of zenith + four horizon directions from the model
     cpuScatter(camH, 0, 1, 0, sd, bMs, bMe, _a);
@@ -450,7 +456,7 @@ float skyFogDensity(vec3 p) {
     uniforms.uSkyGlow.value.set(0.055 * glow, 0.034 * glow, 0.018 * glow);
     // clouds & wind drift (from the WNW, ~6 m/s, like the sea breeze)
     uniforms.uCloudCover.value = wClouds; uniforms.uCirrus.value = wCirrus;
-    uniforms.uCloudBase.value = kind === 'auto' && live && live.base ? live.base : 1650;
+    uniforms.uCloudBase.value = kind === 'auto' && live && live.base ? live.base : kind === 'rain' || kind === 'snow' ? 900 : kind === 'storm' ? 700 : 1650;
     const tw = Env.time.sec + (+ymd.slice(6, 8)) * 86400;
     if (live && kind === 'auto') { const wd = (live.windDir + 180) * Math.PI / 180, ws = live.windSpeed; cloudDrift.x += Math.sin(wd) * ws * dt / 11000; cloudDrift.y += -Math.cos(wd) * ws * dt / 11000; uniforms.uCloudOfs.value.set(tw * 6 / 11000 * 0.8 + cloudDrift.x, tw * 6 / 11000 * 0.35 + cloudDrift.y); }
     else uniforms.uCloudOfs.value.set(tw * 6 / 11000 * 0.8, tw * 6 / 11000 * 0.35);

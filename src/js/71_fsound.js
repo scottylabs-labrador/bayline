@@ -112,6 +112,23 @@ const FSound = (() => {
       const u = new SpeechSynthesisUtterance(text); if (voice) u.voice = voice; u.rate = 1.15; u.pitch = 0.8; u.volume = 0.9; speechSynthesis.speak(u);
     } catch (e) {}
   }
+  // the tower: another voice, a touch slower, a radio-ish pitch (speech synthesis cannot be filtered, so the voice does it)
+  let atcVoice = null;
+  function atc(text) {
+    if (typeof Sound !== 'undefined' && Sound.muted) return;
+    if (!('speechSynthesis' in window)) return;
+    try {
+      if (!atcVoice) { const vs = speechSynthesis.getVoices(); atcVoice = vs.find(x => /en[-_](GB|AU|IE)/i.test(x.lang)) || vs.find(x => /en[-_]US/i.test(x.lang) && /samantha|victoria|karen|female|zira/i.test(x.name)) || vs.find(x => /^en/i.test(x.lang)) || null; }
+      const u = new SpeechSynthesisUtterance(text); if (atcVoice) u.voice = atcVoice; u.rate = 1.08; u.pitch = 1.05; u.volume = 0.85; speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  // thunder: a crack when near, then a long low rumble
+  function thunder(dist) {
+    if (!ensure() || (typeof Sound !== 'undefined' && Sound.muted)) return; const t = ctx.currentTime, near = Math.max(0, 1 - dist / 5);
+    const s = ctx.createBufferSource(); s.buffer = v.B; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 120 + 500 * near; const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.5 + 0.6 * near, t + 0.08 + dist * 0.05); g.gain.exponentialRampToValueAtTime(0.001, t + 3.5 + dist * 0.6);
+    s.connect(lp); lp.connect(g); g.connect(out); s.start(t, Math.random()); s.stop(t + 4.5 + dist);
+  }
   function thump(gain, f) {
     if (!ensure()) return; const t = ctx.currentTime;
     const s = ctx.createBufferSource(); s.buffer = v.B; const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = f * 2; const g = ctx.createGain();
@@ -132,5 +149,5 @@ const FSound = (() => {
       o.connect(g); g.connect(out); o.start(t + dt2); o.stop(t + dt2 + 0.14); });
   }
   function stop() { if (v) ramp(v.master.gain, 0, 0.2); if (v) { ramp(v.n.hornG.gain, 0); ramp(v.n.clackG.gain, 0); } gearWas = null; }
-  return { update, warnings, say, touch, crash, apOff, stop };
+  return { update, warnings, say, atc, thunder, touch, crash, apOff, stop };
 })();

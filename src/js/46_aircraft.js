@@ -268,7 +268,7 @@ const AIRCRAFT = (() => {
         strike: [[-25, 0, -0.5, 'tail'], [-14, -12.8, 1.3, 'tip'], [-14, 12.8, 1.3, 'tip'], [-15, -5.4, 1.8, 'nacelle'], [-15, 5.4, 1.8, 'nacelle'], [30, 0, 1.2, 'nose'], [0, 0, 1.6, 'belly']],
         Ixx: 1.5e6, Iyy: 1.28e7, Izz: 1.4e7, gearVmax: 4.6, nMax: 2.5, qMax: 4 * D, pMax: 20 * D, alphaMax: 17 * D, fbw: 'airbus', toPitch: 13, retardH: 2.5 },
       model: {
-        kind: 'jet', L: 61.66, nose: 32.7, fus: { d: 2.88, h: 3.32, zc: 0.1, noseLen: 9, tailLen: 12, tailUp: 0.5, pointy: true },
+        kind: 'jet', L: 61.66, nose: 32.7, droop: 5.6, fus: { d: 2.88, h: 3.32, zc: 0.1, noseLen: 9, tailLen: 12, tailUp: 0.5, pointy: true },
         wing: { x: 10.7, y0: 1.44, span: 12.8, c0: 27.7, c1: 3.0, sweep: 63, dih: 0, z: 1.5, t: 0.035, tt: 0.03, twist: 0, cam: 0.012,
           flap: null, ail: [1.8, 12.3, 0.12], elevon: true, spoil: null, tip: 'round' },
         htail: null,
