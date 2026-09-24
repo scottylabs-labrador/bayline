@@ -1,9 +1,9 @@
 // a northbound express through a San Mateo grade crossing at ~78 mph in the last sun: gates down, lights flashing; the
-// camera at the roadside pans with the cab until the double-deckers stream past broadside (60 fps: slow motion or blur)
+// camera at the roadside pans with the cab until the double-deckers stream past broadside (120 fps: smooth 1/4-speed slow motion)
 import { cine, passClock } from './_lib.mjs';
 const SX = 29235;
 export default {
-  hash: '#auto&t=18:44&q=ultra&w=clear&at=san_mateo', warm: 40, frames: 480, fps: 60,
+  hash: '#auto&t=18:44&q=ultra&w=clear&at=san_mateo', warm: 40, frames: 960, fps: 120,
   setup: `async () => { ${cine}; window.__dep = (${passClock})(${SX}, 0, 18 * 3600 + 44 * 60, 4.2, 25); return window.__dep; }`,
   prime: `() => { const B = window.__bayline, d = window.__dep; B.Env.setClock(d.t); B.Player.setFocus(d.key);
     const F = {}; B.Track.frame(${SX}, F); const lat = B.Track.lane(${SX}, 0), side = Math.sign(lat) || 1, o = lat + side * 6.5;

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Trailer title cards: HTML (the site's own fonts and colours) rendered to transparent 1920x1080 PNGs.
-//   node tools/trailer/titles.mjs <outdir>
+//   node tools/trailer/titles.mjs <outdir> [scale]      (scale 2: 3840x2160 cards for a 4K master)
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const out = resolve(process.argv[2] || 'titles'); mkdirSync(out, { recursive: true });
+const out = resolve(process.argv[2] || 'titles'); mkdirSync(out, { recursive: true }); const SCALE = +(process.argv[3] || 1);
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
 html, body { margin: 0; width: 1920px; height: 1080px; background: transparent; overflow: hidden; }
@@ -22,6 +22,8 @@ html, body { margin: 0; width: 1920px; height: 1080px; background: transparent; 
 .url { font-family: 'IBM Plex Mono'; font-weight: 600; font-size: 30px; margin-top: 46px; color: #f3efe6; opacity: .95; }
 .url b { color: #e0402f; font-weight: 600; }
 .play { font-family: 'Barlow Condensed'; font-weight: 600; font-size: 28px; letter-spacing: .3em; text-transform: uppercase; margin-top: 16px; color: rgba(243,239,230,.7); }
+.scrim { position: absolute; left: 50%; top: 50%; width: 1500px; height: 760px; transform: translate(-50%, -50%); z-index: -1;
+        background: radial-gradient(ellipse at center, rgba(4,7,12,.62) 0%, rgba(4,7,12,.38) 42%, rgba(4,7,12,0) 72%); }
 .fine { position: absolute; left: 0; right: 0; bottom: 46px; font-family: 'Barlow'; font-size: 19px; color: rgba(243,239,230,.55); text-align: center; line-height: 1.5; }
 `;
 const cards = {
@@ -31,17 +33,17 @@ const cards = {
   take_off: `<div class="c"><div class="w">Now take <em>off</em></div></div>`,
   airports: `<div class="c"><div class="w">28,000 <em>airports</em></div></div>`,
   weather: `<div class="c"><div class="w">Real <em>weather</em></div></div>`,
-  traffic: `<div class="c"><div class="w">Real <em>traffic</em></div></div>`,
+  traffic: `<div class="c" style="justify-content:flex-start;padding-top:150px"><div class="w">Real <em>traffic</em></div></div>`,   // clear of the live callsign label
   world: `<div class="c"><div class="w">The whole <em>world</em></div></div>`,
-  endcard: `<div class="c"><div class="logo">Bay<span>line</span></div><div class="tag">Trains. Planes. The whole world.</div>
+  endcard: `<div class="c"><div class="scrim"></div><div class="logo">Bay<span>line</span></div><div class="tag">Trains. Planes. The whole world.</div>
     <div class="url">bayline.sheltie.<b>scottylabs</b>.org</div><div class="play">Free · in your browser</div>
     <div class="fine">Unofficial. Not affiliated with Caltrain or the Peninsula Corridor Joint Powers Board, or with any airline or aircraft manufacturer.<br>
     Real gameplay, captured in the browser. Music: “The Sound of Arrows” by Bonnie Grace · Epidemic Sound.</div></div>`,
 };
 
 // the end card again as separate layers (same layout, the other parts hidden) so the edit can reveal them one by one
-{ const parts = { endcard_logo: ['logo'], endcard_tag: ['tag'], endcard_url: ['url', 'play'], endcard_fine: ['fine'] };
-  for (const [name, show] of Object.entries(parts)) cards[name] = cards.endcard.replace(/class="(logo|tag|url|play|fine)"/g, (m, c) => show.includes(c) ? m : `class="${c}" style="visibility:hidden"`); }
+{ const parts = { endcard_logo: ['scrim', 'logo'], endcard_tag: ['tag'], endcard_url: ['url', 'play'], endcard_fine: ['fine'] };
+  for (const [name, show] of Object.entries(parts)) cards[name] = cards.endcard.replace(/class="(scrim|logo|tag|url|play|fine)"/g, (m, c) => show.includes(c) ? m : `class="${c}" style="visibility:hidden"`); }
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const prof = mkdtempSync(join(tmpdir(), 'shot-'));
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run', '--hide-scrollbars', '--window-size=1920,1080', 'about:blank'], { stdio: 'ignore' });
@@ -55,7 +57,7 @@ const ws = new WebSocket(wsUrl); await new Promise(r => ws.onopen = r);
 let id = 0; const pending = new Map(); ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
 const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
 await send('Page.enable'); await send('Runtime.enable');
-await send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false });
+await send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: SCALE, mobile: false });
 await send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
 for (const [name, html] of Object.entries(cards)) {
   const doc = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>${html}</body></html>`;

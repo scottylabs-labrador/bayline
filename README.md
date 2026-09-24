@@ -5,7 +5,7 @@ An unofficial, browser-based, photoreal replica of the San Francisco Peninsula c
 photography on real terrain, every real building and tree along the line, landmarks, road and air
 traffic, and trains you can ride, walk through and drive.
 
-**Play: https://bayline.sheltie.scottylabs.org**
+**Play: https://bayline.sheltie.scottylabs.org** · **Trailer: https://bayline.sheltie.scottylabs.org/data/v2/trailer/bayline_trailer.mp4**
 
 > Unofficial fan project. Not affiliated with, endorsed by or connected to Caltrain or the
 > Peninsula Corridor Joint Powers Board. "Bayline" and its livery are our own; station names are
@@ -174,6 +174,23 @@ Run one with `node tools/shot.mjs "http://localhost:8123/#auto&t=08:00" out.png 
 
 Aircraft types are named for identification only and wear a fictional scheme; nothing here is affiliated
 with any manufacturer or airline. Not for real-world navigation.
+
+## The trailer
+
+Every shot in the trailer is real gameplay, rendered by the game itself and captured frame by frame in 4K.
+
+- `tools/capture.mjs` runs the page in headless Chrome on the GPU in capture mode (`__bayline.capture`): a fixed
+  time step, quality frozen at ultra, a scripted camera that the world's level of detail and streaming follow, and
+  a settle step that waits for tiles before a frame is kept. The same shot renders the same frames every time.
+- `tools/trailer/shots/*.mjs` stage the shots with the game's own systems: the real timetable picks the train
+  (`passClock` finds the express that crosses a San Mateo grade crossing at 78 mph in the last sun), the
+  autopilot flies the aircraft, and live ADS-B supplies the aircraft on the ground at SFO.
+  `tools/trailer/preview.py` makes contact sheets and `capture_all.py` batch-captures (resumable).
+- `tools/trailer/edit.py` with `edl.json` cuts it to the music: speed ramps into slow motion (the crossing pass is
+  captured at 120 fps), lightning, impact jolts, animated title cards (`titles.mjs`, the site's own fonts), a
+  2.2:1 letterbox, and the sound design, mixed and loudness-normalised to -14 LUFS.
+
+Music: "The Sound of Arrows" by Bonnie Grace, and sound effects, from Epidemic Sound.
 
 ## Multiplayer, safely
 

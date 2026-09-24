@@ -18,7 +18,9 @@ const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i
 const shotPath = resolve(opt('shot')), out = resolve(opt('out'));
 const shot = (await import(pathToFileURL(shotPath).href)).default;
 const PREVIEW = +opt('preview', 0);                     // --preview K: step every frame, keep only K frames, at DSF 1
-const W = +opt('w', 1920), H = +opt('h', 1080), DSF = PREVIEW ? 1 : +opt('dsf', 2), FPS = +opt('fps', shot.fps || 30);
+// shot.maxDsf caps the scale: headless 4K screenshots of the densest scenes (downtown at night, San Mateo) wedge the
+// GPU readback, while 1.5x (2880x1620) is fine
+const W = +opt('w', 1920), H = +opt('h', 1080), DSF = PREVIEW ? 1 : Math.min(+opt('dsf', 2), shot.maxDsf || 99), FPS = +opt('fps', shot.fps || 30);
 const FMT = opt('fmt', 'jpeg'), QUAL = +opt('quality', 94), BASE = opt('base', 'http://localhost:8123/lead.html');
 const SETTLE = +opt('settle', shot.settle || 0);          // ms per frame at most: wait for streaming to catch up before each shot
 mkdirSync(out, { recursive: true });
@@ -49,7 +51,9 @@ ws.onmessage = ev => { const m = JSON.parse(ev.data);
   if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || m.params.type === 'warning' || m.params.type === 'log')) { const s = m.params.args.map(a => a.value ?? a.description ?? '').join(' '); if (!/not valid JSON/.test(s)) console.log(`[page.${m.params.type}]`, s.slice(0, 300)); }
   if (m.method === 'Runtime.exceptionThrown') console.log('[pageerror]', (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text).slice(0, 600));
 };
-const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+// every call times out (a wedged GPU process otherwise hangs a capture forever): fail loudly so the batch can retry
+const send = (method, params = {}, ms = 120000) => new Promise((r, j) => { const i = ++id; const to = setTimeout(() => { pending.delete(i); j(new Error(`${method} timed out`)); }, ms);
+  pending.set(i, (m) => { clearTimeout(to); r(m); }); ws.send(JSON.stringify({ id: i, method, params })); });
 const ev = async (code, what) => { const r = await send('Runtime.evaluate', { expression: code, awaitPromise: true, returnByValue: true });
   if (r.result?.exceptionDetails) throw new Error(`${what}: ` + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
   return r.result?.result?.value; };
@@ -76,6 +80,7 @@ for (let i = 0; i < N; i++) {
   await ev(`window.__bayline.stepFrame(${shot.substeps || 1}), 1`, 'step');
   if (keep && !keep.has(i)) continue;
   if (SETTLE) await ev(`window.__bayline.capture.settle(${SETTLE})`, 'settle');   // let tiles and builds catch up, redraw
+  if (process.env.CAPDBG) console.log(i, await ev(`(() => { const r = window.__bayline.Env.renderer, gl = r.getContext(); return JSON.stringify({ lost: gl.isContextLost(), calls: r.info.render.calls, tris: r.info.render.triangles, err: gl.getError() }); })()`, 'dbg'));
   const shotR = await send('Page.captureScreenshot', FMT === 'png' ? { format: 'png' } : { format: 'jpeg', quality: QUAL });
   writeFileSync(join(out, `f${String(i).padStart(5, '0')}.${ext}`), Buffer.from(shotR.result.data, 'base64'));
   if (i % 30 === 0) console.log(T(), `frame ${i}/${N}`);

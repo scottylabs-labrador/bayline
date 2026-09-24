@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Assemble the trailer: captured frames -> retimed, graded 1080p cuts -> the cut list timed to the music -> titles -> mix.
-   python3 tools/trailer/edit.py WORKDIR [--draft] [--edl other.json]
+   python3 tools/trailer/edit.py WORKDIR [--draft | --4k] [--edl other.json]
 WORKDIR holds frames/<shot>/f00000.jpg ... (from capture.mjs), titles/*.png, music/arrows.wav, sfx/*.wav. The cut list,
 titles and sound design are tools/trailer/edl.json; --draft renders fast (720p, x264) for review.
 
@@ -18,9 +18,10 @@ import os, sys, subprocess, json, re, glob
 import numpy as np
 from PIL import Image
 
-W = sys.argv[1]; DRAFT = '--draft' in sys.argv
+W = sys.argv[1]; DRAFT = '--draft' in sys.argv; UHD = '--4k' in sys.argv
 FPS = 30
-OUT_W, OUT_H = (1280, 720) if DRAFT else (1920, 1080)
+OUT_W, OUT_H = (1280, 720) if DRAFT else (3840, 2160) if UHD else (1920, 1080)
+TITLES = 'titles4k' if UHD and os.path.isdir(os.path.join(W, 'titles4k')) else 'titles'   # cards rendered at scale 2 for 4K
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDL = json.load(open(sys.argv[sys.argv.index('--edl') + 1] if '--edl' in sys.argv else os.path.join(HERE, 'edl.json')))
 MUSIC = os.path.join(W, 'music', 'arrows.wav')
@@ -80,7 +81,9 @@ def render_cut(i, cut):
     dst = os.path.join(W, 'cuts', f'{i:02d}_{shot}_{OUT_H}.mov'); sigf = dst + '.sig'
     if os.path.exists(dst) and os.path.exists(sigf) and open(sigf).read() == sig: return dst
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    codec = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p'] if DRAFT else ['-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le']
+    codec = (['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p'] if DRAFT else
+             ['-c:v', 'libx264', '-preset', 'fast', '-crf', '11', '-pix_fmt', 'yuv420p'] if UHD else      # near-lossless (4K ProRes would be ~13 GB)
+             ['-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le'])
     p = subprocess.Popen(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{OUT_W}x{OUT_H}', '-r', str(FPS), '-i', '-',
                           '-vf', GRADE + (',' + cut['vf'] if cut.get('vf') else ''), *codec, dst], stdin=subprocess.PIPE)
     bolts, shakes = cut.get('lightning', []), cut.get('shake', [])
@@ -120,8 +123,8 @@ def animate_title(j, ti):
     `layers` [[png, delay], ...] reveal one after another (the end card)"""
     style = ti.get('style', 'drift'); t0, t1 = ti['t0'], ti['t1']; fd = ti.get('fade', 0.18)
     layers = ti.get('layers') or [[ti['png'], 0.0]]
-    imgs = [(Image.open(os.path.join(W, 'titles', png)).convert('RGBA').resize((OUT_W, OUT_H), Image.LANCZOS), dl) for png, dl in layers]
-    sig = json.dumps([ti, OUT_H, [os.path.getmtime(os.path.join(W, 'titles', png)) for png, _ in layers]], sort_keys=True)
+    imgs = [(Image.open(os.path.join(W, TITLES, png)).convert('RGBA').resize((OUT_W, OUT_H), Image.LANCZOS), dl) for png, dl in layers]
+    sig = json.dumps([ti, OUT_H, [os.path.getmtime(os.path.join(W, TITLES, png)) for png, _ in layers]], sort_keys=True)
     d = os.path.join(W, 'titles_anim', f'{j:02d}_{OUT_H}'); sigf = d + '.sig'
     n = max(1, round((t1 - t0) * FPS))
     if os.path.isdir(d) and os.path.exists(sigf) and open(sigf).read() == sig: return d, n
@@ -150,6 +153,11 @@ def render_cut_job(a):
 def main():
     from concurrent.futures import ProcessPoolExecutor
     jobs = os.cpu_count() // 2 or 2
+    if '--cuts-only' in sys.argv:        # pre-render the cuts whose shots are fully captured, nothing else
+        done = lambda sh: os.path.exists(os.path.join(W, 'frames', sh + '.done')) and os.path.isdir(os.path.join(W, 'frames', sh)) and os.listdir(os.path.join(W, 'frames', sh))
+        ready = [(i, c) for i, c in enumerate(EDL['cuts']) if done(c['shot'])]
+        with ProcessPoolExecutor(jobs) as ex: list(ex.map(render_cut_job, ready))
+        print(f'pre-rendered {len(ready)} of {len(EDL["cuts"])} cuts'); return
     with ProcessPoolExecutor(jobs) as ex:
         clips = list(ex.map(render_cut_job, list(enumerate(EDL['cuts']))))
         titles = list(ex.map(animate_title, range(len(EDL['titles'])), EDL['titles']))
@@ -170,17 +178,17 @@ def main():
     # 2. letterbox (2.2:1) on the picture
     bar = round(OUT_H * (1 - (OUT_W / 2.2) / OUT_H) / 2)
     filt.append(f"[pic]drawbox=x=0:y=0:w=iw:h={bar}:color=black:t=fill,drawbox=x=0:y=ih-{bar}:w=iw:h={bar}:color=black:t=fill[lb]")
-    # 3. animated titles over it, then grain and the final fade to black
+    # 3. animated titles over it, then the final fade to black
     last = 'lb'
     for j, (ti, (d, n)) in enumerate(zip(EDL['titles'], titles)):
         k = sum(1 for x in inputs if x == '-i')
         inputs += ['-framerate', str(FPS), '-i', os.path.join(d, '%04d.png')]
         filt.append(f"[{k}:v]format=rgba,setpts=PTS-STARTPTS+{ti['t0']:.4f}/TB[t{j}]")
         filt.append(f"[{last}][t{j}]overlay=0:0:eof_action=pass:format=auto[o{j}]"); last = f'o{j}'
-    filt.append(f"[{last}]noise=alls=4:allf=t,fade=t=out:st={total - 1.6:.3f}:d=1.6,format=yuv420p[vout]")
-    base = os.path.join(W, 'bayline_trailer' + ('_draft' if DRAFT else ''))
+    filt.append(f"[{last}]fade=t=out:st={total - 1.6:.3f}:d=1.6,format=yuv420p[vout]")     # (no synthetic grain: it costs 5x the bitrate)
+    base = os.path.join(W, 'bayline_trailer' + ('_draft' if DRAFT else '_4k' if UHD else ''))
     open(base + '.vf.txt', 'w').write(';'.join(filt))
-    venc = ['-c:v', 'libx264', '-preset', 'veryfast' if DRAFT else 'slow', '-crf', '22' if DRAFT else '16', '-profile:v', 'high', '-pix_fmt', 'yuv420p']
+    venc = ['-c:v', 'libx264', '-preset', 'veryfast' if DRAFT else 'slow', '-crf', '22' if DRAFT else '17' if UHD else '16', '-profile:v', 'high', '-pix_fmt', 'yuv420p']
     run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', *inputs, '-filter_complex_script', base + '.vf.txt', '-map', '[vout]', *venc, '-t', f'{total:.3f}', base + '.video.mp4'])
     print('picture done', flush=True)
     # 4. sound: the music plus designed effects, then loudness-normalised (two passes) to -14 LUFS, -1 dBTP

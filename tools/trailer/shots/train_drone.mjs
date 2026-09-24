@@ -2,6 +2,7 @@
 // lineside trees, above the catenary), nose and sunlit flank in frame as the train closes in
 import { cine, passClock } from './_lib.mjs';
 export default {
+  maxDsf: 1.5,     // 4K screenshots of this dense scene wedge the headless GPU readback
   hash: '#auto&t=17:40&q=ultra&w=clear&at=san_mateo', warm: 40, frames: 240,
   setup: `async () => { ${cine}; window.__dep = (${passClock})(29900, 1, 17 * 3600 + 35 * 60, 1.5, 22); return window.__dep; }`,
   prime: `() => { const B = window.__bayline; B.Env.setClock(window.__dep.t); B.Player.setFocus(window.__dep.key); B.Player.setMode('chase'); return window.__dep.v; }`,
