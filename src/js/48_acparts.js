@@ -664,13 +664,58 @@ const ACParts = (() => {
     });
   }
 
+  // ---------------------------------------------------------------- small parts (high quality and up)
+  // pitot probes beside the nose, blade antennas on the crown and the belly, static wicks on the trailing edges of the
+  // ailerons, elevators and rudder (on their bones, so they move with them)
+  function smallParts(type, ctx, env) {
+    const m = type.model, { B, pal, H, q } = ctx, parts = B.mb('parts'), jet = m.kind === 'jet';
+    if (q < 2 || ctx.lite) return;
+    const scale = clamp((m.fus.d || m.fus.w || 2) / 4, 0.3, 1.8), p = new V3(), a = new V3(), b = new V3();
+    const normalAt = (s2, th, out) => { H.pt(s2 + 1e-3, th, a); H.pt(s2 - 1e-3, th, b); const ds = a.clone().sub(b); H.pt(s2, th + 1e-3, a); H.pt(s2, th - 1e-3, b); return out.crossVectors(ds, a.sub(b)).normalize(); };
+    parts.bind(0);
+    // pitot probes: an L of thin tube standing off the nose's side, pointing forward
+    if (jet && H.noseSpec) {
+      const sP = (m.fus.noseLen || 4) * 0.42, n = new V3();
+      for (const sd of [1, -1]) for (const th of [1.75, 1.95]) {
+        H.pt(sP + (th - 1.75) * 0.6, th, p); normalAt(sP, th, n); if (sd < 0) { p.z = -p.z; n.z = -n.z; }
+        const tip = p.clone().addScaledVector(n, 0.13 * scale);
+        parts.pal = pal('aluDull'); parts.cyl(p, tip, 0.012 * scale, 0.009 * scale, 6, false);
+        parts.pal = pal('alu'); parts.cyl(tip.clone().add(new V3(-0.02, 0, 0)), tip.clone().add(new V3(0.16 * scale, 0, 0)), 0.01 * scale, 0.007 * scale, 6, true);
+      }
+    }
+    // blade antennas: swept fins normal to the skin
+    const blade = (s2, th, h, len) => {
+      const n = new V3(); H.pt(s2, th, p); normalAt(s2, th, n);
+      const aft = new V3(-1, 0, 0), side = new V3().crossVectors(n, aft).normalize(), t = 0.012 * scale;
+      const pts = [p.clone().addScaledVector(aft, -len * 0.5), p.clone().addScaledVector(aft, len * 0.5), p.clone().addScaledVector(n, h).addScaledVector(aft, len * 0.75), p.clone().addScaledVector(n, h).addScaledVector(aft, len * 0.35)];
+      parts.pal = pal('antenna');
+      for (const sgn of [1, -1]) { const nn = side.clone().multiplyScalar(sgn); const ids = pts.map(v => { const w = v.clone().addScaledVector(nn, t); return parts.v(w.x, w.y, w.z, nn.x, nn.y, nn.z); }); if (sgn > 0) { parts.tri(ids[0], ids[1], ids[2]); parts.tri(ids[0], ids[2], ids[3]); } else { parts.tri(ids[0], ids[2], ids[1]); parts.tri(ids[0], ids[3], ids[2]); } }
+    };
+    if (jet) { blade(m.L * 0.3, 0.001, 0.26 * scale, 0.3 * scale); blade(m.L * 0.55, 0.001, 0.2 * scale, 0.26 * scale); blade(m.L * 0.42, Math.PI - 0.001, 0.22 * scale, 0.28 * scale); }
+    else if (m.kind === 'ga') { blade(m.L * 0.45, 0.001, 0.22, 0.14); blade(m.L * 0.62, Math.PI - 0.001, 0.12, 0.1); }
+    // static wicks: thin rods off the trailing edges of the ailerons, elevators and rudder, near their outer ends
+    const wicks = (surf, kinds, n) => {
+      for (const pn of surf.panels) {
+        if (!kinds.includes(pn.kind)) continue;
+        parts.bind(pn.bone); parts.pal = pal('black'); parts.mirror = surf.side < 0;
+        for (let k = 0; k < n; k++) {
+          const y = pn.y1 - (pn.y1 - pn.y0) * (0.06 + 0.22 * k), te = surf.P(y, 0, new V3());
+          parts.cyl(te.clone().add(new V3(0.02, 0, 0)), te.clone().add(new V3(-0.16 * Math.sqrt(scale), 0, 0)), 0.006, 0.004, 5, true);
+        }
+        parts.mirror = false; parts.bind(0);
+      }
+    };
+    if (jet || m.kind === 'fighter') { for (const ws of env.wings) wicks(ws, ['ail', 'elevon'], 3); for (const hs of env.htails) wicks(hs, ['elev'], 2); if (env.fin) wicks(env.fin, ['rud'], 3); }
+    parts.pal = null;
+  }
+
   // ---------------------------------------------------------------- everything for one aircraft
   function* steps(type, ctx, env) {
     const m = type.model;
     for (let i = 0; i < m.engines.length; i++) { const e = m.engines[i]; if (e.type === 'fan') turbofan(e, i, ctx, env); else if (e.type === 'prop') prop(e, i, ctx, env); else if (e.type === 'jet') jet(e, i, ctx, env); yield; }
     if (m.rotor) { rotors(m, ctx, env); yield; }
     if (!ctx.far) { gear(type, ctx, env); yield; }
-    if (!ctx.lite) lights(type, ctx, env);
+    if (!ctx.lite) { lights(type, ctx, env); smallParts(type, ctx, env); }
   }
   function build(type, ctx, env) { const g = steps(type, ctx, env); while (!g.next().done); }
   return { build, steps, turbofan, prop, jet, rotors, gear, lights, wheel, lamp, flexBone };
