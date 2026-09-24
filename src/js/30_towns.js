@@ -306,16 +306,59 @@ const Towns = (() => {
             vec3 trimC = (style == 2.0 || style == 3.0 || style == 4.0 || style == 5.0) ? vec3(0.22, 0.23, 0.24) : mix(wall, vec3(0.94, 0.93, 0.89), 0.72);
             // recessed windows: the glass sits ~13 cm behind the wall, so at an angle the reveal (the opening's side and
             // head) hides part of it. Parallax: sample the glass mask where the view ray reaches the glass plane.
-            float rev = 0.0;
-            if (glassM > 0.01 && style != 3.0 && dcam < 160.0) {
+            float rev = 0.0; vec3 room = vec3(0.0); float roomK = 0.0, roomL = 0.2, roomH = 0.0;
+            if (glassM > 0.01 && dcam < 180.0) {
               float det = qdx.x * qdy.y - qdx.y * qdy.x;
               if (abs(det) > 1e-10) {
                 vec3 Tw = normalize((pdx * qdy.y - pdy * qdx.y) / det), Bw = normalize((pdy * qdx.x - pdx * qdy.x) / det);
                 vec3 V = normalize(-vViewPosition);
                 vec3 vt = vec3(dot(V, Tw), dot(V, Bw), abs(dot(V, normalize(vNormal))));
-                vec2 off = -vt.xy / max(vt.z, 0.2) * 0.13;
-                float g2 = textureGrad(uFac, vec3(fuvW + off * gsc, lay), qdx * gsc, qdy * gsc).g;
-                rev = clamp(glassM - g2, 0.0, 1.0) * (1.0 - smoothstep(110.0, 160.0, dcam));
+                if (style != 3.0 && dcam < 160.0) {
+                  vec2 off = -vt.xy / max(vt.z, 0.2) * 0.13;
+                  float g2 = textureGrad(uFac, vec3(fuvW + off * gsc, lay), qdx * gsc, qdy * gsc).g;
+                  rev = clamp(glassM - g2, 0.0, 1.0) * (1.0 - smoothstep(110.0, 160.0, dcam));
+                }
+                // interior mapping: the view ray goes on through the glass into a room one facade cell wide, one floor
+                // high and 3-6.5 m deep; the face it reaches (back wall, floor, ceiling, side walls) is drawn per room
+                if (style != 5.0 && style != 9.0 && vt.z > 0.02) {
+                  float Hf = gfl ? gf : fh; vec2 cellC = floor(fuv); float rh = tHash3(vec3(cellC, seed + 3.7)); roomH = rh;
+                  float D = mix(3.2, 6.5, fract(rh * 13.1)) * (style == 4.0 && gfl ? 1.7 : 1.0);
+                  vec3 rr = -vt;                                                                   // into the wall (z < 0)
+                  rr = sign(rr + 1e-9) * max(abs(rr), vec3(1e-4));
+                  vec3 p0 = vec3(fract(fuv.x) * cw, fract(fuv.y) * Hf, 0.0);
+                  vec3 tA = (vec3(0.0, 0.0, -D) - p0) / rr, tB = (vec3(cw, Hf, 0.0) - p0) / rr, tF = max(tA, tB);
+                  float t = min(min(tF.x, tF.y), tF.z); vec3 hp = p0 + rr * t;
+                  bool back = tF.z <= min(tF.x, tF.y), flc = !back && tF.y <= tF.x;
+                  bool shop = style == 4.0 && gfl, office = style == 2.0 || style == 3.0 || shop;
+                  vec3 wallC = mix(vec3(0.80, 0.76, 0.68), vec3(0.64, 0.70, 0.74), step(0.62, fract(rh * 7.7))) * mix(0.78, 1.05, fract(rh * 3.1));
+                  if (office) wallC = mix(vec3(0.74, 0.75, 0.74), vec3(0.58, 0.6, 0.62), fract(rh * 7.7));
+                  vec3 floorC = office ? vec3(0.34, 0.35, 0.36) : mix(vec3(0.38, 0.27, 0.18), vec3(0.46, 0.44, 0.40), step(0.5, fract(rh * 5.3)));
+                  vec3 c;
+                  if (back) {
+                    c = wallC; float bx = hp.x / cw, by = hp.y;
+                    // furniture along the back wall: sofas / beds / desks / shelving
+                    float fh2 = office ? 0.76 : mix(0.5, 1.0, fract(rh * 17.0));
+                    float fur = step(by, fh2) * step(0.12, bx) * step(bx, mix(0.55, 0.92, fract(rh * 23.0)));
+                    c = mix(c, (office ? vec3(0.3, 0.3, 0.32) : mix(vec3(0.35, 0.22, 0.16), vec3(0.2, 0.28, 0.4), fract(rh * 41.0))) , fur * 0.85);
+                    // a picture, or a door, on the back wall
+                    float pic = step(abs(bx - mix(0.3, 0.7, fract(rh * 31.0))), 0.12) * step(abs(by - 1.6), 0.28);
+                    c = mix(c, mix(vec3(0.2, 0.3, 0.45), vec3(0.6, 0.35, 0.2), fract(rh * 53.0)), pic * step(0.4, fract(rh * 61.0)) * (1.0 - fur));
+                    if (shop) { float sh = step(0.5, fract(by / 0.55)) * step(by, 2.3); c = mix(c * 0.9, mix(vec3(0.7, 0.3, 0.25), vec3(0.3, 0.5, 0.7), fract(floor(hp.x * 3.0) * 0.37 + rh)), sh * 0.6); }
+                  } else if (flc) {
+                    if (rr.y < 0.0) c = floorC;
+                    else { c = vec3(0.86, 0.85, 0.82);                                                // ceiling, with a light
+                      vec2 cl = office ? abs(fract(vec2(hp.x / 2.4, -hp.z / 2.4)) - 0.5) : abs(vec2(hp.x / cw, -hp.z / D) - 0.5);
+                      float lamp = step(cl.x, office ? 0.12 : 0.08) * step(cl.y, office ? 0.3 : 0.08);
+                      c = mix(c, vec3(1.0, 0.97, 0.9) * 2.4, lamp); }
+                  } else {
+                    c = wallC * 0.84;
+                    if (shop) { float sh = step(0.55, fract(hp.y / 0.5)) * step(hp.y, 2.4); c = mix(c, mix(vec3(0.75, 0.6, 0.3), vec3(0.35, 0.55, 0.4), fract(floor(-hp.z * 2.0) * 0.41 + rh)), sh * 0.55); }
+                  }
+                  c *= 1.0 - 0.5 * clamp(-hp.z / D, 0.0, 1.0);                                   // light falls off into the room
+                  room = c;
+                  roomK = (1.0 - smoothstep(110.0, 170.0, dcam)) * (style == 3.0 ? 0.55 : 1.0);
+                  roomL = shop ? 0.26 : office ? 0.13 : 0.075;                                      // daylight inside (dim next to outside)
+                }
               }
             }
             float glassV = max(glassM - rev, 0.0);
@@ -347,6 +390,9 @@ const Towns = (() => {
               float cov = kb < 0.45 ? step(1.0 - fract(cell * 7.9) * 0.85, wy) : 0.0;
               glass = mix(glass, fab * (0.55 + 0.25 * fract(cell * 3.3)), cov * (1.0 - smoothstep(60.0, 140.0, dcam)));
             }
+            // (blinds cover the room; the room shows through the rest of the glass)
+            float blind = (style != 3.0 && !(style == 4.0 && gfl) && style != 5.0) ? step(fract(cell * 31.7), 0.45) * step(1.0 - fract(cell * 7.9) * 0.85, clamp((cu2.y - wLo) / (wHi - wLo), 0.0, 1.0)) : 0.0;
+            glass = mix(glass, glass * 0.25, roomK * (1.0 - blind));
             outc = mix(outc, glass, glassM);
             outc = mix(outc, mix(wall, trimC, 0.35) * 0.6, rev);                // the reveal, in its own shade
             // coated curtain walls mirror the sky strongly; ordinary windows less, both rising with Fresnel
@@ -364,7 +410,10 @@ const Towns = (() => {
               float shelf = 1.0 - 0.5 * (smoothstep(0.03, 0.0, abs(sv - 0.36)) + smoothstep(0.03, 0.0, abs(sv - 0.62)));
               float racks = 0.8 + 0.2 * step(0.35, fract(fuv.x * 7.0 + cell * 3.1));
               ib = mix(0.12, 0.75, smoothstep(0.2, 1.0, sv)) * shelf * racks * (0.7 + 0.45 * fract(cell * 5.31 + floor(fuv.x * 3.0) * 0.37)) * (1.0 - 0.4 * step(sv, 0.3)); }
-            gEmit += wc * lit * ib * mix(glassV, 0.45, smoothstep(0.8, 3.0, wpp)) * mix(0.5 + 0.5 * fract(cell * 13.7), 0.75, smoothstep(0.8, 3.0, wpp)) * 0.8;
+            // the room: daylight inside by day, the room's own lights when this window is lit at night
+            float roomLit = step(fract(roomH * 97.0), litP) * uNight;
+            gEmit += room * glassV * roomK * (1.0 - blind) * (roomL * (1.0 - uNight) + roomLit * vec3(1.0, 0.8, 0.58) * 0.9 + 0.02);
+            gEmit += wc * lit * ib * mix(glassV, 0.45, smoothstep(0.8, 3.0, wpp)) * mix(0.5 + 0.5 * fract(cell * 13.7), 0.75, smoothstep(0.8, 3.0, wpp)) * 0.8 * (1.0 - roomK * 0.85);
             if (!front && style == 4.0 && gfl) { outc = mix(outc, wall, 0.9); gEmit *= 0.1; }   // storefront glass only faces the street
           }
           if (front && dcam < 220.0) {                                    // street-facing wall: doors, garages, entries
@@ -402,7 +451,7 @@ const Towns = (() => {
   function makeBldMat(u) {
     const m = new THREE.MeshLambertMaterial({ vertexColors: true });
     m.onBeforeCompile = sh => bldShader(sh, u);
-    m.customProgramCacheKey = () => 'towns-bld-v4';
+    m.customProgramCacheKey = () => 'towns-bld-v5';
     m.userData.u = u;
     return m;
   }
