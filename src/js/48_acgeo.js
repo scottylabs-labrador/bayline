@@ -121,6 +121,12 @@ const ACGeo = (() => {
       }
       return this;
     }
+    // a rounded box: a superellipsoid (e = 2 an ellipsoid; 4-8 a cushion with soft edges), n segments around
+    rbox(cx, cy, cz, sx, sy, sz, e = 5, n = 12) {
+      const pe = 2 / e, sp = (v) => Math.sign(v) * Math.pow(Math.abs(v), pe), hx = sx / 2, hy = sy / 2, hz = sz / 2;
+      const us = [], vs = []; for (let i = 0; i <= n; i++) us.push(-Math.PI / 2 + Math.PI * i / n); for (let j = 0; j <= 2 * n; j++) vs.push(Math.PI * 2 * j / (2 * n));
+      return this.surface(us, vs, (u, v, out) => out.set(cx + hx * sp(Math.cos(u)) * sp(Math.cos(v)), cy + hy * sp(Math.sin(u)), cz + hz * sp(Math.cos(u)) * sp(Math.sin(v))), { eu: 1e-4, ev: 1e-4, flip: true, pole: new V3(0, 1, 0) });
+    }
     // a flat polygon (convex or star-shaped around its first point) given in 3D, one normal
     poly(pts, n) { const i0 = pts.map(p => this.v(p.x, p.y, p.z, n.x, n.y, n.z)); for (let i = 1; i + 1 < i0.length; i++) this.tri(i0[0], i0[i], i0[i + 1]); return this; }
     geometry() {

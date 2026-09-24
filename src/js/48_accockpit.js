@@ -278,12 +278,15 @@ const ACCockpit = (() => {
         pm.pal = null;
       }
     }
+    // a crew seat: padded cushion and back (rounded), a headrest, armrests on the aisle side, the pedestal base
     function seat(p, sd) {
-      box(cab, 'seat', p.clone().add(new V3(0.05, 0.45, 0)), 0.5, 0.12, 0.5);                         // cushion
-      box(cab, 'seat', p.clone().add(new V3(-0.2, 0.85, 0)), 0.12, 0.75, 0.48, new Q4().setFromAxisAngle(Z1, 10 * D));   // back
-      box(cab, 'seat', p.clone().add(new V3(-0.25, 1.3, 0)), 0.1, 0.22, 0.3);                           // headrest
-      for (const s2 of [-1, 1]) box(cab, 'seat', p.clone().add(new V3(0, 0.6, s2 * 0.27)), 0.4, 0.05, 0.06);
-      box(cab, 'darkMetal', p.clone().add(new V3(0, 0.2, 0)), 0.3, 0.4, 0.2);
+      const n = [6, 8, 10, 12, 14][q];
+      cab.pal = pal('seat');
+      cab.rbox(p.x + 0.05, p.y + 0.45, p.z, 0.5, 0.13, 0.5, 6, n);                                          // cushion
+      cab.at(mat4(p.clone().add(new V3(-0.2, 0.86, 0)), new Q4().setFromAxisAngle(Z1, 10 * D)), () => cab.rbox(0, 0, 0, 0.13, 0.74, 0.48, 6, n));   // back
+      cab.at(mat4(p.clone().add(new V3(-0.26, 1.32, 0)), new Q4().setFromAxisAngle(Z1, 10 * D)), () => cab.rbox(0, 0, 0, 0.11, 0.22, 0.3, 5, n));   // headrest
+      for (const s2 of [-1, 1]) cab.rbox(p.x, p.y + 0.62, p.z + s2 * 0.27, 0.38, 0.05, 0.06, 4, n);
+      cab.pal = pal('darkMetal'); cab.rbox(p.x, p.y + 0.2, p.z, 0.3, 0.4, 0.22, 8, n); cab.pal = null;
     }
     function light() {
       // a GA panel: the canvas is the panel face (gauges and the moving map), yokes, throttle / mixture, seats
