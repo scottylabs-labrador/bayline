@@ -12,6 +12,7 @@ const Game = (() => {
 
   // ---------------- drive runs ----------------
   function startDrive(plan, opts = {}) {
+    if (typeof Flight !== 'undefined' && Flight.active) Flight.stop(true);      // (a flight in progress would keep the controls)
     // set the clock to shortly before the scheduled departure from the first stop of the run
     const k0 = opts.fromK || 0; const dep = plan.trip.stops[k0][2] + plan.dayOff;
     const now = Env.time.sec; if (now > dep - 20 || now < dep - 3600) Env.setClock(dep - 50);
@@ -27,9 +28,10 @@ const Game = (() => {
     emit('toast', `You have the ${Sim.routeShort(plan.trip).toLowerCase()} ${plan.trip.id} to ${name(plan.trip.stops[run.endK][0])}. At departure time press W: the doors close and you're away.`);
     return run;
   }
-  function endRun(completed) {
+  function endRun(completed, quiet) {                     // quiet: leaving for another activity (no report card)
     if (!run) return;
     const r = run; run = null; Sim.stopDrive();
+    if (quiet) { if (r.mission) mission = null; return; }
     const st = r.stats; const mins = (Env.time.sec - st.t0) / 60;
     const q = r.score / Math.max(220, (r.endK - r.k0) * 220); const grade = q >= 0.95 ? 'A+' : q >= 0.85 ? 'A' : q >= 0.7 ? 'B' : q >= 0.5 ? 'C' : q >= 0.3 ? 'D' : 'F';
     const key = r.trip.route + ':' + r.trip.stops[r.k0][0] + '>' + r.trip.stops[r.endK][0];

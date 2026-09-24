@@ -82,6 +82,7 @@ const Flight = (() => {
       const type = AIRCRAFT.byId[c.type] || AIRCRAFT.byId.c172;
       const a = c.apt; if (!a) throw new Error('no airport');
       if (active) stop(true);
+      if (typeof Sim !== 'undefined' && Sim.drive && typeof Game !== 'undefined') Game.endRun(false, true);   // leaving the cab for the cockpit: the drive ends quietly
       // move the frame to the airport (the camera and everything else convert through lat/lon)
       const w0 = Globe.ll2w(a.lat, a.lon);
       if (Math.hypot(w0.x, w0.z) > 60000 || (Globe.frame.bay && !Globe.inBayline(w0.x, w0.z) && Math.hypot(w0.x, w0.z) > 140000)) Globe.setFrame(a.lat, a.lon);
@@ -127,6 +128,7 @@ const Flight = (() => {
         else if (fcs.assist !== 'direct') { fcs.ap.athr = true; fcs.ap.spd = spd; fcs.ap.thrI = 0.55; }
       }
       model = ACModel.build(T); Env.scene.add(model.root);
+      if (typeof FVfx !== 'undefined') { FVfx.clear(); FVfx.attach(model, T); }
       cfg = { ...c, type: T.id, rw, end, apt: a, e, vref, vapp };
       active = true; paused = false; crashed = null; landed = null; airTime = 0; flightTime = 0; maxAgl = 0; gLast = null; warn.clear(); callout.reset();
       if (typeof FMap !== 'undefined') FMap.trail.length = 0;
@@ -149,6 +151,7 @@ const Flight = (() => {
   function heliAirStart() { ac.eng[0].n = 1; ac.rotor.rpm = 1; ac.ctl.coll = 0.45; ac.ctl.park = 0; fcs.ap.athr = false; }   // rotor at speed, collective near the hover
   function stop(keepCamera) {
     if (model) { Env.scene.remove(model.root); model.dispose(); model = null; }
+    if (typeof FVfx !== 'undefined') FVfx.clear();
     const was = active; active = false; ac = null; fcs = null;
     if (typeof FHud !== 'undefined') FHud.show(false);
     if (typeof FSound !== 'undefined') FSound.stop();
@@ -179,7 +182,7 @@ const Flight = (() => {
     function down(e) {
       if (!active) return;
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
-      if (e.code === 'Escape') { if (replay) { stopReplay(); e.preventDefault(); e.stopImmediatePropagation(); return; } if (typeof FMap !== 'undefined' && FMap.open) FMap.toggle(false); else if (typeof FHud !== 'undefined' && FHud.menuOpen()) FHud.menu(false); else { FHud.menu(true); } e.preventDefault(); e.stopImmediatePropagation(); return; }
+      if (e.code === 'Escape') { if (replay) { stopReplay(); e.preventDefault(); e.stopImmediatePropagation(); return; } if (UI.anyOpen && UI.anyOpen()) UI.closeAll(); else if (typeof FMap !== 'undefined' && FMap.open) FMap.toggle(false); else if (typeof FHud !== 'undefined' && FHud.menuOpen()) FHud.menu(false); else { FHud.menu(true); } e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (!flightKeys.has(e.code)) return;                                    // H, M, P, L, K, V... go to the main handler
       e.preventDefault(); e.stopImmediatePropagation();
       if (typeof FHud !== 'undefined' && FHud.menuOpen()) return;
@@ -385,7 +388,7 @@ const Flight = (() => {
     c.addEventListener('wheel', (e) => { if (!active) return; e.preventDefault(); e.stopImmediatePropagation(); cam.zoom = clamp(cam.zoom * (e.deltaY > 0 ? 1.12 : 0.89), 0.25, 8); }, { passive: false, capture: true });
     c.addEventListener('dblclick', () => { if (active) { cam.yaw = 0; cam.pitch = 0.12; cam.look.yaw = 0; cam.look.pitch = cam.mode === 'cockpit' ? -0.06 : 0; } });
   })();
-  const tq = new Q4(), tq2 = new Q4(), tv = new V3(), tv2 = new V3(), tv3 = new V3(), qModel = new Q4();
+  const tq = new Q4(), tq2 = new Q4(), tv = new V3(), tv2 = new V3(), tv3 = new V3(), qModel = new Q4(), smokeP = new V3();
   function placeModel() { if (!model || !ac) return; qModel.copy(ac.q).multiply(qFix); model.root.quaternion.copy(qModel); model.root.position.copy(ac.pos); model.root.updateMatrixWorld(true); }
   function updateCamera(dt, snap) {
     const c = Env.camera, m = T.model, size = Math.max(m.L, T.fdm.b);
@@ -462,6 +465,10 @@ const Flight = (() => {
   function events(dt) {
     const o = ac.out; flightTime += dt;
     const touchEv = o.touch; o.touch = null;
+    if (touchEv && touchEv.gs > 22 && !T.fdm.heli && typeof FVfx !== 'undefined') {       // tyre smoke from each main leg as the wheels spin up
+      const sink = Math.max(0, -touchEv.vy / FT * 60);
+      for (const g of ac.legs) { if (g.nose || g.skid) continue; smokeP.set(g.x, g.y, g.z).applyQuaternion(ac.q).add(ac.pos); FVfx.touchdown(smokeP.x, touchEv.y, smokeP.z, ac.vel, sink); }
+    }
     if (!o.onGround) { airTime += dt; maxAgl = Math.max(maxAgl, o.agl); }
     // crash
     if (o.crashed && !crashed) {
@@ -579,7 +586,7 @@ const Flight = (() => {
     dt = Math.min(dt, 0.05);
     if (replay) {
       replayFrame(dt);
-      if (replay) { placeModel(); model.update(ac, dt, { night: U.uNight.value, inside: cam.mode === 'cockpit' }); updateCamera(dt, false); if (typeof FHud !== 'undefined') FHud.draw(api, dt); if (typeof FSound !== 'undefined') FSound.update(api, dt); }
+      if (replay) { placeModel(); model.update(ac, dt, { night: U.uNight.value, inside: cam.mode === 'cockpit' }); if (typeof FVfx !== 'undefined') FVfx.update(dt, api); updateCamera(dt, false); if (typeof FHud !== 'undefined') FHud.draw(api, dt); if (typeof FSound !== 'undefined') FSound.update(api, dt); }
       return true;
     }
     const menu = typeof FHud !== 'undefined' && FHud.menuOpen();
@@ -607,6 +614,7 @@ const Flight = (() => {
     Env.state.shadowTarget = ac.out.agl > 250 ? { pos: ac.pos, size: Math.max(30, Math.max(T.model.L, T.fdm.b) * 0.75) } : null;
     placeModel();
     model.update(ac, dt, { night: U.uNight.value, inside: cam.mode === 'cockpit' });
+    if (typeof FVfx !== 'undefined') FVfx.update(dt, api);
     updateCamera(dt, false);
     if (typeof FHud !== 'undefined') FHud.draw(api, dt);
     if (typeof FSound !== 'undefined') FSound.update(api, dt);

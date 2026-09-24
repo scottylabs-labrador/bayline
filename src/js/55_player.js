@@ -80,6 +80,7 @@ const Player = (() => {
     const p = Stations.platformY(x, z); const t = Terrain.h(x, z); return p !== null ? Math.max(p, t) : Math.max(t, Terrain.isWater(x, z) ? 0.3 : t); }
 
   function setMode(m, opts = {}) {
+    if (m !== 'fly' && typeof Flight !== 'undefined' && Flight.active) Flight.stop(true);   // a train view ends the flight (it would keep the keys and the camera)
     const prev = mode;
     if (m === 'cab' || m === 'onboard' || m === 'chase' || m === 'trackside' || m === 'heli') {
       if (!focusTrain()) { const tr = Sim.nearestTrain(cam().position, 1e9); if (!tr) { emit('toast', 'No trains running right now: try Explore at another time'); return; } setFocus(tr.key); }
