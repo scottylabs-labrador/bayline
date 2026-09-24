@@ -287,15 +287,16 @@ const ACCockpit = (() => {
     }
     function fighter() {
       pilot();
-      // cockpit tub, instrument panel with two displays, the HUD combiner, side-stick and throttle, the seat
-      const px = E.x + 0.62, py = E.y - 0.35;
-      box(cab, 'panelBoeing', new V3(px + 0.05, py, 0), 0.08, 0.34, 0.62);
-      box(cab, 'glareshield', new V3(px + 0.02, py + 0.19, 0), 0.25, 0.04, 0.6);
-      quad(scr, new V3(px, py - 0.02, -0.15), new V3(0, 0, 0.1), new V3(0, 0.1, 0), reg(0));
-      quad(scr, new V3(px, py - 0.02, 0.15), new V3(0, 0, 0.1), new V3(0, 0.1, 0), reg(1));
+      // cockpit tub, instrument panel with two displays, the HUD combiner, side-stick and throttle, the seat (all
+      // inside the canopy's line: seen from outside through it)
+      const px = E.x + 0.56, py = E.y - 0.44;
+      box(cab, 'panelBoeing', new V3(px + 0.05, py, 0), 0.08, 0.3, 0.56);
+      box(cab, 'glareshield', new V3(px + 0.02, py + 0.17, 0), 0.22, 0.035, 0.52);
+      quad(scr, new V3(px, py - 0.02, -0.14), new V3(0, 0, 0.1), new V3(0, 0.1, 0), reg(0));
+      quad(scr, new V3(px, py - 0.02, 0.14), new V3(0, 0, 0.1), new V3(0, 0.1, 0), reg(1));
       for (const sd of [-1, 1]) box(cab, 'panelBoeing', new V3(E.x - 0.1, E.y - 0.5, sd * 0.33), 0.9, 0.08, 0.14);
       box(cab, 'seat', new V3(E.x - 0.42, E.y - 0.3, 0), 0.12, 0.72, 0.42); box(cab, 'leverRed', new V3(E.x - 0.2, E.y - 0.68, 0), 0.08, 0.1, 0.12);
-      const hudP = new V3(px - 0.02, py + 0.3, 0); const hg = B.mb('canopy'); hg.bind(0); hg.at(mat4(hudP, new Q4().setFromAxisAngle(Z1, -25 * D)), () => hg.box(0, 0, 0, 0.005, 0.14, 0.16));
+      const hudP = new V3(px - 0.02, py + 0.28, 0); const hg = B.mb('canopy'); hg.bind(0); hg.at(mat4(hudP, new Q4().setFromAxisAngle(Z1, -25 * D)), () => hg.box(0, 0, 0, 0.005, 0.14, 0.16));
       const sb = rig.add(0, E.x + 0.05, E.y - 0.47, 0.33); cab.bind(sb); cab.pal = pal('knob'); cab.cyl(new V3(E.x + 0.05, E.y - 0.47, 0.33), new V3(E.x + 0.07, E.y - 0.33, 0.33), 0.016, 0.02, 8, true); cab.pal = null; cab.bind(0); L.sticks.push({ bone: sb, side: 1 });
       const tb = rig.add(0, E.x - 0.05, E.y - 0.47, -0.33); cab.bind(tb); cab.pal = pal('knob'); cab.box(E.x - 0.05, E.y - 0.4, -0.33, 0.08, 0.12, 0.05); cab.pal = null; cab.bind(0); L.thr.push({ bone: tb, k: 0, slide: true });
     }

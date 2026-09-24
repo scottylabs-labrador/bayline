@@ -144,7 +144,13 @@ const ACFrame = (() => {
       fn = (s) => {
         let a = W, top = yc0 + Hh, bot = yc0 - Hh, e = 2.7;
         const fl = single ? 0.28 : 0.9;
-        if (s < sF) { a = spin * 0.3; top = axisY + spin * 0.3; bot = axisY - spin * 0.3; }
+        if (!single && s < C) {     // a twin's long nose: the top sloping down from the windscreen to a low rounded tip
+          const t = Math.max(0, s) / C, tipY = yc0 - Hh * 0.3, k0 = Math.sqrt(Math.max(0, 1 - Math.pow(1 - Math.min(1, s / 0.3), 2)));
+          top = tipY + (yc0 + Hh * 0.8 - tipY) * Math.pow(t, 0.6) * (0.35 + 0.65 * k0);
+          bot = tipY - (tipY - (yc0 - Hh)) * Math.pow(Math.min(1, t / 0.45), 0.55) * (0.35 + 0.65 * k0);
+          a = W * (0.08 + 0.92 * Math.pow(Math.min(1, t / 0.7), 0.5)) * (0.3 + 0.7 * k0); e = lerp(2.2, 2.7, Math.min(1, t * 2));
+        }
+        else if (s < sF) { a = spin * 0.3; top = axisY + spin * 0.3; bot = axisY - spin * 0.3; }
         else if (s < sF + fl) { const t = (s - sF) / fl, k = Math.sqrt(Math.max(0, 1 - (1 - t) * (1 - t))); a = lerp(spin * 0.95, W * 0.93, k); top = lerp(axisY + spin * 0.95, cowlTop, k); bot = lerp(axisY - spin * 0.95, yc0 - Hh * 0.88, k); e = lerp(2.1, 2.6, t); }
         else if (s < C) { const t = (s - sF - fl) / Math.max(0.1, C - sF - fl); a = W * (0.93 + 0.07 * sstep(0, 1, t)); top = lerp(cowlTop, yc0 + Hh * 0.8, t); bot = yc0 - Hh * (0.88 + 0.12 * sstep(0, 1, t)); e = 2.7; }
         else if (s < C + WS) { const t = sstep(0, 1, (s - C) / WS); top = lerp(yc0 + Hh * 0.8, roof, t); }
@@ -174,14 +180,17 @@ const ACFrame = (() => {
       // the LEX (both built in wingDetails) over the chin intake's duct, the aft body tapering to the nozzle.
       // Heights in model y (the CG at 0), from the ground up: intake lip ~0.9 m, the shoulders, the canopy on top.
       const T2 = (pts) => ACGeo.mono(pts);
-      const fTop = T2([[0, 0.15], [0.8, 0.36], [1.8, 0.47], [2.9, 0.54], [3.6, 0.58], [5, 0.64], [7, 0.64], [11, 0.55], [13, 0.48], [14.35, 0.44]]);
-      const fBot = T2([[0, 0.15], [0.8, -0.06], [1.8, -0.15], [2.9, -0.19], [3.3, -0.2], [5, -0.3], [6.4, -0.62], [7.2, -0.74], [11, -0.75], [13, -0.72], [14.35, -0.72]]);
-      const fA = T2([[0, 0], [0.8, 0.2], [1.8, 0.31], [2.9, 0.39], [3.6, 0.44], [5, 0.54], [6.5, 0.72], [8.5, 0.84], [10.5, 0.82], [12, 0.7], [13.2, 0.62], [14.35, 0.6]]);
-      const fEu = T2([[0, 2], [3, 2], [5, 2.4], [8, 2.9], [11, 2.6], [13, 2.2], [14.35, 2]]), fEd = T2([[0, 2], [3, 2.1], [6, 2.8], [11, 3], [13.5, 2.2], [14.35, 2]]);
+      const fTop = T2([[0, 0.14], [0.5, 0.33], [1.2, 0.45], [2.2, 0.52], [2.9, 0.55], [3.6, 0.57], [5, 0.6], [7, 0.58], [11, 0.52], [13, 0.48], [14.35, 0.44]]);
+      const fBot = T2([[0, 0.14], [0.5, -0.04], [1.2, -0.13], [2.2, -0.18], [2.9, -0.2], [3.3, -0.21], [5, -0.3], [6.4, -0.62], [7.2, -0.74], [11, -0.75], [13, -0.72], [14.35, -0.72]]);
+      const fA = T2([[0, 0], [0.5, 0.2], [1.2, 0.31], [2.2, 0.38], [2.9, 0.41], [3.6, 0.45], [5, 0.56], [6.5, 0.76], [8.5, 0.88], [10.5, 0.88], [12, 0.84], [13.2, 0.76], [14.35, 0.66]]);
+      const fEu = T2([[0, 2], [3, 2], [5, 2.5], [8, 3.2], [11, 3], [13, 2.5], [14.35, 2]]), fEd = T2([[0, 2], [3, 2.1], [6, 2.8], [11, 3], [13.5, 2.4], [14.35, 2]]);
+      // the dorsal spine: a narrow hump from the canopy's end, highest just behind it, fading into the fin root
+      const spine = T2([[5.9, 0], [6.4, 0.3], [7.5, 0.3], [10.5, 0.2], [12.4, 0.06], [13.2, 0]]);
       H.s1 = 14.35;
       fn = (s) => {
         const top = fTop(s), bot = fBot(s), ym = (top + bot) / 2;
-        sec.yc = ym; sec.up = Math.max(1e-4, top - ym); sec.dn = Math.max(1e-4, ym - bot); sec.a = Math.max(1e-4, fA(s)); sec.eu = fEu(s); sec.ed = fEd(s); sec.lobe = 0; sec.fb = 0; sec.fk = 0;
+        sec.yc = ym; sec.up = Math.max(1e-4, top - ym); sec.dn = Math.max(1e-4, ym - bot); sec.a = Math.max(1e-4, fA(s)); sec.eu = fEu(s); sec.ed = fEd(s);
+        sec.lobe = s > 5.9 && s < 13.2 ? spine(s) : 0; sec.lobeK = 9; sec.fb = 0; sec.fk = 0;
         return sec;
       };
       H.style = 'fighter'; H.crown = 0.64; H.keel = -0.75; H.yc0 = -0.05; H.Rw = 0.7; H.Rh = 0.7;
@@ -331,7 +340,7 @@ const ACFrame = (() => {
   function canopy(H, ctx) {
     const c = H.canopy, q = ctx.q, glass = ctx.B.mb('canopy'), fr = ctx.B.mb('parts'), n = H.nose, th0 = 0.95;
     const rail = (x) => { const p = new V3(); H.pt(ACGeo.clamp(n - x, 0, H.L), th0, p); return p; };
-    const prof = (u) => { const pk = c.peak || 0.45, tl = c.tail || 0.4; return u < pk ? Math.sin(Math.PI / 2 * u / pk) ** 0.7 : 1 - (1 - tl) * Math.pow((u - pk) / (1 - pk), 1.6); };
+    const prof = (u) => { const pk = c.peak || 0.45, tl = c.tail || 0.4; return u < pk ? Math.sin(Math.PI / 2 * u / pk) ** 0.45 : 1 - (1 - tl) * Math.pow((u - pk) / (1 - pk), 1.6); };
     const P2 = (u, v, out) => {
       const x = c.x + c.len * (0.5 - u), r = rail(x), k = prof(u), top = r.y + (-c.z + c.h - r.y) * k, a = Math.PI * v, bulge = 0.04 * k;
       return out.set(x, r.y + (top - r.y) * Math.sin(a), -Math.cos(a) * (r.z + bulge * Math.sin(a) + (c.w - r.z) * 0.15 * k * Math.sin(a)));
@@ -662,10 +671,10 @@ const ACFrame = (() => {
     // ---- the F-16's leading-edge extension: a thin strake from under the canopy out to the wing root's leading
     // edge, blending the forebody into the wing; the ventral fins under the aft body
     if (w.lex) {
-      const mb = ctx.B.mb('wing'), H = ctx.H, xF = 4.9, xW = ws.leX(ws.y0), yW = -w.z;
+      const mb = ctx.B.mb('wing'), H = ctx.H, xF = 5.3, xW = ws.leX(ws.y0), yW = -w.z;
       mb.bind(0); mb.mirror = side < 0;
       const lex = (u, v, out) => {
-        const x = lerp(xF, xW - 1.2, u), s = H.nose - x, side0 = H.sec(s).a * 0.9, reach = (ws.y0 + 0.15 - side0) * Math.pow(Math.sin(Math.PI / 2 * clamp(u * 1.25, 0, 1)), 1.3) + 0.02;
+        const x = lerp(xF, xW - 1.0, u), s = H.nose - x, side0 = H.sec(s).a * 0.9, reach = (ws.y0 + 0.28 - side0) * Math.pow(u, 1.15) + 0.02;
         const th2 = 0.018 + 0.06 * u, a = v * Math.PI * 2;
         return out.set(x, yW + 0.03 + Math.sin(a) * th2, side0 + reach * (0.5 - 0.5 * Math.cos(a)));
       };

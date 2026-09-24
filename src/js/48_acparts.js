@@ -293,6 +293,24 @@ const ACParts = (() => {
         nb.pal = pal('black'); nb.surface(ACGeo.linSpace(0, 1, 1), ACGeo.linSpace(0, 1, seg), (k, v, out) => duct(0.45, v, out, 0.04).lerp(duct(0.45, 0.25, new V3(), 0.5), k), { eu: 1e-4, ev: 1e-4 });
         nb.pal = null;
       }
+      // the F-16's details: the nose pitot boom, the drag-chute housing at the fin's root, the split speed brakes
+      // beside the nozzle (they open with the speed brake control)
+      if (m.kind === 'fighter') {
+        const H = ctx.H, vt = m.vtail, nb = ctx.B.mb('parts'); nb.bind(0);
+        const tip = new V3(); H.pt(0.02, 0, tip); tip.y = H.sec(0.02).yc;
+        nb.pal = pal('aluDull'); nb.cyl(new V3(tip.x - 0.05, tip.y, 0), new V3(tip.x + 0.55, tip.y, 0), 0.03, 0.012, 8, true);
+        const hx0 = vt.x - vt.c0 * 0.55, hx1 = vt.x - vt.c0 - 0.75, hy = -vt.z + 0.05;
+        nb.pal = pal('base'); nb.at(mat4(new V3(hx0, hy, 0), new Q4().setFromUnitVectors(X1, new V3(-1, 0, 0)), new V3(1, 1.3, 0.75)), () => nb.lathe([[0, 0.001], [0, 0.18], [0.3, 0.2], [hx0 - hx1 - 0.25, 0.19], [hx0 - hx1, 0.12], [hx0 - hx1, 0.001]], 12));
+        const sbs = [];
+        for (const sd of [1, -1]) for (const ud of [1, -1]) {
+          const hx = o.x + 1.25, b2 = rig.add(0, hx, o.y + ud * 0.04, sd * 0.66);
+          nb.bind(b2); nb.pal = pal('base');
+          nb.box(hx - 0.55, o.y + ud * 0.2, sd * 0.66, 1.1, 0.34, 0.035);
+          sbs.push({ bone: b2, ud, sd });
+        }
+        nb.bind(0); nb.pal = null;
+        env.anim.push((ac) => { const k = clamp(ac.spoilerPos || 0, 0, 1) * 55 * D; for (const b2 of sbs) rig.bone(b2.bone).quaternion.setFromAxisAngle(Z1, -b2.ud * k).premultiply(new Q4().setFromAxisAngle(Y1, b2.sd * k * 0.25)); });
+      }
     }
     parts.pal = null; parts.bind(0);
     // reheat: an additive flame on its own bone (scaled with the afterburner)
