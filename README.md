@@ -23,6 +23,13 @@ traffic, and trains you can ride, walk through and drive.
   a trackside camera and watch the line run.
 - **Missions**: drive runs (the Bullet, the Peninsula Local, South County diesel, the Four
   Tunnels), commuter challenges ("9 AM meeting at 22nd Street") and landmark tours.
+- **Fly (Bayline Flight)**: take off from any of the world's 28,000 airports in a real aircraft type
+  (Cessna 172, A320neo, 737-800, 787-9, 747-400, A380, Concorde, King Air 350, Twin Otter, DC-3,
+  Extra 330, F-16C) over real terrain and imagery, in the real weather, among the real aircraft
+  flying there right now (live ADS-B). Start on the runway, on an 8 nm final or in the air; fly by
+  hand with fly-by-wire assistance (or raw), or let the autopilot capture the runway and autoland.
+  Challenges: famous approaches (Innsbruck, Gibraltar, Maho Beach, Madeira, Lukla), under the Golden
+  Gate, a gate course around San Francisco, an engine failure after takeoff.
 - **Multiplayer (optional)**: see other people's trains, and other people riding and walking,
   live. There is no chat or free text; callsigns like "Engineer Heron 17" are assigned by the
   server.
@@ -44,7 +51,13 @@ time up.
 | **Driving:** `W`/`S` | Power and brake notches. `W` at departure closes the doors and departs; doors open themselves at the stop mark. `X` coast, `O` doors, `Q` reverser, `Space` horn, `G` bell, `Backspace` emergency, `R` release, `A` autopilot. On-screen buttons do the same. |
 | `K` / `P` / `L` | Cycle the weather · photo mode (hide the interface) · copy a link to this view |
 
-Link options (after `#`, joined with `&`): `t=17:30` sets the clock, `at=palo_alto` starts at a station
+**Flying:** arrows pitch and roll (`↓` nose up) · `W`/`S` throttle (past 100 % = afterburner) · `A`/`D` rudder and
+steering · `F`/`R` flaps · `G` gear · `Space` brakes, `B` parking brake · `T` reverse · `Z` speed brakes · `Y`
+autopilot, `U` autothrottle, `I` approach (autoland) · `[` `]` `,` `.` `;` `'` heading / altitude / speed targets (or the
+on-screen autopilot panel) · `C`, `1`–`5`, `Tab` cameras (cockpit, chase, orbit, tower, flyby) · `M` world map · `X`
+handling (assisted, fly-by-wire, direct) · `Esc` menu. Gamepads and touch work too.
+
+Link options (after `#`, joined with `&`): `fly=a320,KSFO,28R,final` starts a flight (type, airport, runway, `runway`|`final`|`air`), `t=17:30` sets the clock, `at=palo_alto` starts at a station
 (`cam=orbit&dist=400` orbits it), `ll=37.8045,-122.4705,265,-0.78,-0.03` flies the camera to a viewpoint (lat, lon, altitude m, yaw,
 pitch), `w=clear|fog|cloudy|haze` sets the weather, `q=ultra|high|medium|low` forces a
 quality tier (the default adapts to your GPU), `auto` skips the title screen. Example (the Golden Gate towers in the evening fog
@@ -124,6 +137,29 @@ QA (all through real keyboard events, against the dev server):
 
 Run one with `node tools/shot.mjs "http://localhost:8123/#auto&t=08:00" out.png --gpu --wait 80000 --eval "$(cat tools/qa_ptc.js)" --eval2 "JSON.stringify(window.__qa)"`.
 
+## Bayline Flight: how it works
+
+- **The planet:** the flat local frame follows the aircraft (rebasing through latitude/longitude every ~150 km),
+  Earth curvature is added in the vertex shader, and a web-mercator globe streams AWS terrain with USGS NAIP
+  (US) or EOX Sentinel-2 cloudless (elsewhere) imagery, NASA VIIRS Black Marble city lights at night, and
+  OpenFreeMap buildings, aprons and taxiways near the ground. Airports and runways come from OurAirports,
+  drawn with markings, edge / approach lights and PAPIs, the terrain flattened under them.
+- **Flight model (`47_fdm.js`):** six degrees of freedom at 240 Hz: ISA atmosphere, stability and control
+  derivatives with a smooth stall, flaps / slats / spoilers / gear, ground effect, transonic and supersonic
+  drag, piston / turboprop / turbofan / afterburning engines with per-engine moments, spring-damper gear
+  with brakes and steering. `node tools/qa_flight.js` flies every type through takeoff, cruise and autoland.
+- **Flight controls (`47_fcs.js`):** incremental nonlinear dynamic inversion fly-by-wire (rate command,
+  flight-path and bank hold, protections, auto-flare), direct law, autopilot (HDG, ALT, V/S, LOC + glide
+  path to any runway, flare, retard) and autothrottle.
+- **Aircraft (`48_acmodel.js`):** procedural models from each type's dimensions: lofted fuselages with a
+  fictional Bayline Air livery, NACA-section wings with moving surfaces, engines, props, gear, lights,
+  and cockpits whose windows are cut from the pilot's view.
+- **Live data:** weather from Open-Meteo (wind aloft, clouds, visibility, temperature), traffic from adsb.lol
+  (proxied and cached by this server's nginx, which is rate-limited per IP).
+
+Aircraft types are named for identification only and wear a fictional scheme; nothing here is affiliated
+with any manufacturer or airline. Not for real-world navigation.
+
 ## Multiplayer, safely
 
 The relay only carries tiny presence records: mode, trip, position, speed. Everything else is
@@ -162,6 +198,11 @@ game **and** a small realtime backend.
   © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, ODbL.
 - Terrain: [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Mapzen; USGS 3DEP and others).
 - Aerial imagery: USDA National Agriculture Imagery Program (NAIP), via USGS The National Map (public domain).
+- World elevation: AWS Terrain Tiles (USGS 3DEP, SRTM, GMTED2010, ETOPO1 and others). World imagery:
+  EOxCloudless 2025 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025, CC BY-NC-SA 4.0).
+- Night lights: NASA GIBS / VIIRS Black Marble (public domain). Airports: [OurAirports](https://ourairports.com/data/) (public domain).
+- Weather: [Open-Meteo](https://open-meteo.com) (CC BY 4.0). Live traffic: [adsb.lol](https://adsb.lol) (ODbL).
+- World buildings and airport surfaces: [OpenFreeMap](https://openfreemap.org) © OpenMapTiles, data © OpenStreetMap contributors.
 - three.js (MIT). Fonts: Barlow, Barlow Condensed and IBM Plex Mono (Google Fonts, OFL).
 
 Code: MIT. Built as a ScottyLabs Sheltie example.

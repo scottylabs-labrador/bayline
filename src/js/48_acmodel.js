@@ -550,8 +550,9 @@ const ACModel = (() => {
     lamps.beaconT = lamp(0xff1a0a, 1.6); lamps.beaconT.position.set(m.nose - m.L * 0.45, topY + 0.15, 0);
     lamps.beaconB = lamp(0xff1a0a, 1.6); lamps.beaconB.position.set(m.nose - m.L * 0.42, botY - 0.15, 0);
     const landX = m.kind === 'ga' ? w.x - 0.05 : w.x - 1.2, landZ = m.kind === 'ga' ? 2.0 : Math.max(2.2, w.y0 + 1.2);
-    lamps.landL = lamp(0xfff4e0, 2.4); lamps.landL.position.copy(P(landX, -landZ, (m.kind === 'ga' ? w.z : w.z + 0.2)));
-    lamps.landR = lamp(0xfff4e0, 2.4); lamps.landR.position.copy(P(landX, landZ, (m.kind === 'ga' ? w.z : w.z + 0.2)));
+    const landSz = m.kind === 'ga' ? 1.1 : 2.4;
+    lamps.landL = lamp(0xfff4e0, landSz); lamps.landL.position.copy(P(landX, -landZ, (m.kind === 'ga' ? w.z : w.z + 0.2)));
+    lamps.landR = lamp(0xfff4e0, landSz); lamps.landR.position.copy(P(landX, landZ, (m.kind === 'ga' ? w.z : w.z + 0.2)));
     for (const k in lamps) { lamps[k].visible = false; root.add(lamps[k]); }
     const spot = new THREE.SpotLight(0xfff1dc, 0, m.kind === 'ga' ? 420 : 900, 13 * D, 0.55, 1.4); spot.castShadow = false;
     spot.position.copy(P(m.nose - 3, 0, (m.kind === 'jet' ? m.fus.zc + 1 : 0.8))); spot.target.position.copy(P(m.nose + 200, 0, 40)); root.add(spot, spot.target);

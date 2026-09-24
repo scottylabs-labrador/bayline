@@ -57,6 +57,13 @@ joysticks.
 autopilot (HDG/ALT/VS/SPD, approach), landing scoring (sink rate, centreline, touchdown zone), crash
 detection, sounds.
 
+## Status (2026-09-23)
+
+Phases 1-6 are done and live, and most of 7: twelve types, challenges, a world map, OpenFreeMap buildings and airport
+surfaces, Black Marble city lights. Headless QA: `node tools/qa_flight.js`. Open ideas: multiplayer aircraft, a proper
+glare-shield FCU and five-screen panel in the airliner cockpits, Concorde's droop nose, helicopters, volumetric
+clouds from the real cloud layers, OpenFreeMap water polygons for exact coastlines.
+
 ## Phases (each ends deployed and checked)
 
 1. Curvature patch + Globe in the Bay frame (horizon beyond the Bayline square: Diablo, the Pacific,

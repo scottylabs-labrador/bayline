@@ -129,9 +129,10 @@ const WorldTiles = (() => {
             vec2 t = normalize(vec2(-vWN.z, vWN.x)); float u = dot(vWP.xz, t), fl = (vWP.y - vAux.y) / 3.3;
             float fw = fwidth(u) + fwidth(fl) * 3.3;
             float fy = fract(fl), fx = fract(u / 2.8), win = smoothstep(0.22, 0.26, fy) * (1.0 - smoothstep(0.74, 0.78, fy)) * smoothstep(0.16, 0.2, fx) * (1.0 - smoothstep(0.8, 0.84, fx));
-            win *= 1.0 - smoothstep(0.6, 1.4, fw);                 // average out far away
-            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.14, 0.17), win * 0.75);
-            gWin = win * step(0.62, wh(floor(vec2(u / 2.8, fl)) + floor(vWP.xz / 97.0)));
+            float near = 1.0 - smoothstep(0.6, 1.4, fw);          // windows resolve up close, average out far away
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.12, 0.14, 0.17), mix(0.2, win * 0.75, near));
+            float lit = step(0.62, wh(floor(vec2(u / 2.8, fl)) + floor(vWP.xz / 97.0)));
+            gWin = mix(0.13 * (0.6 + 0.8 * wh(floor(vWP.xz / 61.0))), win * lit, near);
           } else if (vAux.x > 2.5) {                              // taxiway: yellow centre line
             float cl = 1.0 - smoothstep(0.03, 0.06, abs(vAux.y)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.85, 0.66, 0.1), cl);
           }`)
