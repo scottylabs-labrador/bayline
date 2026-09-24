@@ -87,24 +87,29 @@ const FVfx = (() => {
     const on = jets.length && ac.pos.y > 7900 && !ac.out.onGround && F.model;
     if (on && trails.length !== jets.length) { clearTrails(); trails = jets.map(e => ({ e, pts: [], mesh: trailMesh() })); }
     trailT += dt;
-    if (on && trailT >= TR_DT) {
-      trailT = 0; F.model.root.updateMatrixWorld(true);
-      for (const tr of trails) { const e = tr.e; tmp.set(e.x - (e.len || 3) - 1, -e.z, e.y).applyMatrix4(F.model.root.matrixWorld); tr.pts.push({ p: tmp.clone(), age: 0 }); if (tr.pts.length > TR_MAX) tr.pts.shift(); }
-    }
+    if (on) {
+      // the head follows the nozzle every frame; a fixed point is left behind every TR_DT
+      F.model.root.updateMatrixWorld(true); const drop = trailT >= TR_DT; if (drop) trailT = 0;
+      for (const tr of trails) { const e = tr.e; tmp.set(e.x - (e.len || 3) - 1, -e.z, e.y).applyMatrix4(F.model.root.matrixWorld);
+        if (!tr.head) tr.head = { p: tmp.clone(), age: 0 }; tr.head.p.copy(tmp);
+        if (drop) { tr.pts.push({ p: tmp.clone(), age: 0 }); if (tr.pts.length > TR_MAX - 1) tr.pts.shift(); } }
+    } else for (const tr of trails) tr.head = null;
     if (!trails.length) return;
     const cam = Env.camera.position, amb = typeof Sky !== 'undefined' && Sky.uniforms ? Sky.uniforms.uSkyAmbient.value : null, sun = typeof Sky !== 'undefined' && Sky.sunLight ? Sky.sunLight.intensity : 1;
-    if (amb) trailMat.uniforms.uColor.value.setRGB(amb.x * 1.8 + sun * 0.28, amb.y * 1.8 + sun * 0.28, amb.z * 1.8 + sun * 0.29);
+    if (amb) trailMat.uniforms.uColor.value.setRGB(amb.x * 2.2 + sun * 0.46, amb.y * 2.2 + sun * 0.46, amb.z * 2.2 + sun * 0.47);   // (as bright as a sunlit cloud)
+    if (dbg.red) trailMat.uniforms.uColor.value.setRGB(5, 0, 0);
     let any = false;
     for (const tr of trails) {
       for (const q of tr.pts) { q.age += dt; q.p.addScaledVector(wind, dt); }
       while (tr.pts.length && tr.pts[0].age > TR_MAX * TR_DT) tr.pts.shift();
-      const n = tr.pts.length, g = tr.mesh.geometry, P = g.attributes.position, UVs = g.attributes.uv, A = g.attributes.aA;
+      const L = tr.head ? tr.pts.concat([tr.head]) : tr.pts;
+      const n = L.length, g = tr.mesh.geometry, P = g.attributes.position, UVs = g.attributes.uv, A = g.attributes.aA;
       for (let i = 0; i < n; i++) {
-        const q = tr.pts[i], nb = tr.pts[Math.min(n - 1, i + 1)], pb = tr.pts[Math.max(0, i - 1)];
+        const q = L[i], nb = L[Math.min(n - 1, i + 1)], pb = L[Math.max(0, i - 1)];
         dir.copy(nb.p).sub(pb.p); if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0); dir.normalize();
         toCam.copy(cam).sub(q.p).normalize(); side.crossVectors(dir, toCam).normalize();
-        const w = 0.8 + 11 * Math.sqrt(q.age / (TR_MAX * TR_DT)), young = U.smooth(0.15, 1.2, q.age), old = 1 - U.smooth(0.6, 1, q.age / (TR_MAX * TR_DT));
-        const a = 0.55 * young * old * (i === n - 1 ? 0 : 1);
+        const w = 0.8 + 11 * Math.sqrt(q.age / (TR_MAX * TR_DT)), young = U.smooth(0.03, 0.4, q.age), old = 1 - U.smooth(0.6, 1, q.age / (TR_MAX * TR_DT));
+        const a = (dbg.red ? 1 : 0.78) * young * old * (i === n - 1 ? 0 : 1);
         P.setXYZ(i * 2, q.p.x + side.x * w, q.p.y + side.y * w, q.p.z + side.z * w); P.setXYZ(i * 2 + 1, q.p.x - side.x * w, q.p.y - side.y * w, q.p.z - side.z * w);
         UVs.setXY(i * 2, i / TR_MAX, 0); UVs.setXY(i * 2 + 1, i / TR_MAX, 1); A.setX(i * 2, a); A.setX(i * 2 + 1, a);
       }
@@ -163,5 +168,5 @@ const FVfx = (() => {
     });
   }
   let hooked = false;
-  return { update(dt, F) { if (!hooked) { hooked = true; initFrameHook(); } update(dt, F); }, touchdown, attach, clear, get puffs() { return puffs.length; }, get smoke() { return smoke; }, dbg };
+  return { update(dt, F) { if (!hooked) { hooked = true; initFrameHook(); } update(dt, F); }, touchdown, attach, clear, get puffs() { return puffs.length; }, get smoke() { return smoke; }, get trails() { return trails.map(t => ({ n: t.pts.length, draw: t.mesh.geometry.drawRange.count, inScene: !!t.mesh.parent, p0: t.pts[0] && t.pts[0].p, a: t.mesh.geometry.attributes.aA.array[2] })); }, dbg };
 })();
