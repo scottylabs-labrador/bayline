@@ -349,12 +349,13 @@ const ACCockpit = (() => {
     // (made once the textures exist: the cabin shares the part palette)
     const materials = {};
     // (the interior fills the view: below 'ultra' it is lit with the cheaper Lambert model, which has no sky
-    // reflections, so it is lifted with a little of its own colour as emissive)
+    // reflections, so it is lifted with a little of its own colour as emissive; less of it at night)
+    const lift = H.canopy ? 0.12 : 0.07;
     function makeMaterials(T) {
       const rich = q >= 3;
       Object.assign(materials, {
         cabin: rich ? new THREE.MeshStandardMaterial({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, roughness: 1, metalness: 1, envMapIntensity: H.canopy ? 0.8 : 0.35 })
-          : new THREE.MeshLambertMaterial({ map: T.pal.map, emissiveMap: T.pal.map, emissive: 0xffffff, emissiveIntensity: H.canopy ? 0.12 : 0.07 }),
+          : new THREE.MeshLambertMaterial({ map: T.pal.map, emissiveMap: T.pal.map, emissive: 0xffffff, emissiveIntensity: lift }),
         screens: new THREE.MeshBasicMaterial({ map: panelT, toneMapped: false }),
         fcu: new THREE.MeshBasicMaterial({ map: fcu ? fcu.tex : null, toneMapped: false }),
         panels: rich ? new THREE.MeshStandardMaterial({ map: PA.map, emissiveMap: PA.emis, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.7, metalness: 0.05, envMapIntensity: 0.35 })
@@ -386,6 +387,7 @@ const ACCockpit = (() => {
       for (const p of L.pedals) { const b = rig.bone(p.bone); b.position.copy(b.userData.rest); b.position.x += s.rud * 0.05 * p.s; }
       if (L.coll) rig.bone(L.coll).quaternion.setFromAxisAngle(Z1, ((ac.ctl.coll || 0.4) - 0.4) * 20 * D);
       if (materials.panels) materials.panels.emissiveIntensity = st.night * 0.8;
+      if (materials.cabin && materials.cabin.isMeshLambertMaterial) materials.cabin.emissiveIntensity = lift * (1 - 0.6 * st.night);
       if (env.ewdMesh) { ewdT -= dt; if (ewdT <= 0) { ewdT = 0.1; drawEWD(ewd, ac, type); } }
     }
     function dispose() { panelT.dispose(); if (fcu) fcu.tex.dispose(); ewd.t.dispose(); for (const k in materials) materials[k].dispose(); }
