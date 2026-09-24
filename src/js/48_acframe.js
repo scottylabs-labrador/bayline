@@ -225,10 +225,25 @@ const ACFrame = (() => {
     const tmp = new V3();
     H.polar = (s, y, z) => {
       const q = fnc(clamp(s, 0, L)), phi = Math.atan2(Math.abs(z), y - q.yc); let lo = 0, hi = Math.PI;
-      for (let i = 0; i < 36; i++) { const mid = (lo + hi) / 2; H.pt(s, mid, tmp); const ph = Math.atan2(Math.abs(tmp.z), tmp.y - q.yc); if (ph < phi) lo = mid; else hi = mid; }
+      for (let i = 0; i < 26; i++) { const mid = (lo + hi) / 2; H.pt(s, mid, tmp); const ph = Math.atan2(Math.abs(tmp.z), tmp.y - q.yc); if (ph < phi) lo = mid; else hi = mid; }
       const th = (lo + hi) / 2; H.pt(s, th, tmp);
       const inside = Math.hypot(y - q.yc, z) < Math.hypot(tmp.y - q.yc, tmp.z);
       return { th: z >= 0 ? th : 2 * Math.PI - th, inside };
+    };
+    // whether a point is inside the fuselage: from the section's outline, tabulated once per station (for searches
+    // that test many points at a few stations)
+    const outl = new Map();
+    H.inside = (s, y, z) => {
+      const key = Math.round(clamp(s, 0, L) * 1000); let o = outl.get(key);
+      if (!o) {
+        const N = 64, ph = new Float64Array(N + 1), rr = new Float64Array(N + 1), sc = key / 1000, yc = fnc(sc).yc;
+        for (let i = 0; i <= N; i++) { H.pt(sc, Math.PI * i / N, tmp); ph[i] = Math.atan2(Math.abs(tmp.z), tmp.y - yc); rr[i] = Math.hypot(tmp.y - yc, tmp.z); }
+        o = { yc, ph, rr, N }; if (outl.size > 48) outl.clear(); outl.set(key, o);
+      }
+      const phi = Math.atan2(Math.abs(z), y - o.yc); let lo = 0, hi = o.N;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (o.ph[mid] < phi) lo = mid; else hi = mid; }
+      const f = clamp((phi - o.ph[lo]) / Math.max(1e-9, o.ph[hi] - o.ph[lo]), 0, 1);
+      return Math.hypot(y - o.yc, z) < o.rr[lo] + (o.rr[hi] - o.rr[lo]) * f;
     };
     // where a ray from inside the fuselage leaves it: { s, th, p }
     H.hit = (o, d) => {
@@ -297,7 +312,11 @@ const ACFrame = (() => {
 
   // ---------------------------------------------------------------- building the fuselage
   // ctx: { B, rig, q, pal(name), uvBody(s, th) -> [u, v], tile (m), bone(s) -> bone index (the droop nose) }
-  function buildHull(H, ctx) {
+  // (buildHull runs it through; hullSteps yields between chunks of stations, so the traffic's detailed models can be
+  // built a few milliseconds per frame)
+  const run = (g) => { let r = g.next(); while (!r.done) r = g.next(); return r.value; };
+  function buildHull(H, ctx) { return run(hullSteps(H, ctx)); }
+  function* hullSteps(H, ctx) {
     const G = ACGeo, B = ctx.B, L = H.L, q = ctx.q;
     const mb = B.mb('body');
     const nAround = ctx.far ? 16 : [28, 36, 56, 72, 96][q], nAlong = ctx.far ? 26 : [70, 100, 150, 190, 260][q];
@@ -315,14 +334,15 @@ const ACFrame = (() => {
     const S = [...new Set(ss.map(v => +Math.min(v, sEnd).toFixed(5)))].filter(v => v >= s0 && v <= sEnd);
     const tile = ctx.tile || 2;
     const arc = (s, th) => { const qd = H.sec(s); return th * (qd.a + qd.up) / 2; };
-    const half = (right) => {
+    const half = (right, S2) => {
       const ths = []; for (let k = 0; k <= nAround / 2; k++) ths.push(right ? Math.PI * k / (nAround / 2) : Math.PI + Math.PI * k / (nAround / 2));
       mb.skin = ctx.skin || null; if (!ctx.skin) mb.bind(0);
-      mb.surface(S, ths, (s, th, out) => H.pt(s, th, out), { eu: 2e-4, ev: 1e-4, pole: new V3(1, 0, 0),
+      mb.surface(S2, ths, (s, th, out) => H.pt(s, th, out), { eu: 2e-4, ev: 1e-4, pole: new V3(1, 0, 0),
         uv: (s, th) => { const [u, v] = ctx.uvBody(s, th, right); return [u, v, s / tile, arc(s, right ? th : 2 * Math.PI - th) / tile]; } });
     };
-    half(true); half(false);
-    mb.skin = null; mb.bind(0);
+    // (in chunks that share their end stations: the normals are the surface's own, so the joins do not show)
+    const CH = 24;
+    for (let i = 0; i + 1 < S.length; i += CH) { const S2 = S.slice(i, Math.min(S.length, i + CH + 1)); half(true, S2); half(false, S2); mb.skin = null; mb.bind(0); yield; }
     // the aft end of an airliner: the APU exhaust in the tail cone
     if (H.m.engines.some(e => e.type === 'fan')) {
       const e0 = H.sec(L), pc = ctx.pal('exhaustDark'), rX = Math.min(e0.a, (e0.up + e0.dn) / 2) * 0.8;
@@ -398,7 +418,8 @@ const ACFrame = (() => {
   // tile, rootIn (the root runs on inside the fuselage to this span), extraStations, noTip }
   // Returns the section functions and the panels: each moving surface is a bone with a hinge axis such that a
   // positive angle moves its trailing edge down (the fin's: to the right).
-  function surface(w, ctx) {
+  function surface(w, ctx) { return run(surfaceSteps(w, ctx)); }
+  function* surfaceSteps(w, ctx) {
     const G = ACGeo, q = ctx.q, side = ctx.side || 1, vert = !!ctx.vertical, mb = ctx.B.mb(ctx.mat || 'wing');
     const y0 = w.y0 || 0, span = w.span, tanS = Math.tan((w.sweep || 0) * D), tanD = Math.tan((w.dih || 0) * D);
     const cam = w.cam !== undefined ? w.cam : (vert ? 0 : ctx.jet ? 0.022 : 0.016), style = ctx.jet && !vert ? 'sc' : 'naca';
@@ -502,6 +523,7 @@ const ACFrame = (() => {
     }
     const A = new V3(), Bv = new V3();
     for (const st of strips) {
+      yield;
       const xr = st.cut ? 1 - st.cut.cf : 1, qu = xr < 1 ? G.qAt(xr, 1) : 0, ql = xr < 1 ? G.qAt(xr, -1) : 1;
       if (!st.slat) S(st.ys, between(qu, ql), P, false, loopUV);
       else {
@@ -548,6 +570,7 @@ const ACFrame = (() => {
       }
     };
     for (const c of cuts) {
+      yield;
       const ys = Y.filter(v => v >= c.y0 - 1e-6 && v <= c.y1 + 1e-6); if (ys.length < 2) continue;
       const xr = 1 - c.cf, qu = G.qAt(xr, 1), ql = G.qAt(xr, -1);
       const nose = (y, k, out) => { P(y, qu, A); P(y, ql, Bv); const r = A.distanceTo(Bv) / 2;
@@ -567,6 +590,7 @@ const ACFrame = (() => {
     }
     // spoilers: plates on the upper surface ahead of the flaps, hinged at their leading edge
     if (w.spoil && !vert) for (const [a, b] of w.spoil) {
+      yield;
       const n = clamp(Math.round((b - a) / 1.9), 2, 8);
       for (let k = 0; k < n; k++) {
         const ya = a + (b - a) * k / n + 0.02, yb = a + (b - a) * (k + 1) / n - 0.02;
@@ -588,6 +612,7 @@ const ACFrame = (() => {
     }
     // slats: the leading edge; they swing forward and droop about a point behind them
     for (const sl of slats) {
+      yield;
       const ys = [sl.y0, ...Y.filter(v => v > sl.y0 + 1e-3 && v < sl.y1 - 1e-3), sl.y1];
       const qs1 = G.qAt(XS, 1), qs2 = G.qAt(XS2, -1);
       const back = (y, k, out) => { P(y, qs1, A); P(y, qs2, Bv); return out.copy(A).lerp(Bv, k); };
@@ -746,5 +771,5 @@ const ACFrame = (() => {
     mb.surface(G.linSpace(0, 1, [4, 6, 8, 10, 12][ctx.q]), G.linSpace(0, 1, 12), P2, { eu: 1e-4, ev: 1e-4, uv: (u, v, i, j, p) => ctx.uv(p, Math.sin(v * Math.PI * 2) >= 0) });
   }
 
-  return { hull, buildHull, surface, wingDetails, finDetails, NOSES, TAILS, TIPS, paint, grow, mirrorPoly };
+  return { hull, buildHull, hullSteps, surface, surfaceSteps, wingDetails, finDetails, NOSES, TAILS, TIPS, paint, grow, mirrorPoly };
 })();

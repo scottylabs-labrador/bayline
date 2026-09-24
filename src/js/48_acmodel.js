@@ -72,7 +72,7 @@ const ACModel = (() => {
       droop = { bone: b, ang: 0 };
       ctx.skin = (x, y, z, out) => { const s = m.nose - x, k = clamp((hs + 0.25 - s) / 0.5, 0, 1); out[0] = 0; out[1] = b; out[2] = k; };
     }
-    ACFrame.buildHull(H, ctx); ctx.skin = null;
+    yield* ACFrame.hullSteps(H, ctx); ctx.skin = null;
     yield;
     // wings: span bones for the flex (also at every engine), the skin blended between them; panels hang from them
     const w = m.wing;
@@ -95,7 +95,7 @@ const ACModel = (() => {
     const plain = (spec) => ({ ...spec, flap: null, ail: null, spoil: null, slats: false, elev: 0, rud: 0 });   // (far LOD: no moving surfaces)
     if (w) for (const side of [1, -1]) {
       const flex = flexSet(side), engSt = m.engines.filter(e => Math.sign(e.y) === side).map(e => Math.abs(e.y));
-      const ws = ACFrame.surface(opt.far ? plain(w) : w, { ...ctx, side, mat: 'wing', flex, uv: uvWing, rootIn: w.high ? 0 : Math.max(0, (w.y0 || 0) - 0.7), extraStations: engSt, noTip: !!(ACFrame.TIPS[w.tip] || w.tip === 'fence') });
+      const ws = yield* ACFrame.surfaceSteps(opt.far ? plain(w) : w, { ...ctx, side, mat: 'wing', flex, uv: uvWing, rootIn: w.high ? 0 : Math.max(0, (w.y0 || 0) - 0.7), extraStations: engSt, noTip: !!(ACFrame.TIPS[w.tip] || w.tip === 'fence') });
       ws.flex = flex; env.wings.push(ws);
       ACFrame.wingDetails(w, ws, { ...ctx, side, flex, uv: uvWing });
       yield;
@@ -110,7 +110,7 @@ const ACModel = (() => {
       for (const side of [1, -1]) {
         const bone = ht.allMoving ? rig.add(0, pivot.x, pivot.y, side * y0) : ths;
         const spec = { ...ht, y0, tt: ht.t, twist: 0, cam: 0, elev: ht.allMoving ? 0 : ht.elev, flap: null, ail: null, spoil: null, slats: false };
-        const hs = ACFrame.surface(opt.far ? plain(spec) : spec, { ...ctx, side, mat: 'wing', bone, uv: uvT, rootIn: Math.max(0, y0 - 0.35) });
+        const hs = yield* ACFrame.surfaceSteps(opt.far ? plain(spec) : spec, { ...ctx, side, mat: 'wing', bone, uv: uvT, rootIn: Math.max(0, y0 - 0.35) });
         hs.bone = bone; env.htails.push(hs);
       }
     }
@@ -118,7 +118,7 @@ const ACModel = (() => {
     const vt = m.vtail;
     const uvFin = (p, right) => { const a = pf.fin, R = FR[right ? 'r' : 'l']; const xf = clamp((p.x - a.xmin) / (a.xmax - a.xmin), 0, 1), hf = clamp((p.y - a.ymin) / (a.ymax - a.ymin), 0, 1); return [R[0] + R[2] * (right ? xf : 1 - xf), R[1] + R[3] * (1 - hf)]; };
     const finSpec = { x: vt.x, y0: 0, span: vt.h, c0: vt.c0, c1: vt.c1, sweep: vt.sweep, z: vt.z, t: vt.t, tt: vt.t, cam: 0, rud: !opt.far && vt.rud > 0.01 ? vt.rud : 0, rudSplit: vt.split };
-    env.fin = ACFrame.surface(finSpec, { ...ctx, side: 1, mat: 'fin', vertical: true, bone: 0, uv: uvFin, rootIn: -Math.min(1.2, (m.fus.h || m.fus.d || 2) * 0.3) });
+    env.fin = yield* ACFrame.surfaceSteps(finSpec, { ...ctx, side: 1, mat: 'fin', vertical: true, bone: 0, uv: uvFin, rootIn: -Math.min(1.2, (m.fus.h || m.fus.d || 2) * 0.3) });
     ACFrame.finDetails(vt, env.fin, { ...ctx, uv: uvFin });
     yield;
     // engines, propellers, rotors, gear, lights; the cockpit

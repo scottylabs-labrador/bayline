@@ -556,7 +556,7 @@ const ACParts = (() => {
         // a point on the tyre: across the disc (dz) and along the axle (dy), in the tilted frame
         const x = wc.x + dx, s = H.nose - x, py = cy + dy * ca - sd * dz * sa * 0, pz = cz + dz * ca + sd * dy * sa;
         if (s < 0 || s > H.L) { bad++; continue; }
-        if (!H.polar(s, py - Math.abs(dz) * sa, pz).inside) bad++;
+        if (!H.inside(s, py - Math.abs(dz) * sa, pz)) bad++;
       }
       const score = bad + sh * 1.5 + lift * 1.2 + Math.max(0, cy - keelY) * 0.35 + Math.abs(cz) * 0.15;
       if (!best || score < best.score) best = { a, sh, lift, score };
