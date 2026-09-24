@@ -81,6 +81,8 @@ const Player = (() => {
 
   function setMode(m, opts = {}) {
     if (m !== 'fly' && typeof Flight !== 'undefined' && Flight.active) Flight.stop(true);   // a train view ends the flight (it would keep the keys and the camera)
+    // the trains live in the Bay frame: coming back from a flight elsewhere on Earth, bring the world home first
+    if (['cab', 'onboard', 'chase', 'trackside', 'heli'].includes(m) && typeof Globe !== 'undefined' && !Globe.frame.bay) Globe.setFrame(Geo.LAT0, Geo.LON0);
     const prev = mode;
     if (m === 'cab' || m === 'onboard' || m === 'chase' || m === 'trackside' || m === 'heli') {
       if (!focusTrain()) { const tr = Sim.nearestTrain(cam().position, 1e9); if (!tr) { emit('toast', 'No trains running right now: try Explore at another time'); return; } setFocus(tr.key); }
