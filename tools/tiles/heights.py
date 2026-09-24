@@ -170,8 +170,9 @@ def med_pred(q):
     return pred
 
 
-def encode(H):
-    q = np.clip(np.round((H.astype(np.float64) + 200.0) * 16.0), 0, 65535).astype(np.int64)
+def encode(H, scale=16.0, offset=200.0):
+    """q = round((h + offset) * scale): tiles/h uses 1/16 m; tiles/h9 (lidar) 1/64 m (see its index.json)."""
+    q = np.clip(np.round((H.astype(np.float64) + offset) * scale), 0, 65535).astype(np.int64)
     r = q - med_pred(q)
     assert r.min() >= -32768 and r.max() <= 32767, (r.min(), r.max())
     zz = ((r << 1) ^ (r >> 63)) & 0xFFFF
@@ -243,10 +244,10 @@ except Exception:          # numba missing: slow pure-python fallback
         return q
 
 
-def decode_fast(blob):
+def decode_fast(blob, scale=16.0, offset=200.0):
     zz = np.frombuffer(zlib.decompress(blob), '<u2').astype(np.int64).reshape(HN, HN)
     r = (zz >> 1) ^ -(zz & 1)
-    return _med_decode(r).astype(np.float32) / 16.0 - 200.0
+    return _med_decode(r).astype(np.float32) / scale - offset
 
 
 def load(L, tx, ty):
