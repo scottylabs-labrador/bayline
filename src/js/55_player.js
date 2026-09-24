@@ -47,7 +47,7 @@ const Player = (() => {
       if (pointerLocked) { look.yaw += e.movementX * 0.0022; look.pitch = U.clamp(look.pitch - e.movementY * 0.0022, -1.45, 1.45); return; }
       if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
         if (needsLock()) { look.yaw += dx * 0.004; look.pitch = U.clamp(look.pitch - dy * 0.004, -1.45, 1.45); }
-        else { orbit.yaw -= dx * 0.005; orbit.pitch = U.clamp(orbit.pitch + dy * 0.004, -0.2, 1.52); } }
+        else { orbit.yaw -= dx * 0.005; orbit.pitch = U.clamp(orbit.pitch + dy * 0.004, -0.2, 1.52); orbit.userT = performance.now(); orbit.yawGoal = undefined; } }
     });
     document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === c; emit('lock', pointerLocked); });
     c.addEventListener('wheel', (e) => { e.preventDefault();
@@ -60,7 +60,7 @@ const Player = (() => {
     c.addEventListener('touchstart', (e) => { if (e.touches.length === 1) t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY }; if (e.touches.length === 2) pinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }, { passive: true });
     c.addEventListener('touchmove', (e) => {
       if (e.touches.length === 1 && t0) { const dx = e.touches[0].clientX - t0.x, dy = e.touches[0].clientY - t0.y; t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        if (needsLock()) { look.yaw += dx * 0.005; look.pitch = U.clamp(look.pitch - dy * 0.005, -1.45, 1.45); } else { orbit.yaw -= dx * 0.006; orbit.pitch = U.clamp(orbit.pitch + dy * 0.005, -0.2, 1.52); } }
+        if (needsLock()) { look.yaw += dx * 0.005; look.pitch = U.clamp(look.pitch - dy * 0.005, -1.45, 1.45); } else { orbit.yaw -= dx * 0.006; orbit.pitch = U.clamp(orbit.pitch + dy * 0.005, -0.2, 1.52); orbit.userT = performance.now(); orbit.yawGoal = undefined; } }
       if (e.touches.length === 2) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); if (pinch) orbit.dist = U.clamp(orbit.dist * pinch / d, 8, 60000); pinch = d; }
     }, { passive: true });
   }
@@ -79,6 +79,29 @@ const Player = (() => {
     if (ap !== null) return Math.max(ap, Terrain.h(x, z));
     const p = Stations.platformY(x, z); const t = Terrain.h(x, z); return p !== null ? Math.max(p, t) : Math.max(t, Terrain.isWater(x, z) ? 0.3 : t); }
 
+  // line of sight for the chase camera: obstacles near the train (buildings, tree crowns) cached every half second
+  const los = { lift: null, t: 0, x: 1e9, z: 1e9, b: [], tr: [] };
+  function clearSight(tx, ty, tz, cx, cy, cz) {
+    const now = performance.now();
+    if (now - los.t > 500 || Math.hypot(tx - los.x, tz - los.z) > 60) {
+      los.t = now; los.x = tx; los.z = tz; los.b.length = 0; los.tr.length = 0;
+      const R = Math.hypot(cx - tx, cz - tz) + 40;
+      if (typeof Towns !== 'undefined' && Towns.buildingsAt) for (const b of Towns.buildingsAt(tx, tz, R)) { if (b.height < 4) continue;
+        let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; const P = b.pts; for (let i = 0; i < P.length; i += 2) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); z0 = Math.min(z0, P[i + 1]); z1 = Math.max(z1, P[i + 1]); }
+        los.b.push({ P, x0, x1, z0, z1, top: groundAt(b.x, b.z) + b.height }); }
+      if (typeof Flora !== 'undefined' && Flora.treesNear) Flora.treesNear(tx, tz, R, los.tr);
+    }
+    let need = cy;
+    for (let k = 3; k <= 12; k++) {            // samples from a fifth of the way out to the camera
+      const f = k / 12, x = tx + (cx - tx) * f, z = tz + (cz - tz) * f; let top = -1e9;
+      for (const b of los.b) { if (x < b.x0 || x > b.x1 || z < b.z0 || z > b.z1 || b.top <= top) continue; if (inRingP(b.P, x, z)) top = b.top; }
+      for (const t of los.tr) { if (t.top <= top) continue; const dx = x - t.x, dz = z - t.z; if (dx * dx + dz * dz < t.r * t.r) top = t.top; }
+      if (top > -1e8) { const y = ty + (need - ty) * f; if (y < top + 1.5) need = ty + (top + 1.5 - ty) / f; }
+    }
+    return Math.min(need, ty + 140);
+  }
+  function inRingP(P, x, z) { let c = false; for (let i = 0, n = P.length / 2, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; }
+
   function setMode(m, opts = {}) {
     if (m !== 'fly' && typeof Flight !== 'undefined' && Flight.active) Flight.stop(true);   // a train view ends the flight (it would keep the keys and the camera)
     // the trains live in the Bay frame: coming back from a flight elsewhere on Earth, bring the world home first
@@ -93,7 +116,7 @@ const Player = (() => {
     if (m === 'cab') { look.yaw = 0; look.pitch = -0.04; fovTarget = 58; }
     if (m === 'onboard') { pendingEnter = { car: opts.car, door: opts.door, t: 0 }; enterTrain(opts.car, opts.door); if (ob.key) pendingEnter = null; }
     if (m === 'cab') pendingCab = 0;
-    if (m === 'chase') { orbit.rel = true; orbit.yaw = Math.PI + 0.35; orbit.pitch = 0.22; orbit.dist = 70; fovTarget = 55; }
+    if (m === 'chase') { orbit.rel = true; orbit.yaw = Math.PI + 0.35; orbit.yawGoal = undefined; orbit.pitch = 0.22; orbit.dist = 70; fovTarget = 55; los.lift = null; }
     if (m === 'orbit') { orbit.rel = false; fovTarget = 55; if (opts.target) { setFocus(null); orbit.tx = opts.target.x; orbit.ty = opts.target.y; orbit.tz = opts.target.z; } if (opts.dist) orbit.dist = opts.dist; }
     if (m === 'trackside') { ts.s = -1; }
     if (m === 'heli') { heli.ang = Math.random() * 6; fovTarget = 40; }
@@ -273,7 +296,7 @@ const Player = (() => {
         if (mode === 'chase') { const car = leadCar(tr); if (!car) { setMode('orbit'); break; }
           const cs = cars(tr); const mid = cs[Math.min(1, cs.length - 1)] && (tr.dir ? cs[1] : cs[cs.length - 2]) || car; const g = car.group;
           tx = U.lerp(g.position.x, mid.group.position.x, 0.5); ty = g.position.y + 2.5; tz = U.lerp(g.position.z, mid.group.position.z, 0.5);
-          Track.frame(tr.s, F); base = Math.atan2(F.dx, -F.dz) + (tr.dir ? 0 : Math.PI); orbit.tx = tx; orbit.ty = ty; orbit.tz = tz; }
+          Track.frame(tr.s, F); base = Math.atan2(F.dx, F.dz) + (tr.dir ? 0 : Math.PI); orbit.tx = tx; orbit.ty = ty; orbit.tz = tz; }   // (base: the direction of travel; orbit.yaw pi = right behind)
         else if (!orbit.rel) { // free orbit: WASD pans the target
           const sp = orbit.dist * 0.9 * dt; const cy = Math.sin(orbit.yaw), sy = Math.cos(orbit.yaw);
           if (down('KeyW', 'ArrowUp')) { orbit.tx -= cy * sp; orbit.tz -= sy * sp; } if (down('KeyS', 'ArrowDown')) { orbit.tx += cy * sp; orbit.tz += sy * sp; }
@@ -282,9 +305,27 @@ const Player = (() => {
           orbit.ty = U.lerp(orbit.ty, groundAt(orbit.tx, orbit.tz), Math.min(1, dt * 3)); tx = orbit.tx; ty = orbit.ty; tz = orbit.tz;
           if (focus && tr) { const car = leadCar(tr); if (car) { orbit.tx = U.lerp(orbit.tx, car.group.position.x, Math.min(1, dt * 4)); orbit.tz = U.lerp(orbit.tz, car.group.position.z, Math.min(1, dt * 4)); orbit.ty = car.group.position.y + 2; } }
         }
+        if (mode === 'chase') {                 // blocked on this side? swing (smoothly) to whichever side needs the least lift
+          const now = performance.now();
+          if (now - (orbit.userT || 0) > 6000 && now - (los.sideT || 0) > 2500) {
+            los.sideT = now; let best = null;
+            for (const oy of [orbit.yaw, 2 * Math.PI - orbit.yaw, Math.PI]) {
+              const y2 = base + oy, h2 = ty + Math.sin(orbit.pitch) * orbit.dist, r2 = Math.cos(orbit.pitch) * orbit.dist;
+              const lift = clearSight(tx, ty, tz, tx + Math.sin(y2) * r2, h2, tz + Math.cos(y2) * r2) - h2;
+              if (!best || lift < best.lift - 8) best = { oy, lift };
+            }
+            if (best && Math.abs(best.oy - orbit.yaw) > 0.01) orbit.yawGoal = best.oy;
+          }
+          if (orbit.yawGoal !== undefined) { const dy2 = orbit.yawGoal - orbit.yaw; orbit.yaw += dy2 * Math.min(1, dt * 0.9); if (Math.abs(dy2) < 0.005) orbit.yawGoal = undefined; }
+        }
         const yaw = base + orbit.yaw, p = orbit.pitch, d = orbit.dist;
         let cx = tx + Math.sin(yaw) * Math.cos(p) * d, cz = tz + Math.cos(yaw) * Math.cos(p) * d, cy = ty + Math.sin(p) * d;
         const gy = groundAt(cx, cz) + 1.5; if (cy < gy) cy = gy;
+        if (mode === 'chase') {                 // a crane: rise until buildings and tree crowns no longer hide the train
+          const want = Math.max(cy, clearSight(tx, ty, tz, cx, cy, cz));
+          los.lift = los.lift === null ? want - cy : U.lerp(los.lift, want - cy, Math.min(1, dt * (want - cy > los.lift ? 2.5 : 0.8)));
+          cy += Math.max(0, los.lift);
+        } else los.lift = null;
         c.position.set(cx, cy, cz); c.up.set(0, 1, 0); c.lookAt(tx, ty, tz);
         break;
       }

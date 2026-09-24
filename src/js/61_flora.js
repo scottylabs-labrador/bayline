@@ -1249,8 +1249,20 @@ const Flora = (() => {
   }
   // debug / preview: feed a tile from bytes instead of the network (same record layout as the tiles)
   function addTestTile(tx, ty, bytes) { const t = { tx, ty, state: 'new', n: 0, prio: 1, dead: false, _bytes: bytes }; tiles.set(tkey(tx, ty), t); return loadTile(t); }
+  // trees near a point (loaded tiles only): [{ x, z, y0 (ground), top, r (crown radius) }], for line-of-sight tests
+  function treesNear(x, z, r, out = []) {
+    const [a0, b0] = tileOf(x - r, z - r), [a1, b1] = tileOf(x + r, z + r);
+    for (let ty = b0; ty <= b1; ty++) for (let tx = a0; tx <= a1; tx++) {
+      const t = tiles.get(tkey(tx, ty)); if (!t || t.state !== 'ready' || !t.n) continue;
+      const D = t.D, K = t.K;
+      for (let i = 0; i < t.n; i++) { const b = i * NF, dx = D[b] - x, dz = D[b + 2] - z; if (dx * dx + dz * dz > r * r) continue;
+        const dim = DIM[KINDS[K[i]]] || [10, 5], sx = Math.hypot(D[b + 3], D[b + 4]);
+        out.push({ x: D[b], z: D[b + 2], y0: D[b + 1], top: D[b + 1] + dim[0] * D[b + 5], r: dim[1] * sx }); }
+    }
+    return out;
+  }
   return {
-    init, update, hasData, covers: hasData, setQuality, dispose, group, stats, KINDS, DIM,
+    init, update, hasData, covers: hasData, setQuality, dispose, group, stats, KINDS, DIM, treesNear,
     get ready() { return ready; }, get quality() { return qName; }, get radii() { return { near: q.near, mid: q.mid, far: q.far, load: q.load }; },
     _geo: { near: geoNear, mid: geoMid }, _atlas: () => atlasTex, _imp: () => impTex, _tiles: tiles, addTestTile,
   };

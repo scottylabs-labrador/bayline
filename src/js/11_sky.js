@@ -440,7 +440,8 @@ float skyFogDensity(vec3 p) {
     sunLight.color.setRGB(Ts[0] / mx, Ts[1] / mx, Ts[2] / mx);
     // under a heavy overcast the sun is mostly hidden (not above the deck: the base is ~1 km thick at most here)
     const deck = (kind === 'auto' && live && live.base ? live.base : kind === 'rain' || kind === 'snow' ? 900 : kind === 'storm' ? 700 : 1650);
-    const overcast = U.smooth(0.55, 0.95, wClouds) * (1 - U.smooth(deck + 300, deck + 1100, camPos.y));
+    const heavy = kind === 'rain' || kind === 'storm' || kind === 'snow' ? 1 : U.smooth(0.8, 0.97, wClouds);   // (broken cloud keeps its sun and moving shadows)
+    const overcast = heavy * (1 - U.smooth(deck + 300, deck + 1100, camPos.y));
     st.overcast = overcast;
     sunLight.intensity = SUN_SCENE * up * Math.min(1, lum / 0.82) * (0.95 + 0.05 * wHaze / 2.2) * (1 - 0.82 * overcast);
     uniforms.uSkySunColor.value.set(Ts[0] * SUN_SCENE * up, Ts[1] * SUN_SCENE * up, Ts[2] * SUN_SCENE * up);
