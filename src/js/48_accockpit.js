@@ -343,12 +343,17 @@ const ACCockpit = (() => {
     // ---- materials (shown only from inside), animation
     // (made once the textures exist: the cabin shares the part palette)
     const materials = {};
+    // (the interior fills the view: below 'ultra' it is lit with the cheaper Lambert model, which has no sky
+    // reflections, so it is lifted with a little of its own colour as emissive)
     function makeMaterials(T) {
+      const rich = q >= 3;
       Object.assign(materials, {
-        cabin: new THREE.MeshStandardMaterial({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, roughness: 1, metalness: 1, envMapIntensity: H.canopy ? 0.8 : 0.35 }),
+        cabin: rich ? new THREE.MeshStandardMaterial({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, roughness: 1, metalness: 1, envMapIntensity: H.canopy ? 0.8 : 0.35 })
+          : new THREE.MeshLambertMaterial({ map: T.pal.map, emissiveMap: T.pal.map, emissive: 0xffffff, emissiveIntensity: H.canopy ? 0.12 : 0.07 }),
         screens: new THREE.MeshBasicMaterial({ map: panelT, toneMapped: false }),
         fcu: new THREE.MeshBasicMaterial({ map: fcu ? fcu.tex : null, toneMapped: false }),
-        panels: new THREE.MeshStandardMaterial({ map: PA.map, emissiveMap: PA.emis, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.7, metalness: 0.05, envMapIntensity: 0.35 }),
+        panels: rich ? new THREE.MeshStandardMaterial({ map: PA.map, emissiveMap: PA.emis, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.7, metalness: 0.05, envMapIntensity: 0.35 })
+          : new THREE.MeshLambertMaterial({ map: PA.map, emissiveMap: PA.emis, emissive: 0xffffff, emissiveIntensity: 0 }),
       });
       if (!fcu) materials.fcu.visible = false;
       if (env.ewdMesh) materials.ewd = new THREE.MeshBasicMaterial({ map: ewd.t, toneMapped: false });
