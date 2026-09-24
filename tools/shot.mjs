@@ -22,6 +22,13 @@ const gl = flag('gpu') ? [] : ['--use-gl=angle', '--use-angle=swiftshader', '--e
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run',
   '--no-default-browser-check', '--ignore-gpu-blocklist', '--allow-file-access-from-files', '--hide-scrollbars', '--mute-audio',
   `--window-size=${W},${H}`, ...gl, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+// never leave Chrome (or its profile, often hundreds of MB) behind: normal exit, errors, Ctrl-C or a watchdog's kill
+let cleaned = false;
+function cleanup() { if (cleaned) return; cleaned = true; try { chrome.kill('SIGKILL'); } catch {} try { rmSync(prof, { recursive: true, force: true }); } catch {} }
+process.on('exit', cleanup);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { cleanup(); process.exit(130); });
+process.on('uncaughtException', (e) => { console.error(e); cleanup(); process.exit(3); });
+process.on('unhandledRejection', (e) => { console.error(e); cleanup(); process.exit(3); });
 let wsUrl = null;
 const t0 = Date.now();
 while (!wsUrl && Date.now() - t0 < 20000) {
@@ -31,7 +38,7 @@ while (!wsUrl && Date.now() - t0 < 20000) {
       const pg = list.find(t => t.type === 'page'); if (pg) wsUrl = pg.webSocketDebuggerUrl; } catch {} }
   if (!wsUrl) await new Promise(r => setTimeout(r, 100));
 }
-if (!wsUrl) { console.error('chrome did not start'); chrome.kill(); process.exit(2); }
+if (!wsUrl) { console.error('chrome did not start'); process.exit(2); }
 const ws = new WebSocket(wsUrl); await new Promise(r => ws.onopen = r);
 let id = 0; const pending = new Map(); let threw = false;
 ws.onmessage = ev => { const m = JSON.parse(ev.data);
@@ -54,5 +61,5 @@ await new Promise(r => setTimeout(r, WAIT));
 await ev(opt('eval2'));
 const shot = await send('Page.captureScreenshot', { format: 'png' });
 if (out) { writeFileSync(out, Buffer.from(shot.result.data, 'base64')); console.log('saved', out); }
-ws.close(); chrome.kill(); try { rmSync(prof, { recursive: true, force: true }); } catch {}
+ws.close(); cleanup();
 process.exit(threw ? 1 : 0);
