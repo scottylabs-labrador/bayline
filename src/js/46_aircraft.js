@@ -82,7 +82,7 @@ const AIRCRAFT = (() => {
         htail: { x: -13.8, span: 6.25, c0: 3.7, c1: 1.3, sweep: 32, dih: 6, z: -0.87, t: 0.1, elev: 0.3 },
         vtail: { x: -11.8, h: 5.9, c0: 5.9, c1: 2.2, sweep: 36, z: -1.97, t: 0.1, rud: 0.32 },
         engines: [{ type: 'fan', x: 3.2, y: -5.75, z: 1.53, d: 2.37, len: 4.3, pylon: 1.0, fanD: 2.06, style: 'leap' }, { type: 'fan', x: 3.2, y: 5.75, z: 1.53, d: 2.37, len: 4.3, pylon: 1.0, fanD: 2.06, style: 'leap' }],
-        gear: { noseX: 11.34, mainX: -1.3, track: 3.8 }, cockpit: { x: 14.4, z: -0.9, y: -0.55, style: 'airbus' },
+        gear: { noseX: 11.34, mainX: -1.3, track: 3.8 }, cockpit: { x: 13.9, z: -0.9, y: -0.55, style: 'airbus' },
         windows: { x0: 11.2, x1: -12.0, pitch: 0.533, z: -0.45, doors: [12.3, 7.4, -10.6] }, livery: { base: '#f7f7f5', tail: '#b3261e', stripe: '#1d3557', belly: '#dfe2e6', reg: 'N320BL' } },
     },
     // ------------------------------------------------------------------ Boeing 737-800
@@ -113,7 +113,7 @@ const AIRCRAFT = (() => {
         htail: { x: -14.8, span: 7.2, c0: 3.8, c1: 1.25, sweep: 32, dih: 7, z: -1, t: 0.1, elev: 0.3 },
         vtail: { x: -12.9, h: 6.0, c0: 6.1, c1: 1.9, sweep: 36, z: -1.95, t: 0.1, rud: 0.3, dorsal: 3.2 },
         engines: [{ type: 'fan', x: 4.4, y: -4.9, z: 1.3, d: 2.1, len: 4.2, pylon: 0.5, fanD: 1.55, style: 'cfm' }, { type: 'fan', x: 4.4, y: 4.9, z: 1.3, d: 2.1, len: 4.2, pylon: 0.5, fanD: 1.55, style: 'cfm' }],
-        gear: { noseX: 14.0, mainX: -1.6, track: 2.86, doors: false }, cockpit: { x: 15.9, z: -0.85, y: -0.53, style: 'boeing' },
+        gear: { noseX: 14.0, mainX: -1.6, track: 2.86, doors: false }, cockpit: { x: 15.4, z: -0.85, y: -0.53, style: 'boeing' },
         windows: { x0: 12.8, x1: -12.8, pitch: 0.508, z: -0.45, doors: [14.4, 9.0, -12.0] }, livery: { base: '#f7f7f5', tail: '#1d3557', stripe: '#b3261e', belly: '#dfe2e6', reg: 'N738BL' } },
     },
     // ------------------------------------------------------------------ Boeing 787-9
@@ -144,7 +144,7 @@ const AIRCRAFT = (() => {
         htail: { x: -22.5, span: 9.8, c0: 5.8, c1: 1.9, sweep: 35, dih: 7, z: -1.25, t: 0.1, elev: 0.3 },
         vtail: { x: -19.8, h: 9.2, c0: 8.8, c1: 3.0, sweep: 40, z: -2.75, t: 0.1, rud: 0.32 },
         engines: [{ type: 'fan', x: 6.0, y: -9.9, z: 2.3, d: 3.3, len: 6.6, pylon: 1.2, fanD: 2.85, style: 'chevron' }, { type: 'fan', x: 6.0, y: 9.9, z: 2.3, d: 3.3, len: 6.6, pylon: 1.2, fanD: 2.85, style: 'chevron' }],
-        gear: { noseX: 23.1, mainX: -2.5, track: 4.9, bogie: 4 }, cockpit: { x: 26.8, z: -1.35, y: -0.6, style: 'boeing' },
+        gear: { noseX: 23.1, mainX: -2.5, track: 4.9, bogie: 4 }, cockpit: { x: 26.3, z: -1.35, y: -0.6, style: 'boeing' },
         windows: { x0: 22.0, x1: -18.5, pitch: 0.81, z: -0.55, h: 0.47, doors: [24.5, 13.0, -3.0, -16.5] }, livery: { base: '#f7f7f5', tail: '#1d3557', stripe: '#b3261e', belly: '#dfe2e6', reg: 'N789BL' } },
     },
     // ------------------------------------------------------------------ Boeing 747-400
@@ -243,7 +243,7 @@ const AIRCRAFT = (() => {
         vtail: { x: -24.2, h: 14.2, c0: 14.5, c1: 4.6, sweep: 40, z: -4.7, t: 0.1, rud: 0.3 },
         engines: [{ type: 'fan', x: 1.5, y: -25.8, z: 2.6, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' }, { type: 'fan', x: 7.0, y: -15.1, z: 3.2, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' },
           { type: 'fan', x: 7.0, y: 15.1, z: 3.2, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' }, { type: 'fan', x: 1.5, y: 25.8, z: 2.6, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' }],
-        gear: { body6: true }, cockpit: { x: 30.6, z: -0.3, y: -0.6, style: 'airbus' },
+        gear: { body6: true }, cockpit: { x: 30.0, z: -0.3, y: -0.6, style: 'airbus' },
         windows: { x0: 29.5, x1: -21.5, pitch: 0.53, z: 1.2, doors: [30.5, 20.5, 8.5, -4.0, -15.5], upper: { x0: 27.5, x1: -19.5, z: -2.3 } },
         livery: { base: '#f7f7f5', tail: '#1d3557', stripe: '#b3261e', belly: '#dfe2e6', reg: 'N380BL' } },
     },

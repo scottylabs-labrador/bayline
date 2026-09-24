@@ -136,11 +136,23 @@ const ACCockpit = (() => {
 
     // ---- the shell with the windows cut out (jets: the nose panes; others: panes from their view angles)
     const panes = (H.paneGlass || []).slice().concat(H.openings || []);
-    const shellS0 = Math.max(0.3, sE - (style === 'fighter' ? 1.6 : 2.2)), shellS1 = sE + (style === 'ga' || style === 'heli' ? 1.2 : style === 'fighter' ? 1.0 : 1.6);
+    // (the shell starts ahead of every window, so its closing bulkhead never shows through one)
+    const paneS = panes.length ? Math.min(...panes.map(P => Math.min(...P.map(p => p[0])))) : sE;
+    const shellS0 = Math.max(0.05, Math.min(sE - (style === 'fighter' ? 1.6 : 2.2), paneS - 0.5)), shellS1 = sE + (style === 'ga' || style === 'heli' ? 1.2 : style === 'fighter' ? 1.0 : 1.6);
     {
       {
         cab.pal = pal(style === 'airbus' ? 'cabinWall' : style === 'boeing' ? 'cabinWall' : style === 'fighter' ? 'panelBoeing' : 'tan');
-        shell(H, cab, shellS0, shellS1, panes, style === 'ga' || style === 'heli' || style === 'fighter' ? 0.03 : 0.06, q, () => cab.pal);
+        const wall = style === 'ga' || style === 'heli' || style === 'fighter' ? 0.03 : 0.06;
+        shell(H, cab, shellS0, shellS1, panes, wall, q, () => cab.pal);
+        // a bulkhead closing the shell's front (the nose ahead of the cockpit), facing aft
+        if (shellS0 > 0.05) {
+          cab.pal = pal('black');
+          const n = 32, c0 = H.sec(shellS0), ctr = new V3(m.nose - shellS0, c0.yc, 0), p = new V3(), a2 = new V3(), b2 = new V3(), nn = new V3(-1, 0, 0);
+          const ids = []; for (let k = 0; k <= n; k++) { H.pt(shellS0, Math.PI * 2 * k / n, p); const d = p.clone().sub(ctr); p.addScaledVector(d.normalize(), -wall); ids.push(cab.v(p.x, p.y, p.z, nn.x, nn.y, nn.z)); }
+          const ci = cab.v(ctr.x, ctr.y, ctr.z, nn.x, nn.y, nn.z);          // (dark: only ever glimpsed)
+          for (let k = 0; k < n; k++) cab.tri(ci, ids[k + 1], ids[k]);
+          void a2; void b2;
+        }
         cab.pal = null;
         // the rear wall (a door in the middle) and the floor
         // (the rear wall reaches from the floor to the roof, or to the rails under a canopy)
@@ -166,13 +178,22 @@ const ACCockpit = (() => {
       const airbus = st === 'airbus', panelCol = airbus ? 'panelAirbus' : 'panelBoeing';
       // glare shield: a padded shelf from the windscreen base (about 20 degrees below the eye) back toward the
       // pilots, the FCU / MCP on its face; the main panel below it, tilted back, six displays
-      const gx = E.x + 0.7, gy = E.y - 0.41, gxF = E.x + 1.02, gyF = E.y - 0.36, wHalf = Math.min(halfW(m.nose - gx, gy) - 0.03, 1.25);
+      // (the shelf's front edge meets the windscreen's base: the higher of the front pane's two lowest corners, so
+      // the eye never looks down past it into the nose)
+      let gxF = E.x + 1.02, gyF = E.y - 0.36;
+      if (H.panes && H.panes[0]) {        // (the front pane's lower edge: the edge lowest on average; its higher end)
+        const cs = H.panes[0].poly.map(([ps, pt]) => { const p = new V3(); H.pt(ps, pt, p); return p; });
+        let best = 0; for (let k = 1; k < cs.length; k++) if (cs[k].y + cs[(k + 1) % cs.length].y < cs[best].y + cs[(best + 1) % cs.length].y) best = k;
+        const e0 = cs[best], e1 = cs[(best + 1) % cs.length], lo = e0.y > e1.y ? e0 : e1;
+        gxF = Math.min(lo.x - 0.02, E.x + 1.4); gyF = Math.min(lo.y - 0.01, E.y - 0.12);
+      }
+      const gx = Math.min(E.x + 0.7, gxF - 0.25), gy = Math.min(E.y - 0.41, gyF - 0.03), wHalf = Math.min(halfW(m.nose - gx, gy) - 0.03, 1.25);
       const shelf = (y0, y1, x0, x1, w2) => {
         const a2 = cab.v(x0, y0, -w2, 0, 1, 0), b2 = cab.v(x0, y0, w2, 0, 1, 0), c2 = cab.v(x1, y1, w2, 0, 1, 0), d2 = cab.v(x1, y1, -w2, 0, 1, 0);
         cab.quad(a2, b2, c2, d2);
       };
       cab.pal = pal('glareshield');
-      shelf(gy, gyF, gx, gxF, wHalf);
+      shelf(gy, gyF, gx, gxF, wHalf); shelf(gyF, gyF - 0.02, gxF, gxF + 1.1, wHalf);      // (on into the nose, under the windscreen)
       cab.box(gx - 0.005, gy - 0.06, 0, 0.012, 0.12, wHalf * 2);                 // the face under the lip
       cab.pal = null;
       const fc = document.createElement('canvas'); fc.width = 1024; fc.height = 96; const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace; ft.anisotropy = 8; ft.flipY = false;
@@ -243,8 +264,8 @@ const ACCockpit = (() => {
       const fp = (H.panes || [])[0];
       if (fp) {
         const pm = B.mb('parts'); pm.pal = pal('black'); pm.bind(0);
-        const P0 = fp.poly; let best = 0, bs = 1e9;
-        for (let k = 0; k < P0.length; k++) { const a0 = P0[k], b0 = P0[(k + 1) % P0.length], sm = (a0[0] + b0[0]) / 2; if (sm < bs) { bs = sm; best = k; } }
+        const P0 = fp.poly, Y0 = P0.map(([ps, pt]) => { const p = new V3(); H.pt(ps, pt, p); return p.y; }); let best = 0, bs = 1e9;
+        for (let k = 0; k < P0.length; k++) { const sm = Y0[k] + Y0[(k + 1) % P0.length]; if (sm < bs) { bs = sm; best = k; } }
         const e0 = P0[best], e1 = P0[(best + 1) % P0.length], inb = e0[1] < e1[1] ? e0 : e1, outb = e0[1] < e1[1] ? e1 : e0;
         for (const sd of [1, -1]) {
           const a2 = new V3(), b2 = new V3(), n2 = new V3(); H.pt(inb[0] + 0.06, inb[1] + 0.03, a2); H.pt(outb[0] + 0.06, outb[1] - 0.25 * (outb[1] - inb[1]), b2);
@@ -322,10 +343,10 @@ const ACCockpit = (() => {
     const materials = {};
     function makeMaterials(T) {
       Object.assign(materials, {
-        cabin: new THREE.MeshStandardMaterial({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, roughness: 1, metalness: 1 }),
+        cabin: new THREE.MeshStandardMaterial({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, roughness: 1, metalness: 1, envMapIntensity: H.canopy ? 0.8 : 0.35 }),
         screens: new THREE.MeshBasicMaterial({ map: panelT, toneMapped: false }),
         fcu: new THREE.MeshBasicMaterial({ map: fcu ? fcu.tex : null, toneMapped: false }),
-        panels: new THREE.MeshStandardMaterial({ map: PA.map, emissiveMap: PA.emis, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.7, metalness: 0.05 }),
+        panels: new THREE.MeshStandardMaterial({ map: PA.map, emissiveMap: PA.emis, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.7, metalness: 0.05, envMapIntensity: 0.35 }),
       });
       if (!fcu) materials.fcu.visible = false;
       if (env.ewdMesh) materials.ewd = new THREE.MeshBasicMaterial({ map: ewd.t, toneMapped: false });

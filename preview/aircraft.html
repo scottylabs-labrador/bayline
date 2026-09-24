@@ -91,7 +91,7 @@
 
   // ---------------------------------------------------------------- the aircraft and its state
   const t0 = performance.now();
-  const model = ACModel.build(T); scene.add(model.root);
+  const model = ACModel.build(T); scene.add(model.root); window.__model = model;
   const buildMs = performance.now() - t0;
   const ac = FDM.create(f); ac.place({ x: 0, y: 100, z: 0, hdg: 0, onGround: !P.air, flaps: 0, gear: 1 });
   const nF = f.flaps.length - 1;
