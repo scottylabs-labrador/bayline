@@ -19,7 +19,9 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     await step(0.58, 'Reading the timetable…');
     await Sim.init();
     const keepOut = (x, z) => { const L = World.landmarks; if (!L) return false; for (const l of L.list) { const r = l.radius || 0; if (r > 0 && Math.abs(x - l.x) < r && Math.abs(z - l.z) < r && Math.hypot(x - l.x, z - l.z) < r) return true; } return false; };
-    const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.h(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), isWater: (x, z) => Terrain.isWater(x, z), keepOut,
+    // groundY = the base surface (L7): streets, buildings, landmarks and road traffic are built on it, and the lidar
+    // detail layer is held at zero under them, so they meet the drawn ground exactly whatever has streamed
+    const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.hBase(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), isWater: (x, z) => Terrain.isWater(x, z), keepOut,
       stationList: Stations.list.map(s => ({ id: s.id, name: s.name, x: s.x, z: s.z, s: s.s })) };
     if (typeof Towns !== 'undefined') { await step(0.64, 'Raising the towns…'); await safeA('towns', async () => { await Towns.init(ctx); Env.scene.add(Towns.group); }); }
     if (typeof Landmarks !== 'undefined') { await step(0.8, 'Placing landmarks…'); World.landmarks = safe('landmarks', () => { const L = Landmarks.stream ? Landmarks.stream(ctx) : Landmarks.build(ctx); Env.scene.add(L.group); return L; }); }

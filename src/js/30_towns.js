@@ -1454,7 +1454,7 @@ const Towns = (() => {
     const ok = () => { if (t.state === 'ground') t.state = 'ready'; };
     if (!t.sky && hasTerrain() && typeof Terrain.ensure === 'function') {
       t.state = 'ground';
-      try { Promise.resolve(Terrain.ensure(t.ox - 15, t.oz - 15, t.ox + TILE + 15, t.oz + TILE + 15)).then(ok, ok); setTimeout(ok, 9000); } catch (e) { t.state = 'ready'; }
+      try { Promise.resolve(Terrain.ensure(t.ox - 15, t.oz - 15, t.ox + TILE + 15, t.oz + TILE + 15, 3, 7)).then(ok, ok); setTimeout(ok, 9000); } catch (e) { t.state = 'ready'; }
     } else t.state = 'ready';
   }
   function unload(t, map) {

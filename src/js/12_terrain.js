@@ -1,9 +1,12 @@
 // Terrain v2: streamed, chunked-LOD photoreal ground. A camera-driven quadtree over the SPEC_v2 tile grid
-// (L0 102.4 km … L8 400 m) draws one mesh per node; each node uses the finest data loaded at or above it:
-// NAIP imagery (L0–8), 129² heights (L0–7) and 128² masks (L0–7), with the v1 64 m field as the ultimate
-// fallback, so the view sharpens progressively like a globe viewer and never shows holes.
-// API (SPEC_v2): load, h, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt,
-//                update(camera), setTownFade (no-op in v2), group/mesh, info, lodFactor, stats.
+// (L0 102.4 km … L9 200 m) draws one mesh per node; each node uses the finest data loaded at or above it:
+// NAIP imagery (L0–9), 129² heights (L0–7, plus the optional lidar detail layer tiles/h9 at L8 3.1 m and L9 1.6 m)
+// and 128² masks (L0–7), with the v1 64 m field as the ultimate fallback, so the view sharpens progressively like a
+// globe viewer and never shows holes.
+// API (SPEC_v2): load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt,
+//                update(camera), setTownFade (no-op in v2), setFine, group/mesh, info, lodFactor, stats.
+// Heights: h(x, z) is the finest loaded surface (what the near terrain draws). hBase(x, z) = h(x, z, 7) is the base
+// surface the lidar layer never changes under roads, track, platforms and runways: street geometry is built on it.
 const Terrain = (() => {
   // ---------- v1 fallback field (64 m heights + masks, whole world) ----------
   let N = 0, S = 64, FX0 = 0, FZ0 = 0, heights = null, mask = null, texFH = null, texFM = null;
@@ -15,6 +18,11 @@ const Terrain = (() => {
   const group = new THREE.Group(); group.name = 'terrain';
   let index = null;                      // level -> Set(key) of existing tiles (levels 6–8); 0–5 complete
   let ready = false;
+  // lidar detail heights (tiles/h9/index.json, optional): { 8: Set, 9: Set, off: L8 key -> height offset o, qs }
+  // (h = q / qs + o). Without it HMAX stays 7 and everything behaves as before. #h9=0 turns it off (QA: the base
+  // terrain, bit for bit).
+  let h9 = null, HMAX = LH;
+  function hExists(L, x, y) { return L <= LH ? exists(L, x, y) : !!(h9 && h9[L] && h9[L].has(K(L, x, y))); }
 
   const tileSize = (L) => SIZE / (1 << L);
   const K = (L, x, y) => (L * 512 + y) * 512 + x;
@@ -54,6 +62,15 @@ const Terrain = (() => {
       for (const L of [6, 7, 8, 9]) { const s = new Set(); for (const [x, y] of (idx.levels && idx.levels[L]) || []) s.add(K(L, x, y)); index[L] = s; }
       index.meta = idx;
     } catch (e) { console.warn('terrain: no tile index, fallback field only', e && e.message); index = null; }
+    if (index && new URLSearchParams(location.hash.slice(1)).get('h9') !== '0') {
+      try {
+        const hi = await Stream.json('tiles/h9/index.json', 0);
+        const s8 = new Set(), s9 = new Set(), off = new Map();
+        for (const [x, y, m, o] of hi.l8 || []) { s8.add(K(8, x, y)); off.set(K(8, x, y), o || 0); for (let b = 0; b < 4; b++) if (m & (1 << b)) s9.add(K(9, 2 * x + (b & 1), 2 * y + (b >> 1))); }
+        h9 = { 8: s8, 9: s9, off, qs: (hi.q && hi.q.scale) || 64, attribution: hi.attribution };
+        HMAX = s9.size ? 9 : 8;
+      } catch (e) { h9 = null; HMAX = LH; }                // not published (yet): base terrain only
+    }
     buildShared();
     if (index) { // warm the top of the pyramid so there is always a photo underneath
       const warm = [];
@@ -66,7 +83,7 @@ const Terrain = (() => {
   // ---------- tile records ----------
   const hrec = new Map(), mrec = new Map(), irec = new Map();   // key -> { L, x, y, state, ... }
   let frameNo = 0;
-  function decodeHeights(u8) {   // MED-predicted zigzag residuals (uint16) -> Float32 heights
+  function decodeHeights(u8, qs = 16, qo = 200) {   // MED-predicted zigzag residuals (uint16) -> Float32 heights (h = q/qs - qo)
     const n = HS * HS; const res = new Uint16Array(u8.buffer, u8.byteOffset, n); const q = new Int32Array(n); const h = new Float32Array(n);
     for (let j = 0; j < HS; j++) for (let i = 0; i < HS; i++) {
       const k = j * HS + i; const zz = res[k]; const r = (zz >>> 1) ^ -(zz & 1); let a, b, c;
@@ -74,17 +91,19 @@ const Terrain = (() => {
       if (j === 0) { a = q[k - 1]; b = a; c = a; } else if (i === 0) { b = q[k - HS]; a = b; c = b; } else { a = q[k - 1]; b = q[k - HS]; c = q[k - HS - 1]; }
       const mx = a > b ? a : b, mn = a < b ? a : b; q[k] = r + (c >= mx ? mn : (c <= mn ? mx : a + b - c));
     }
-    let mn = 1e9, mx = -1e9; for (let k = 0; k < n; k++) { const v = q[k] / 16 - 200; h[k] = v; if (v < mn) mn = v; if (v > mx) mx = v; }
+    let mn = 1e9, mx = -1e9; for (let k = 0; k < n; k++) { const v = q[k] / qs - qo; h[k] = v; if (v < mn) mn = v; if (v > mx) mx = v; }
     return { h, mn, mx };
   }
-  function needHgt(L, x, y, prio) {
-    L = Math.min(L, LH); const k = K(L, x, y); let r = hrec.get(k);
+  function needHgt(L, x, y, prio) {     // L0–7: tiles/h; L8–9: the lidar layer tiles/h9 (callers check hExists)
+    const k = K(L, x, y); let r = hrec.get(k);
     if (r) { r.used = frameNo; return r.p; }
     r = { L, x, y, state: 1, used: frameNo, h: null, tex: null, mn: 0, mx: 0, refs: 0 }; hrec.set(k, r);
-    r.path = `tiles/h/${L}/${x}_${y}.bin`;
+    const lidar = L > LH;
+    r.path = lidar ? `tiles/h9/${L}/${x}_${y}.bin` : `tiles/h/${L}/${x}_${y}.bin`;
     r.p = Stream.bin(r.path, prio).then((u8) => {
       if (u8.length < HS * HS * 2) throw new Error('short height tile');
-      const d = decodeHeights(u8); r.h = d.h; r.mn = d.mn; r.mx = d.mx; r.base = d.mn;
+      const d = lidar && h9 ? decodeHeights(u8, h9.qs, -(h9.off.get(K(8, x >> (L - 8), y >> (L - 8))) || 0)) : decodeHeights(u8);
+      r.h = d.h; r.mn = d.mn; r.mx = d.mx; r.base = d.mn;
       const hf = new Uint16Array(HS * HS); for (let i = 0; i < hf.length; i++) hf[i] = THREE.DataUtils.toHalfFloat(d.h[i] - r.base);
       const t = new THREE.DataTexture(hf, HS, HS, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
       r.tex = t; r.state = 2; stats.hgt++; return r;
@@ -128,8 +147,9 @@ const Terrain = (() => {
   }
 
   // ---------- shared geometry & material ----------
-  let geo = null; const matPool = []; const nodes = [];
-  function buildShared() {
+  let geo = null, geoFine = null, fine = false; const matPool = []; const nodes = [];
+  // node mesh: G x G quads over a unit square (x, z in -0.5..0.5) plus a skirt ring (y = 1 marks the skirt vertices)
+  function buildGeo(G) {
     const pos = [], idx = []; const V = G + 1;
     for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) pos.push(i / G - 0.5, 0, j / G - 0.5);
     for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const a = j * V + i, b = a + 1, c = a + V, d = c + 1; idx.push(a, c, b, b, c, d); }
@@ -137,10 +157,16 @@ const Terrain = (() => {
     for (let i = G; i > 0; i--) ring.push(G * V + i); for (let j = G; j > 0; j--) ring.push(j * V);
     const base = pos.length / 3; for (const r of ring) pos.push(pos[r * 3], 1, pos[r * 3 + 2]);
     for (let k = 0; k < ring.length; k++) { const a = ring[k], b = ring[(k + 1) % ring.length], a2 = base + k, b2 = base + (k + 1) % ring.length; idx.push(a, b, a2, b, b2, a2); }
-    geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx);
-    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9);
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9);
+    return g;
+  }
+  function buildShared() {
+    geo = buildGeo(G);
     try { maxAniso = Math.min(12, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
   }
+  // Ultra+: lidar nodes (L8/L9) get 128x128 quads, so on L9 every vertex sits on a 1.56 m lidar sample
+  function setFine(on) { fine = !!on; if (fine && !geoFine && geo) geoFine = buildGeo(G * 2); }
   const SKY_GLSL = () => (typeof Sky !== 'undefined' && Sky.glsl) ? Sky.glsl : '';
   // ---------- water: a tileable wind-wave slope map, LEAN-encoded (RG = mean slope, B = mean squared slope) ----------
   // ~70 directional waves with integer wavevectors (so the tile repeats seamlessly), a Phillips-like spectrum and
@@ -469,12 +495,12 @@ const Terrain = (() => {
   const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), box = new THREE.Box3(), cp = new THREE.Vector3();
   const sel = [];
   function hRange(L, x, y) { // conservative min/max of a node from the finest loaded height data
-    const f = finest(hrec, L, x, y, LH); if (f) return [f[0].mn - 2, f[0].mx + 2];
+    const f = finest(hrec, L, x, y, HMAX); if (f) return [f[0].mn - 2, f[0].mx + 2];
     return [-120, 1500];
   }
   function nodeWanted(L, x, y) {         // is there any data finer than L-1 here (so splitting helps)?
     if (!index) return L <= 5;
-    return exists(L, x, y);
+    return exists(L, x, y) || (L > LH && hExists(L, x, y));
   }
   function update(cam) {
     if (!ready) return; frameNo++;
@@ -503,13 +529,20 @@ const Terrain = (() => {
     for (let i = 0; i < cap; i++) {
       const [L, x, y, d] = sel[i]; const n = getNode(i); const T = tileSize(L); const u = n.u;
       n.mesh.visible = true;
+      const g = fine && L > LH && geoFine ? geoFine : geo; if (n.mesh.geometry !== g) n.mesh.geometry = g;
       n.mesh.matrix.makeScale(T, 1, T); n.mesh.matrix.setPosition(X0 + (x + 0.5) * T, 0, Z0 + (y + 0.5) * T); n.mesh.matrixWorldNeedsUpdate = true;
       const prio = 2 + Math.min(40, d / 800) + (L < 3 ? -2 : 0);
       if (index) { // request this node's own data (the quadtree only visits nodes that exist)
-        if (exists(L, x, y)) { needImg(L, x, y, prio); if (L <= LH) { needHgt(L, x, y, prio + 0.5); needMsk(L, x, y, prio + 1); } else { const p = L - LH; needHgt(LH, x >> p, y >> p, prio + 0.5); needMsk(LH, x >> p, y >> p, prio + 1); } }
+        const own = exists(L, x, y);
+        if (own) needImg(L, x, y, prio);
+        if (own || (L > LH && hExists(L, x, y))) {
+          const lb = Math.min(L, LH), p = L - lb; needHgt(lb, x >> p, y >> p, prio + 0.5); needMsk(lb, x >> p, y >> p, prio + 1);
+          // lidar detail: the L8 tile over this node, and the L9 tile on L9 nodes (the L8 one shows while it streams)
+          for (let l = LH + 1; l <= Math.min(L, HMAX); l++) { const q = L - l; if (hExists(l, x >> q, y >> q)) needHgt(l, x >> q, y >> q, prio + 0.5 - (l - LH) * 0.1); }
+        }
       }
       // heights
-      const fh = index ? finest(hrec, L, x, y, LH) : null;
+      const fh = index ? finest(hrec, L, x, y, HMAX) : null;
       if (fh) { const [r, s, ox, oy] = fh; r.used = frameNo; u.hTex.value = r.tex; u.hUV.value.set(ox, oy, s, s); u.hTC.value.set(128 / 129, 0.5 / 129); u.hInfo.value.set(r.base, tileSize(r.L) / 128, 1 / 129); }
       else { const n2 = 1 << L; const sc = SIZE / ((N - 1) * S); u.hTex.value = texFH; u.hUV.value.set(x / n2 * sc, y / n2 * sc, sc / n2, sc / n2); u.hTC.value.set((N - 1) / N, 0.5 / N); u.hInfo.value.set(0, S, 1 / N); }
       // masks
@@ -526,7 +559,7 @@ const Terrain = (() => {
     if ((frameNo & 31) === 0) evict();
   }
   // ---------- LRU eviction ----------
-  const CAP = { img: 300, hgt: 700, msk: 500 }, IMG_BUDGET = 520e6;   // imagery: count cap AND a GPU-memory budget
+  const CAP = { img: 300, hgt: 1100, msk: 500 }, IMG_BUDGET = 520e6;   // imagery: count cap AND a GPU-memory budget
   let imgBytes = 0;
   function evictMap(map, cap, dispose, over) {
     if (map.size <= cap && !(over && over())) return;
@@ -550,10 +583,10 @@ const Terrain = (() => {
     const i = fx | 0, j = fz | 0, tx = fx - i, tz = fz - j, k = j * N + i;
     return heights[k] * (1 - tx) * (1 - tz) + heights[k + 1] * tx * (1 - tz) + heights[k + N] * (1 - tx) * tz + heights[k + N + 1] * tx * tz;
   }
-  function h(x, z) {
+  function h(x, z, maxL = HMAX) {
     if (index) {
-      const T7 = tileSize(LH); let tx = Math.floor((x - X0) / T7), ty = Math.floor((z - Z0) / T7);
-      for (let L = LH; L >= 0; L--, tx >>= 1, ty >>= 1) {
+      const top = maxL < HMAX ? maxL : HMAX, Tt = tileSize(top); let tx = Math.floor((x - X0) / Tt), ty = Math.floor((z - Z0) / Tt);
+      for (let L = top; L >= 0; L--, tx >>= 1, ty >>= 1) {
         const r = hrec.get(K(L, tx, ty)); if (!r || r.state !== 2) continue;
         const T = tileSize(L); let fx = (x - X0 - tx * T) / T * 128, fz = (z - Z0 - ty * T) / T * 128;
         fx = fx < 0 ? 0 : fx > 127.999 ? 127.999 : fx; fz = fz < 0 ? 0 : fz > 127.999 ? 127.999 : fz;
@@ -563,22 +596,29 @@ const Terrain = (() => {
     }
     return Math.max(0, fallbackH(x, z));
   }
-  // L7 tiles (or the finest existing level) needed for a rectangle
-  function detailTiles(x0, z0, x1, z1) {
-    const out = []; if (!index) return out; const T7 = tileSize(LH);
-    const a = Math.floor((Math.min(x0, x1) - X0) / T7), b = Math.floor((Math.max(x0, x1) - X0) / T7), c = Math.floor((Math.min(z0, z1) - Z0) / T7), d = Math.floor((Math.max(z0, z1) - Z0) / T7);
-    const seen = new Set();
+  const hBase = (x, z) => h(x, z, LH);
+  // height tiles needed for a rectangle: the finest existing level up to maxL (default: the lidar L8 tiles for rects up
+  // to 1 km, so trees and furniture are placed on the surface that will draw near them; L7 beyond, and for callers that
+  // build on hBase), plus the L7 base under lidar tiles (so a lidar 404 still leaves the base loaded)
+  function detailTiles(x0, z0, x1, z1, maxL) {
+    const out = []; if (!index) return out;
+    if (maxL === undefined) maxL = Math.max(Math.abs(x1 - x0), Math.abs(z1 - z0)) <= 1000 ? LH + 1 : LH;
+    const top = Math.min(maxL, HMAX), Tt = tileSize(top);
+    const a = Math.floor((Math.min(x0, x1) - X0) / Tt), b = Math.floor((Math.max(x0, x1) - X0) / Tt), c = Math.floor((Math.min(z0, z1) - Z0) / Tt), d = Math.floor((Math.max(z0, z1) - Z0) / Tt);
+    const seen = new Set(), add = (L, x, y) => { const k = K(L, x, y); if (!seen.has(k)) { seen.add(k); out.push([L, x, y]); } };
     for (let ty = c; ty <= d; ty++) for (let tx = a; tx <= b; tx++) {
-      let L = LH, x = tx, y = ty; while (L > 5 && !exists(L, x, y)) { L--; x >>= 1; y >>= 1; }
+      let L = top, x = tx, y = ty; while (L > LH && !hExists(L, x, y)) { L--; x >>= 1; y >>= 1; }
+      if (L > LH) { add(L, x, y); const q = L - LH; x >>= q; y >>= q; L = LH; }
+      while (L > 5 && !exists(L, x, y)) { L--; x >>= 1; y >>= 1; }
       if (x < 0 || y < 0 || x >= (1 << L) || y >= (1 << L)) continue;
-      const k = K(L, x, y); if (!seen.has(k)) { seen.add(k); out.push([L, x, y]); }
+      add(L, x, y);
     }
     return out;
   }
-  function hasDetail(x0, z0, x1, z1) { if (!index) return true; for (const [L, x, y] of detailTiles(x0, z0, x1, z1)) { const r = hrec.get(K(L, x, y)); if (!r || (r.state !== 2 && r.state !== 3)) return false; } return true; }
-  function ensure(x0, z0, x1, z1, prio = 3) {
+  function hasDetail(x0, z0, x1, z1, maxL) { if (!index) return true; for (const [L, x, y] of detailTiles(x0, z0, x1, z1, maxL)) { const r = hrec.get(K(L, x, y)); if (!r || (r.state !== 2 && r.state !== 3)) return false; } return true; }
+  function ensure(x0, z0, x1, z1, prio = 3, maxL) {
     if (!index) return Promise.resolve();
-    return Promise.all(detailTiles(x0, z0, x1, z1).map(([L, x, y]) => needHgt(L, x, y, prio))).then(() => {});
+    return Promise.all(detailTiles(x0, z0, x1, z1, maxL).map(([L, x, y]) => needHgt(L, x, y, prio))).then(() => {});
   }
   // finest loaded imagery covering (x,z), optionally capped at level maxL (callers that map one texture onto a fixed
   // area, like the photo roofs of an 800 m town tile's 400 m quadrants, pass maxL = 8)
@@ -604,7 +644,9 @@ const Terrain = (() => {
   const isWater = (x, z) => maskAt(x, z, 0) > 0.5;
   const urbanAt = (x, z) => { const v = maskAt(x, z, 1); return v; };
   function setTownFade() {}
-  return { load, h, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, update, setTownFade, lodFactor, stats, group,
+  return { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, update, setTownFade, setFine, lodFactor, stats, group,
     groundDetail: groundDetailTexture, GROUND_TILE: GTILE, waveTexture, WATER_GLSL,
-    get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH } };
+    get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH },
+    get HMAX() { return HMAX; }, get lidar() { return h9 ? { tiles8: h9[8].size, tiles9: h9[9].size, attribution: h9.attribution } : null; },
+    get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; } };
 })();
