@@ -305,7 +305,7 @@ const AIRCRAFT = (() => {
         htail: { x: -6.85, span: 2.8, c0: 1.5, c1: 0.9, sweep: 25, dih: 0, z: -3.2, t: 0.1, elev: 0.4, y0: 0.15 },
         vtail: { x: -4.8, h: 2.6, c0: 2.3, c1: 1.3, sweep: 38, z: -0.6, t: 0.11, rud: 0.35, dorsal: 1.5 },
         engines: [-2.9, 2.9].map(y => ({ type: 'prop', x: 2.9, y, z: 0.0, d: 2.67, blades: 4, spinner: 0.45, nacelle: { len: 3.8, d: 0.85 } })),
-        gear: {}, cockpit: { x: 4.1, z: -0.35, y: -0.3, style: 'boeing' },
+        gear: {}, cockpit: { x: 3.55, z: -0.35, y: -0.3, style: 'boeing' },
         windows: { x0: 2.7, x1: -1.9, pitch: 0.62, z: 0.1, h: 0.36, doors: [-2.6] },
         livery: { base: '#f5f5f2', tail: '#1d3557', stripe: '#b3261e', belly: '#dfe2e6', reg: 'N350BL' } },
     },

@@ -188,8 +188,9 @@ const ACCockpit = (() => {
         const e0 = cs[best], e1 = cs[(best + 1) % cs.length], lo = e0.y > e1.y ? e0 : e1;
         gxF = Math.min(lo.x - 0.02, E.x + 1.4); gyF = Math.min(lo.y - 0.01, E.y - 0.12);
       }
-      // (its aft edge ~22 degrees below the eye line; the displays start under its lip, 30-40 degrees down)
-      const gx = Math.min(E.x + 0.72, gxF - 0.25), gy = Math.max(E.y - 0.3, gyF - 0.02) > E.y - 0.22 ? gyF - 0.02 : Math.max(E.y - 0.3, gyF - 0.02), wHalf = Math.min(halfW(m.nose - gx, gy) - 0.03, 1.25);
+      // (its aft edge ~22 degrees below the eye line; the displays start under its lip, 30-40 degrees down; a small
+      // cockpit whose windscreen base is close to the eye gets a shallower shelf, its lip kept 0.42 m from the eye)
+      const gx = Math.min(E.x + 0.72, Math.max(gxF - 0.25, Math.min(E.x + 0.42, gxF - 0.06))), gy = Math.max(E.y - 0.3, gyF - 0.02) > E.y - 0.22 ? gyF - 0.02 : Math.max(E.y - 0.3, gyF - 0.02), wHalf = Math.min(halfW(m.nose - gx, gy) - 0.03, 1.25);
       const shelf = (y0, y1, x0, x1, w2) => {
         const a2 = cab.v(x0, y0, -w2, 0, 1, 0), b2 = cab.v(x0, y0, w2, 0, 1, 0), c2 = cab.v(x1, y1, w2, 0, 1, 0), d2 = cab.v(x1, y1, -w2, 0, 1, 0);
         cab.quad(a2, b2, c2, d2);
