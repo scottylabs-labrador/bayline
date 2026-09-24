@@ -97,6 +97,7 @@ const Flight = (() => {
       model = ACModel.build(T); Env.scene.add(model.root);
       cfg = { ...c, type: T.id, rw, end, apt: a, e, vref, vapp };
       active = true; paused = false; crashed = null; landed = null; airTime = 0; flightTime = 0; maxAgl = 0; gLast = null; warn.clear(); callout.reset();
+      if (typeof FMap !== 'undefined') FMap.trail.length = 0;
       input.reset(); cam.mode = prefs.cam || 'chase'; cam.reset();
       FDM.euler(ac.q, E); placeModel(); updateCamera(0.016, true);
       prefs.type = T.id; prefs.apt = a.ident; savePrefs();
@@ -142,7 +143,7 @@ const Flight = (() => {
     function down(e) {
       if (!active) return;
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
-      if (e.code === 'Escape') { if (typeof FHud !== 'undefined' && FHud.menuOpen()) FHud.menu(false); else { FHud.menu(true); } e.preventDefault(); e.stopImmediatePropagation(); return; }
+      if (e.code === 'Escape') { if (typeof FMap !== 'undefined' && FMap.open) FMap.toggle(false); else if (typeof FHud !== 'undefined' && FHud.menuOpen()) FHud.menu(false); else { FHud.menu(true); } e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (!flightKeys.has(e.code)) return;                                    // H, M, P, L, K, V... go to the main handler
       e.preventDefault(); e.stopImmediatePropagation();
       if (typeof FHud !== 'undefined' && FHud.menuOpen()) return;

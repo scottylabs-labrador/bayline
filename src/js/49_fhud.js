@@ -516,5 +516,6 @@ const FHud = (() => {
     touchEl.hidden = !on;
   }
 
-  return { init, show, draw, note, setup, menu, menuOpen, crash, get shown() { return shown; } };
+  function pick(a) { sel.apt = a; sel.rw = ''; renderSetup(); }
+  return { init, show, draw, note, setup, menu, menuOpen, crash, pick, get shown() { return shown; } };
 })();

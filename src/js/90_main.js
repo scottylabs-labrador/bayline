@@ -108,7 +108,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     const c = e.code;
     if (c === 'Escape') { UI.closeAll(); return; }
     if (c === 'KeyH') { const h = $('help'); const was = h.hidden; UI.closeAll(); h.hidden = !was; Player.releaseLock(); return; }
-    if (c === 'KeyM') { const was = $('mapov').hidden; UI.closeAll(); if (was) UI.openMap(); return; }
+    if (c === 'KeyM') { if (typeof FMap !== 'undefined' && ((typeof Flight !== 'undefined' && Flight.active) || (typeof Globe !== 'undefined' && !Globe.frame.bay))) { UI.closeAll(); FMap.toggle(); return; }
+      const was = $('mapov').hidden; UI.closeAll(); if (was) UI.openMap(); return; }
     if (c === 'KeyJ') { const was = $('missions').hidden; UI.closeAll(); if (was) UI.openMissions('all'); return; }
     if (c === 'KeyB' && !Sim.drive) { const was = $('board').hidden; UI.closeAll(); if (was) { const st = Stations.nearest(Env.camera.position, 1e9); if (st) UI.openBoard(st.idx); } return; }
     if (UI.anyOpen()) return;
@@ -232,6 +233,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof Airports !== 'undefined') safeFrame('airports', () => Airports.update(Env.camera));
     if (typeof Weather !== 'undefined' && World.started) safeFrame('weather', () => Weather.update(dt));
     if (typeof Traffic !== 'undefined' && World.started) safeFrame('live-traffic', () => Traffic.update(dt));
+    if (typeof FMap !== 'undefined' && World.started) safeFrame('fmap', () => FMap.update(dt));
     if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
     if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
