@@ -57,12 +57,27 @@ joysticks.
 autopilot (HDG/ALT/VS/SPD, approach), landing scoring (sink rate, centreline, touchdown zone), crash
 detection, sounds.
 
-## Status (2026-09-23)
+## Status (2026-09-23, evening)
 
-Phases 1-6 are done and live, and most of 7: twelve types, challenges, a world map, OpenFreeMap buildings and airport
-surfaces, Black Marble city lights. Headless QA: `node tools/qa_flight.js`. Open ideas: multiplayer aircraft, a proper
-glare-shield FCU and five-screen panel in the airliner cockpits, Concorde's droop nose, helicopters, volumetric
-clouds from the real cloud layers, OpenFreeMap water polygons for exact coastlines.
+Phases 1-7 are done and live: thirteen types including the H125 helicopter, fourteen challenges (two for the
+helicopter), a world map with direct-to and join-a-live-flight, OpenFreeMap buildings and airport surfaces, Black
+Marble city lights, multiplayer aircraft, share links (`L`), replays, solid buildings and landmarks. Headless QA:
+`node tools/qa_flight.js` (every type: takeoff, cruise, autoland; the helicopter: hover, dash, quick stop,
+landing). Autoland touchdowns are 80-130 fpm (Concorde ~300), rolling out on the centre line.
+
+Gotchas learned:
+- The fixed-wing ground law must not engage in the flare (it did at 1.5 m AGL: bounce and balloon); the flight
+  law now holds until the wheels touch.
+- The flare needs flight-path-rate damping; a pure gain on the flight path overshoots into a balloon on heavies.
+- Approach flaps must come out one notch at a time with the speed target following the next notch's limit,
+  or they never deploy and the aircraft lands at 200 kt.
+- Helicopter lateral trim: the tail rotor pushes the aircraft sideways; hold wings at the trim bank
+  (atan(tail rotor thrust / weight)) and let the pedals null the sideslip, or it slides at 20+ kt.
+- A bridge deck is a slab: solid only if the aircraft reaches it (CG + its height above the CG over the deck
+  bottom), otherwise flying under it would be impossible.
+
+Open ideas: Concorde's droop nose, rain on the windshield from Open-Meteo precipitation, volumetric clouds from the
+real cloud layers, OpenFreeMap water polygons for exact coastlines, more helipads (OSM aeroway=helipad) as targets.
 
 ## Phases (each ends deployed and checked)
 

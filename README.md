@@ -25,11 +25,16 @@ traffic, and trains you can ride, walk through and drive.
   Tunnels), commuter challenges ("9 AM meeting at 22nd Street") and landmark tours.
 - **Fly (Bayline Flight)**: take off from any of the world's 28,000 airports in a real aircraft type
   (Cessna 172, A320neo, 737-800, 787-9, 747-400, A380, Concorde, King Air 350, Twin Otter, DC-3,
-  Extra 330, F-16C) over real terrain and imagery, in the real weather, among the real aircraft
-  flying there right now (live ADS-B). Start on the runway, on an 8 nm final or in the air; fly by
-  hand with fly-by-wire assistance (or raw), or let the autopilot capture the runway and autoland.
-  Challenges: famous approaches (Innsbruck, Gibraltar, Maho Beach, Madeira, Lukla), under the Golden
-  Gate, a gate course around San Francisco, an engine failure after takeoff.
+  Extra 330, F-16C, and the H125 helicopter) over real terrain and imagery, in the real weather, among
+  the real aircraft flying there right now (live ADS-B; click one on the map to fly alongside it).
+  Start on the runway, on an 8 nm final or in the air; fly by hand with fly-by-wire assistance (or
+  raw), pick a field on the world map to fly there direct, or let the autopilot capture the runway,
+  autoland and roll out. Buildings and the big landmarks are solid: land the helicopter on a rooftop,
+  fly under the Golden Gate's deck (not into it). Challenges: famous approaches (Innsbruck, Gibraltar,
+  Maho Beach, Madeira, Lukla), under the Golden Gate, a gate course around San Francisco, an engine
+  failure after takeoff, and helicopter landings inside the Salesforce Tower's crown and on top of the
+  Golden Gate's south tower. `L` while flying copies a link that puts a friend in your aircraft, right
+  there; every flight can be replayed.
 - **Multiplayer (optional)**: see other people's trains, and other people riding and walking,
   live. There is no chat or free text; callsigns like "Engineer Heron 17" are assigned by the
   server.
@@ -149,8 +154,15 @@ Run one with `node tools/shot.mjs "http://localhost:8123/#auto&t=08:00" out.png 
   drag, piston / turboprop / turbofan / afterburning engines with per-engine moments, spring-damper gear
   with brakes and steering. `node tools/qa_flight.js` flies every type through takeoff, cruise and autoland.
 - **Flight controls (`47_fcs.js`):** incremental nonlinear dynamic inversion fly-by-wire (rate command,
-  flight-path and bank hold, protections, auto-flare), direct law, autopilot (HDG, ALT, V/S, LOC + glide
-  path to any runway, flare, retard) and autothrottle.
+  flight-path and bank hold, protections, a flare damped by the flight-path rate), direct law, autopilot
+  (HDG, ALT, V/S, great-circle direct-to, LOC + glide path to any runway, flare, retard, rollout along
+  the centre line with autobrake) and autothrottle. The helicopter (a momentum-theory rotor with
+  translational lift, vortex ring state, ground effect, power-limited torque, cyclic disc tilt and tail
+  rotor) gets its own assisted laws: height hold on the collective, speed hold or a drift-free hover on
+  release, and an autopilot with position hold.
+- **Solid world:** OSM building footprints (the Bay's own tiles, OpenFreeMap elsewhere) and the hand-built
+  landmarks' collision solids (towers, bridge decks with their clearance underneath) feed the ground under
+  the aircraft: roofs to land on, walls to hit.
 - **Aircraft (`48_acmodel.js`):** procedural models from each type's dimensions: lofted fuselages with a
   fictional Bayline Air livery, NACA-section wings with moving surfaces, engines, props, gear, lights,
   and cockpits whose windows are cut from the pilot's view.
