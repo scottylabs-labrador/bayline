@@ -20,6 +20,7 @@ VIEWS = {
     'stanford_oval':   ('t=11:30&w=clear&ll=37.42760,-122.16930,0,0.0,-0.30', 55, 'lawns, paths, trees from low altitude'),
     'sanmateo_hills':  ('t=16:40&w=clear&ll=37.54700,-122.33500,0,-2.2,-0.38', 140, 'suburban hills: lidar + roofs + yards'),
     'golden_hills':    ('t=18:40&w=clear&ll=37.49000,-122.21000,0,-0.50,-0.25', 600, 'golden hour along the Peninsula (terrain shadows)'),
+    'sunset_shadow':   ('t=18:52&w=clear&ll=37.50500,-122.24000,0,-2.15,-0.16', 420, 'sun 1-2 deg behind the Santa Cruz Mountains: the valley in their shadow (Ultra+ terrain shadows)'),
     'millbrae_track':  ('t=09:10&w=clear&ll=37.59900,-122.38600,0,-0.60,-0.05', 3, 'trackside, 3 m (ballast, verges)'),
     'oval_eye':        ('t=11:30&w=clear&ll=37.42880,-122.16940,0,0.00,-0.10', 2, 'eye level on the Stanford Oval: lawn, paths, road (materials)'),
     'professorville_eye': ('t=10:30&w=clear&ll=37.44330,-122.15580,0,0.62,-0.10', 2, 'eye level in a Palo Alto street: lawns, driveways, asphalt (materials)'),
