@@ -12,12 +12,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 READY = 'new Promise(r=>{const f=()=>window.__bayline&&window.__bayline.Sim.TT?r():setTimeout(f,200);f();})'
 # (hash, page-side setup run once the world is ready (may return a promise), note)
 FLY = lambda rel: f'(()=>new Promise(r=>setTimeout(()=>{{const B=__bayline,P=B.Player;P.fly.y=B.Terrain.h(P.fly.x,P.fly.z)+{rel};r(1)}},3500)))()'
-# a southbound train through Atherton's trees at speed, seen from its cab (the clock is set so it is there when shot)
+# a southbound train through Atherton's trees at speed, seen from its cab (the clock is set to when it is there, and
+# paused, so every build is shot from the same spot)
 CAB = ('(()=>{const B=__bayline,Sim=B.Sim,o={};const sAt=B.Track.byId.menlo_park.s-1900,after=10*3600+5*60;let best=null;'
        'for(const p of Sim.plans){if(p.dir!==1||p.tEnd<after)continue;const f=t=>Sim.stateAt(p,t,o).s-sAt;let a=Math.max(p.tStart,after),b=p.tEnd;'
        'if(f(a)>=0||f(b)<0)continue;for(let i=0;i<44;i++){const m=(a+b)/2;if(f(m)<0)a=m;else b=m;}const v=Sim.stateAt(p,a,o).v;'
        'if(v<18)continue;if(!best||b<best.t)best={t:b,key:p.key,v};}'
-       'if(!best)return 0;B.Env.setClock(best.t-16);B.Env.time.scale=1;B.Player.setFocus(best.key);B.Player.setMode("cab");return Math.round(best.v)})()')
+       'if(!best)return 0;B.Env.setClock(best.t);B.Env.time.scale=1;B.Env.time.paused=true;B.Player.setFocus(best.key);B.Player.setMode("cab");return Math.round(best.v)})()')
 VIEWS = {
     'cab':       ('t=10:05&w=clear&at=menlo_park', CAB, 'from the cab at speed through Atherton'),
     'platform':  ('t=17:35&w=clear&at=palo_alto', None, 'Palo Alto platform, late afternoon'),
@@ -38,8 +39,8 @@ VIEWS = {
 def capture(base, name, extra, out, wait=16):
     h, setup, _ = VIEWS[name]
     url = f'{base}#auto&{h}' + (f'&{extra}' if extra else '')
-    ev = READY + (f'.then(()=>{setup})' if setup else '.then(()=>1)')
-    ev2 = ('(()=>{for(const id of ["hud","toast"]){const e=document.getElementById(id);if(e)e.style.visibility="hidden"}'
+    ev = READY + '.then(()=>{document.body.classList.add("photo")})' + (f'.then(()=>{setup})' if setup else '.then(()=>1)')   # photo mode: no traffic tags
+    ev2 = ('(()=>{document.body.classList.add("photo");for(const id of ["hud","toast"]){const e=document.getElementById(id);if(e)e.style.visibility="hidden"}'
            'const B=__bayline;return JSON.stringify({q:B.Post&&B.Post.quality,px:B.Env.renderer.getPixelRatio()})})()')
     cmd = ['node', 'tools/shot.mjs', url, out, '--gpu', '--w', '1440', '--h', '900', '--wait', str(wait * 1000), '--eval', ev, '--eval2', ev2]
     try:
