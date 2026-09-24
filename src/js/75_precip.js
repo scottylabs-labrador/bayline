@@ -75,7 +75,7 @@ const Precip = (() => {
   }
 
   // drops on the windshield (cockpit view only): they bead and trickle when slow, streak up and outward at speed
-  function windshield(dt, on, rate) {
+  function windshield(dt, on, rate, kt) {
     if (!drops) {
       const cv = document.createElement('canvas'); cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2';
       document.body.appendChild(cv); drops = { cv, g: cv.getContext('2d'), list: [], w: 0, h: 0 };
@@ -84,7 +84,7 @@ const Precip = (() => {
     if (!on) { if (D.list.length || D.cv.style.display !== 'none') { D.list.length = 0; D.cv.style.display = 'none'; } return; }
     D.cv.style.display = '';
     if (D.w !== W || D.h !== H) { D.w = W; D.h = H; D.cv.width = W * dpr; D.cv.height = H * dpr; }
-    const g = D.g, kt = Flight.ac ? Flight.ac.out.tas / 0.514444 : 0, fast = U.smooth(25, 90, kt), top = H * 0.62;
+    const g = D.g, fast = U.smooth(25, 90, kt), top = H * 0.62;
     // new drops: more with more rain and more speed
     let n = rate * (6 + kt * 0.35) * dt * 12; while (n > 0) { if (Math.random() < n) D.list.push({ x: Math.random() * W, y: Math.random() * top, r: 1.2 + Math.random() * 2.8, a: 0, life: 2 + Math.random() * 5 }); n -= 1; }
     if (D.list.length > 420) D.list.splice(0, D.list.length - 420);
@@ -114,11 +114,12 @@ const Precip = (() => {
     // ease in and out
     state.kind = want.kind !== 'none' ? want.kind : state.rate > 0.01 ? state.kind : 'none';
     state.rate += ((want.kind !== 'none' ? want.rate : 0) - state.rate) * Math.min(1, dt * 0.6); state.storm = want.storm;
-    const cam = Env.camera.position, inside = typeof Player !== 'undefined' && (Player.mode === 'onboard' || Player.mode === 'cab') && !(typeof Flight !== 'undefined' && Flight.active);
+    const cam = Env.camera.position, flying = typeof Flight !== 'undefined' && Flight.active, pm = typeof Player !== 'undefined' ? Player.mode : '';
+    const inTrain = !flying && (pm === 'onboard' || pm === 'cab');                // (the drops start beyond the glass)
     // the camera's own motion (for the slant of the streaks); a frame rebase or a teleport is not motion
     if (haveLast && dt > 0) { const jump = lastCam.distanceTo(cam); if (jump < 250) camVel.lerp(app.copy(cam).sub(lastCam).divideScalar(dt), Math.min(1, dt * 6)); else camVel.set(0, 0, 0); }
     lastCam.copy(cam); haveLast = true; time += dt;
-    const on = state.rate > 0.01 && !inside;
+    const on = state.rate > 0.01;
     mesh.visible = on;
     if (on) {
       const snow = state.kind === 'snow';
@@ -128,7 +129,7 @@ const Precip = (() => {
       const U2 = mat.uniforms, night = U.uNight ? U.uNight.value : 0, cockpit = typeof Flight !== 'undefined' && Flight.active && Flight.cam.mode === 'cockpit';
       U2.uCam.value.copy(cam); U2.uVel.value.copy(rainVel); U2.uApp.value.copy(app); U2.uTime.value = time;
       U2.uBox.value.copy(BOX).multiplyScalar(snow ? 0.5 : 1);                         // (snow: a smaller, denser box)
-      U2.uSnow.value = snow ? 1 : 0; U2.uWidth.value = snow ? 0.05 : 0.016; U2.uLen.value = 1 / 22; U2.uNear.value = cockpit ? 7 : 1.1;
+      U2.uSnow.value = snow ? 1 : 0; U2.uWidth.value = snow ? 0.05 : 0.016; U2.uLen.value = 1 / 22; U2.uNear.value = cockpit ? 7 : inTrain ? (pm === 'cab' ? 4.5 : 3.2) : 1.1;
       U2.uAlpha.value = (snow ? 0.85 : 0.6) * (0.55 + 0.45 * state.rate);
       const amb = typeof Sky !== 'undefined' && Sky.uniforms ? Sky.uniforms.uSkyAmbient.value : null;   // lit by the sky: grey by day, dim at night
       const gl = (snow ? 0.1 : 0.05) * night;                                        // (city glow at night)
@@ -138,8 +139,10 @@ const Precip = (() => {
       if (debug.red) { U2.uColor.value.setRGB(3, 0, 0); U2.uAlpha.value = 1; U2.uWidth.value = 0.15; }
     }
     // the windshield
-    const cockpit = typeof Flight !== 'undefined' && Flight.active && Flight.cam.mode === 'cockpit' && state.kind === 'rain';
-    windshield(dt, cockpit && on, state.rate);
+    // the windshield: the aircraft's from its cockpit, the train's from its cab
+    const glass = state.kind === 'rain' && ((flying && Flight.cam.mode === 'cockpit') || (!flying && pm === 'cab'));
+    let kt = 0; if (flying && Flight.ac) kt = Flight.ac.out.tas / 0.514444; else if (pm === 'cab' && Player.focusTrain) { const tr = Player.focusTrain(); kt = tr ? Math.abs(tr.v || 0) / 0.514444 : 0; }
+    windshield(dt, glass && on, state.rate, kt);
     // lightning: a flash across the sky, the thunder a few seconds later
     if (flashEl) {
       if (state.storm && on) { nextBolt -= dt; if (nextBolt <= 0) { nextBolt = 6 + Math.random() * 16; flashT = 0.45; const dist = 1 + Math.random() * 6; setTimeout(() => { if (typeof FSound !== 'undefined' && FSound.thunder) FSound.thunder(dist); }, dist * 900); } }
