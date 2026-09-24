@@ -7,7 +7,7 @@
 // s = distance aft of the nose tip (m); th = section angle: 0 crown, pi/2 right side, pi keel, 3pi/2 left side.
 // Model axes: x forward, y up, z right, origin = CG. Other modules are referenced at call time only.
 const ACFrame = (() => {
-  const V3 = THREE.Vector3, D = Math.PI / 180;
+  const V3 = THREE.Vector3, D = Math.PI / 180, X1 = new V3(1, 0, 0);
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -680,13 +680,12 @@ const ACFrame = (() => {
         const pp = { y: 0, z: 0, ty: 0, tz: 1 };
         const P2 = (u, qq, out) => {
           path(u, pp); const h = Math.abs(pp.y), k = sstep(0, 0.35, u);
-          const c = lerp(c0, c0 * top, Math.pow(u, 0.85)), sweepX = h * Math.tan(sweep * D) * (dir > 0 ? 1 : 0.9) + (1 - k) * 0;
+          const c = lerp(c0, c0 * top, Math.pow(u, 0.85)), sweepX = h * Math.tan(sweep * D) * (dir > 0 ? 1 : 0.9);
           const tw = ws.w.tt !== undefined ? ws.w.tt : ws.w.t, [xa, ya] = G.foil(qq, tw, ws.cam, ws.style), [xb, yb] = G.foil(qq, t, 0.004, 'naca');
           const x = lerp(xa, xb, k), yf = lerp(ya, yb, k);
           // section frame: aft, and 'up' turned with the path (the device's suction side faces inboard)
-          const ux = 0, uy = dir > 0 ? pp.tz : pp.tz, uz = -pp.ty;
-          const cdx = lerp(fr0.cd.x, -1, k), cdy = lerp(fr0.cd.y, 0, k);
-          return out.set(xLE0 - sweepX + (cdx * x) * c + ux, y0t + pp.y + (cdy * x + uy * yf) * c, span + pp.z + (uz * yf) * c * (dir > 0 ? 1 : -1));
+          const uy = pp.tz, uz = -pp.ty, cdx = lerp(fr0.cd.x, -1, k), cdy = lerp(fr0.cd.y, 0, k);
+          return out.set(xLE0 - sweepX + cdx * x * c, y0t + pp.y + (cdy * x + uy * yf) * c, span + pp.z + uz * yf * c * (dir > 0 ? 1 : -1));
         };
         const nu = ctx.far ? 2 : [4, 6, 9, 12, 16][q], us = G.linSpace(0, 1, nu), nqq = ctx.far ? 3 : [6, 8, 11, 14, 18][q];
         const flipB = dir < 0;
@@ -737,11 +736,8 @@ const ACFrame = (() => {
       top.x = xT; top.z = yS; top.y += 0.02;
       const ax = top.clone().sub(bot), len = ax.length(); ax.normalize(); const side = new V3().crossVectors(ax, new V3(1, 0, 0)).normalize();
       const fb = ws.flex ? ws.flex.bones[0] : 0;
-      mb.bind(fb); mb.pal = ctx.pal('base'); mb.mirror = side < 0 && false;
-      for (const sd of [ws.side]) {
-        mb.mirror = sd < 0;
-        mb.surface(ACGeo.linSpace(0, 1, 6), ACGeo.linSpace(0, 1, 10), (u, v, out) => { const a = v * Math.PI * 2; return out.copy(bot).addScaledVector(ax, u * len).addScaledVector(new V3(1, 0, 0), Math.cos(a) * 0.075).addScaledVector(side, Math.sin(a) * 0.025); }, { eu: 1e-4, ev: 1e-4, flip: true });
-      }
+      mb.bind(fb); mb.pal = ctx.pal('base'); mb.mirror = ws.side < 0;
+      mb.surface(ACGeo.linSpace(0, 1, 6), ACGeo.linSpace(0, 1, 10), (u, v, out) => { const a = v * Math.PI * 2; return out.copy(bot).addScaledVector(ax, u * len).addScaledVector(X1, Math.cos(a) * 0.075).addScaledVector(side, Math.sin(a) * 0.025); }, { eu: 1e-4, ev: 1e-4, flip: true });
       mb.mirror = false; mb.pal = null; mb.bind(0);
     }
     // ---- flap-track fairings: canoes under the flaps; the aft part rides on the flap
@@ -782,9 +778,9 @@ const ACFrame = (() => {
     mb.bind(0);
     const crownAt = (x) => { const p = new V3(); H.pt(clamp(H.nose - x, 0, H.L), 0, p); return p.y; };
     const P2 = (u, v, out) => {
-      const x = lerp(x0, x1, u), top = rootY + hTop * Math.pow(u, 1.4) + (u > 0.95 ? 0 : 0), base = crownAt(x) - 0.08, hgt = Math.max(0.01, top - base);
+      const x = lerp(x0, x1, u), top = rootY + hTop * Math.pow(u, 1.4), base = crownAt(x) - 0.08, hgt = Math.max(0.01, top - base);
       const a = v * Math.PI * 2, wd = (vt.t * vt.c0 * 0.35) * Math.pow(Math.sin(Math.PI * Math.min(1, 0.02 + u * 0.98)), 0.3) * Math.min(1, u * 6 + 0.05);
-      return out.set(x - (1 - Math.cos(a)) * 0.0, base + hgt * (0.5 + 0.5 * Math.cos(a)), Math.sin(a) * wd * Math.pow(Math.abs(Math.sin(a)), 0) * (0.5 + 0.5 * Math.cos(a) * 0 + 0.5));
+      return out.set(x, base + hgt * (0.5 + 0.5 * Math.cos(a)), Math.sin(a) * wd);
     };
     mb.surface(G.linSpace(0, 1, [4, 6, 8, 10, 12][ctx.q]), G.linSpace(0, 1, 12), P2, { eu: 1e-4, ev: 1e-4, uv: (u, v, i, j, p) => ctx.uv(p, Math.sin(v * Math.PI * 2) >= 0) });
   }

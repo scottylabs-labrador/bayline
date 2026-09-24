@@ -91,13 +91,12 @@ const Traffic = (() => {
   }
 
   // ---------------------------------------------------------------- drawing
-  // one instanced mesh per class for the far model, and (once ACModel has built them in the background) a detailed
-  // one within NEAR metres: gear up in the air, gear down on the ground
+  // instanced meshes per class, made once ACModel has built the models in the background: the far model, and a detailed
+  // one within NEAR metres (gear up in the air, gear down on the ground)
   const NEAR = 2500;
   let liteMat = null;
   const mkMesh = (geo) => { const m = new THREE.InstancedMesh(geo, liteMat, 160); m.count = 0; m.frustumCulled = false; m.castShadow = true; m.receiveShadow = false;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.layers.enable(1); group.add(m); return m; };
-  // (made when a class first appears: the far model at once, the detailed ones when they are ready)
   function meshFor(c, lod) {
     const k = c + '|' + lod; if (meshes[k]) return meshes[k];
     const g = ACModel.lite(AIRCRAFT.byId[c], lod, true); return g ? (meshes[k] = mkMesh(g.clone())) : null;
@@ -158,8 +157,8 @@ const Traffic = (() => {
       t.pitch += ((f.ground ? 0 : gam + 2.5 * D) - t.pitch) * Math.min(1, dt);
       if (t.player) { t.hdg = f.trk; t.pitch = t.mpPitch; t.bank = t.mpRoll; }
       FDM.attitude(tq, t.hdg, t.pitch, t.bank); tq.multiply(qFix);
-      const m = (d < NEAR && meshFor(t.cls, f.ground || t.onGround ? 'gear' : 'near')) || meshFor(t.cls, 'far'), n = counts.get(m) || 0; if (n >= 160) continue;
-      sc.setScalar(t.scale); m4.compose(t.pos, tq, sc); m.setMatrixAt(n, m4); counts.set(m, n + 1);
+      const m = (d < NEAR && meshFor(t.cls, f.ground || t.onGround ? 'gear' : 'near')) || meshFor(t.cls, 'far'), n = m ? counts.get(m) || 0 : 0;
+      if (m && n < 160) { sc.setScalar(t.scale); m4.compose(t.pos, tq, sc); m.setMatrixAt(n, m4); counts.set(m, n + 1); }
       // lights (world positions from the model's tips)
       if (nl + 7 <= aP.count && d < 80000) {
         const mdl = AIRCRAFT.byId[t.cls].model, Lh = mdl.L * t.scale, ph = now / 1000 + t.phase;

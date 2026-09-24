@@ -264,33 +264,35 @@ const ACModel = (() => {
   // ---------------------------------------------------------------- traffic models
   // The same parts at the lowest detail (or coarser still for 'far'), posed (gear up, or down for 'gear'), the
   // skinning baked, every vertex coloured from the livery layout or its palette swatch, merged into one geometry.
-  // lite(type, 'far') builds at once (a few ms); 'near' and 'gear' (one shared geometry pass, posed twice) are
-  // built in the background, a few ms per frame: until they are ready lite(type, lod, true) returns null
+  // lite(type, lod) builds at once; lite(type, lod, true) returns the cached model or null, and has it built in the
+  // background a few milliseconds per frame (the far models first; 'near' and 'gear' share one geometry pass)
   const liteCache = new Map(), liteJobs = new Map();
+  const job = (type, far) => ({ type, far, gen: geometrySteps(type, 0, far ? { lite: true, far: true } : { lite: true }) });
+  function finish(j, G) {
+    if (j.far) liteCache.set(j.type.id + '|far', bakeLite(j.type, 'far', G));
+    else { liteCache.set(j.type.id + '|near', bakeLite(j.type, 'near', G)); liteCache.set(j.type.id + '|gear', bakeLite(j.type, 'gear', G)); }
+  }
   function lite(type, lod = 'far', ifReady = false) {
-    const key = type.id + '|' + lod;
-    if (liteCache.has(key)) return ifReady ? liteCache.get(key) : liteCache.get(key).clone();
-    if (lod === 'far' || !ifReady) {
-      if (lod === 'far') liteCache.set(key, bakeLite(type, 'far', geometry(type, 0, { lite: true, far: true })));
-      else { const G = geometry(type, 0, { lite: true }); liteCache.set(type.id + '|near', bakeLite(type, 'near', G)); liteCache.set(type.id + '|gear', bakeLite(type, 'gear', G)); }
-      return ifReady ? liteCache.get(key) : liteCache.get(key).clone();
+    const key = type.id + '|' + lod, far = lod === 'far';
+    if (!liteCache.has(key)) {
+      const jk = type.id + (far ? '|far' : '|near');
+      if (!ifReady) { const j = liteJobs.get(jk) || job(type, far); liteJobs.delete(jk); let r = j.gen.next(); while (!r.done) r = j.gen.next(); finish(j, r.value); }
+      else { if (!liteJobs.has(jk)) { liteJobs.set(jk, job(type, far)); pump(); } return null; }
     }
-    if (!liteJobs.has(type.id)) { liteJobs.set(type.id, { type, gen: geometrySteps(type, 0, { lite: true }) }); pump(); }
-    return null;
+    return ifReady ? liteCache.get(key) : liteCache.get(key).clone();
   }
   let pumping = false;
+  const later = (f) => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(f);
   function pump() {
     if (pumping) return; pumping = true;
     const tick = () => {
       const t0 = performance.now();
-      for (const [id, job] of liteJobs) {
-        while (performance.now() - t0 < 4) { const r = job.gen.next(); if (r.done) { job.G = r.value; break; } }
-        if (job.G) { liteCache.set(id + '|near', bakeLite(job.type, 'near', job.G)); liteCache.set(id + '|gear', bakeLite(job.type, 'gear', job.G)); liteJobs.delete(id); }
-        break;          // (one job per frame)
-      }
-      if (liteJobs.size) (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(tick); else pumping = false;
+      let k = null; for (const [jk, j] of liteJobs) { if (j.far) { k = jk; break; } if (!k) k = jk; }     // (far models first)
+      const j = liteJobs.get(k);
+      while (performance.now() - t0 < 4) { const r = j.gen.next(); if (r.done) { finish(j, r.value); liteJobs.delete(k); break; } }
+      if (liteJobs.size) later(tick); else pumping = false;
     };
-    (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(tick);
+    later(tick);
   }
   function bakeLite(type, lod, G) {
     const m = type.model, lv = m.livery, far = lod === 'far';

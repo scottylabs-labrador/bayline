@@ -252,11 +252,9 @@ const ACParts = (() => {
         const cz = pairY, hw = bw * 0.98, hh = bh / 2, xF = o.x + bl - 0.6, xR = o.x - 0.55, yc = o.y, ramp = 1.2, nb = ctx.B.mb('nac'), ws = env.wings.find(w => w.side === Math.sign(e.y));
         const wingLow = (x) => { if (!ws) return yc + hh; const span = Math.abs(cz), fr = ws.frame(span, { cd: new V3(), ud: new V3() }), xc = clamp((fr.lx - x) / fr.c, 0.001, 0.999); return ws.P(span, ACGeo.qAt(xc, -1), new V3()).y; };
         const sec = (u, v, out, inset = 0) => {
-          const a = v * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), up = ca > 0;
-          const x0 = xF - (1 - ca) * 0.5 * 0 + (up ? -ramp * ca * 0 : 0);
-          const xx = lerp(xF + (ca + 1) * 0.5 * -ramp * -1 - ramp, xR, u) + (1 - u) * ramp * (ca + 1) * 0.5;
+          // (the mouth is raked: its lower lip reaches furthest forward)
+          const a = v * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), xx = lerp(xF - ramp * ca, xR, u);
           const top = Math.max(yc + hh, wingLow(xx) + 0.2), bot = yc - hh, ym = (top + bot) / 2, hy = (top - bot) / 2 - inset, hz = hw - inset;
-          void x0;
           return out.set(xx, ym + Math.sign(ca) * Math.pow(Math.abs(ca), 0.25) * hy, cz + Math.sign(sa) * Math.pow(Math.abs(sa), 0.25) * hz);
         };
         nb.bind(0);
@@ -362,8 +360,7 @@ const ACParts = (() => {
     // tail rotor (left side of the boom), two blades
     const TR = m.tailRotor, tc = P(TR.x, TR.y, TR.z), tb = rig.add(0, tc.x, tc.y, tc.z);
     parts.bind(tb); parts.pal = pal('rotor');
-    for (let k = 0; k < TR.blades; k++) { const a = k * Math.PI * 2 / TR.blades; const d2 = new V3(Math.cos(a), Math.sin(a), 0);
-      parts.at(mat4(tc, new Q4().setFromAxisAngle(Z1, a)), () => parts.box(TR.R / 2 + 0.05, 0, 0, TR.R, 0.018, 0.16)); void d2; }
+    for (let k = 0; k < TR.blades; k++) parts.at(mat4(tc, new Q4().setFromAxisAngle(Z1, k * Math.PI * 2 / TR.blades)), () => parts.box(TR.R / 2 + 0.05, 0, 0, TR.R, 0.018, 0.16));
     parts.pal = pal('darkMetal'); parts.cyl(new V3(tc.x, tc.y, tc.z + 0.12), new V3(tc.x, tc.y, tc.z - 0.05), 0.07, 0.07, 10);
     parts.pal = null; parts.bind(0);
     if (!ctx.lite) disc(ctx, env, tb, new V3(tc.x, tc.y, tc.z - 0.02), Z1, TR.R, 'tail', 0);
@@ -503,7 +500,7 @@ const ACParts = (() => {
     const bog = out.filter(g => g.bogie);
     env.gear = legs2;
     env.anim.push((ac, dt, st) => {
-      const gp = ac.gearPos, legT = 1 - sstep(0.12, 0.88, gp), doorT = sstep(0, 0.12, gp) * (1 - sstep(0.88, 1, gp)) + (gp > 0.02 && gp < 0.98 ? 1 : 0) * 0;
+      const gp = ac.gearPos, legT = 1 - sstep(0.12, 0.88, gp), doorT = sstep(0, 0.12, gp) * (1 - sstep(0.88, 1, gp));
       st.doorT = Math.max(doorT, 0);
       const vgs = ac.out.gs || 0;
       for (const g of legs2) {
@@ -513,9 +510,8 @@ const ACParts = (() => {
         pb.position.copy(pb.userData.rest); pb.position.y += comp + g.shorten * sstep(0.1, 0.5, legT);
         if (g.nose) pb.quaternion.setFromAxisAngle(Y1, -(ac.ctl.steer || 0) * g.steer * (gp > 0.9 ? 1 : 0));
         // torque links: keep the apex joint as the piston rises (upper link pivots down, lower up)
-        const h = Math.max(0.05, g.apex0.y - (g.wc.y + g.r * 0.25)), dx = g.apex0.x - (g.wc.x + 0) ;
-        const a2 = Math.atan2(comp * 0.5, Math.max(0.05, dx));
-        rig.bone(g.linkUp).quaternion.setFromAxisAngle(Z1, -a2 * 1.2); rig.bone(g.linkLo).quaternion.setFromAxisAngle(Z1, a2 * 1.2); void h;
+        const a2 = Math.atan2(comp * 0.5, Math.max(0.05, g.apex0.x - g.wc.x));
+        rig.bone(g.linkUp).quaternion.setFromAxisAngle(Z1, -a2 * 1.2); rig.bone(g.linkLo).quaternion.setFromAxisAngle(Z1, a2 * 1.2);
         const spin = L && L.contact ? vgs / g.r : 0;
         for (const A of g.axles) { const b = rig.bone(A.bone); A.ang = ((A.ang || 0) - spin * dt) % (Math.PI * 2); if (!(L && L.contact)) A.ang *= 0.995; b.quaternion.setFromAxisAngle(Z1, A.ang); }
         for (const d of g.doors) { const b = rig.bone(d.bone); b.quaternion.setFromAxisAngle(d.axis, d.ang * (d.open === 'down' ? sstep(0, 0.1, gp) : doorT)); }
@@ -554,7 +550,7 @@ const ACParts = (() => {
       let bad = sd * cz - r * 0.5 < 0.06 ? 20 : 0;            // (not across the centre line)
       for (const dx of [-half - r * 0.9, -half, 0, half, half + r * 0.9]) for (const dz of [-r * 0.9, 0, r * 0.9]) for (const dy of [-ext, ext]) {
         // a point on the tyre: across the disc (dz) and along the axle (dy), in the tilted frame
-        const x = wc.x + dx, s = H.nose - x, py = cy + dy * ca - sd * dz * sa * 0, pz = cz + dz * ca + sd * dy * sa;
+        const x = wc.x + dx, s = H.nose - x, py = cy + dy * ca, pz = cz + dz * ca + sd * dy * sa;
         if (s < 0 || s > H.L) { bad++; continue; }
         if (!H.inside(s, py - Math.abs(dz) * sa, pz)) bad++;
       }

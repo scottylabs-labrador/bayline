@@ -240,14 +240,12 @@ const ACLivery = (() => {
         textAt(g, 1, 'BAYLINE AIR', tS, winY + (wn.h || 0.34) * 0.5 + tH * 0.78, tH, lv.stripe, 700, tH * 0.06);
         textAt(g, 1, lv.reg, L - TL * 0.55, sweep(L - TL * 0.55) - lineH * 3.9, clamp(F.h * 0.07, 0.12, 0.42), '#5d6570', 600);
         // grime: exhaust and hydraulic streaks on the belly behind the wing, darkening toward the tail cone
-        const grd = g.createLinearGradient(0, 0, W, 0);
         if (H.fair) for (const r of sides) {
           g.save(); g.globalAlpha = 0.07; g.fillStyle = '#4a4d52';
           const s0 = H.fair.s1 - 2, s1 = L - TL * 0.4;
           for (let k = 0; k < 7; k++) { const s = s0 + (s1 - s0) * k / 7; g.fillRect(X(s, r) - (r ? 3.5 * ppm : 0), Y(s, yc0 - Rh * 0.75, r), 3.5 * ppm, Y(s, yc0 - Rh * 0.98, r) - Y(s, yc0 - Rh * 0.75, r)); }
           g.restore();
         }
-        void grd;
         // polished-metal liveries: slightly different panels
         if (bare) { for (const r of sides) for (let s = 0.4; s < L; s += 1.6) for (let th = 0.1; th < Math.PI; th += 0.5) { const v = 0.93 + ((Math.sin(s * 12.9 + th * 78.2) * 43758.5) % 1 + 1) % 1 * 0.1;
           go.fillStyle = `rgb(90,${Math.round(55 + v * 60)},255)`; go.fillRect(Math.min(X(s, r), X(s + 1.6, r)) / 2, Yth(th, r) / 2, 1.6 * ppm / 2, (Yth(th + 0.5, r) - Yth(th, r)) / 2);

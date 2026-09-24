@@ -147,11 +147,10 @@ const ACCockpit = (() => {
         // a bulkhead closing the shell's front (the nose ahead of the cockpit), facing aft
         if (shellS0 > 0.05) {
           cab.pal = pal('black');
-          const n = 32, c0 = H.sec(shellS0), ctr = new V3(m.nose - shellS0, c0.yc, 0), p = new V3(), a2 = new V3(), b2 = new V3(), nn = new V3(-1, 0, 0);
+          const n = 32, c0 = H.sec(shellS0), ctr = new V3(m.nose - shellS0, c0.yc, 0), p = new V3(), nn = new V3(-1, 0, 0);
           const ids = []; for (let k = 0; k <= n; k++) { H.pt(shellS0, Math.PI * 2 * k / n, p); const d = p.clone().sub(ctr); p.addScaledVector(d.normalize(), -wall); ids.push(cab.v(p.x, p.y, p.z, nn.x, nn.y, nn.z)); }
           const ci = cab.v(ctr.x, ctr.y, ctr.z, nn.x, nn.y, nn.z);          // (dark: only ever glimpsed)
           for (let k = 0; k < n; k++) cab.tri(ci, ids[k + 1], ids[k]);
-          void a2; void b2;
         }
         cab.pal = null;
         // the rear wall (a door in the middle) and the floor
