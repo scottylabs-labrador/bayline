@@ -137,6 +137,8 @@ const GroundCover = (() => {
       }
     }
   }
+  // ground material classes grass grows on: lawn, dry grass, shrub, marsh, farmland (leaf litter: sparse), none (no map)
+  const GRASSY = [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1];
   // coarse height lattice (2 m) so each tuft sits on the ground without thousands of Terrain.h calls
   const HL = Math.ceil(R * 2 / 2) + 3; const hl = new Float32Array(HL * HL);
   function rebuild(cx, cz) {
@@ -145,12 +147,15 @@ const GroundCover = (() => {
     const hx0 = cx - R - 2, hz0 = cz - R - 2;
     for (let j = 0; j < HL; j++) for (let i = 0; i < HL; i++) hl[j * HL + i] = Terrain.h(hx0 + i * 2, hz0 + j * 2);
     rasterRoads(cx, cz); const ox = cx - OG / 2, oz = cz - OG / 2;
+    const matAt = Terrain.materialAt;
     const A = aPos.array; let n = 0; const R2 = R * R;
     for (let j = 0; j < N && n < MAX; j++) for (let i = 0; i < N && n < MAX; i++) {
       const gx = gx0 + i, gz = gz0 + j;
       const x = (gx + hash(gx, gz)) * CELL, z = (gz + hash(gz * 3 + 1, gx * 5 + 7)) * CELL;
       const dx = x - cx, dz = z - cz; if (dx * dx + dz * dz > R2) continue;
       const ocx = Math.floor(x - ox), ocz = Math.floor(z - oz); if (ocx >= 0 && ocz >= 0 && ocx < OG && ocz < OG && occ[ocz * OG + ocx]) continue;
+      // the ground material map (when loaded) says where grass can grow at all: never on paving, roofs, gravel, water
+      const mc = matAt ? matAt(x, z) : -1; if (mc >= 0 && !GRASSY[mc] && !(mc === 4 && hash(gx * 7 + 1, gz * 3 + 2) < 0.3)) continue;
       const fx = (x - hx0) / 2, fz = (z - hz0) / 2, ix = Math.min(HL - 2, Math.max(0, fx | 0)), iz = Math.min(HL - 2, Math.max(0, fz | 0)), tx = fx - ix, tz = fz - iz;
       const y = hl[iz * HL + ix] * (1 - tx) * (1 - tz) + hl[iz * HL + ix + 1] * tx * (1 - tz) + hl[(iz + 1) * HL + ix] * (1 - tx) * tz + hl[(iz + 1) * HL + ix + 1] * tx * tz;
       A[n * 4] = x - anchor.x; A[n * 4 + 1] = y - 0.03; A[n * 4 + 2] = z - anchor.z; A[n * 4 + 3] = hash(gx * 11 + 3, gz * 13 + 5); n++;

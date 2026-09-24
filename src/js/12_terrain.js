@@ -23,6 +23,9 @@ const Terrain = (() => {
   // terrain, bit for bit).
   let h9 = null, HMAX = LH;
   function hExists(L, x, y) { return L <= LH ? exists(L, x, y) : !!(h9 && h9[L] && h9[L].has(K(L, x, y))); }
+  // ground materials (tiles/mat/index.json, optional): Set of L7 keys with a 512² class map (what the ground is, per 1.56 m:
+  // lawn, dry grass, gravel, asphalt ...), used for the near-ground detail and by GroundCover. #mat=0 turns it off.
+  let mat = null;
 
   const tileSize = (L) => SIZE / (1 << L);
   const K = (L, x, y) => (L * 512 + y) * 512 + x;
@@ -70,6 +73,10 @@ const Terrain = (() => {
         h9 = { 8: s8, 9: s9, off, qs: (hi.q && hi.q.scale) || 64, attribution: hi.attribution };
         HMAX = s9.size ? 9 : 8;
       } catch (e) { h9 = null; HMAX = LH; }                // not published (yet): base terrain only
+    }
+    if (index && new URLSearchParams(location.hash.slice(1)).get('mat') !== '0') {
+      try { const mi = await Stream.json('tiles/mat/index.json', 0); mat = new Set((mi.tiles || []).map(([x, y]) => K(LH, x, y))); if (!mat.size) mat = null; }
+      catch (e) { mat = null; }
     }
     buildShared();
     if (index) { // warm the top of the pyramid so there is always a photo underneath
@@ -121,6 +128,27 @@ const Terrain = (() => {
       r.tex = t; r.state = 2; stats.msk++; return r;
     }, () => { r.state = 3; return r; });
     return r.p;
+  }
+  const MATN = 512, matRec = new Map();
+  let matDummy = null;
+  function needMat(x, y, prio) {                     // L7 class map -> R8 texture (nearest) + the CPU copy for queries
+    const k = K(LH, x, y); let r = matRec.get(k);
+    if (r) { r.used = frameNo; return r; }
+    r = { L: LH, x, y, state: 1, used: frameNo, m: null, tex: null }; matRec.set(k, r);
+    r.path = `tiles/mat/${LH}/${x}_${y}.bin`;
+    Stream.bin(r.path, prio + 1.5).then((u8) => {
+      if (u8.length < MATN * MATN) throw new Error('short material tile');
+      r.m = u8; const t = new THREE.DataTexture(u8, MATN, MATN, THREE.RedFormat, THREE.UnsignedByteType);
+      t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; r.tex = t; r.state = 2;
+    }, () => { r.state = 3; });
+    return r;
+  }
+  // ground material class at a point (0 none .. 15, see tools/tiles/materials.py), or -1 while its tile isn't loaded
+  function materialAt(x, z) {
+    if (!mat) return -1; const T7 = tileSize(LH), tx = Math.floor((x - X0) / T7), ty = Math.floor((z - Z0) / T7);
+    const r = matRec.get(K(LH, tx, ty)); if (!r || r.state !== 2) return -1;
+    const i = U.clamp(Math.floor((x - X0 - tx * T7) / T7 * MATN), 0, MATN - 1), j = U.clamp(Math.floor((z - Z0 - ty * T7) / T7 * MATN), 0, MATN - 1);
+    return r.m[j * MATN + i];
   }
   let maxAniso = 8;
   function needImg(L, x, y, prio) {
@@ -255,15 +283,11 @@ const Terrain = (() => {
       }
     }
     #endif`;
-  // ---------- eye-level ground detail: four tileable grey-scale patterns in one mipmapped texture ----------
-  // R asphalt (aggregate), G dirt (grit and pebbles), B grass (blades over soil), A concrete (speckle and voids): 512 px
-  // over a 2.5 m tile (5 mm/px). Each channel has mean 0.5 and modulates the photo's local colour; mipmaps and
-  // anisotropic filtering band-limit it at any distance.
   const GTILE = 2.5;
-  let groundTex = null;
-  function groundDetailTexture() {
-    if (groundTex) return groundTex;
-    const N = 512, M = N - 1, r = U.rng(4242), C = [0, 1, 2, 3].map(() => new Float32Array(N * N).fill(0.5));
+  let groundTex = null, groundTex2 = null;
+  // tileable grey-scale pattern painter shared by the detail textures (one seeded RNG each, so they are deterministic)
+  function detailPainter(N, seed) {
+    const M = N - 1, r = U.rng(seed), C = [0, 1, 2, 3].map(() => new Float32Array(N * N).fill(0.5));
     const vnoise = (a, cells, amp) => {                    // tileable smooth value noise with `cells` lattice cells per side
       const g = new Float32Array(cells * cells); for (let i = 0; i < g.length; i++) g[i] = r() * 2 - 1;
       for (let y = 0; y < N; y++) {
@@ -290,6 +314,28 @@ const Terrain = (() => {
       for (let t = 0; t < len; t++) { const o = ((Math.round(y + dy * t)) & M) * N + ((Math.round(x + dx * t)) & M); a[o] += (v + 0.12 * t / len - a[o]) * 0.85; }
     };
     const ri = () => Math.floor(r() * N);
+    // each channel to mean 0.5 and standard deviation sd[c], then one mipmapped RGBA texture
+    const pack = (sd) => {
+      const d = new Uint8Array(N * N * 4);
+      for (let c = 0; c < 4; c++) {
+        const a = C[c]; let m = 0, v = 0; for (let i = 0; i < N * N; i++) m += a[i]; m /= N * N;
+        for (let i = 0; i < N * N; i++) v += (a[i] - m) ** 2; const k = sd[c] / Math.sqrt(v / (N * N));
+        for (let i = 0; i < N * N; i++) d[i * 4 + c] = Math.max(0, Math.min(255, Math.round(((a[i] - m) * k + 0.5) * 255)));
+      }
+      const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
+      t.anisotropy = maxAniso; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
+      return t;
+    };
+    return { N, M, r, C, vnoise, grain, disc, blade, ri, pack };
+  }
+  // ---------- eye-level ground detail: four tileable grey-scale patterns in one mipmapped texture ----------
+  // R asphalt (aggregate), G dirt (grit and pebbles), B grass (blades over soil), A concrete (speckle and voids): 512 px
+  // over a 2.5 m tile (5 mm/px). Each channel has mean 0.5 and modulates the photo's local colour; mipmaps and
+  // anisotropic filtering band-limit it at any distance.
+  function groundDetailTexture() {
+    if (groundTex) return groundTex;
+    const { N, r, C, vnoise, grain, disc, blade, ri, pack } = detailPainter(512, 4242);
     // R: asphalt — bitumen with light and dark aggregate, a few larger stones
     { const a = C[0]; vnoise(a, 4, 0.05); vnoise(a, 16, 0.04); grain(a, 0.05);
       for (let i = 0; i < 16000; i++) disc(a, ri(), ri(), 0.35 + r() * 1.1, r() < 0.68 ? 0.62 + 0.2 * r() : 0.3 + 0.1 * r());
@@ -304,16 +350,29 @@ const Terrain = (() => {
     // A: concrete — fine speckle, air voids, faint trowel mottling
     { const a = C[3]; vnoise(a, 2, 0.035); vnoise(a, 10, 0.03); vnoise(a, 40, 0.02); grain(a, 0.03);
       for (let i = 0; i < 6000; i++) disc(a, ri(), ri(), 0.35 + r() * 0.55, r() < 0.6 ? 0.36 : 0.6); }
-    const d = new Uint8Array(N * N * 4), sd = [0.085, 0.11, 0.13, 0.06];
-    for (let c = 0; c < 4; c++) {
-      const a = C[c]; let m = 0, v = 0; for (let i = 0; i < N * N; i++) m += a[i]; m /= N * N;
-      for (let i = 0; i < N * N; i++) v += (a[i] - m) ** 2; const k = sd[c] / Math.sqrt(v / (N * N));
-      for (let i = 0; i < N * N; i++) d[i * 4 + c] = Math.max(0, Math.min(255, Math.round(((a[i] - m) * k + 0.5) * 255)));
-    }
-    const t = new THREE.DataTexture(d, N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter;
-    t.anisotropy = maxAniso; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
-    return (groundTex = t);
+    return (groundTex = pack([0.085, 0.11, 0.13, 0.06]));
+  }
+  // second set, for the ground material classes (tiles/mat): R gravel / ballast (rounded stones with contact shadows),
+  // G dry grass (long straw over bare soil), B sand (grain and wind ripples), A leaf litter (leaves and twigs), same scale
+  function groundDetail2Texture() {
+    if (groundTex2) return groundTex2;
+    const { N, r, C, vnoise, grain, disc, blade, ri, pack } = detailPainter(512, 5151);
+    { const a = C[0]; a.fill(0.34); vnoise(a, 6, 0.04); grain(a, 0.05);
+      for (let i = 0; i < 5200; i++) disc(a, ri(), ri(), 2.2 + Math.pow(r(), 1.6) * 5.5, 0.42 + 0.34 * r(), 0.16, 0.12); }
+    { const a = C[1]; a.fill(0.36); vnoise(a, 5, 0.06); vnoise(a, 24, 0.04); grain(a, 0.05);
+      for (let i = 0; i < 9000; i++) { const ang = r() * 6.2832; blade(a, r() * N, r() * N, ang, 10 + r() * 24, 0.58 + 0.3 * r()); } }
+    { const a = C[2]; vnoise(a, 4, 0.04); grain(a, 0.09);
+      const w = new Float32Array(N * N); vnoise(w, 3, 1.0);            // (tileable warp of the ripples)
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) a[y * N + x] += 0.06 * Math.sin(6.2832 * (9 * (x + 0.35 * y) / N) + 2.2 * w[y * N + x]); }
+    { const a = C[3]; a.fill(0.3); vnoise(a, 7, 0.06); grain(a, 0.04);
+      for (let i = 0; i < 2600; i++) { const cx = ri(), cy = ri(), ang = r() * 6.2832, L = 4 + r() * 7, v = 0.35 + 0.45 * r();
+        for (let t = -L; t <= L; t += 0.8) { const wdt = Math.max(0.5, (1 - (t / L) ** 2) * L * 0.45); disc(a, Math.round(cx + Math.cos(ang) * t), Math.round(cy + Math.sin(ang) * t), wdt * 0.5, v); } }
+      for (let i = 0; i < 500; i++) blade(a, r() * N, r() * N, r() * 6.2832, 12 + r() * 20, 0.2); }
+    return (groundTex2 = pack([0.13, 0.12, 0.05, 0.11]));
+  }
+  function matDummyTex() {
+    if (!matDummy) { matDummy = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType); matDummy.minFilter = matDummy.magFilter = THREE.NearestFilter; matDummy.needsUpdate = true; }
+    return matDummy;
   }
   function makeMaterial() {
     const u = {
@@ -321,10 +380,11 @@ const Terrain = (() => {
       iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
       skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind, uWaveT: U.uTime, uGround: { value: groundDetailTexture() },
+      uMat: { value: matDummyTex() }, uMatUV: { value: new THREE.Vector4(0, 0, 1, 1) }, uMatOn: { value: 0 }, uGround2: { value: mat ? groundDetail2Texture() : groundDetailTexture() },
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
-    m.customProgramCacheKey = () => 'bayline-terrain-v2';
+    m.customProgramCacheKey = () => 'bayline-terrain-v3';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
@@ -348,7 +408,31 @@ const Terrain = (() => {
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel;
           uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
           uniform float night; uniform float time; uniform sampler2D uGround;
+          uniform sampler2D uMat; uniform vec4 uMatUV; uniform float uMatOn; uniform sampler2D uGround2;
           ${WATER_GLSL()}
+          // ground material class (tiles/mat) -> surface weights: A = (asphalt, concrete, grass, soil),
+          // B = (dry grass, gravel, sand, leaf litter). 0 none, 1 lawn, 2 dry grass, 3 shrub, 4 leaf litter, 5 soil, 6 gravel,
+          // 7 asphalt, 8 concrete, 9 roof, 10 sand, 11 rock, 12 water, 13 marsh, 14 salt pond, 15 farmland
+          const vec4 MAT_A[16] = vec4[16](vec4(0.0), vec4(0.0, 0.0, 1.0, 0.0), vec4(0.0), vec4(0.0, 0.0, 0.6, 0.4), vec4(0.0, 0.0, 0.0, 0.3), vec4(0.0, 0.0, 0.0, 1.0),
+            vec4(0.0), vec4(1.0, 0.0, 0.0, 0.0), vec4(0.0, 1.0, 0.0, 0.0), vec4(0.0, 1.0, 0.0, 0.0), vec4(0.0), vec4(0.0, 0.0, 0.0, 0.5), vec4(0.0),
+            vec4(0.0, 0.0, 0.7, 0.3), vec4(0.0, 0.0, 0.0, 0.5), vec4(0.0, 0.0, 0.0, 0.6));
+          const vec4 MAT_B[16] = vec4[16](vec4(0.0), vec4(0.0), vec4(1.0, 0.0, 0.0, 0.0), vec4(0.0), vec4(0.0, 0.0, 0.0, 0.7), vec4(0.0),
+            vec4(0.0, 1.0, 0.0, 0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0, 0.0, 1.0, 0.0), vec4(0.0, 0.5, 0.0, 0.0), vec4(0.0),
+            vec4(0.0), vec4(0.0, 0.0, 0.5, 0.0), vec4(0.4, 0.0, 0.0, 0.0));
+          // landcover code (mask A's scheme, for the mid-range detail) of each material class; 8 = gravel
+          const float MAT_LC[16] = float[16](-1.0, 0.0, 0.0, 0.0, 7.0, 0.0, 8.0, 6.0, 6.0, 6.0, 4.0, 5.0, 0.0, 2.0, 3.0, 1.0);
+          int matAt(ivec2 t) { return int(texelFetch(uMat, clamp(t, ivec2(0), ivec2(511)), 0).r * 255.0 + 0.5); }
+          // four nearest class cells blended bilinearly (smooth 1.56 m boundaries), sampled through a small warp so the
+          // edges between lawn, path and asphalt don't follow the grid; returns the dominant class too
+          int matWeights(vec2 uv, vec2 jit, out vec4 wA, out vec4 wB) {
+            vec2 p = (uMatUV.xy + uv * uMatUV.zw) * 512.0 - 0.5 + jit; vec2 f = fract(p); ivec2 i = ivec2(floor(p));
+            int c0 = matAt(i), c1 = matAt(i + ivec2(1, 0)), c2 = matAt(i + ivec2(0, 1)), c3 = matAt(i + ivec2(1, 1));
+            float w0 = (1.0 - f.x) * (1.0 - f.y), w1 = f.x * (1.0 - f.y), w2 = (1.0 - f.x) * f.y, w3 = f.x * f.y;
+            wA = MAT_A[c0] * w0 + MAT_A[c1] * w1 + MAT_A[c2] * w2 + MAT_A[c3] * w3;
+            wB = MAT_B[c0] * w0 + MAT_B[c1] * w1 + MAT_B[c2] * w2 + MAT_B[c3] * w3;
+            float m = max(max(w0, w1), max(w2, w3));
+            return m == w0 ? c0 : m == w1 ? c1 : m == w2 ? c2 : c3;
+          }
           varying vec3 vW; varying vec2 vUV;
           float th(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
           float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -411,6 +495,19 @@ const Terrain = (() => {
                 // bare ground: soil with grit and pebbles
                 vec3 dirt = lf * (0.9 + 0.2 * tnb(q * 1.9, fwq * 1.9)) * (1.0 + gd.g * 1.8);
                 vec3 synth = mix(mix(dirt, pave, grey), grass, veg * (1.0 - grey * 0.6));
+                if (uMatOn > 0.5) {                     // what the ground IS (tiles/mat) instead of a guess from its colour
+                  vec2 jit = (vec2(tnb(q * 0.9, fwq * 0.9), tnb(q.yx * 0.9 + 7.3, fwq * 0.9)) - 0.5) * 0.9;
+                  vec4 wA, wB; matWeights(vUV, jit, wA, wB); float ws = dot(wA, vec4(1.0)) + dot(wB, vec4(1.0));
+                  if (ws > 0.05) {
+                    vec4 g2 = mix(textureGrad(uGround2, q / ${GTILE.toFixed(1)}, qdx / ${GTILE.toFixed(1)}, qdy / ${GTILE.toFixed(1)}), textureGrad(uGround2, q2, q2dx, q2dy), 0.38) - 0.5;
+                    float wv = 0.12 * (wear - 0.5);
+                    vec3 asphS = lf * (1.0 + gd.r * 1.8 + wv), concS = lf * (1.0 + gd.a * 1.3 + wv);
+                    vec3 dryS = lf * (0.9 + 0.2 * clump) * (1.0 + g2.g * 2.0);
+                    vec3 gravS = lf * (1.0 + g2.r * 2.2), sandS = lf * (1.0 + g2.b * 1.8), litS = lf * (0.92 + 0.16 * clump) * (1.0 + g2.a * 1.9);
+                    vec3 m = asphS * wA.x + concS * wA.y + grass * wA.z + dirt * wA.w + dryS * wB.x + gravS * wB.y + sandS * wB.z + litS * wB.w;
+                    synth = mix(synth, m / ws, smoothstep(0.05, 0.6, ws));
+                  }
+                }
                 col = mix(col, synth, eye * 0.96);
               }
             } else {
@@ -424,11 +521,15 @@ const Terrain = (() => {
             if (det > 0.0) {
               // surface-aware micro detail from the landcover class (mask A): each pattern fades before it can alias
               vec2 p = vW.xz; float cls = floor(mk.a * 255.0 + 0.5);
+              if (uMatOn > 0.5) { vec4 wa, wb; float lc = MAT_LC[matWeights(vUV, vec2(0.0), wa, wb)]; if (lc >= 0.0) cls = lc; }
               float fw = fwq;
               float d1 = tnb(p * 1.7, fw * 1.7), d2 = tnb(p * 0.43, fw * 0.43);
               float gain = ((d1 - 0.5) * 0.18 + (d2 - 0.5) * 0.12) * det;          // broad variation everywhere
               float bump = 0.3, bf = 1.0 - smoothstep(0.07, 0.19, fw);
-              if (cls > 5.5 && cls < 6.5) {                                       // pavement: asphalt grain, patching, cracks
+              if (cls > 7.5) {                                                     // gravel: stones, from the material detail texture
+                float gg = textureGrad(uGround2, p / ${GTILE.toFixed(1)}, qdx / ${GTILE.toFixed(1)}, qdy / ${GTILE.toFixed(1)}).r - 0.5;
+                gain += gg * 1.1 * det; bump = 0.5;
+              } else if (cls > 5.5 && cls < 6.5) {                                       // pavement: asphalt grain, patching, cracks
                 float g2 = tnb(p * 0.21, fw * 0.21);
                 float ga = textureGrad(uGround, p / ${GTILE.toFixed(1)}, qdx / ${GTILE.toFixed(1)}, qdy / ${GTILE.toFixed(1)}).r - 0.5;
                 gain += (ga * 0.9 + (g2 - 0.5) * 0.08) * det; bump = 0.12;
@@ -553,6 +654,13 @@ const Terrain = (() => {
       const fi = index ? finest(irec, L, x, y, LMAX) : null;
       if (fi) { const [r, s, ox, oy] = fi; u.iTex.value = r.tex; u.iUV.value.set(ox, oy, s, s); u.iHas.value = 1; u.iTexel.value = r.texel || 1; r.used = frameNo; }
       else { u.iHas.value = 0; u.iTex.value = null; }
+      // ground materials: the node's L7 class map, near the camera only (the detail it drives fades out by ~420 m)
+      u.uMatOn.value = 0;
+      if (mat && L >= LH && d < 900) {
+        const q = L - LH, mx = x >> q, my = y >> q;
+        if (mat.has(K(LH, mx, my))) { const r = needMat(mx, my, prio); if (r.state === 2) { const s = 1 / (1 << q); u.uMat.value = r.tex; u.uMatUV.value.set((x - (mx << q)) * s, (y - (my << q)) * s, s, s); u.uMatOn.value = 1; } }
+      }
+      if (!u.uMatOn.value) u.uMat.value = matDummyTex();
       u.skirt.value = Math.max(2, T / 64 * 0.8); u.nodeSize.value = T;
     }
     for (let i = cap; i < nodes.length; i++) if (nodes[i]) nodes[i].mesh.visible = false;
@@ -571,8 +679,9 @@ const Terrain = (() => {
     stats.imgMB = Math.round(imgBytes / 1e6);
     evictMap(hrec, CAP.hgt, r => { if (r.tex) r.tex.dispose(); });
     evictMap(mrec, CAP.msk, r => { if (r.tex) r.tex.dispose(); });
+    evictMap(matRec, 48, r => { if (r.tex) r.tex.dispose(); });
     // drop queued requests nobody wants any more
-    for (const map of [irec, hrec, mrec]) for (const r of map.values()) if (r.state === 1 && r.used < frameNo - 90 && r.L > 2) { Stream.cancel(r.path); }
+    for (const map of [irec, hrec, mrec, matRec]) for (const r of map.values()) if (r.state === 1 && r.used < frameNo - 90 && r.L > 2) { Stream.cancel(r.path); }
   }
 
   // ---------- queries ----------
@@ -644,9 +753,9 @@ const Terrain = (() => {
   const isWater = (x, z) => maskAt(x, z, 0) > 0.5;
   const urbanAt = (x, z) => { const v = maskAt(x, z, 1); return v; };
   function setTownFade() {}
-  return { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, update, setTownFade, setFine, lodFactor, stats, group,
+  return { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, materialAt, update, setTownFade, setFine, lodFactor, stats, group,
     groundDetail: groundDetailTexture, GROUND_TILE: GTILE, waveTexture, WATER_GLSL,
     get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH },
-    get HMAX() { return HMAX; }, get lidar() { return h9 ? { tiles8: h9[8].size, tiles9: h9[9].size, attribution: h9.attribution } : null; },
+    get HMAX() { return HMAX; }, get materials() { return mat ? { tiles: mat.size, loaded: [...matRec.values()].filter(r => r.state === 2).length } : null; }, get lidar() { return h9 ? { tiles8: h9[8].size, tiles9: h9[9].size, attribution: h9.attribution } : null; },
     get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; } };
 })();
