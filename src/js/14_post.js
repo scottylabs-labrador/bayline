@@ -8,14 +8,15 @@
 const Post = (() => {
   const R = Env.renderer, scene = Env.scene, camera = Env.camera;
   const QUALITY = {
-    ultraplus: { samples: 4, ao: 16, aoSlices: 4, aoSteps: 10, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014, ssr: true },
-    high:   { samples: 4, ao: 12, aoSlices: 2, aoSteps: 7, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016 },
-    medium: { samples: 2, ao: 8,  aoSlices: 2, aoSteps: 5, fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012 },
+    ultraplus: { samples: 4, ao: 16, aoSlices: 4, aoSteps: 10, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014, ssr: true, shafts: 40 },
+    high:   { samples: 4, ao: 12, aoSlices: 2, aoSteps: 7, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016, shafts: 24 },
+    medium: { samples: 2, ao: 8,  aoSlices: 2, aoSteps: 5, fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012, shafts: 16 },
     low:    { samples: 0, ao: 0,  fogSteps: 8,  fogScale: 0.25, bloom: 4, fxaa: true, shadow: 2048, grain: 0.0 },
   };
   let quality = 'high', Q = QUALITY.high, enabled = true, W = 0, H = 0, frame = 0;
   const stats = { calls: 0, triangles: 0 };
-  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true, showAO: false, ae: true };   // per-pass switches (profiling); showAO: the AO buffer alone
+  // per-pass switches (profiling); showAO: the AO buffer alone; expo: an exposure multiplier; aeKey: overrides the eye-adaptation key
+  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true, showAO: false, ae: true, expo: 1, shafts: true, aeKey: 0 };
   const sz = new THREE.Vector2();
 
   // ---------------------------------------------------------------- full-screen plumbing
@@ -54,13 +55,13 @@ const Post = (() => {
   `;
 
   // ---------------------------------------------------------------- targets
-  let rtScene = null, rtAO = [null, null], rtFog = null, rtHDR = null, rtLDR = null, down = [], up = [], rtLum = null, rtAE = [null, null], aeSnap = true;
+  let rtScene = null, rtAO = [null, null], rtFog = null, rtHDR = null, rtLDR = null, down = [], up = [], rtLum = null, rtAE = [null, null], aeSnap = true, rtShaft = null;
   const HF = THREE.HalfFloatType;
   function mkRT(w, h, opts = {}) {
     const rt = new THREE.WebGLRenderTarget(Math.max(1, w), Math.max(1, h), Object.assign({ type: HF, depthBuffer: false, stencilBuffer: false }, opts));
     rt.texture.minFilter = rt.texture.magFilter = THREE.LinearFilter; rt.texture.generateMipmaps = false; rt.texture.wrapS = rt.texture.wrapT = THREE.ClampToEdgeWrapping; return rt;
   }
-  function disposeAll() { for (const rt of [rtScene, rtAO[0], rtAO[1], rtFog, rtHDR, rtLDR, rtLum, rtAE[0], rtAE[1], ...down, ...up]) if (rt) { if (rt.depthTexture) rt.depthTexture.dispose(); rt.dispose(); } down = []; up = []; }
+  function disposeAll() { for (const rt of [rtScene, rtAO[0], rtAO[1], rtFog, rtHDR, rtLDR, rtLum, rtAE[0], rtAE[1], rtShaft, ...down, ...up]) if (rt) { if (rt.depthTexture) rt.depthTexture.dispose(); rt.dispose(); } down = []; up = []; }
   function build(w, h) {
     disposeAll(); W = w; H = h;
     const maxS = R.capabilities.maxSamples || 4;
@@ -68,7 +69,7 @@ const Post = (() => {
     const dt = new THREE.DepthTexture(w, h, THREE.FloatType); dt.format = THREE.DepthFormat; dt.minFilter = dt.magFilter = THREE.NearestFilter;
     rtScene = mkRT(w, h, { depthBuffer: true, depthTexture: dt, samples });
     const hw = Math.ceil(w / 2), hh = Math.ceil(h / 2);
-    rtAO = [mkRT(hw, hh), mkRT(hw, hh)];
+    rtAO = [mkRT(hw, hh), mkRT(hw, hh)]; rtShaft = mkRT(hw, hh);
     rtFog = mkRT(Math.ceil(w * Q.fogScale), Math.ceil(h * Q.fogScale));
     rtHDR = mkRT(w, h);
     rtLum = mkRT(1, 1); rtAE = [mkRT(1, 1), mkRT(1, 1)]; aeSnap = true;
@@ -193,10 +194,28 @@ const Post = (() => {
       }
       gl_FragColor = vec4(L, T);
     }`);
+  // light shafts (Mitchell, GPU Gems 3): from each half-res pixel, march toward the sun's place on screen and measure how
+  // much of the way is open sky; the composite scatters that much sunlight into the haze in front of the pixel, so the sun
+  // behind trees, towers or a ridge throws beams through the gaps. r = open fraction (decay-weighted)
+  const shaftMat = mk(Object.assign({ tDepth: { value: null }, uSunUv: { value: new THREE.Vector2() }, uShaftN: { value: 24 } }, cam), CAMGLSL + /* glsl */`
+    uniform sampler2D tDepth; uniform vec2 uSunUv; uniform int uShaftN; varying vec2 vUv;
+    void main() {
+      vec2 dv = uSunUv - vUv; float n = float(uShaftN);
+      vec2 st = dv / n; float jit = ign(gl_FragCoord.xy);
+      float open = 0.0, wsum = 0.0, w = 1.0;
+      for (int i = 0; i < 48; i++) {
+        if (i >= uShaftN) break;
+        vec2 uv = vUv + st * (float(i) + jit);
+        float sky = (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? 0.5 : step(0.99999, texture2D(tDepth, uv).r);
+        open += sky * w; wsum += w; w *= 0.965;
+      }
+      gl_FragColor = vec4(open / max(wsum, 1e-4), 0.0, 0.0, 1.0);
+    }`);
   const compMat = mk(Object.assign({
     tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 }, uTimeS: U.uTime, uExpo: { value: 1 },
+    tShaft: { value: null }, uShaftK: { value: 0 },
   }, cam, Sky.uniforms), Sky.glsl + Sky.glslFx + CAMGLSL + /* glsl */`
-    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO, uShowAO, uExpo; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
+    uniform sampler2D tScene, tDepth, tAO, tFog, tShaft; uniform float uUseAO, uShowAO, uExpo, uShaftK; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
     #ifdef BL_SSR
     uniform float uTimeS;
     float ssrH(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -268,6 +287,14 @@ const Post = (() => {
           col *= 1.0 - 0.55 * skyCloudDens(cp.xz) * smoothstep(0.02, 0.2, uSkySunDir.y);
         }
         vec3 T; vec3 ins = skyAerial(ro.y, rd, tS, T); col = col * T + ins;
+      }
+      // light shafts: in front of a surface, the haze scatters sunlight toward the eye where the way to the sun is open (lit
+      // beams between the shadows of trunks, crowns, towers); the sky itself already holds that light, so there only the
+      // shadowed part is taken out (dark beams behind a crown against the glare)
+      if (uShaftK > 0.0) {
+        float sh = texture2D(tShaft, vUv).r, ph = skyPhaseHG(mu, 0.85);
+        if (sky) col = max(col - uSkySunColor * ph * (1.0 - sh) * uShaftK * 0.35, col * 0.55);
+        else col += uSkySunColor * ph * sh * (1.0 - exp(-tS * 0.03)) * uShaftK;
       }
       // cumulus deck: three slices through the 1.6-2.3 km layer (domed tops, darker bases, silver lining)
       bool above = ro.y > uCloudBase + 500.0; vec4 cl = vec4(0.0);
@@ -404,6 +431,7 @@ const Post = (() => {
   // ---------------------------------------------------------------- frame
   let failed = false;
   const AE_KEY = 0.1;         // the metered log-average a sunlit street view gives (eye adaptation leaves it alone)
+  const SHAFT_K = 0.6, _sv = new THREE.Vector3();
   // QA: the adapted state { lum (metered log-average), f (exposure factor) }; reads back a 1x1 target (stalls: debug only)
   function aeRead() {
     if (!rtAE[0]) return null; const b = new Uint16Array(4), rt = rtAE[frame & 1];
@@ -432,6 +460,19 @@ const Post = (() => {
         blurMat.uniforms.tAO.value = rtAO[0].texture; blurMat.uniforms.uDir.value.set(1 / rtAO[0].width, 0); pass(blurMat, rtAO[1]);
         blurMat.uniforms.tAO.value = rtAO[1].texture; blurMat.uniforms.uDir.value.set(0, 1 / rtAO[0].height); pass(blurMat, rtAO[0]);
       }
+      // 2b. light shafts (half res), when the sun is up and on or near the screen
+      let shaftK = 0;
+      if (Q.shafts && debug.shafts && Env.sunDir.y > -0.02) {
+        _sv.copy(Env.sunDir).transformDirection(camera.matrixWorldInverse);
+        if (_sv.z < -0.05) {
+          const ux = (_sv.x / -_sv.z) / cam.uTanHalf.value.x * 0.5 + 0.5, uy = (_sv.y / -_sv.z) / cam.uTanHalf.value.y * 0.5 + 0.5;
+          const off = Math.max(0, -ux, ux - 1, -uy, uy - 1);
+          const hz = Env.state.wx ? U.clamp((Env.state.wx.haze || 2) / 2.2, 0.5, 2) : 1;
+          shaftK = SHAFT_K * (1 - U.smooth(0.2, 1.0, off)) * U.smooth(-0.02, 0.08, Env.sunDir.y) * hz * (1 - 0.6 * U.uNight.value);
+          if (shaftK > 1e-4) { shaftMat.uniforms.tDepth.value = depth; shaftMat.uniforms.uSunUv.value.set(ux, uy); shaftMat.uniforms.uShaftN.value = Q.shafts; pass(shaftMat, rtShaft); }
+        }
+      }
+      compMat.uniforms.tShaft.value = rtShaft.texture; compMat.uniforms.uShaftK.value = shaftK > 1e-4 ? shaftK : 0; stats.shaftK = +shaftK.toFixed(4);
       // 3. marine layer raymarch (half res)
       fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; pass(fogMat, rtFog);
       // 4. composite -> HDR
@@ -439,14 +480,14 @@ const Post = (() => {
       compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uShowAO.value = debug.showAO ? 1 : 0;
       compMat.uniforms.uExpo.value = Env.state.exposure || 1; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
       pass(compMat, rtHDR);
-      const exposure = Env.state.exposure || 1, night = U.uNight.value;
+      const exposure = (Env.state.exposure || 1) * debug.expo, night = U.uNight.value;
       // 5. eye adaptation (two 1x1 passes)
       lumMat.uniforms.tSrc.value = rtHDR.texture; lumMat.uniforms.uExpo.value = exposure;
       lumMat.uniforms.uJit.value.set((frame * 0.618034) % 1, (frame * 0.754878) % 1); pass(lumMat, rtLum);
       const ai = frame & 1, au = adaptMat.uniforms;
       au.tCur.value = rtLum.texture; au.tPrev.value = rtAE[1 - ai].texture; au.uOn.value = debug.ae ? 1 : 0;
       au.uK.value = aeSnap ? 1 : 1 - Math.exp(-Math.max(0, Math.min(dt || 0, 0.5)) / 0.9); aeSnap = false;
-      au.uKey.value = AE_KEY; au.uMaxB.value = U.lerp(2.1, 1.3, night);
+      au.uKey.value = debug.aeKey || AE_KEY; au.uMaxB.value = U.lerp(2.1, 1.3, night);
       pass(adaptMat, rtAE[ai]); const tAE = rtAE[ai].texture;
       // 6. bloom
       brightMat.uniforms.tSrc.value = rtHDR.texture; brightMat.uniforms.tAE.value = tAE; brightMat.uniforms.uExposure.value = exposure; brightMat.uniforms.uTexel.value.set(1 / W, 1 / H);
