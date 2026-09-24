@@ -8,7 +8,7 @@
 const Post = (() => {
   const R = Env.renderer, scene = Env.scene, camera = Env.camera;
   const QUALITY = {
-    ultraplus: { samples: 4, ao: 16, aoSlices: 4, aoSteps: 10, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014 },
+    ultraplus: { samples: 4, ao: 16, aoSlices: 4, aoSteps: 10, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014, ssr: true },
     high:   { samples: 4, ao: 12, aoSlices: 2, aoSteps: 7, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016 },
     medium: { samples: 2, ao: 8,  aoSlices: 2, aoSteps: 5, fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012 },
     low:    { samples: 0, ao: 0,  fogSteps: 8,  fogScale: 0.25, bloom: 4, fxaa: true, shadow: 2048, grain: 0.0 },
@@ -191,9 +191,36 @@ const Post = (() => {
       gl_FragColor = vec4(L, T);
     }`);
   const compMat = mk(Object.assign({
-    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 },
+    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 }, uTimeS: U.uTime,
   }, cam, Sky.uniforms), Sky.glsl + Sky.glslFx + CAMGLSL + /* glsl */`
     uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO, uShowAO; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
+    #ifdef BL_SSR
+    uniform float uTimeS;
+    float ssrH(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    float ssrN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(ssrH(i), ssrH(i + vec2(1, 0)), f.x), mix(ssrH(i + vec2(0, 1)), ssrH(i + vec2(1, 1)), f.x), f.y); }
+    // screen-space reflection of a view-space ray from P along R: the reflected colour and how sure we are (0 = no hit)
+    vec4 ssrTrace(vec3 P, vec3 R) {
+      float t = 1.0 + 0.006 * -P.z, tPrev = 0.0;                     // ~40 geometric steps reach ~4.5 km
+      for (int k = 0; k < 40; k++) {
+        vec3 X = P + R * t;
+        if (X.z > -0.2) break;
+        vec2 uv = (X.xy / -X.z) / uTanHalf * 0.5 + 0.5;
+        if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) break;
+        float ds = texture2D(tDepth, uv).r; float sd = depthW(ds), rz = -X.z;
+        if (ds < 0.99999 && rz > sd && rz - sd < max(1.5, 0.06 * sd) + t * 0.03) {
+          float a = tPrev, b = t;                                   // refine: binary search between the last two steps
+          for (int j = 0; j < 5; j++) { float m = 0.5 * (a + b); vec3 Y = P + R * m; vec2 u2 = (Y.xy / -Y.z) / uTanHalf * 0.5 + 0.5;
+            if (-Y.z > depthW(texture2D(tDepth, u2).r)) b = m; else a = m; }
+          vec3 Y = P + R * b; vec2 uh = (Y.xy / -Y.z) / uTanHalf * 0.5 + 0.5;
+          vec2 e = min(uh, 1.0 - uh); float edge = smoothstep(0.0, 0.08, min(e.x, e.y));
+          return vec4(texture2D(tScene, uh).rgb, edge * (1.0 - smoothstep(0.7, 1.0, float(k) / 40.0)));
+        }
+        tPrev = t; t = t * 1.2 + 0.4;
+      }
+      return vec4(0.0);
+    }
+    #endif
     float aoUp(vec2 uv, float d) {       // joint bilateral upsample of the half-res AO (depth stored in .g)
       vec2 hp = uv / uAOHalf - 0.5; vec2 f = fract(hp); vec2 b = (floor(hp) + 0.5) * uAOHalf;
       float w0 = depthW(d); float s = 0.0, ws = 0.0;
@@ -215,6 +242,20 @@ const Post = (() => {
         if (uShowAO > 0.5) { gl_FragColor = vec4(vec3(uUseAO > 0.5 ? aoUp(vUv, d) : 1.0) * 0.18, 1.0); return; }   // (QA: Post.debug.showAO)
         if (uUseAO > 0.5) col *= aoUp(vUv, d);
         vec3 wp = ro + rd * tS;
+        #ifdef BL_SSR
+        // open water sits at sea level (the terrain draws it at y = 0): a pixel within ~0.4 m of it, seen from above,
+        // reflects what the depth buffer holds along its mirrored ray, broken up by the wind's ripples (Ultra+)
+        { float yU = blUnbentY(wp, ro);
+          if (abs(yU) < 0.4 && rd.y < -0.004 && tS < 30000.0) {
+            vec2 wq = wp.xz * 0.045 + vec2(uTimeS * 0.08, uTimeS * 0.05);
+            vec3 nW = normalize(vec3((ssrN(wq) - 0.5) * 0.09 + (ssrN(wq * 3.7 + 9.1) - 0.5) * 0.05, 1.0, (ssrN(wq + 5.3) - 0.5) * 0.09 + (ssrN(wq * 3.3 + 2.7) - 0.5) * 0.05));
+            vec3 R = reflect(rd, nW); R.y = max(R.y, 0.002);
+            vec3 Pv = viewRay(vUv) * depthW(d), Rv = normalize(transpose(mat3(uCamWorld)) * R);
+            vec4 h = ssrTrace(Pv, Rv);
+            float F = 0.02 + 0.98 * pow(1.0 - clamp(-rd.y, 0.0, 1.0), 5.0);
+            col = mix(col, h.rgb * 0.94, clamp(F, 0.0, 0.9) * h.a);
+          } }
+        #endif
         if (uSkySunDir.y > 0.02 && uCloudCover > 0.01) {       // moving cloud shadows on the land
           vec3 cp = wp + uSkySunDir * ((uCloudBase + 250.0 - wp.y) / uSkySunDir.y);
           col *= 1.0 - 0.55 * skyCloudDens(cp.xz) * smoothstep(0.02, 0.2, uSkySunDir.y);
@@ -394,6 +435,7 @@ const Post = (() => {
   }
   function setQuality(q) {
     if (!QUALITY[q]) return; quality = q; Q = QUALITY[q]; W = H = 0;       // rebuild targets next frame
+    const ssr = !!Q.ssr; if (!!compMat.defines.BL_SSR !== ssr) { if (ssr) compMat.defines.BL_SSR = 1; else delete compMat.defines.BL_SSR; compMat.needsUpdate = true; }
     const s = Env.sun.shadow; if (s.mapSize.x !== Q.shadow) { s.mapSize.set(Q.shadow, Q.shadow); if (s.map) { s.map.dispose(); s.map = null; } }
   }
   setQuality('high');
