@@ -189,12 +189,14 @@ const Terrain = (() => {
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9);
     return g;
   }
+  let anisoCap = 12;
   function buildShared() {
     geo = buildGeo(G);
-    try { maxAniso = Math.min(12, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+    try { anisoCap = Env.renderer.capabilities.getMaxAnisotropy(); maxAniso = Math.min(12, anisoCap); } catch (e) {}
   }
-  // Ultra+: lidar nodes (L8/L9) get 128x128 quads, so on L9 every vertex sits on a 1.56 m lidar sample
-  function setFine(on) { fine = !!on; if (fine && !geoFine && geo) geoFine = buildGeo(G * 2); }
+  // Ultra+: lidar nodes (L8/L9) get 128x128 quads, so on L9 every vertex sits on a 1.56 m lidar sample, and imagery
+  // streamed from now on gets 16x anisotropic filtering (grazing ground stays sharp farther out)
+  function setFine(on) { fine = !!on; if (fine && !geoFine && geo) geoFine = buildGeo(G * 2); maxAniso = Math.min(fine ? 16 : 12, anisoCap); }
   const SKY_GLSL = () => (typeof Sky !== 'undefined' && Sky.glsl) ? Sky.glsl : '';
   // ---------- water: a tileable wind-wave slope map, LEAN-encoded (RG = mean slope, B = mean squared slope) ----------
   // ~70 directional waves with integer wavevectors (so the tile repeats seamlessly), a Phillips-like spectrum and
