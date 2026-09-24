@@ -120,9 +120,11 @@ const ACFrame = (() => {
         const ym = bot + (top - bot) * wy;
         sec.yc = ym; sec.up = Math.max(1e-4, top - ym); sec.dn = Math.max(1e-4, ym - bot); sec.a = Math.max(1e-4, a); sec.eu = eu; sec.ed = 2;
         sec.lobe = 0; sec.fb = 0; sec.fk = 0;
-        if (hump) {    // 747 upper deck: a lobe on the crown from the flight deck back to hump.x1, faired out behind
-          const sEnd = nose - hump.x1;
-          sec.lobe = hump.h * sstep(NL * 0.12, NL * 0.95, s) * (1 - sstep(sEnd - 1.5, sEnd + 7.5, s)); sec.lobeK = 2.4;
+        if (hump) {    // 747 upper deck: its top line rises from just behind the nose tip over the flight deck, runs
+          // level back to hump.x1 and fairs down behind; a lobe on the crown makes up the difference to the main deck
+          const sEnd = nose - hump.x1, upTop = crown + hump.h, t = clamp((s - 0.4) / 6.2, 0, 1);
+          const target = s < sEnd ? tipY + (upTop - tipY) * (1 - Math.pow(1 - t, 2.2)) : upTop - hump.h * sstep(sEnd - 1.5, sEnd + 7.5, s);
+          sec.lobe = Math.max(0, target - (sec.yc + sec.up)); sec.lobeK = 2.2 + 0.4 * sstep(NL - 3, NL + 3, s);
         }
         if (fair && s > fair.s0 - 3 && s < fair.s1 + 5) {
           const k = sstep(fair.s0 - 3, fair.s0 + 1.2, s) * (1 - sstep(fair.s1 - 1.5, fair.s1 + 5, s));

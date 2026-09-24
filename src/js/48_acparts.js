@@ -660,8 +660,9 @@ const ACParts = (() => {
       const ph = strobeT % 1.25, sOn = (airborne || ac.out.gs > 20) && (ph < 0.05 || (jet && ph > 0.14 && ph < 0.19));
       lit(L.strobeL, sOn && !!w); lit(L.strobeR, sOn && !!w);
       const landOn = (ac.gearPos > 0.5 && ac.pos.y - ac.out.gnd < 3000) || (ac.out.gs > 25 && !airborne);
-      lit(L.landL, landOn, 0.6 + night); lit(L.landR, landOn, 0.6 + night);
-      lit(L.taxi, ac.gearPos > 0.95 && (ac.out.gs > 1 || landOn) && eng1, 0.5 + night);
+      // (from the cockpit the landing and taxi lights are not seen themselves, only what they light)
+      lit(L.landL, landOn && !st.inside, 0.6 + night); lit(L.landR, landOn && !st.inside, 0.6 + night);
+      lit(L.taxi, ac.gearPos > 0.95 && (ac.out.gs > 1 || landOn) && eng1 && !st.inside, 0.5 + night);
       lit(L.logoL, night > 0.3 && eng1, 1); lit(L.logoR, night > 0.3 && eng1, 1);
       spot.intensity = landOn ? 30000 * night * (m.kind === 'ga' ? 0.25 : 1) : 0;
     });

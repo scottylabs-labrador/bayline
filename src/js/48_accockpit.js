@@ -238,16 +238,19 @@ const ACCockpit = (() => {
         for (const s2 of [-1, 1]) { const pb = rig.add(0, E.x + 0.85, E.y - 1.05, z + s2 * 0.11); cab.bind(pb); cab.pal = pal('black'); cab.box(E.x + 0.85, E.y - 0.98, z + s2 * 0.11, 0.04, 0.16, 0.08); cab.pal = null; cab.bind(0); L.pedals.push({ bone: pb, s: s2 }); }
         seat(new V3(seatX, E.y - 1.12, z), sd);
       }
-      // windshield wipers (outside): parked along the lower edge of each front pane
+      // windshield wipers (outside): parked along the lower edge of each front pane (the edge furthest forward on the
+      // sloping nose), a little above it and proud of the glass
       const fp = (H.panes || [])[0];
       if (fp) {
         const pm = B.mb('parts'); pm.pal = pal('black'); pm.bind(0);
-        const sA = Math.min(...fp.poly.map(p2 => p2[0])), thO = Math.max(...fp.poly.map(p2 => p2[1])), thI = Math.min(...fp.poly.map(p2 => p2[1]));   // (the pane's lower edge is its forward one)
+        const P0 = fp.poly; let best = 0, bs = 1e9;
+        for (let k = 0; k < P0.length; k++) { const a0 = P0[k], b0 = P0[(k + 1) % P0.length], sm = (a0[0] + b0[0]) / 2; if (sm < bs) { bs = sm; best = k; } }
+        const e0 = P0[best], e1 = P0[(best + 1) % P0.length], inb = e0[1] < e1[1] ? e0 : e1, outb = e0[1] < e1[1] ? e1 : e0;
         for (const sd of [1, -1]) {
-          const a2 = new V3(), b2 = new V3(), nrm = new V3(); H.pt(sA + 0.02, thO - 0.04, a2); H.pt(sA + 0.07, thI + 0.1, b2);
-          if (sd < 0) { a2.z = -a2.z; b2.z = -b2.z; }
-          nrm.copy(a2).sub(new V3(a2.x, H.sec(m.nose - a2.x).yc, 0)).normalize().multiplyScalar(0.035);
-          pm.cyl(a2.clone().add(nrm), b2.clone().add(nrm), 0.011, 0.008, 6, true);
+          const a2 = new V3(), b2 = new V3(), n2 = new V3(); H.pt(inb[0] + 0.06, inb[1] + 0.03, a2); H.pt(outb[0] + 0.06, outb[1] - 0.25 * (outb[1] - inb[1]), b2);
+          n2.set(a2.x, a2.y - H.sec(m.nose - a2.x).yc, a2.z).setX(0).normalize().multiplyScalar(0.025);
+          if (sd < 0) { a2.z = -a2.z; b2.z = -b2.z; n2.z = -n2.z; }
+          pm.cyl(a2.clone().add(n2), b2.clone().add(n2), 0.011, 0.008, 6, true);
         }
         pm.pal = null;
       }
