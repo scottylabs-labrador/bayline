@@ -85,6 +85,7 @@ const Player = (() => {
     if (['cab', 'onboard', 'chase', 'trackside', 'heli'].includes(m) && typeof Globe !== 'undefined' && !Globe.frame.bay) Globe.setFrame(Geo.LAT0, Geo.LON0);
     const prev = mode;
     if (m === 'cab' || m === 'onboard' || m === 'chase' || m === 'trackside' || m === 'heli') {
+      if (Sim.drive && (!focus || !focusTrain() || !focusTrain().driven)) setFocus(Sim.drive.plan.key);     // driving: the view belongs to your train
       if (!focusTrain()) { const tr = Sim.nearestTrain(cam().position, 1e9); if (!tr) { emit('toast', 'No trains running right now: try Explore at another time'); return; } setFocus(tr.key); }
     }
     if (prev === 'onboard' && m !== 'onboard') ob.seat = -1;
@@ -232,7 +233,8 @@ const Player = (() => {
     frameDt = Math.min(0.1, dt || 0.016);
     const c = cam();
     prompt = ''; promptAction = null;
-    if (focus && !Sim.trainByKey(focus)) {
+    if (Sim.drive && focus !== Sim.drive.plan.key && (mode === 'cab' || mode === 'chase' || mode === 'heli' || mode === 'trackside')) setFocus(Sim.drive.plan.key);   // driving: stay with your train
+    if (focus && !Sim.trainByKey(focus) && !(Sim.drive && focus === Sim.drive.plan.key)) {
       // focused train ended its run
       if (mode === 'onboard' || mode === 'cab') { const st = Stations.nearest(c.position, 800); if (st) { const sp = Stations.spawnPoint(st, 0, {}); setMode('walk', { pos: sp }); emit('toast', 'End of the line: everybody off at ' + st.name); } else setMode('fly'); }
       setFocus(null);

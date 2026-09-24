@@ -169,6 +169,9 @@ const Sim = (() => {
     drive = { plan: p, trip: p.trip, dir: p.dir, kind: p.kind, s: st.s, v: st.v, acc: 0, lever: 0, emergency: false, penalty: false, doors: 0, doorsTarget: 0,
       doorSideNow: 0, horn: false, bell: false, odometer: 0, key: 'drive', auto: !!opts.auto, jerk: 0, lastAcc: 0 };
     // settle state if we start mid-run: keep speed
+    // (visible to key lookups at once: the running list is otherwise only rebuilt next frame, from before the clock jump)
+    for (let i = running.length - 1; i >= 0; i--) if (running[i].key === p.key || running[i].trip.id === p.trip.id) running.splice(i, 1);
+    Track.frame(st.s, F); running.unshift({ plan: p, trip: p.trip, key: p.key, kind: p.kind, dir: p.dir, s: st.s, v: 0, a: 0, seg: null, len: 0, driven: true, x: F.x, y: F.y, z: F.z, dist: 0 });
     return drive;
   }
   function stopDrive() { drive = null; }
@@ -211,7 +214,7 @@ const Sim = (() => {
     for (const p of plans) {
       if (p.tStart > t + 1) break;
       if (p.tEnd < t) continue;
-      if (drive && p === drive.plan) continue;
+      if (drive && (p === drive.plan || p.trip.id === drive.trip.id)) continue;       // (by trip: plans are rebuilt when the service day turns)
       const o = stateAt(p, t, {});
       running.push({ plan: p, trip: p.trip, key: p.key, kind: p.kind, dir: p.dir, s: o.s, v: o.v, a: o.a, seg: o.seg, segIdx: o.segIdx, len: 0, driven: false });
     }
@@ -384,7 +387,7 @@ const Sim = (() => {
     replan();
   }
   // the consist entry for a key (for the player to attach to)
-  function trainByKey(key) { return running.find(r => r.key === key) || null; }
+  function trainByKey(key) { return running.find(r => r.key === key && r.driven) || running.find(r => r.key === key) || null; }
   function nearestTrain(pos, maxD = 1e9, filter) { let best = null, bd = maxD; for (const tr of running) { if (filter && !filter(tr)) continue; const d = Math.hypot(tr.x - pos.x, tr.z - pos.z); if (d < bd) { bd = d; best = tr; } } return best; }
 
   return { init, update, stateAt, nextStopK, nextDepartures, departures, planById, routeShort, routeColor, kindOf, stopS, doorSide, trainByKey, nearestTrain,
