@@ -19,16 +19,23 @@ CAB = ('(()=>{const B=__bayline,Sim=B.Sim,o={};const sAt=B.Track.byId.menlo_park
        'if(f(a)>=0||f(b)<0)continue;for(let i=0;i<44;i++){const m=(a+b)/2;if(f(m)<0)a=m;else b=m;}const v=Sim.stateAt(p,a,o).v;'
        'if(v<18)continue;if(!best||b<best.t)best={t:b,key:p.key,v};}'
        'if(!best)return 0;B.Env.setClock(best.t);B.Env.time.scale=1;B.Env.time.paused=true;B.Player.setFocus(best.key);B.Player.setMode("cab");return Math.round(best.v)})()')
+LOOK = lambda yaw, pitch: f'(()=>{{__bayline.Player.look.yaw={yaw};__bayline.Player.look.pitch={pitch};return 1}})()'
 VIEWS = {
     'cab':       ('t=10:05&w=clear&at=menlo_park', CAB, 'from the cab at speed through Atherton'),
-    'platform':  ('t=17:35&w=clear&at=palo_alto', None, 'Palo Alto platform, late afternoon'),
+    'platform':  ('t=18:10&w=clear&at=palo_alto', LOOK(-0.9, 0.03), 'Palo Alto platform, early evening, up the line'),
     'street':    ('t=13:00&w=clear&ll=37.78290,-122.46400,0,1.57,0.05', FLY(2), 'Clement St, San Francisco, street level'),
-    'flight_pen': ('t=11:30&w=clear&ll=37.56800,-122.32800,0,0.55,-0.32', FLY(120), 'low flight over downtown San Mateo, 120 m'),
-    'flight_sf': ('t=15:00&w=clear&ll=37.75900,-122.41800,0,0.10,-0.25', FLY(260), 'over the Mission toward downtown, 260 m'),
-    'golden':    ('t=18:40&w=clear&ll=37.75180,-122.44690,0,0.62,-0.12', FLY(260), 'golden hour from Twin Peaks'),
+    'flight_pen': ('t=17:30&w=clear&ll=37.56800,-122.32800,0,-1.75,-0.25', FLY(120), 'low flight over San Mateo toward the hills, 120 m'),
+    'flight_sf': ('t=16:00&w=clear&ll=37.79900,-122.42300,0,0.90,-0.30', FLY(80), 'over Russian Hill toward the Bay, 80 m'),
+    'golden':    ('t=18:25&w=clear&ll=37.44470,-122.16150,0,-1.95,-0.05', FLY(25), 'golden hour over Palo Alto, 25 m, into the sun'),
     'night':     ('t=21:30&w=clear&ll=37.78710,-122.41550,0,1.57,0.12', FLY(4), 'Post St at night, street level'),
     'forest':    ('t=14:00&w=clear&ll=37.44500,-122.28000,0,-1.20,-0.30', FLY(150), 'the Woodside hills, 150 m'),
+    # the round's first framings (midday / sun behind): where the difference is smaller
+    'platform_noon': ('t=17:35&w=clear&at=palo_alto', None, 'Palo Alto platform, afternoon, sun behind'),
+    'flight_pen_noon': ('t=11:30&w=clear&ll=37.56800,-122.32800,0,0.55,-0.32', FLY(120), 'low flight over downtown San Mateo, 120 m, late morning'),
+    'flight_sf_noon': ('t=15:00&w=clear&ll=37.75900,-122.41800,0,0.10,-0.25', FLY(260), 'over the Mission toward downtown, 260 m'),
+    'golden_twinpeaks': ('t=18:40&w=clear&ll=37.75180,-122.44690,0,0.62,-0.12', FLY(260), 'golden hour from Twin Peaks, sun behind'),
     'meadow':    ('t=14:00&w=clear&ll=37.44500,-122.28000,0,-1.20,-0.30', None, 'a Woodside meadow, eye level'),
+    'sunset_st': ('t=18:35&w=clear&ll=37.78290,-122.46400,0,-1.57,0.05', FLY(2), 'Clement St at sunset, into the sun'),
     # Ultra+ extras (compare --a ...lead.html#q=ultra vs --b ...#q=ultraplus!)
     'bay_bridge': ('t=17:30&w=clear&ll=37.79560,-122.39150,0,1.95,-0.06', FLY(12), 'the Bay Bridge from the Embarcadero'),
     'bay_night': ('t=21:00&w=clear&ll=37.81800,-122.36700,0,-2.25,-0.04', FLY(20), 'San Francisco across the water at night'),
