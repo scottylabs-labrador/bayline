@@ -1492,7 +1492,8 @@ const Towns = (() => {
     }
     // full tiles: state machine, wanted levels (hysteresis on the way down), unloading
     // shadows: only tiles that can overlap the sun's shadow box cast or receive (the box follows the camera; see Env)
-    const shR = ((typeof Env !== 'undefined' && Env.state && Env.state.shadowSize) || SHADOW_R / 2.2) * 2.2 + 150;
+    // (Ultra+ adds a far sun cascade: Env.state.shadowReach, so tiles out to it cast too)
+    const shR = Math.max(((typeof Env !== 'undefined' && Env.state && Env.state.shadowSize) || SHADOW_R / 2.2) * 2.2 + 150, (typeof Env !== 'undefined' && Env.state && Env.state.shadowReach) || 0);
     _jobs.length = 0;
     for (const t of [...tiles.values()]) {
       const d = t.dist = tileDist(t, camPos);
