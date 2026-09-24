@@ -173,7 +173,7 @@ const AIRCRAFT = (() => {
       model: {
         kind: 'jet', L: 70.6, nose: 33.5, fus: { d: 6.5, h: 7.85, zc: 0.4, noseLen: 9, tailLen: 17, tailUp: 2.0, hump: { x0: 33.5, x1: 10.5, h: 2.1 } },
         wing: { x: 6.2, y0: 3.2, span: 32.2, c0: 14.2, cK: 9.0, yK: 10.5, c1: 3.9, sweep: 37.5, dih: 7, z: 2.0, t: 0.13, tt: 0.08, twist: -3.5,
-          flap: [3.5, 20.0, 0.28], ail: [21.0, 29.0, 0.2], spoil: [[5, 19.5]], tip: 'winglet', slats: true, fairings: 4 },
+          flap: [3.5, 20.0, 0.28], ail: [21.0, 29.0, 0.2], spoil: [[5, 19.5]], tip: 'canted', slats: true, fairings: 4 },
         htail: { x: -25.2, span: 11.0, c0: 7.2, c1: 2.4, sweep: 37, dih: 7, z: -1.2, t: 0.1, elev: 0.3 },
         vtail: { x: -21.8, h: 10.2, c0: 10.5, c1: 3.4, sweep: 45, z: -3.0, t: 0.1, rud: 0.3 },
         engines: [{ type: 'fan', x: 1.6, y: -21.0, z: 1.9, d: 2.8, len: 5.9, pylon: 1.2, fanD: 2.37, style: 'long' }, { type: 'fan', x: 6.1, y: -12.0, z: 2.5, d: 2.8, len: 5.9, pylon: 1.2, fanD: 2.37, style: 'long' },
@@ -238,7 +238,7 @@ const AIRCRAFT = (() => {
       model: {
         kind: 'jet', L: 72.72, nose: 34.5, fus: { d: 7.14, h: 8.41, zc: 0.3, noseLen: 10, tailLen: 18.5, tailUp: 2.6 },
         wing: { x: 8.8, y0: 3.6, span: 39.9, c0: 17.7, cK: 11.2, yK: 12.6, c1: 4.0, sweep: 33.5, dih: 5.6, z: 2.7, t: 0.14, tt: 0.09, twist: -4,
-          flap: [4.2, 25.5, 0.26], ail: [27, 37.5, 0.2], spoil: [[6, 25]], tip: 'winglet', slats: true, fairings: 4 },
+          flap: [4.2, 25.5, 0.26], ail: [27, 37.5, 0.2], spoil: [[6, 25]], tip: 'fence', slats: true, fairings: 4 },
         htail: { x: -26.8, span: 15.2, c0: 9.6, c1: 3.2, sweep: 35, dih: 7, z: -1.4, t: 0.1, elev: 0.3 },
         vtail: { x: -24.2, h: 14.2, c0: 14.5, c1: 4.6, sweep: 40, z: -4.2, t: 0.1, rud: 0.3 },
         engines: [{ type: 'fan', x: 1.5, y: -25.8, z: 2.6, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' }, { type: 'fan', x: 7.0, y: -15.1, z: 3.2, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' },
@@ -301,7 +301,7 @@ const AIRCRAFT = (() => {
       model: {
         kind: 'jet', L: 14.22, nose: 6.5, fus: { d: 1.57, h: 1.63, zc: -0.1, noseLen: 2.6, tailLen: 5.4, tailUp: 0.45 },
         wing: { x: 1.3, y0: 0.7, span: 8.83, c0: 2.2, c1: 1.0, sweep: 3, dih: 6, z: 0.55, t: 0.18, tt: 0.12, twist: -3,
-          flap: [0.7, 5.2, 0.28], ail: [5.3, 8.3, 0.26], spoil: null, tip: 'round' },
+          flap: [0.7, 5.2, 0.28], ail: [5.3, 8.3, 0.26], spoil: null, tip: 'winglet' },
         htail: { x: -6.85, span: 2.8, c0: 1.5, c1: 0.9, sweep: 25, dih: 0, z: -3.2, t: 0.1, elev: 0.4, y0: 0.15 },
         vtail: { x: -4.8, h: 2.6, c0: 2.3, c1: 1.3, sweep: 38, z: -0.6, t: 0.11, rud: 0.35, dorsal: 1.5 },
         engines: [-2.9, 2.9].map(y => ({ type: 'prop', x: 2.9, y, z: 0.0, d: 2.67, blades: 4, spinner: 0.45, nacelle: { len: 3.8, d: 0.85 } })),
