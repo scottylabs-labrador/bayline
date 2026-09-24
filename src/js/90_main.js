@@ -208,12 +208,12 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
 
   // ---------- main loop ----------
   let last = performance.now(), fpsAcc = 0, fpsN = 0, calm = 0, slow = 0;
-  // Quality tiers. lod = the terrain's split threshold (T/d > lod). Auto (the default) moves between
+  // Quality tiers. lod = the terrain's split threshold (T/d > lod: LOWER refines more). Auto (the default) moves between
   // ultra and low on frame time; the Graphics setting (Gfx.pref: title card, help overlay) or #q=<name> pins a tier.
   // Ultra+ is never picked automatically: it needs WebGPU and a passing GPU benchmark (Gfx.probe), renders at up to 2x
   // (8.3 MP cap, so it also supersamples dpr-1 screens) and drops back to ultra if frames stay slow.
-  const TIERS = [ { name: 'ultraplus', dpr: 2, lod: 3.2, post: 'ultraplus', ss: 8.3e6 }, { name: 'ultra', dpr: 2, lod: 4.8, post: 'high' }, { name: 'high', dpr: 1.5, lod: 4.2, post: 'high' },
-    { name: 'medium', dpr: 1.25, lod: 3.4, post: 'medium' }, { name: 'low', dpr: 1, lod: 2.6, post: 'low' } ];
+  const TIERS = [ { name: 'ultraplus', dpr: 2, lod: 3.2, post: 'ultraplus', ss: 8.3e6 }, { name: 'ultra', dpr: 2, lod: 3.6, post: 'high' }, { name: 'high', dpr: 1.5, lod: 4.2, post: 'high' },
+    { name: 'medium', dpr: 1.25, lod: 4.8, post: 'medium' }, { name: 'low', dpr: 1, lod: 5.6, post: 'low' } ];
   const TI = (name) => TIERS.findIndex(t => t.name === name), AUTO_TOP = TI('ultra');
   const mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   let tier = mobile ? TI('low') : TI('high');
