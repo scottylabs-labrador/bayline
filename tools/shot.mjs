@@ -3,6 +3,7 @@
 //   node tools/shot.mjs <page.html|url> <out.png> [--w 1400] [--h 900] [--wait 4000]
 //        [--eval "js to run after load, may return a promise"] [--eval2 "js to run just before the shot"]
 //        [--gpu]  (use the real GPU instead of SwiftShader; faster, needs a display session)  [--mobile] (phone: touch, DPR 2)
+//        [--audio] (allow the page's AudioContext to start without a gesture; output stays muted)
 // Prints console messages and page errors. Exit code 1 if the page threw.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -13,15 +14,16 @@ import { pathToFileURL } from 'node:url';
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const flag = k => args.includes('--' + k);
-const [page, out] = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !['--gpu', '--mobile'].includes(args[i - 1])));
+const [page, out] = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !['--gpu', '--mobile', '--audio'].includes(args[i - 1])));
 const W = +opt('w', 1400), H = +opt('h', 900), WAIT = +opt('wait', 4000);
 const url = /^https?:|^file:/.test(page) ? page : pathToFileURL(resolve(page)).href;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const prof = mkdtempSync(join(tmpdir(), 'shot-'));
 const gl = flag('gpu') ? [] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+const audio = flag('audio') ? ['--autoplay-policy=no-user-gesture-required'] : [];   // --audio: let the page start its AudioContext (still muted)
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run',
   '--no-default-browser-check', '--ignore-gpu-blocklist', '--allow-file-access-from-files', '--hide-scrollbars', '--mute-audio',
-  `--window-size=${W},${H}`, ...gl, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  `--window-size=${W},${H}`, ...gl, ...audio, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 // never leave Chrome (or its profile, often hundreds of MB) behind: normal exit, errors, Ctrl-C or a watchdog's kill
 let cleaned = false;
 function cleanup() { if (cleaned) return; cleaned = true; try { chrome.kill('SIGKILL'); } catch {} try { rmSync(prof, { recursive: true, force: true }); } catch {} }
