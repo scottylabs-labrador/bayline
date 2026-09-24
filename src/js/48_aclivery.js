@@ -313,8 +313,9 @@ const ACLivery = (() => {
     const f = pf.fin, R = FIN_R;
     // side view px: u along x (nose to the right on the right side), v down from the tip
     const toPx = (reg, xf, hf) => [(R[reg][0] + R[reg][2] * (reg === 'r' || reg === 'wo' ? xf : 1 - xf)) * S, (R[reg][1] + R[reg][3] * (1 - hf)) * S];
-    if (kind === 'jet') {
-      // the emblem centred on the fin, the colour carried down; a thin white trailing band
+    // (the tail colour and the emblem on every type with a tail colour of its own; a white fin gets the stripes)
+    const colouredTail = kind === 'jet' || (kind !== 'fighter' && lv.tail && lv.tail.toLowerCase() !== lv.base.toLowerCase());
+    if (colouredTail) {
       for (const reg of ['r', 'l']) {
         const [cx, cy] = toPx(reg, f.emX, f.emH), rad = f.emR * R[reg][2] * S;
         emblem(g, cx, cy, rad, lv);
