@@ -215,6 +215,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof Post !== 'undefined' && Post.setQuality) safe('post', () => Post.setQuality(T.post));
     if (typeof Flora !== 'undefined' && Flora.setQuality) safe('flora', () => Flora.setQuality(T.post));
     if (typeof Towns !== 'undefined' && Towns.setQuality) safe('towns', () => Towns.setQuality(T.post));
+    if (typeof ACModel !== 'undefined' && ACModel.setQuality) safe('acmodel', () => ACModel.setQuality(T.name));
     window.dispatchEvent(new Event('resize'));
   }
   applyTier();
