@@ -33,8 +33,11 @@ traffic, and trains you can ride, walk through and drive.
   fly under the Golden Gate's deck (not into it). Challenges: famous approaches (Innsbruck, Gibraltar,
   Maho Beach, Madeira, Lukla), under the Golden Gate, a gate course around San Francisco, an engine
   failure after takeoff, and helicopter landings inside the Salesforce Tower's crown and on top of the
-  Golden Gate's south tower. `L` while flying copies a link that puts a friend in your aircraft, right
-  there; every flight can be replayed.
+  Golden Gate's south tower, or sit back on a guided helicopter tour of San Francisco. The tower clears
+  you for takeoff and landing with the live wind; it rains, snows and storms where the real weather
+  says so (or press K), with drops on the windshield, lightning, tyre smoke on touchdown and contrails
+  at cruise altitude. `L` while flying copies a link that puts a friend in your aircraft, right there;
+  every flight can be replayed.
 - **Multiplayer (optional)**: see other people's trains, and other people riding and walking,
   live. There is no chat or free text; callsigns like "Engineer Heron 17" are assigned by the
   server.
