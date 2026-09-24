@@ -2,7 +2,7 @@
 // Headless Chrome screenshot over the DevTools protocol (no dependencies, Node 22+).
 //   node tools/shot.mjs <page.html|url> <out.png> [--w 1400] [--h 900] [--wait 4000]
 //        [--eval "js to run after load, may return a promise"] [--eval2 "js to run just before the shot"]
-//        [--gpu]  (use the real GPU instead of SwiftShader; faster, needs a display session)
+//        [--gpu]  (use the real GPU instead of SwiftShader; faster, needs a display session)  [--mobile] (phone: touch, DPR 2)
 // Prints console messages and page errors. Exit code 1 if the page threw.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const flag = k => args.includes('--' + k);
-const [page, out] = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !['--gpu'].includes(args[i - 1])));
+const [page, out] = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--') && !['--gpu', '--mobile'].includes(args[i - 1])));
 const W = +opt('w', 1400), H = +opt('h', 900), WAIT = +opt('wait', 4000);
 const url = /^https?:|^file:/.test(page) ? page : pathToFileURL(resolve(page)).href;
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -41,7 +41,9 @@ ws.onmessage = ev => { const m = JSON.parse(ev.data);
 };
 const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
 await send('Runtime.enable'); await send('Page.enable');
-await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+const mobile = flag('mobile');
+await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: mobile ? 2 : 1, mobile });
+if (mobile) { await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }); await send('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' }); }
 await send('Page.navigate', { url });
 await new Promise(r => setTimeout(r, 1500));
 const ev = async code => { if (!code) return; const r = await send('Runtime.evaluate', { expression: code, awaitPromise: true, returnByValue: true });

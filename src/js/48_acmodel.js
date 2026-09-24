@@ -573,6 +573,13 @@ const ACModel = (() => {
     const glare = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, pw * 1.08), dark);
     glare.position.copy(panel.position).add(new V3(0.1, ph * 0.5 * Math.cos(0.4) + 0.035, 0)); inside.add(glare);
     const pedestal = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, m.kind === 'jet' ? 0.5 : 0.25), dark); pedestal.position.copy(panel.position).add(new V3(-0.35, -ph * 0.6 - 0.25, 0)); inside.add(pedestal);
+    // the autopilot panel on the glare shield's face (jets)
+    let fcu = null;
+    if (m.kind === 'jet') {
+      const fc = document.createElement('canvas'); fc.width = 1024; fc.height = 96; const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace; ft.anisotropy = 8;
+      const fm = new THREE.Mesh(new THREE.PlaneGeometry(pw * 0.66, pw * 0.66 * 96 / 1024), new THREE.MeshBasicMaterial({ map: ft, toneMapped: false }));
+      fm.position.copy(glare.position).add(new V3(-0.152, -0.002, 0)); fm.rotation.y = -Math.PI / 2; inside.add(fm); fcu = { canvas: fc, tex: ft };
+    }
     const floor = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.05, pw * 1.3), new THREE.MeshStandardMaterial({ color: 0x24282d, roughness: 0.95 })); floor.position.copy(eye).add(new V3(0.2, -1.05, -m.cockpit.y)); inside.add(floor);
 
     const tmpQ = new THREE.Quaternion(), fanAng = [];
@@ -639,7 +646,7 @@ const ACModel = (() => {
     }
     function dispose() { root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const k of ['map', 'emissiveMap', 'alphaMap']) if (o.material[k] && o.material[k] !== lightTex) o.material[k].dispose(); o.material.dispose(); } }); }
     U.global(root);
-    return { root, update, dispose, eye, panel: { canvas: panelC, tex: panelT, w: pw, h: ph }, inside, parts, lamps, spot, type };
+    return { root, update, dispose, eye, panel: { canvas: panelC, tex: panelT, w: pw, h: ph }, fcu, inside, parts, lamps, spot, type };
   }
   // a light single-mesh version for traffic (instanced): vertex-coloured fuselage, wings, tails and engines
   function lite(type) {

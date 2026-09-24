@@ -49,7 +49,7 @@ const FHud = (() => {
   #fcu .k.on{background:rgba(62,240,138,.18);border-color:rgba(62,240,138,.7);color:#8dffc0} #fcu .k.arm{border-color:rgba(67,217,255,.7);color:#9be8ff}
   body.photo #fcu{display:none!important}
   @media (max-width:1320px) and (min-width:761px){#fcu{top:74px}}
-  @media (max-width:760px){#fcu{top:auto;bottom:250px;transform:translateX(-50%) scale(.82);transform-origin:bottom center} #fcu .g.hide-s{display:none}}
+  @media (max-width:760px){#fcu{display:none!important}}
   @media (max-width:760px){.fgrid{grid-template-columns:1fr 1fr!important} .fres{grid-template-columns:1fr}}
   `;
   function init() {
@@ -211,7 +211,7 @@ const FHud = (() => {
       const cols = [
         A.athr ? (A.retard ? 'RETARD' : 'SPEED') : ac.ctl.thr >= 0.98 ? (ac.ctl.thr > 1 ? 'MAX AB' : 'TOGA') : ac.ctl.thr < 0.02 ? 'IDLE' : 'MAN THR',
         A.on ? (A.flare ? 'FLARE' : A.gs ? 'G/S' : A.appr ? (A.alt !== null ? 'ALT  G/S' : 'G/S') : A.vs !== null && A.alt !== null && Math.abs(A.alt - ac.pos.y) > 60 ? 'V/S' : 'ALT') : F.fcs.flare ? 'FLARE' : F.fcs.law === 'flight' ? 'FPA' : '',
-        A.on ? (A.appr ? (A.loc ? 'LOC' : 'HDG  LOC') : 'HDG') : '',
+        A.on ? (A.appr ? (A.loc ? 'LOC' : 'HDG  LOC') : A.nav ? 'NAV ' + A.nav.ident : 'HDG') : '',
         A.on ? 'AP' : '', ({ full: 'ASSIST', fbw: 'FBW', direct: 'DIRECT' })[F.fcs.assist],
       ];
       cols.forEach((t, i) => txt(t, x0 + 8 * s + (i + 0.5) * (fw / 5), fy, 11.5 * s, i === 0 ? (A.athr ? COL.green : COL.white) : i === 3 ? COL.white : i === 4 ? COL.cyan : COL.green));
@@ -244,7 +244,7 @@ const FHud = (() => {
     const ac = F.ac, o = ac.out; const ll = Globe.w2ll(ac.pos.x, ac.pos.z);
     const atm = FDM.atmosphere(ac.pos.y), lines = [
       ['GS', Math.round(o.gs / KT) + ' kt'], ['TAS', Math.round(o.tas / KT) + ' kt'], ['WIND', windText(ac)], ['OAT', (typeof Weather !== 'undefined' && Weather.now ? Math.round(Weather.now.temp - (ac.pos.y - Weather.now.elev) * 0.0065) : Math.round(atm.T - 273.15)) + '°C'],
-      ['POS', `${Math.abs(ll.lat).toFixed(3)}${ll.lat >= 0 ? 'N' : 'S'} ${Math.abs(ll.lon).toFixed(3)}${ll.lon >= 0 ? 'E' : 'W'}`], ['TIME', fmtT(F.flightTime)]];
+      ['POS', `${Math.abs(ll.lat).toFixed(3)}${ll.lat >= 0 ? 'N' : 'S'} ${Math.abs(ll.lon).toFixed(3)}${ll.lon >= 0 ? 'E' : 'W'}`], ['TIME', fmtT(F.flightTime) + (F.simRate > 1 ? '  ×' + F.simRate : '')]];
     const w = 200 * s, h = (lines.length * 17 + 12) * s; y -= (lines.length - 5) * 17 * s; rr(x, y, w, h, 8 * s, COL.box);
     lines.forEach(([k, v], i) => { txt(k, x + 10 * s, y + (14 + i * 17) * s, 10.5 * s, COL.line.replace('.18', '.6'), 'left', 'mono', 500); txt(v, x + w - 10 * s, y + (14 + i * 17) * s, 11 * s, COL.white, 'right'); });
   }
@@ -287,8 +287,8 @@ const FHud = (() => {
   function warnings(F, s, dt) {
     const L = F.warn.list; const blink = (performance.now() / 350 | 0) % 2 === 0;
     L.slice(0, 3).forEach((t, i) => { const red = /STALL|PULL UP|OVERSPEED|TOO LOW|TAIL/.test(t); const w = Math.max(140, t.length * 12) * s;
-      rr(W / 2 - w / 2, (W < 1320 ? 140 : 80) * s + i * 34 * s, w, 28 * s, 6 * s, red ? (blink ? 'rgba(200,20,10,.85)' : 'rgba(120,10,5,.85)') : 'rgba(40,30,0,.8)', red ? '#ff6a5e' : COL.amber);
-      txt(t, W / 2, (W < 1320 ? 154 : 94) * s + i * 34 * s, 15 * s, red ? '#fff' : COL.amber); });
+      rr(W / 2 - w / 2, (W < 760 ? 330 : W < 1320 ? 140 : 80) * s + i * 34 * s, w, 28 * s, 6 * s, red ? (blink ? 'rgba(200,20,10,.85)' : 'rgba(120,10,5,.85)') : 'rgba(40,30,0,.8)', red ? '#ff6a5e' : COL.amber);
+      txt(t, W / 2, (W < 760 ? 344 : W < 1320 ? 154 : 94) * s + i * 34 * s, 15 * s, red ? '#fff' : COL.amber); });
     notes = notes.filter(n => (n.age += dt) < 2.2);
     notes.forEach((n, i) => { const a = Math.min(1, (2.2 - n.age) * 2); g.globalAlpha = a; rr(W / 2 - 110 * s, H * 0.3 + i * 30 * s, 220 * s, 24 * s, 6 * s, 'rgba(8,10,14,.7)'); txt(n.t, W / 2, H * 0.3 + 12 * s + i * 30 * s, 13 * s, COL.green); g.globalAlpha = 1; });
   }
@@ -307,6 +307,21 @@ const FHud = (() => {
     }
     g = save; W = sW; H = sH;
     P.tex.needsUpdate = true;
+    if (F.model.fcu) fcuPanel(F, F.model.fcu);
+  }
+  function fcuPanel(F, U2) {         // the glare-shield autopilot panel: windows with the targets, lit engage buttons
+    const fg = U2.canvas.getContext('2d'), A = F.fcs.ap, D2 = Math.PI / 180;
+    fg.fillStyle = '#2b2f35'; fg.fillRect(0, 0, 1024, 96);
+    const win = (x, label, val, on) => { fg.fillStyle = '#0a0b0d'; fg.fillRect(x, 30, 150, 46); fg.fillStyle = '#b6bcc4'; fg.font = '600 16px "IBM Plex Mono", monospace'; fg.textAlign = 'center'; fg.fillText(label, x + 75, 20);
+      fg.fillStyle = on ? '#ffb347' : '#6b5130'; fg.font = '700 30px "IBM Plex Mono", monospace'; fg.fillText(val, x + 75, 64); };
+    const btn = (x, label, on) => { fg.fillStyle = '#3a3f46'; fg.fillRect(x, 34, 70, 40); fg.fillStyle = on ? '#6dff9e' : '#8a9099'; fg.font = '700 17px "IBM Plex Mono", monospace'; fg.textAlign = 'center'; fg.fillText(label, x + 35, 60);
+      if (on) { fg.fillStyle = '#6dff9e'; fg.fillRect(x + 15, 38, 40, 3); } };
+    win(20, 'SPD', A.spd === null ? '---' : String(A.spd), A.athr);
+    win(190, 'HDG', A.hdg === null ? '---' : String(Math.round(A.hdg / D2) % 360 || 360).padStart(3, '0'), A.on && !A.appr);
+    btn(360, 'AP1', A.on); btn(440, 'A/THR', A.athr); btn(520, 'APPR', A.appr);
+    win(610, 'ALT', A.alt === null ? '-----' : String(Math.round(A.alt / FT / 100) * 100), A.on);
+    win(780, 'V/S', A.vs === null ? '----' : (A.vs >= 0 ? '+' : '') + Math.round(A.vs / FT * 60 / 100) * 100, A.on && A.vs !== null);
+    U2.tex.needsUpdate = true;
   }
   function nd(F, cx, cy, R) {     // navigation display: heading-up map of nearby airports and runways
     const ac = F.ac, E = F.euler, range = 20 * NM, k = R / range;
@@ -367,11 +382,12 @@ const FHud = (() => {
     const cockpit = F.cam.mode === 'cockpit';
     if (cockpit) hud(F, s);
     const small = W < 760;
-    if (!cockpit) pfd(F, W / 2, H - (small ? 160 : 175) * s, small ? s * 0.8 : s);
+    if (!cockpit) { if (small) pfd(F, W / 2, 128 + 95 * s * 0.72, s * 0.72, { noFma: true }); else pfd(F, W / 2, H - 175 * s, s); }
     else hudData(F, s);
     if (!small) { systems(F, W - 16, H - 16, s); info(F, 16, H - 16 - 104 * s, s); }
     warnings(F, s, dt);
     fcuUpdate(F, dt);
+    if (touchEl && !touchEl.hidden && Flight.input.touch.thr === null) { const th = touchEl.querySelector('.thr'), tk = th.firstElementChild; tk.style.top = ((1 - Math.min(1, F.ac.ctl.thr)) * (th.clientHeight - 26)) + 'px'; }
     if (typeof FMissions !== 'undefined') FMissions.hudMarker(g, W, H, projectPos);
     // the panel texture ~12 times a second while in the cockpit
     if (cockpit) { panelT -= dt; if (panelT <= 0) { panelT = 0.08; panel(F); } }

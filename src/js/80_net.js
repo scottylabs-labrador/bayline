@@ -22,7 +22,7 @@ const Net = (() => {
     '#2ec4b6', '#ffbf46', '#5c80bc', '#d65db1', '#56c596', '#ff7f51', '#3d9be9', '#c3d350'];
   const callsign = id => `${ROLES[id % 8]} ${WORDS[Math.floor(id / 8) % 32]} ${(id * 37) % 100}`;
   const colorOf = id => COLORS[(id * 7) % 16];
-  const MODE_NAMES = ['menu', 'walk', 'ride', 'drive', 'fly', 'map', 'cab'];
+  const MODE_NAMES = ['menu', 'walk', 'ride', 'drive', 'fly', 'map', 'cab', 'air'];
   const MODE = Object.fromEntries(MODE_NAMES.map((n, i) => [n, i]));
 
   const SEND_MIN_MS = 500, HEARTBEAT_MS = 15000, PING_MS = 10000, HIDDEN_CLOSE_MS = 60000;
@@ -191,7 +191,7 @@ const Net = (() => {
     if (!st) return;
     const mode = typeof st.mode === 'string' ? (MODE[st.mode] ?? 0) : (st.mode | 0);
     cur = {
-      mode: Math.min(6, Math.max(0, mode)),
+      mode: Math.min(7, Math.max(0, mode)),
       trip: String(st.trip ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12),
       s: fin(st.s, -1000, 250000), car: Math.round(fin(st.car ?? -1, -1, 31)),
       x: fin(st.x, -250000, 250000), y: fin(st.y, -1000, 10000), z: fin(st.z, -250000, 250000),

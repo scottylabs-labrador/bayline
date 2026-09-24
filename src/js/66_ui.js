@@ -16,7 +16,7 @@ const UI = (() => {
       ['− / =', 'Slow down / speed up time'], ['0', 'Back to live time'], ['V', 'Mute / unmute'], ['P', 'Photo mode (hide the interface)'], ['K', 'Weather: auto · clear · fog · cloudy · haze'], ['L', 'Copy a link to this view'], ['Esc', 'Release mouse / close'],
       ['Driving: W / S', 'Power / brake notches (W also closes the doors)'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Q', 'Reverser (when stopped)'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot'],
       ['Flying: ↑ ↓ ← →', 'Pitch (↓ = nose up) and roll'], ['W / S', 'Throttle (Shift: faster; past 100 % = afterburner)'], ['A / D', 'Rudder · nose-wheel steering'], ['F / R', 'Flaps extend / retract'], ['G', 'Landing gear'], ['Space · B', 'Wheel brakes · parking brake'], ['T', 'Thrust reverse (on the ground)'], ['Z', 'Speed brakes'],
-      ['Y · U', 'Autopilot · autothrottle'], ['I', 'Approach: capture the runway ahead and autoland'], ['[ ] , . ; \'', 'Heading · altitude · speed targets'], ['C · 1-5 · Tab', 'Cameras: cockpit, chase, orbit, tower, flyby'], ['X', 'Handling: assisted · fly-by-wire · direct'], ['Home / End', 'Trim (direct handling)'], ['M', 'World map (while flying or away from the Bay)'], ['Esc', 'Flight menu']];
+      ['Y · U', 'Autopilot · autothrottle'], ['I', 'Approach: capture the runway ahead and autoland'], ['[ ] , . ; \'', 'Heading · altitude · speed targets'], ['C · 1-5 · Tab', 'Cameras: cockpit, chase, orbit, tower, flyby'], ['X', 'Handling: assisted · fly-by-wire · direct'], ['Home / End', 'Trim (direct handling)'], ['M', 'World map: click an airport to fly there direct, a live aircraft to join it'], ['N / Shift+N', 'Sim rate ×1-×16 (cruise, autopilot on)'], ['Esc', 'Flight menu']];
     el.keys.innerHTML = K.map(([k, v]) => `<div><span>${v}</span><kbd>${k}</kbd></div>`).join('');
     initMap();
     // touch joystick: drives the same WASD keys the keyboard does (walk, fly, onboard)
@@ -269,8 +269,8 @@ const UI = (() => {
     }
     // prompt
     const pr = Player.prompt; if (pr !== el.prompt._t) { el.prompt._t = pr; el.prompt.innerHTML = pr; el.prompt.hidden = !pr; }
-    el.crosshair.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly');
-    if (el.touch) el.joy.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly') || anyOpen();
+    el.crosshair.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly') || (typeof Flight !== 'undefined' && Flight.active);
+    if (el.touch) el.joy.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly') || anyOpen() || (typeof Flight !== 'undefined' && Flight.active);
     if (!el.mapov.hidden) drawMap();
   }
   const setPlaceFn = (f) => { placeFn = f; }, setSubFn = (f) => { subFn = f; }, setStripOff = (v) => { stripOff = !!v; };

@@ -107,7 +107,8 @@ const Flight = (() => {
       if (typeof Net !== 'undefined') {}
       const where = `${a.ident}${a.iata ? ' / ' + a.iata : ''} · ${a.name}`;
       if (typeof Weather !== 'undefined' && Weather.now) setTimeout(() => { if (active) UI.toast(`${a.ident} weather: ${Weather.text()}`, 7); }, 7500);
-      UI.toast(pos === 'runway' ? `${T.name} on runway ${e.ident}, ${where}. Hold W for takeoff power (the parking brake lets go), ↓ to rotate at ${T.v.r} kt, G gear up. H: all keys` : pos === 'final' ? `${T.name} on an ${c.dist || 8} nm final to runway ${e.ident}, ${where}` : `${T.name} inbound to ${where}`, 7);
+      const touch = matchMedia('(pointer: coarse)').matches;
+      UI.toast(pos === 'runway' ? (touch ? `${T.name} on runway ${e.ident}, ${where}. Slide the throttle up, pull the stick back at ${T.v.r} kt, then GEAR` : `${T.name} on runway ${e.ident}, ${where}. Hold W for takeoff power (the parking brake lets go), ↓ to rotate at ${T.v.r} kt, G gear up. H: all keys`) : pos === 'final' ? `${T.name} on an ${c.dist || 8} nm final to runway ${e.ident}, ${where}` : `${T.name} inbound to ${where}`, 7);
       emit('start', cfg);
     } finally { loading = false; }
   }
@@ -116,7 +117,7 @@ const Flight = (() => {
     const was = active; active = false; ac = null; fcs = null;
     if (typeof FHud !== 'undefined') FHud.show(false);
     if (typeof FSound !== 'undefined') FSound.stop();
-    Env.state.shadowTarget = null;
+    Env.state.shadowTarget = null; if (simRate !== 1) { simRate = 1; Env.time.scale = 1; }
     UI.setStripOff(false); UI.setPlaceFn(null); UI.setSubFn(null);
     if (was && !keepCamera) { const p = Env.camera.position; Player.fly.x = p.x; Player.fly.y = p.y; Player.fly.z = p.z; Player.setMode('fly'); }
     if (was) emit('stop');
@@ -171,6 +172,7 @@ const Flight = (() => {
         case 'Semicolon': case 'Quote': { const d = (code === 'Semicolon' ? -1 : 1) * (sh ? 1 : 5); A.spd = Math.max(40, Math.round((A.spd === null ? ac.out.cas / KT : A.spd) + d)); say('SPD', A.spd + ' kt'); break; }
         case 'KeyX': fcs.assist = fcs.assist === 'full' ? 'fbw' : fcs.assist === 'fbw' ? 'direct' : 'full'; prefs.assist = fcs.assist; savePrefs(); UI.toast({ full: 'Assisted handling: fly-by-wire with auto-flare', fbw: 'Fly-by-wire, you flare', direct: 'Direct control: the stick moves the surfaces (trim: Home / End)' }[fcs.assist], 4); break;
         case 'KeyO': ac.ctl.brake = 0; break;
+        case 'KeyN': { if (ac.out.onGround || ac.out.agl < 600) { UI.toast('Sim rate works above 2,000 ft'); break; } const R = [1, 2, 4, 8, 16]; const i = R.indexOf(simRate); setSimRate(R[(i + (sh ? R.length - 1 : 1)) % R.length]); break; }
         case 'Tab': cam.set(cam.mode === 'cockpit' ? 'chase' : 'cockpit'); break;
       }
     }
@@ -210,7 +212,7 @@ const Flight = (() => {
       const tmax = T.fdm.engines.some(en => en.ab) ? 1.1 : 1;
       if (tUp && c.park && c.thr > 0.35 && ac.out.onGround) { c.park = 0; say('parking brake', 'RELEASED'); }
       if (tUp || tDn) { if (fcs.ap.athr) { fcs.ap.athr = false; say('A/THR', 'OFF'); } c.thr = clamp(c.thr + ((tUp ? 1 : 0) - (tDn ? 1 : 0)) * dt * (shift ? 1.5 : 0.45), 0, tmax); if (c.thr > 1 && c.thr < 1.02 && tUp) c.thr = 1.021; }
-      if (touch.thr !== null) { c.thr = touch.thr * tmax; if (fcs.ap.athr) fcs.ap.athr = false; }
+      if (touch.thr !== null) { c.thr = touch.thr * tmax; if (fcs.ap.athr) fcs.ap.athr = false; if (c.park && c.thr > 0.35 && ac.out.onGround) { c.park = 0; say('parking brake', 'RELEASED'); } }
       c.rev = k('KeyT') && ac.out.onGround ? 1 : 0; if (c.rev) c.thr = 0;
       c.brake = k('Space') || (gp && gp.brake) ? 1 : (fcs.autoBrakeActive ? c.brake : 0);
     }
@@ -244,13 +246,41 @@ const Flight = (() => {
         if (align > 0.3 && toward > 0.2 && s > bs) { bs = s; best = { a: n.apt, rw, end }; } } }
     return best;
   }
+  // direct to an airport: great-circle guidance, a timely descent, then the approach to the runway into the wind
+  function directTo(a) {
+    if (!ac || ac.out.onGround) { UI.toast('Direct-to works in the air'); return; }
+    const A = fcs.ap;
+    A.nav = { apt: a, ident: a.ident }; A.arrived = false; A.descending = false;
+    A.navFn = (p) => { const ll = Globe.w2ll(p.x, p.z); return { brg: Airports.bearing(ll.lat, ll.lon, a.lat, a.lon) * D, dist: Airports.hav(ll.lat, ll.lon, a.lat, a.lon), elev: a.elev }; };
+    A.onArrive = () => {
+      const r = runwayChoice(a); if (!r) return;
+      setApproachRunway(a, r.rw, r.end); A.appr = true; A.gs = A.loc = A.flare = A.retard = false; A.nav = null; A.toIF = undefined;
+      if (fcs.assist !== 'direct') { A.athr = true; A.spd = Math.round(AIRCRAFT.vref(T, ac.mass) + 5); }
+      setSimRate(1);
+      UI.toast(`${a.ident}: approach armed for runway ${A.rwy.ident}. ${fcs.assist === 'full' ? 'Flaps and gear will follow by themselves; the autopilot lands' : 'Flaps (F) and gear (G) as you slow; the autopilot will land'}`, 8);
+    };
+    if (!A.on) toggleAP(); if (A.alt === null || A.alt < ac.pos.y - 100) A.alt = Math.max(ac.pos.y, a.elev + 3000 * FT);
+    const ll = Globe.w2ll(ac.pos.x, ac.pos.z);
+    UI.toast(`Direct to ${a.ident} · ${a.name}: ${(Airports.hav(ll.lat, ll.lon, a.lat, a.lon) / NM).toFixed(0)} nm. N speeds up time in cruise`, 7);
+  }
+  let simRate = 1;
+  function setSimRate(r) { simRate = r; Env.time.scale = r; if (r !== 1) Env.time.live = false; FHud && FHud.note('Sim rate ×' + r); }
+  // assisted: on an armed approach the aircraft configures itself (flaps by distance, gear at ~7 nm, the approach speed)
+  function autoConfig() {
+    const A = fcs.ap; if (fcs.assist !== 'full' || !A.on || !A.appr || !A.rwy || ac.out.onGround) return;
+    const d = Math.hypot(ac.pos.x - A.rwy.x, ac.pos.z - A.rwy.z) / NM, nF = T.fdm.flaps.length - 1, c = ac.ctl;
+    const want = nF === 0 ? 0 : d < 5 ? nF : d < 7 ? Math.max(1, nF - 1) : d < 10 ? Math.max(1, Math.round(nF * 0.5)) : d < 13 ? 1 : 0;
+    if (want > c.flaps) { const vfe = (T.v.fe || [])[want - 1]; if (!vfe || ac.out.cas / KT < vfe - 3) { c.flaps = want; say('flaps', T.fdm.flaps[want].label); } }
+    if (T.fdm.retract && d < 7.5 && c.gear < 0.5) { c.gear = 1; say('gear', 'DOWN'); }
+    A.spd = Math.round(d < 6 ? AIRCRAFT.vref(T, ac.mass) + 5 : Math.max(AIRCRAFT.vref(T, ac.mass) + 5, Math.min(A.spd || 999, (T.v.fe || [])[Math.max(0, Math.round(ac.flapPos) - 1)] - 10 || 220, T.fdm.retract ? 210 : 110)));
+  }
   function armApproach() {
     const A = fcs.ap;
     if (A.appr) { A.appr = false; A.gs = A.loc = false; say('APPR', 'OFF'); return; }
     const b = findApproach(); if (!b) { UI.toast('No runway ahead to approach (within 45 km, roughly aligned)'); return; }
     setApproachRunway(b.a, b.rw, b.end);
     if (!A.on) toggleAP();
-    A.appr = true; A.gs = A.loc = A.flare = A.retard = false;
+    A.appr = true; A.gs = A.loc = A.flare = A.retard = false; A.toIF = undefined;
     if (fcs.assist !== 'direct') { A.athr = true; A.spd = Math.round(AIRCRAFT.vref(T, ac.mass) + 5); }
     UI.toast(`Approach armed: runway ${A.rwy.ident} at ${b.a.ident}. Set flaps (F) and gear (G); the autopilot captures the centreline, then the glide path, and lands`, 7);
   }
@@ -436,13 +466,15 @@ const Flight = (() => {
       // the ground under a parked or taxiing aircraft can change as finer terrain streams in or a runway is refitted:
       // carry the aircraft with it instead of letting the gear springs launch it
       if (ac.out.onGround && ac.out.gs < 40) { const gh = groundFn(ac.pos.x, ac.pos.z).h; if (gLast !== null && Math.abs(gh - gLast) > 0.08 && Math.hypot(ac.pos.x - gLastX, ac.pos.z - gLastZ) < 3) ac.pos.y += gh - gLast; }
-      ac.step(dt, env);
+      if (simRate > 1 && (ac.out.agl < 600 || !fcs.ap.on || crashed)) setSimRate(1);
+      ac.step(dt * simRate, env);
       gLast = groundFn(ac.pos.x, ac.pos.z).h; gLastX = ac.pos.x; gLastZ = ac.pos.z;
       events(dt);
       FDM.euler(ac.q, E);
       callout.tick();
       for (const ev of fcs.events.splice(0)) UI.toast(ev, 3);
       if (typeof FMissions !== 'undefined') FMissions.update(dt);
+      autoConfig();
     }
     warn.tick(dt);
     Env.state.shadowTarget = ac.out.agl > 250 ? { pos: ac.pos, size: Math.max(30, Math.max(T.model.L, T.fdm.b) * 0.75) } : null;
@@ -489,7 +521,7 @@ const Flight = (() => {
   const api = {
     init, start, stop, update, restart, fromHash, on, input, cam, warn, prefs,
     get active() { return active; }, get loading() { return loading; }, get ac() { return ac; }, get fcs() { return fcs; }, get type() { return T; }, get model() { return model; }, get cfg() { return cfg; },
-    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, joinTraffic, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
+    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, joinTraffic, directTo, get simRate() { return simRate; }, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
   };
   return api;
 })();

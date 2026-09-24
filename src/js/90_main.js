@@ -151,7 +151,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     function update() {
       let n = 0; if (typeof Net === 'undefined') return;
       for (const o of Net.others()) {
-        if (o.modeName === 'drive' || o.modeName === 'cab' || o.modeName === 'menu' || o.modeName === 'map') continue;
+        if (o.modeName === 'drive' || o.modeName === 'cab' || o.modeName === 'menu' || o.modeName === 'map' || o.modeName === 'air') continue;
         let x = o.x, y = o.y, z = o.z;
         if (o.modeName === 'ride') { const tr = Sim.running.find(r => r.trip.id === o.trip); if (!tr || !tr.entry) continue; const car = tr.entry.consist.cars[o.car]; if (!car) continue; v.set(o.x, o.y, o.z); car.group.localToWorld(v); x = v.x; y = v.y; z = v.z; }
         else if (o.modeName === 'fly') y -= 1.6; else if (o.modeName === 'walk') y -= 1.62;

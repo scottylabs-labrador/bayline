@@ -77,7 +77,7 @@ const Traffic = (() => {
       }
       t.lastTrk = fix.trk; t.lastFixT = fixT; t.onGround = ground;
     }
-    for (const [hex, t] of targets) if (!seen.has(hex) && now - t.seen > 30000) { removeLabel(t); targets.delete(hex); }
+    for (const [hex, t] of targets) if (!t.player && !seen.has(hex) && now - t.seen > 30000) { removeLabel(t); targets.delete(hex); }
   }
   // dead reckoning from the last fix (great-circle-free: short distances), in the current frame
   function predict(t, now, out) {
@@ -149,6 +149,7 @@ const Traffic = (() => {
       t.hdg += ((((f.trk + t.trkRate * 2) - t.hdg + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) * Math.min(1, dt * 1.5);
       const bankT = f.ground ? 0 : clamp(Math.atan(f.gs * t.trkRate / 9.81), -0.55, 0.55); t.bank += (bankT - t.bank) * Math.min(1, dt * 1.2);
       t.pitch += ((f.ground ? 0 : gam + 2.5 * D) - t.pitch) * Math.min(1, dt);
+      if (t.player) { t.hdg = f.trk; t.pitch = t.mpPitch; t.bank = t.mpRoll; }
       FDM.attitude(tq, t.hdg, t.pitch, t.bank); tq.multiply(qFix);
       const m = meshes[t.cls]; if (counts[t.cls] >= 160) continue;
       sc.setScalar(t.scale); m4.compose(t.pos, tq, sc); m.setMatrixAt(counts[t.cls]++, m4);
@@ -177,12 +178,28 @@ const Traffic = (() => {
       const txt = `${t.cs || t.reg || t.hex.toUpperCase()}  ${t.type}  ${altFt}  ${Math.round(t.fix.gs / KT)} kt`;
       const L = t.label, u = L.userData;
       if (u.text !== txt) { u.text = txt; const g = u.g; g.clearRect(0, 0, 320, 64); g.fillStyle = 'rgba(10,12,16,.72)'; g.beginPath(); g.roundRect(2, 10, 316, 44, 12); g.fill();
-        g.fillStyle = '#f3efe6'; g.font = '600 22px "IBM Plex Mono", monospace'; g.textBaseline = 'middle'; g.fillText(txt, 14, 33, 296); u.tex.needsUpdate = true; }
+        g.fillStyle = t.player || '#f3efe6'; g.font = '600 22px "IBM Plex Mono", monospace'; g.textBaseline = 'middle'; g.fillText(txt, 14, 33, 296); u.tex.needsUpdate = true; }
       const mdl = AIRCRAFT.byId[t.cls].model; L.position.copy(t.pos); L.position.y += (mdl.fus.h || mdl.fus.d || 2) * t.scale + 6 + d * 0.01; L.material.opacity = clamp(1.4 - d / 7000, 0, 1);
     }
   }
+  // other Bayline players flying: decoded from the relay's presence ('air' mode) into targets drawn like traffic
+  function players(now) {
+    if (typeof Net === 'undefined') return;
+    const seen = new Set();
+    for (const o of Net.others()) {
+      if (o.modeName !== 'air' || !AIRCRAFT.byId[o.trip]) continue;
+      const key = 'mp' + o.id; seen.add(key);
+      const lat = o.s / 1000 - 90, lon = o.x / 1000, alt = o.y * 2, pitch = (Math.floor(o.z / 400) / 2 - 90) * D, roll = ((o.z % 400) - 180) * D;
+      let t = targets.get(key);
+      const fix = { lat, lon, alt, ground: false, trk: o.yaw, gs: o.speed, vs: 0, t: now };
+      if (!t) { t = { hex: key, cs: o.name, type: AIRCRAFT.byId[o.trip].short, reg: '', cls: o.trip, scale: 1, fix, off: new THREE.Vector3(), trkRate: 0, pos: new THREE.Vector3(), q: new THREE.Quaternion(), hdg: o.yaw, bank: roll, pitch, seen: now, phase: Math.random() * 10, label: null, player: o.color }; targets.set(key, t); }
+      t.fix = fix; t.seen = now; t.mpPitch = pitch; t.mpRoll = roll; t.onGround = alt - (typeof Player !== 'undefined' ? Player.groundAt(Globe.ll2w(lat, lon).x, Globe.ll2w(lat, lon).z) : 0) < AIRCRAFT.byId[o.trip].fdm.cgHeight + 1;
+    }
+    for (const [k, t] of targets) if (t.player && !seen.has(k)) { removeLabel(t); targets.delete(k); }
+  }
   function update(dt) {
     if (!enabled || typeof Globe === 'undefined' || typeof ACModel === 'undefined') { group.visible = false; return; }
+    players(performance.now());
     if (!inited) { inited = true; try { initMeshes(); } catch (e) { console.error('traffic', e); enabled = false; return; } }
     group.visible = true;
     pollT -= dt;

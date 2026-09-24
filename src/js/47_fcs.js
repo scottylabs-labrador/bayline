@@ -37,9 +37,14 @@ const FCS = (() => {
         const R = A.rwy; const dx = ac.pos.x - R.x, dz = ac.pos.z - R.z;
         const along = dx * R.ux + dz * R.uz, cross = -dx * R.uz + dz * R.ux;              // cross > 0: right of the centreline
         const course = Math.atan2(R.ux, -R.uz);
-        const icpt = clamp(-cross / 28, -30, 30) * D;                                       // intercept angle toward the centreline
         const drift = wrap(track() - E.hdg);
-        const hdgCmd = course + icpt - drift;
+        let hdgCmd;
+        // from the wrong side or far off the centreline: first to a fix 14 km out on the extended centreline, then inbound
+        const ifx = R.x - R.ux * 14000, ifz = R.z - R.uz * 14000, toIF = Math.hypot(ifx - ac.pos.x, ifz - ac.pos.z);
+        if (A.toIF === undefined) A.toIF = !A.loc && (along > -9000 || Math.abs(cross) > 6000 || Math.cos(wrap(E.hdg - course)) < 0.2);
+        if (A.toIF && toIF < 3500) A.toIF = false;
+        if (A.toIF) hdgCmd = Math.atan2(ifx - ac.pos.x, -(ifz - ac.pos.z)) - drift;
+        else { const icpt = clamp(-cross / 28, -30, 30) * D; hdgCmd = course + icpt - drift; }   // intercept angle toward the centreline
         phiCmd = clamp(wrap(hdgCmd - E.hdg) * 2.2, -25 * D, 25 * D);
         if (Math.abs(cross) < 150 && along < 0) A.loc = true;
         // glide path to the aiming point
@@ -56,6 +61,15 @@ const FCS = (() => {
           if (ra < 7 && A.athr) A.retard = true;
         } else if (A.alt !== null) vsCmd = clamp((A.alt - alt) * 0.08, -12, 12);
         if (o.onGround) { A.on = false; A.appr = false; A.athr = false; f.events.push('AUTOLAND COMPLETE'); }
+      } else if (A.nav && A.navFn) {
+        // direct to: the great-circle track to the destination (wind-corrected), a 3-degree descent in time, then the approach
+        const nv = A.navFn(ac.pos);             // { brg (rad), dist (m), elev (m) }
+        const drift = wrap(track() - E.hdg), want = nv.brg - drift;
+        phiCmd = clamp(wrap(want - E.hdg) * 1.6, -25 * D, 25 * D); A.hdg = ((nv.brg % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        const floor = nv.elev + 3000 * FTM, gsm = Math.max(60, Math.hypot(ac.vel.x, ac.vel.z));
+        const tod = (ac.pos.y - floor) / Math.tan(3 * D) + 22000;
+        if (nv.dist < tod && ac.pos.y > floor + 50) { A.alt = floor; A.vs = -Math.min(gsm * Math.tan(3 * D), 20); A.descending = true; }
+        if (nv.dist < 26000 && A.onArrive && !A.arrived) { A.arrived = true; A.onArrive(); }
       } else if (A.hdg !== null) {
         phiCmd = clamp(wrap(A.hdg - E.hdg) * 1.6, -25 * D, 25 * D);
       } else phiCmd = Math.abs(E.roll) < 6 * D ? 0 : E.roll;
@@ -78,7 +92,9 @@ const FCS = (() => {
       A.trend = A.lastKt === undefined ? 0 : A.trend + ((kt - A.lastKt) / dt - A.trend) * Math.min(1, dt * 1.5); A.lastKt = kt;
       if (A.retard) { ac.ctl.thr = Math.max(0, ac.ctl.thr - dt * 0.5); return; }
       if (A.spd === null) return;
-      const err = A.spd - kt, lead = err - A.trend * 4;                // aim at where the speed is heading
+      // never below the lowest selectable speed for the flaps in use (1.23 x the 1-g stall speed + 5 kt)
+      const vls = typeof AIRCRAFT !== 'undefined' ? AIRCRAFT.vstall(type, ac.mass, Math.floor(ac.flapPos + 0.05)) * (ac.spec.retract ? 1.23 : 1.3) + 5 : 0;
+      const err = Math.max(A.spd, vls) - kt, lead = err - A.trend * 4;                // aim at where the speed is heading
       A.thrI = clamp(A.thrI + lead * dt * 0.006, 0.02, A.thrMax || 1);
       ac.ctl.thr = clamp(A.thrI + lead * 0.018, 0, A.thrMax || 1);
     }

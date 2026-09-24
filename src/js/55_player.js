@@ -364,6 +364,12 @@ const Player = (() => {
   function interact() { if (promptAction) { const f = promptAction; promptAction = null; f(); return true; } return false; }
   function teleportToStation(st, dir = 1) { const sp = Stations.spawnPoint(st, dir, {}); setMode('walk', { pos: sp }); }
   function state() {
+    // flying an aircraft: position on the planet (lat/lon) and attitude, packed into the relay's numeric fields
+    if (typeof Flight !== 'undefined' && Flight.active && Flight.ac) {
+      const a = Flight.ac, E = Flight.euler, ll = Globe.w2ll(a.pos.x, a.pos.z), R = 180 / Math.PI;
+      const pz = Math.round((U.clamp(E.pitch * R, -90, 90) + 90) * 2) * 400 + Math.round(U.clamp(E.roll * R, -180, 180) + 180);
+      return { mode: 'air', trip: Flight.type.id, s: (ll.lat + 90) * 1000, car: -1, x: ll.lon * 1000, y: U.clamp(a.pos.y / 2, -500, 10000), z: pz, yaw: E.hdg, speed: U.clamp(a.out.gs, 0, 200) };
+    }
     const tr = focusTrain(); const c = cam();
     if (mode === 'onboard' && tr) return { mode: 'ride', trip: tr.trip.id, s: tr.s, car: ob.car, x: ob.x, y: ob.y, z: ob.z, yaw: look.yaw, speed: tr.dir ? tr.v : -tr.v };
     if (mode === 'cab' && tr) return { mode: tr.driven ? 'drive' : 'cab', trip: tr.trip.id, s: tr.s, car: tr.dir ? 0 : 99, x: 0, y: 0, z: 0, yaw: 0, speed: tr.dir ? tr.v : -tr.v };
