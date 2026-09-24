@@ -70,6 +70,7 @@ const ACGeo = (() => {
       }
       const f0 = this.flip; if (flip) this.flip = !this.flip;
       for (let i = 0; i + 1 < us.length; i++) for (let j = 0; j + 1 < nv; j++) {
+        if (o.skip && o.skip((us[i] + us[i + 1]) / 2, (vs[j] + vs[j + 1]) / 2)) continue;       // (a hole: o.skip(u, v) at the quad's centre)
         const q = base + i * nv + j; this.quad(q, q + nv, q + nv + 1, q + 1);
       }
       this.flip = f0; return this;

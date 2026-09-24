@@ -353,7 +353,7 @@ const ACFrame = (() => {
     const half = (right, S2) => {
       const ths = []; for (let k = 0; k <= nAround / 2; k++) ths.push(right ? Math.PI * k / (nAround / 2) : Math.PI + Math.PI * k / (nAround / 2));
       mb.skin = ctx.skin || null; if (!ctx.skin) mb.bind(0);
-      mb.surface(S2, ths, (s, th, out) => H.pt(s, th, out), { eu: 2e-4, ev: 1e-4, pole: new V3(1, 0, 0),
+      mb.surface(S2, ths, (s, th, out) => H.pt(s, th, out), { eu: 2e-4, ev: 1e-4, pole: new V3(1, 0, 0), skip: H.openings ? (s, th) => H.openings.some(P => inPoly(P, s, th)) : null,
         uv: (s, th) => { const [u, v] = ctx.uvBody(s, th, right); return [u, v, s / tile, arc(s, right ? th : 2 * Math.PI - th) / tile]; } });
     };
     // (in chunks that share their end stations: the normals are the surface's own, so the joins do not show)
@@ -415,6 +415,8 @@ const ACFrame = (() => {
     return G.offsetPoly(poly.map(([s, th]) => [s, th * r]), d).map(([s, t]) => [s, t / r]);
   }
   const mirrorPoly = (poly) => ACGeo.ccw(poly.map(([s, th]) => [s, 2 * Math.PI - th]));
+  // a point inside a convex, counter-clockwise polygon
+  const inPoly = (P, x, y) => { for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; if ((b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) < 0) return false; } return true; };
   function windscreen(H, ctx) {
     const B = ctx.B, glass = B.mb('glass'), frames = B.mb('parts');
     glass.bind(0); frames.bind(0); frames.pal = ctx.pal('frame');
