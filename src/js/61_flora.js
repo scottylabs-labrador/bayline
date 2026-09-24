@@ -12,7 +12,8 @@
 //   Flora.update(camPos, env)  every frame (streams tiles, rebuilds rings when the camera moves)
 //   Flora.group                add to the scene (init() does this when a scene is given)
 //   Flora.hasData(x, z)        true when a tree tile covers (x, z): Towns should skip its own trees there (alias: covers)
-//   Flora.stats                counters; Flora.setQuality('high'|'medium'|'low')
+//   Flora.stats                counters; Flora.setQuality('ultraplus'|'high'|'medium'|'low')
+// Tree data: tiles/t2 (measured heights, extra crowns; tools/bake_trees2.py) where published, else tiles/t.
 const Flora = (() => {
   const TAU = Math.PI * 2;
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -919,7 +920,9 @@ const Flora = (() => {
   const tiles = new Map();           // 'tx_ty' -> { tx, ty, state, n, D (Float32Array n*10), K (Uint8Array), prio, dead }
   let index = null;                  // Set of 'tx_ty' with tree data (null = unknown: probe by fetching)
   let dirty = true; const lastNear = new V3(1e9, 0, 0);
-  const DATA_TILE = (tx, ty) => `tiles/t/7/${tx}_${ty}${suffix}.bin`;
+  // tiles/t2 (same layout; measured canopy heights + crowns the photo detector missed) wherever its index lists the tile
+  let t2 = null;
+  const DATA_TILE = (tx, ty) => `tiles/${t2 && t2.has(tkey(tx, ty)) ? 't2' : 't'}/7/${tx}_${ty}${suffix}.bin`;
   const tkey = (tx, ty) => tx + '_' + ty;
   const tileOf = (x, z) => [Math.floor((x - X0) / T7), Math.floor((z - Z0) / T7)];
   const hash = (a, b) => { let h = (a * 374761393 + b * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -963,6 +966,9 @@ const Flora = (() => {
         if (!list && (hasTrees || ctx.index) && idx.levels && idx.levels['7']) list = idx.levels['7'];   // an explicit ctx.index is taken as given
         if (list) index = new Set(list.map(([x, y]) => tkey(x, y)));
       } catch (e) { index = null; }
+      if (typeof Stream !== 'undefined' && !suffix && new URLSearchParams(location.hash.slice(1)).get('t2') !== '0') {
+        try { const i2 = await Stream.json('tiles/t2/index.json', 1); t2 = new Set((i2.tiles || []).map(([x, y]) => tkey(x, y))); if (index) for (const k of t2) index.add(k); } catch (e) { t2 = null; }   // (t2 also plants the hills beyond the imagery tiles)
+      }
       ready = true; dirty = true;
     })();
     return initP;
