@@ -4,7 +4,7 @@ data layers. Needs the dev server (tools/devserver.py). One headless Chrome per 
 each under a watchdog; prints frame cost per view and writes a contact sheet when two runs are compared.
 
   python3 tools/qa_views.py OUT [--base http://localhost:8124/lead.html] [--hash q=ultra] [--views a,b] [--wait 24]
-  python3 tools/qa_views.py --compare OUT_A OUT_B SHEET.jpg [--labels "before,after"]
+  python3 tools/qa_views.py --compare OUT_A OUT_B SHEET.jpg [--labels "before,after"] [--views a,b]
 """
 import argparse, json, os, subprocess, sys, time
 
@@ -14,20 +14,29 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VIEWS = {
     'belmont_hills':   ('t=17:40&w=clear&ll=37.5160,-122.2830,0,-1.9,-0.34', 230, 'lidar relief of the Belmont hills, low sun'),
     'sancarlos_plat':  ('t=10:40&w=clear&at=san_carlos', None, 'platform eye level: ballast, paving, planting'),
-    'alamo_victorians': ('t=16:10&w=clear&ll=37.77600,-122.43400,0,1.57,0.06', 6, 'the Painted Ladies on Steiner St from Alamo Square (facades)'),
+    'alamo_victorians': ('t=16:10&w=clear&ll=37.77615,-122.43335,0,1.57,0.02', 10, 'the Painted Ladies on Steiner St, from the street at 10 m (facades)'),
     'tenderloin_post': ('t=15:20&w=clear&ll=37.78710,-122.41550,0,1.57,0.12', 4, 'mid-rise street, Post St (facades)'),
     'market_st':       ('t=13:30&w=clear&ll=37.78870,-122.40240,0,0.86,0.13', None, 'downtown street level (facades)'),
     'stanford_oval':   ('t=11:30&w=clear&ll=37.42760,-122.16930,0,0.0,-0.30', 55, 'lawns, paths, trees from low altitude'),
     'sanmateo_hills':  ('t=16:40&w=clear&ll=37.54700,-122.33500,0,-2.2,-0.38', 140, 'suburban hills: lidar + roofs + yards'),
     'golden_hills':    ('t=18:40&w=clear&ll=37.49000,-122.21000,0,-0.50,-0.25', 600, 'golden hour along the Peninsula (terrain shadows)'),
-    'millbrae_track':  ('t=09:10&w=clear&at=millbrae', None, 'trackside eye level'),
+    'millbrae_track':  ('t=09:10&w=clear&ll=37.59900,-122.38600,0,-0.60,-0.05', 3, 'trackside, 3 m (ballast, verges)'),
+    'oval_eye':        ('t=11:30&w=clear&ll=37.42880,-122.16940,0,0.00,-0.10', 2, 'eye level on the Stanford Oval: lawn, paths, road (materials)'),
+    'professorville_eye': ('t=10:30&w=clear&ll=37.44330,-122.15580,0,0.62,-0.10', 2, 'eye level in a Palo Alto street: lawns, driveways, asphalt (materials)'),
     'twin_peaks':      ('t=18:25&w=clear&ll=37.75180,-122.44690,0,0.62,-0.12', 260, 'SF from Twin Peaks at golden hour'),
     'ecr_sanmateo':    ('t=12:10&w=clear&ll=37.56400,-122.32300,0,0.80,-0.20', 28, 'downtown San Mateo from 28 m (facades, roofs)'),
+    'atherton_line':   ('t=10:20&w=clear&ll=37.46320,-122.19573,0,-0.87,-0.02', 4, 'train-window height beside the line through Atherton, looking up the line (trees)'),
+    'ggpark':          ('t=11:10&w=clear&ll=37.77000,-122.47000,0,-1.57,-0.18', 45, 'Golden Gate Park from 45 m (trees)'),
+    'presidio':        ('t=15:40&w=clear&ll=37.79400,-122.46000,0,-0.90,-0.15', 70, 'the Presidio forest (trees)'),
+    'eastbay_hills':   ('t=16:20&w=clear&ll=37.81200,-122.23000,0,0.80,-0.25', 180, 'low flight over the Oakland hills (trees, lidar)'),
+    'huddart_forest':  ('t=14:00&w=clear&ll=37.44500,-122.28000,0,-1.20,-0.30', 150, 'Woodside hills redwoods: CHM-only trees beyond the imagery tiles'),
 }
 READY = 'new Promise(r=>{const f=()=>window.__bayline&&window.__bayline.Sim.TT?r():setTimeout(f,200);f();})'
 PERF = ('new Promise(r=>{const B=__bayline,i=B.Env.renderer.info;for(const id of ["hud","toast"]){const e=document.getElementById(id);if(e)e.style.visibility="hidden"}let n=0,t0=performance.now();function f(){n++;if(n<90)requestAnimationFrame(f);'
         'else r(JSON.stringify({ms:+((performance.now()-t0)/n).toFixed(1),calls:i.render.calls,tris:i.render.triangles,nodes:B.Terrain.stats.nodes,'
-        'hgt:B.Terrain.stats.hgt,lidar:!!B.Terrain.lidar,q:B.Post&&B.Post.quality,px:B.Env.renderer.getPixelRatio()}))}requestAnimationFrame(f)})')
+        'hgt:B.Terrain.stats.hgt,lidar:!!B.Terrain.lidar,q:B.Post&&B.Post.quality,px:B.Env.renderer.getPixelRatio(),'
+        'gpu:(()=>{const p=B.Post&&B.Post.profile&&B.Post.profile(10);return p?p.total:null})()}))}requestAnimationFrame(f)})')
+# ms = frame interval (vsync-capped at 60 Hz in headless Chrome); gpu = GPU time of one frame, synced (Post.profile)
 
 
 def capture(out, name, base, extra, wait):
@@ -54,9 +63,9 @@ def capture(out, name, base, extra, wait):
     return dict(view=name, perf=perf, errors=errs, s=round(time.time() - t0))
 
 
-def compare(a, b, sheet, labels):
+def compare(a, b, sheet, labels, only=None):
     from PIL import Image, ImageDraw
-    names = [n for n in VIEWS if os.path.exists(os.path.join(a, n + '.png')) and os.path.exists(os.path.join(b, n + '.png'))]
+    names = [n for n in (only or VIEWS) if os.path.exists(os.path.join(a, n + '.png')) and os.path.exists(os.path.join(b, n + '.png'))]
     W = 960; rows = []
     for n in names:
         ims = [Image.open(os.path.join(d, n + '.png')).convert('RGB') for d in (a, b)]
@@ -86,7 +95,7 @@ if __name__ == '__main__':
     ap.add_argument('--labels', default='before,after')
     a = ap.parse_args()
     if a.compare:
-        compare(*a.compare, a.labels.split(',')); sys.exit(0)
+        compare(*a.compare, a.labels.split(','), a.views.split(',') if a.views else None); sys.exit(0)
     os.makedirs(a.out, exist_ok=True)
     res = []
     for n in (a.views.split(',') if a.views else VIEWS):
