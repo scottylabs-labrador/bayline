@@ -52,6 +52,10 @@ button{font:inherit;color:inherit;cursor:pointer}
 .btn.primary{background:var(--red);border-color:var(--red);color:#fff} .btn.primary:hover{background:#ef5140}
 .chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:6px 12px;font-size:13px;color:var(--ink-dim)}
 .chip.on{background:rgba(255,255,255,.14);color:var(--ink);border-color:rgba(255,255,255,.3)}
+.chip.off,.chip:disabled{opacity:.42;cursor:not-allowed}
+#gfxchips2{display:flex;gap:8px;align-items:center}
+.gfxlab{color:var(--ink-faint);font-size:13px;margin-right:4px}
+.gfxnote{color:var(--ink-faint);font-size:12px;margin-left:6px;flex:1 1 180px;min-width:0}
 kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);background:rgba(255,255,255,.07);color:var(--ink)}
 
 /* loading */
@@ -240,7 +244,7 @@ kbd{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:5px;bor
 <div class="overlay" id="mapov" hidden><div class="card panel" style="width:min(1200px,96vw)"><button class="close" data-close>×</button><div class="kicker">Live map</div><div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><h2 style="margin-right:auto">The line right now</h2><select id="flyto" class="chip" style="background:rgba(255,255,255,.06);color:var(--ink);padding:8px 12px;font-size:14px"></select></div><canvas id="mapc"></canvas><p style="color:var(--ink-faint);font-size:13px">Click a station to walk its platform, a train to follow it, a landmark (gold) to fly there. Scroll to zoom, drag to pan.</p></div></div>
 <div class="overlay" id="missions" hidden><div class="card panel"><button class="close" data-close>×</button><div class="kicker">Missions</div><h2>What do you want to do?</h2><div class="list" id="mlist"></div></div></div>
 <div class="overlay" id="result" hidden><div class="card panel" style="width:min(560px,92vw)"><button class="close" data-close>×</button><div class="kicker" id="rkicker">Run complete</div><h2 id="rtitle">Well driven</h2><div class="score" id="rscore">0</div><div id="rbody" style="color:var(--ink-dim);line-height:1.6;margin:10px 0 16px"></div><button class="btn primary" data-close>Continue</button></div></div>
-<div class="overlay" id="help" hidden><div class="card panel"><button class="close" data-close>×</button><div class="kicker">Controls</div><h2>How to play</h2><div class="keys" id="keys"></div></div></div>
+<div class="overlay" id="help" hidden><div class="card panel"><button class="close" data-close>×</button><div class="kicker">Controls</div><h2>How to play</h2><div class="keys" id="keys"></div><div class="row" id="gfxchips2" style="margin-top:14px;flex-wrap:wrap"></div></div></div>
 
 <!--THREE-->
 <!--DATA-->

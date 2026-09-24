@@ -1468,7 +1468,7 @@ const Towns = (() => {
   const _jobs = [];
   let scanX = 1e9, scanZ = 1e9, scanR = 0, imgClock = 0;
   let qR = 1;
-  function setQuality(name) { qR = { high: 1, medium: 0.72, low: 0.5 }[name] || 1; scanR = 0; }
+  function setQuality(name) { qR = { ultraplus: 1.35, high: 1, medium: 0.72, low: 0.5 }[name] || 1; scanR = 0; }
   function update(camPos, env) {
     if (!ready) return;
     const t0 = now(); const budget = (env && env.budgetMs) || BUDGET_MS; deadline = t0 + budget;

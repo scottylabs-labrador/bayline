@@ -22,7 +22,8 @@ const Flora = (() => {
   const X0 = -45056, Z0 = -49152, SIZE = 102400, L7 = 7, T7 = SIZE / 128;
   const KINDS = ['oak', 'redwood', 'eucalyptus', 'palm', 'sycamore', 'cypress', 'pine', 'street', 'fanpalm', 'shrub'];   // shrub: generated along the line
   const NK = KINDS.length;
-  const Q = {   // quality tiers
+  const Q = {   // quality tiers (instance capacities are allocated for high at init: ultraplus only reaches farther)
+    ultraplus: { near: 170, mid: 700, far: 2100, load: 2400, shadows: true, nearMax: 1400, midMax: 9000, farMax: 160000 },
     high: { near: 135, mid: 560, far: 1650, load: 1900, shadows: true, nearMax: 1400, midMax: 9000, farMax: 160000 },
     medium: { near: 95, mid: 420, far: 1300, load: 1550, shadows: true, nearMax: 800, midMax: 6000, farMax: 110000 },
     low: { near: 55, mid: 300, far: 950, load: 1200, shadows: false, nearMax: 350, midMax: 3500, farMax: 70000 },

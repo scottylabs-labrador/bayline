@@ -18,13 +18,13 @@ VIEWS = {
     'market_st':       ('t=13:30&w=clear&ll=37.78870,-122.40240,0,0.86,0.13', None, 'downtown street level (facades)'),
     'stanford_oval':   ('t=11:30&w=clear&ll=37.42760,-122.16930,0,0.0,-0.30', 55, 'lawns, paths, trees from low altitude'),
     'sanmateo_hills':  ('t=16:40&w=clear&ll=37.54700,-122.33500,0,-2.2,-0.38', 140, 'suburban hills: lidar + roofs + yards'),
-    'golden_hills':    ('t=18:52&w=clear&ll=37.50500,-122.24000,0,-2.15,-0.16', 420, 'golden hour toward the hills (terrain shadows)'),
+    'golden_hills':    ('t=18:40&w=clear&ll=37.49000,-122.21000,0,-0.50,-0.25', 600, 'golden hour along the Peninsula (terrain shadows)'),
     'millbrae_track':  ('t=09:10&w=clear&at=millbrae', None, 'trackside eye level'),
     'twin_peaks':      ('t=18:25&w=clear&ll=37.75180,-122.44690,0,0.62,-0.12', 260, 'SF from Twin Peaks at golden hour'),
     'ecr_sanmateo':    ('t=12:10&w=clear&ll=37.56420,-122.32300,0,-0.62,0.06', None, 'El Camino in San Mateo (street facades)'),
 }
 READY = 'new Promise(r=>{const f=()=>window.__bayline&&window.__bayline.Sim.TT?r():setTimeout(f,200);f();})'
-PERF = ('new Promise(r=>{const B=__bayline,i=B.Env.renderer.info;let n=0,t0=performance.now();function f(){n++;if(n<90)requestAnimationFrame(f);'
+PERF = ('new Promise(r=>{const B=__bayline,i=B.Env.renderer.info;for(const id of ["hud","toast"]){const e=document.getElementById(id);if(e)e.style.visibility="hidden"}let n=0,t0=performance.now();function f(){n++;if(n<90)requestAnimationFrame(f);'
         'else r(JSON.stringify({ms:+((performance.now()-t0)/n).toFixed(1),calls:i.render.calls,tris:i.render.triangles,nodes:B.Terrain.stats.nodes,'
         'hgt:B.Terrain.stats.hgt,lidar:!!B.Terrain.lidar,q:B.Post&&B.Post.quality,px:B.Env.renderer.getPixelRatio()}))}requestAnimationFrame(f)})')
 
