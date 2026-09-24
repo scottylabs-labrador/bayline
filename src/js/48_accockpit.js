@@ -186,7 +186,8 @@ const ACCockpit = (() => {
         const e0 = cs[best], e1 = cs[(best + 1) % cs.length], lo = e0.y > e1.y ? e0 : e1;
         gxF = Math.min(lo.x - 0.02, E.x + 1.4); gyF = Math.min(lo.y - 0.01, E.y - 0.12);
       }
-      const gx = Math.min(E.x + 0.7, gxF - 0.25), gy = Math.min(E.y - 0.41, gyF - 0.03), wHalf = Math.min(halfW(m.nose - gx, gy) - 0.03, 1.25);
+      // (its aft edge ~22 degrees below the eye line; the displays start under its lip, 30-40 degrees down)
+      const gx = Math.min(E.x + 0.72, gxF - 0.25), gy = Math.max(E.y - 0.3, gyF - 0.02) > E.y - 0.22 ? gyF - 0.02 : Math.max(E.y - 0.3, gyF - 0.02), wHalf = Math.min(halfW(m.nose - gx, gy) - 0.03, 1.25);
       const shelf = (y0, y1, x0, x1, w2) => {
         const a2 = cab.v(x0, y0, -w2, 0, 1, 0), b2 = cab.v(x0, y0, w2, 0, 1, 0), c2 = cab.v(x1, y1, w2, 0, 1, 0), d2 = cab.v(x1, y1, -w2, 0, 1, 0);
         cab.quad(a2, b2, c2, d2);
@@ -199,7 +200,7 @@ const ACCockpit = (() => {
       fcu = { canvas: fc, tex: ft };
       const fw = Math.min(0.6, wHalf * 0.55);
       quad(fcuB, new V3(gx - 0.013, gy - 0.055, 0), new V3(0, 0, fw), new V3(0, fw * 96 / 1024, 0), area(0, 0, 1, 1));
-      const tilt = new Q4().setFromAxisAngle(Z1, 14 * D), py = E.y - 0.76, px = E.x + 0.8;
+      const tilt = new Q4().setFromAxisAngle(Z1, 14 * D), py = gy - 0.34, px = gx + 0.08;
       const face = (y, z, w, h) => { const c = new V3(px, y, z), ex = new V3(0, 0, w / 2), ey = new V3(0, h / 2, 0).applyQuaternion(tilt); return { c, ex, ey }; };
       cab.pal = pal(panelCol); cab.at(mat4(new V3(px + 0.035, py, 0), tilt), () => cab.box(0, 0, 0, 0.05, 0.62, wHalf * 2)); cab.pal = null;
       const du = 0.2, gap = 0.035, zc = Math.abs(E.z);
