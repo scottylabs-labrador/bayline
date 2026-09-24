@@ -3,6 +3,7 @@
 the crowns the photo detector misses (see tools/tiles/trees2.py). Needs data/raw/chm_meta (Meta / WRI canopy height,
 CC BY 4.0) and, for the placement checks, tiles/mat (tools/bake_materials.py).
 
+  python3 tools/bake_trees2.py register [--workers 6]      # photo <-> canopy model shift per imagery tile
   python3 tools/bake_trees2.py bake [--workers 6] [--limit N] [--force]
   python3 tools/bake_trees2.py index                    # publish it last
   python3 tools/bake_trees2.py all
@@ -25,16 +26,59 @@ def l7_tiles(limit=0):
     return t[:limit] if limit else t
 
 
-def _bake(args):
-    t, force = args
-    return T2.bake_tile(t[0], t[1], force=force)
+SHIFTS = os.path.join(C.RAW, 'chm_meta', 'shifts.json')
+
+
+def _rows(tiles):
+    """tiles grouped by row: one row per task, so a worker decodes each canopy-model strip once"""
+    rows = {}
+    for t in tiles:
+        rows.setdefault(t[1], []).append(t)
+    return [sorted(r) for _, r in sorted(rows.items())]
+
+
+def _register_row(row):
+    return [(t, T2.register(*t)) for t in row]
+
+
+def step_register(a):
+    tiles = [t for t in l7_tiles(a.limit) if os.path.exists(C.path('t', 7, t[0], t[1], 'bin'))]
+    C.log(f'trees v2: registering {len(tiles)} imagery tiles against the canopy model')
+    res = run_pool(_register_row, _rows(tiles), a.workers, 'register', kind='process')
+    out = {f'{t[0]}_{t[1]}': r for row in res for (t, r) in row if r}
+    C.write_atomic(SHIFTS, json.dumps(out).encode())
+    q = [r for r in out.values() if r['q'] >= 3.0]
+    import numpy as np
+    C.log(f'registered {len(out)} tiles, {len(q)} confident; median shift dx {np.median([r["dx"] for r in q]):+.1f} m, dz {np.median([r["dz"] for r in q]):+.1f} m')
+
+
+def shift_for(t, shifts, conf=3.0, reach=4):
+    """own shift when confident, else the median of confident tiles within `reach` tiles (then any distance)"""
+    own = shifts.get(f'{t[0]}_{t[1]}')
+    if own and own['q'] >= conf:
+        return (own['dx'], own['dz'])
+    near = [(v['dx'], v['dz']) for k, v in shifts.items() if v['q'] >= conf and
+            max(abs(int(k.split('_')[0]) - t[0]), abs(int(k.split('_')[1]) - t[1])) <= reach]
+    if len(near) < 3:
+        near = [(v['dx'], v['dz']) for v in shifts.values() if v['q'] >= conf]
+    if not near:
+        return (0.0, 0.0)
+    import numpy as np
+    return (float(np.median([n[0] for n in near])), float(np.median([n[1] for n in near])))
+
+
+def _bake_row(args):
+    row, force, shifts = args
+    return [T2.bake_tile(t[0], t[1], force=force, shift=shifts[i]) for i, t in enumerate(row)]
 
 
 def step_bake(a):
     tiles = l7_tiles(a.limit)
-    C.log(f'trees v2: {len(tiles)} L7 tiles')
-    res = run_pool(_bake, [(t, a.force) for t in tiles], a.workers, 'trees2', kind='process')
-    st = [r[3] for r in res if r and r[3]]
+    shifts = json.load(open(SHIFTS)) if os.path.exists(SHIFTS) else {}
+    C.log(f'trees v2: {len(tiles)} L7 tiles ({len(shifts)} registered)')
+    rows = _rows(tiles)
+    res = run_pool(_bake_row, [(r, a.force, [shift_for(t, shifts) for t in r]) for r in rows], a.workers, 'trees2', kind='process')
+    st = [x[3] for row in res for x in row if x and x[3]]
     if st:
         C.log(f"trees: {sum(s['old'] for s in st)} detected, {sum(s['measured'] for s in st)} with measured heights, "
               f"{sum(s['added'] for s in st)} added from the canopy height model ({sum(1 for s in st if s['chm'])} tiles with CHM, "
@@ -53,11 +97,13 @@ def step_index(a):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('step', choices=['bake', 'index', 'all'])
+    ap.add_argument('step', choices=['register', 'bake', 'index', 'all'])
     ap.add_argument('--workers', type=int, default=6)
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--force', action='store_true')
     a = ap.parse_args()
+    if a.step in ('register', 'all'):
+        step_register(a)
     if a.step in ('bake', 'all'):
         step_bake(a)
     if a.step in ('index', 'all'):
