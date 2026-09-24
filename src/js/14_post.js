@@ -1,5 +1,5 @@
 // Render pipeline (atmosphere agent). Scene -> HDR (half-float, MSAA) target with a resolved (logarithmic) depth
-// texture -> SSAO (half res, bilateral) -> marine-layer raymarch (half res) -> composite (AO, cloud shadows, aerial
+// texture -> GTAO (half res, bilateral) -> marine-layer raymarch (half res) -> composite (AO, cloud shadows, aerial
 // perspective, cloud deck, cirrus, fog) -> bloom mip chain -> ACES + grading + vignette + grain -> screen (+FXAA on low).
 //   Post.render(dt)                         call instead of renderer.render(scene, camera)
 //   Post.setQuality('ultraplus'|'high'|'medium'|'low')  Post.quality
@@ -8,14 +8,14 @@
 const Post = (() => {
   const R = Env.renderer, scene = Env.scene, camera = Env.camera;
   const QUALITY = {
-    ultraplus: { samples: 4, ao: 16, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014 },
-    high:   { samples: 4, ao: 12, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016 },
-    medium: { samples: 2, ao: 8,  fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012 },
+    ultraplus: { samples: 4, ao: 16, aoSlices: 4, aoSteps: 10, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014 },
+    high:   { samples: 4, ao: 12, aoSlices: 2, aoSteps: 7, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016 },
+    medium: { samples: 2, ao: 8,  aoSlices: 2, aoSteps: 5, fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012 },
     low:    { samples: 0, ao: 0,  fogSteps: 8,  fogScale: 0.25, bloom: 4, fxaa: true, shadow: 2048, grain: 0.0 },
   };
   let quality = 'high', Q = QUALITY.high, enabled = true, W = 0, H = 0, frame = 0;
   const stats = { calls: 0, triangles: 0 };
-  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true };   // per-pass switches (profiling)
+  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true, showAO: false };   // per-pass switches (profiling); showAO: the AO buffer alone
   const sz = new THREE.Vector2();
 
   // ---------------------------------------------------------------- full-screen plumbing
@@ -77,34 +77,63 @@ const Post = (() => {
   }
 
   // ---------------------------------------------------------------- passes
-  const aoMat = mk(Object.assign({ tDepth: { value: null }, uSamples: { value: 12 }, uRadius: { value: 1.1 }, uStrength: { value: 1.25 } }, cam), CAMGLSL + /* glsl */`
-    uniform sampler2D tDepth; uniform int uSamples; uniform float uRadius, uStrength; varying vec2 vUv;
-    vec3 vp(vec2 uv) { return viewPosAt(uv, texture2D(tDepth, uv).r); }
+  // Ground-truth ambient occlusion (GTAO: Jimenez et al. 2016, as in XeGTAO): per pixel, uSlices screen-space slices
+  // through the view vector; in each, the highest horizon on both sides (uSteps depth samples each, quadratic spacing)
+  // and the cosine-weighted visible arc above the normal. The world radius grows with distance: ~2.5 m of contact
+  // occlusion up close (door reveals, kerbs, under cars, tree bases), street-canyon scale in aerial views.
+  const aoMat = mk(Object.assign({ tDepth: { value: null }, uSlices: { value: 2 }, uSteps: { value: 6 }, uRadius: { value: 2.4 }, uStrength: { value: 1.0 } }, cam), CAMGLSL + /* glsl */`
+    uniform sampler2D tDepth; uniform int uSlices, uSteps; uniform float uRadius, uStrength; varying vec2 vUv;
+    // every depth read is snapped to a full-res texel centre and its ray taken through that same centre: this pass runs
+    // at half resolution, and a ray half a pixel off its depth sample reads grazing walls as occluded (stripes)
+    vec2 snapUv(vec2 uv) { return (floor(uv / uTexel) + 0.5) * uTexel; }
+    vec3 vp(vec2 uv) { uv = snapUv(uv); return viewPosAt(uv, texture2D(tDepth, uv).r); }
+    float facos(float x) { x = clamp(x, -1.0, 1.0); float r = (-0.1565827 * abs(x) + 1.5707963) * sqrt(1.0 - abs(x)); return x >= 0.0 ? r : 3.1415927 - r; }
     void main() {
-      float d = texture2D(tDepth, vUv).r;
+      vec2 uv0 = snapUv(vUv);
+      float d = texture2D(tDepth, uv0).r;
       if (d >= 0.99999) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }
-      vec3 P = viewPosAt(vUv, d);
-      vec2 tx = vec2(uTexel.x * 2.0, 0.0), ty = vec2(0.0, uTexel.y * 2.0);
-      vec3 pr = vp(vUv + tx) - P, pl = P - vp(vUv - tx), pu = vp(vUv + ty) - P, pd = P - vp(vUv - ty);
+      vec3 P = viewPosAt(uv0, d);
+      vec2 tx = vec2(uTexel.x, 0.0), ty = vec2(0.0, uTexel.y);
+      vec3 pr = vp(uv0 + tx) - P, pl = P - vp(uv0 - tx), pu = vp(uv0 + ty) - P, pd = P - vp(uv0 - ty);
       vec3 dx = abs(pr.z) < abs(pl.z) ? pr : pl, dy = abs(pu.z) < abs(pd.z) ? pu : pd;
       vec3 Nc = cross(dx, dy); float nl = length(Nc);
-      if (!(nl > 1e-9)) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }        // degenerate / NaN guard
-      vec3 N = Nc / nl;
-      float w = -P.z; float rad = min(uRadius * (1.0 + w * 0.01), 7.0);
-      float rpx = rad * uFocal / w;
-      if (rpx < 1.2) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }
-      rpx = min(rpx, 90.0);
-      float ang = ign(gl_FragCoord.xy) * 6.2831853, occ = 0.0;
-      for (int i = 0; i < 16; i++) {
-        if (i >= uSamples) break;
-        float f = (float(i) + 0.5) / float(uSamples); float r = sqrt(f) * rpx; ang += 2.3999632;
-        vec2 suv = vUv + vec2(cos(ang), sin(ang)) * r * uTexel;
-        vec3 v = vp(suv) - P; float dist = length(v);
-        occ += max(dot(N, v / max(dist, 1e-4)) - 0.1, 0.0) * (1.0 - smoothstep(rad * 0.55, rad, dist));
+      if (!(nl > 1e-12)) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }       // degenerate / NaN guard
+      vec3 N = Nc / nl, V = normalize(-P);
+      float w = -P.z;
+      float R = uRadius * clamp(1.0 + w * 0.012, 1.0, 8.0);                      // m
+      float rpx = R * uFocal / w;                                                  // full-res pixels
+      if (rpx < 1.5) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }
+      rpx = min(rpx, 140.0);
+      float noise = ign(gl_FragCoord.xy), jit = fract(noise * 7.1307 + 0.37);
+      float vis = 0.0, fm = 1.0 / (0.4 * R);
+      for (int s = 0; s < 4; s++) {
+        if (s >= uSlices) break;
+        float phi = (float(s) + noise) * 3.1415927 / float(uSlices);
+        vec2 om = vec2(cos(phi), sin(phi));
+        vec3 dir3 = vec3(om, 0.0), orthoDir = dir3 - dot(dir3, V) * V;
+        vec3 axis = normalize(cross(orthoDir, V)), projN = N - axis * dot(N, axis);
+        float pnl = length(projN), cosN = clamp(dot(projN, V) / max(pnl, 1e-5), 0.0, 1.0);
+        float n = sign(dot(orthoDir, projN)) * facos(cosN);
+        float hc0 = -1.0, hc1 = -1.0;
+        for (int k = 0; k < 12; k++) {
+          if (k >= uSteps) break;
+          float t = (float(k) + jit) / float(uSteps); t *= t;
+          vec2 o = om * max(t * rpx, float(k) + 1.0) * uTexel;
+          vec3 sa = vp(uv0 + o) - P, sb = vp(uv0 - o) - P;
+          float la = length(sa), lb = length(sb);
+          hc0 = max(hc0, mix(-1.0, dot(sa, V) / max(la, 1e-4), clamp((R - la) * fm, 0.0, 1.0)));
+          hc1 = max(hc1, mix(-1.0, dot(sb, V) / max(lb, 1e-4), clamp((R - lb) * fm, 0.0, 1.0)));
+        }
+        float h0 = -facos(hc1), h1 = facos(hc0);
+        h0 = n + clamp(h0 - n, -1.5707963, 1.5707963); h1 = n + clamp(h1 - n, -1.5707963, 1.5707963);
+        float sn = sin(n);
+        vis += pnl * 0.25 * ((cosN + 2.0 * h0 * sn - cos(2.0 * h0 - n)) + (cosN + 2.0 * h1 * sn - cos(2.0 * h1 - n)));
       }
-      float ao = 1.0 - uStrength * occ / float(uSamples); if (!(ao >= 0.0 && ao <= 1.0)) ao = 1.0;
-      ao = mix(1.0, ao, 1.0 - smoothstep(500.0, 1400.0, w));
-      gl_FragColor = vec4(clamp(ao, 0.0, 1.0), d, 0.0, 1.0);
+      float ao = clamp(vis / float(uSlices), 0.0, 1.0);
+      ao = pow(ao, uStrength);
+      if (!(ao >= 0.0 && ao <= 1.0)) ao = 1.0;
+      ao = mix(1.0, ao, 1.0 - smoothstep(1500.0, 3200.0, w));
+      gl_FragColor = vec4(ao, d, 0.0, 1.0);
     }`);
   const blurMat = mk(Object.assign({ tAO: { value: null }, uDir: { value: new THREE.Vector2() } }, cam), CAMGLSL + /* glsl */`
     uniform sampler2D tAO; uniform vec2 uDir; varying vec2 vUv;
@@ -162,9 +191,9 @@ const Post = (() => {
       gl_FragColor = vec4(L, T);
     }`);
   const compMat = mk(Object.assign({
-    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() },
+    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 },
   }, cam, Sky.uniforms), Sky.glsl + Sky.glslFx + CAMGLSL + /* glsl */`
-    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
+    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO, uShowAO; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
     float aoUp(vec2 uv, float d) {       // joint bilateral upsample of the half-res AO (depth stored in .g)
       vec2 hp = uv / uAOHalf - 0.5; vec2 f = fract(hp); vec2 b = (floor(hp) + 0.5) * uAOHalf;
       float w0 = depthW(d); float s = 0.0, ws = 0.0;
@@ -183,6 +212,7 @@ const Post = (() => {
       vec3 rd = normalize(mat3(uCamWorld) * vr), ro = uCamPos;
       float mu = dot(rd, uSkySunDir);
       if (!sky) {
+        if (uShowAO > 0.5) { gl_FragColor = vec4(vec3(uUseAO > 0.5 ? aoUp(vUv, d) : 1.0) * 0.18, 1.0); return; }   // (QA: Post.debug.showAO)
         if (uUseAO > 0.5) col *= aoUp(vUv, d);
         vec3 wp = ro + rd * tS;
         if (uSkySunDir.y > 0.02 && uCloudCover > 0.01) {       // moving cloud shadows on the land
@@ -315,7 +345,7 @@ const Post = (() => {
       // 2. SSAO (half res) + bilateral blur
       const useAO = Q.ao > 0 && debug.ao;
       if (useAO) {
-        aoMat.uniforms.tDepth.value = depth; aoMat.uniforms.uSamples.value = Q.ao; pass(aoMat, rtAO[0]);
+        aoMat.uniforms.tDepth.value = depth; aoMat.uniforms.uSlices.value = Q.aoSlices || 2; aoMat.uniforms.uSteps.value = Q.aoSteps || 6; pass(aoMat, rtAO[0]);
         blurMat.uniforms.tAO.value = rtAO[0].texture; blurMat.uniforms.uDir.value.set(1 / rtAO[0].width, 0); pass(blurMat, rtAO[1]);
         blurMat.uniforms.tAO.value = rtAO[1].texture; blurMat.uniforms.uDir.value.set(0, 1 / rtAO[0].height); pass(blurMat, rtAO[0]);
       }
@@ -323,7 +353,7 @@ const Post = (() => {
       fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; pass(fogMat, rtFog);
       // 4. composite -> HDR
       compMat.uniforms.tScene.value = rtScene.texture; compMat.uniforms.tDepth.value = depth; compMat.uniforms.tAO.value = rtAO[0].texture;
-      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
+      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uShowAO.value = debug.showAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
       pass(compMat, rtHDR);
       // 5. bloom
       const exposure = Env.state.exposure || 1, night = U.uNight.value;
