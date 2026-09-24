@@ -15,7 +15,7 @@ const Post = (() => {
   };
   let quality = 'high', Q = QUALITY.high, enabled = true, W = 0, H = 0, frame = 0;
   const stats = { calls: 0, triangles: 0 };
-  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true, showAO: false };   // per-pass switches (profiling); showAO: the AO buffer alone
+  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true, showAO: false, ae: true };   // per-pass switches (profiling); showAO: the AO buffer alone
   const sz = new THREE.Vector2();
 
   // ---------------------------------------------------------------- full-screen plumbing
@@ -54,13 +54,13 @@ const Post = (() => {
   `;
 
   // ---------------------------------------------------------------- targets
-  let rtScene = null, rtAO = [null, null], rtFog = null, rtHDR = null, rtLDR = null, down = [], up = [];
+  let rtScene = null, rtAO = [null, null], rtFog = null, rtHDR = null, rtLDR = null, down = [], up = [], rtLum = null, rtAE = [null, null], aeSnap = true;
   const HF = THREE.HalfFloatType;
   function mkRT(w, h, opts = {}) {
     const rt = new THREE.WebGLRenderTarget(Math.max(1, w), Math.max(1, h), Object.assign({ type: HF, depthBuffer: false, stencilBuffer: false }, opts));
     rt.texture.minFilter = rt.texture.magFilter = THREE.LinearFilter; rt.texture.generateMipmaps = false; rt.texture.wrapS = rt.texture.wrapT = THREE.ClampToEdgeWrapping; return rt;
   }
-  function disposeAll() { for (const rt of [rtScene, rtAO[0], rtAO[1], rtFog, rtHDR, rtLDR, ...down, ...up]) if (rt) { if (rt.depthTexture) rt.depthTexture.dispose(); rt.dispose(); } down = []; up = []; }
+  function disposeAll() { for (const rt of [rtScene, rtAO[0], rtAO[1], rtFog, rtHDR, rtLDR, rtLum, rtAE[0], rtAE[1], ...down, ...up]) if (rt) { if (rt.depthTexture) rt.depthTexture.dispose(); rt.dispose(); } down = []; up = []; }
   function build(w, h) {
     disposeAll(); W = w; H = h;
     const maxS = R.capabilities.maxSamples || 4;
@@ -71,6 +71,7 @@ const Post = (() => {
     rtAO = [mkRT(hw, hh), mkRT(hw, hh)];
     rtFog = mkRT(Math.ceil(w * Q.fogScale), Math.ceil(h * Q.fogScale));
     rtHDR = mkRT(w, h);
+    rtLum = mkRT(1, 1); rtAE = [mkRT(1, 1), mkRT(1, 1)]; aeSnap = true;
     rtLDR = Q.fxaa ? mkRT(w, h, { type: THREE.UnsignedByteType }) : null;
     let bw = hw, bh = hh; for (let i = 0; i < Q.bloom; i++) { down.push(mkRT(bw, bh)); if (i < Q.bloom - 1) up.push(mkRT(bw, bh)); bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); }
     cam.uTexel.value.set(1 / w, 1 / h);
@@ -303,13 +304,41 @@ const Post = (() => {
       col = max(col, vec3(0.0));
       gl_FragColor = vec4(min(col, vec3(60000.0)), 1.0);
     }`);
-  // bloom
-  const brightMat = mk({ tSrc: { value: null }, uThreshold: { value: 1.0 }, uExposure: { value: 1 }, uTexel: { value: new THREE.Vector2() } }, /* glsl */`
-    uniform sampler2D tSrc; uniform float uThreshold, uExposure; uniform vec2 uTexel; varying vec2 vUv;
-    vec3 fetch(vec2 o) { vec3 c = texture2D(tSrc, vUv + o * uTexel).rgb; if (any(isnan(c))) c = vec3(0.0); return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure * 0.25); }   // Karis-style firefly tamer
+  // eye adaptation: the frame's centre-weighted log-average luminance (with the time-of-day exposure applied) from a
+  // jittered 16x9 grid of the HDR frame, eased toward over ~1 s. A scene darker than a sunlit street (a meadow in the
+  // shade of oaks, the line under a canopy) is lifted by up to ~1.1 EV (less at night); only one over twice as bright
+  // is pulled down, gently. The factor (.g of the 1x1 target) scales the exposure of the bloom and final passes.
+  const lumMat = mk({ tSrc: { value: null }, uExpo: { value: 1 }, uJit: { value: new THREE.Vector2() } }, /* glsl */`
+    uniform sampler2D tSrc; uniform float uExpo; uniform vec2 uJit; varying vec2 vUv;
     void main() {
+      float s = 0.0, ws = 0.0;
+      for (int j = 0; j < 9; j++) for (int i = 0; i < 16; i++) {
+        vec2 p = (vec2(float(i), float(j)) + uJit) / vec2(16.0, 9.0);
+        vec3 c = texture2D(tSrc, p).rgb;
+        float l = clamp(dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExpo, 1e-4, 64.0);
+        vec2 q = (p - vec2(0.5, 0.56)) * vec2(1.0, 1.5); float w = exp(-dot(q, q) * 4.0);
+        s += log2(l) * w; ws += w;
+      }
+      gl_FragColor = vec4(s / ws, 0.0, 0.0, 1.0);
+    }`);
+  const adaptMat = mk({ tCur: { value: null }, tPrev: { value: null }, uK: { value: 1 }, uKey: { value: 0.1 }, uMaxB: { value: 2.1 }, uOn: { value: 1 } }, /* glsl */`
+    uniform sampler2D tCur, tPrev; uniform float uK, uKey, uMaxB, uOn; varying vec2 vUv;
+    void main() {
+      float a = mix(texture2D(tPrev, vec2(0.5)).r, texture2D(tCur, vec2(0.5)).r, uK);
+      if (!(abs(a) < 30.0)) a = log2(uKey);                              // NaN / first-frame guard
+      float f = uKey / exp2(a);
+      f = f >= 1.0 ? min(pow(f, 0.72), uMaxB) : clamp(f * 2.2, 0.85, 1.0);
+      gl_FragColor = vec4(a, mix(1.0, f, uOn), 0.0, 1.0);
+    }`);
+  // bloom
+  const brightMat = mk({ tSrc: { value: null }, tAE: { value: null }, uThreshold: { value: 1.0 }, uExposure: { value: 1 }, uTexel: { value: new THREE.Vector2() } }, /* glsl */`
+    uniform sampler2D tSrc, tAE; uniform float uThreshold, uExposure; uniform vec2 uTexel; varying vec2 vUv;
+    float ex;
+    vec3 fetch(vec2 o) { vec3 c = texture2D(tSrc, vUv + o * uTexel).rgb; if (any(isnan(c))) c = vec3(0.0); return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * ex * 0.25); }   // Karis-style firefly tamer
+    void main() {
+      ex = uExposure * texture2D(tAE, vec2(0.5)).g;
       vec3 c = 0.25 * (fetch(vec2(-1.0, -1.0)) + fetch(vec2(1.0, -1.0)) + fetch(vec2(-1.0, 1.0)) + fetch(vec2(1.0, 1.0)));
-      float l = dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure; float knee = uThreshold * 0.5;
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722)) * ex; float knee = uThreshold * 0.5;
       float soft = clamp(l - uThreshold + knee, 0.0, 2.0 * knee); soft = soft * soft / (4.0 * knee + 1e-4);
       gl_FragColor = vec4(c * max(soft, l - uThreshold) / max(l, 1e-4), 1.0);
     }`);
@@ -330,10 +359,10 @@ const Post = (() => {
       gl_FragColor = vec4(r / 16.0 * uMix + texture2D(tAdd, vUv).rgb, 1.0);
     }`);
   const finalMat = mk({
-    tHDR: { value: null }, tBloom: { value: null }, uExposure: { value: 1 }, uBloom: { value: 0.06 }, uTime: U.uTime, uGrain: { value: 0.016 }, uVignette: { value: 0.22 },
+    tHDR: { value: null }, tBloom: { value: null }, tAE: { value: null }, uExposure: { value: 1 }, uBloom: { value: 0.06 }, uTime: U.uTime, uGrain: { value: 0.016 }, uVignette: { value: 0.22 },
     uTint: { value: new THREE.Vector3(1, 1, 1) }, uGrade: { value: 1 }, uSat: { value: 1.06 }, uNight: U.uNight,
   }, /* glsl */`
-    uniform sampler2D tHDR, tBloom; uniform float uExposure, uBloom, uTime, uGrain, uVignette, uGrade, uSat, uNight; uniform vec3 uTint; varying vec2 vUv;
+    uniform sampler2D tHDR, tBloom, tAE; uniform float uExposure, uBloom, uTime, uGrain, uVignette, uGrade, uSat, uNight; uniform vec3 uTint; varying vec2 vUv;
     vec3 RRTAndODTFit(vec3 v) { vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
     vec3 aces(vec3 c) {
       const mat3 I = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
@@ -344,7 +373,7 @@ const Post = (() => {
     float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
     void main() {
       vec3 c = texture2D(tHDR, vUv).rgb + texture2D(tBloom, vUv).rgb * uBloom;
-      c = aces(c * uTint * uExposure);
+      c = aces(c * uTint * uExposure * texture2D(tAE, vec2(0.5)).g);
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = max(mix(vec3(l), c, uSat), 0.0);
       // split toning: cool shadows, warm highlights (night: deeper blue shadows)
@@ -374,6 +403,13 @@ const Post = (() => {
 
   // ---------------------------------------------------------------- frame
   let failed = false;
+  const AE_KEY = 0.1;         // the metered log-average a sunlit street view gives (eye adaptation leaves it alone)
+  // QA: the adapted state { lum (metered log-average), f (exposure factor) }; reads back a 1x1 target (stalls: debug only)
+  function aeRead() {
+    if (!rtAE[0]) return null; const b = new Uint16Array(4), rt = rtAE[frame & 1];
+    const h2f = (x) => { const e = (x >> 10) & 31, m = x & 1023, sg = x & 0x8000 ? -1 : 1; return e === 0 ? sg * Math.pow(2, -14) * m / 1024 : e === 31 ? NaN : sg * Math.pow(2, e - 15) * (1 + m / 1024); };
+    R.readRenderTargetPixels(rt, 0, 0, 1, 1, b); return { lum: +Math.pow(2, h2f(b[0])).toFixed(4), f: +h2f(b[1]).toFixed(3) };
+  }
   function render(dt) {
     if (!enabled || failed) { R.setRenderTarget(null); R.render(scene, camera); return; }
     try {
@@ -403,9 +439,17 @@ const Post = (() => {
       compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uShowAO.value = debug.showAO ? 1 : 0;
       compMat.uniforms.uExpo.value = Env.state.exposure || 1; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
       pass(compMat, rtHDR);
-      // 5. bloom
       const exposure = Env.state.exposure || 1, night = U.uNight.value;
-      brightMat.uniforms.tSrc.value = rtHDR.texture; brightMat.uniforms.uExposure.value = exposure; brightMat.uniforms.uTexel.value.set(1 / W, 1 / H);
+      // 5. eye adaptation (two 1x1 passes)
+      lumMat.uniforms.tSrc.value = rtHDR.texture; lumMat.uniforms.uExpo.value = exposure;
+      lumMat.uniforms.uJit.value.set((frame * 0.618034) % 1, (frame * 0.754878) % 1); pass(lumMat, rtLum);
+      const ai = frame & 1, au = adaptMat.uniforms;
+      au.tCur.value = rtLum.texture; au.tPrev.value = rtAE[1 - ai].texture; au.uOn.value = debug.ae ? 1 : 0;
+      au.uK.value = aeSnap ? 1 : 1 - Math.exp(-Math.max(0, Math.min(dt || 0, 0.5)) / 0.9); aeSnap = false;
+      au.uKey.value = AE_KEY; au.uMaxB.value = U.lerp(2.1, 1.3, night);
+      pass(adaptMat, rtAE[ai]); const tAE = rtAE[ai].texture;
+      // 6. bloom
+      brightMat.uniforms.tSrc.value = rtHDR.texture; brightMat.uniforms.tAE.value = tAE; brightMat.uniforms.uExposure.value = exposure; brightMat.uniforms.uTexel.value.set(1 / W, 1 / H);
       brightMat.uniforms.uThreshold.value = U.lerp(1.15, 0.8, night); pass(brightMat, down[0]);
       for (let i = 1; i < down.length; i++) { downMat.uniforms.tSrc.value = down[i - 1].texture; downMat.uniforms.uTexel.value.set(1 / down[i - 1].width, 1 / down[i - 1].height); pass(downMat, down[i]); }
       for (let i = up.length - 1; i >= 0; i--) {
@@ -413,9 +457,9 @@ const Post = (() => {
         upMat.uniforms.tSrc.value = src.texture; upMat.uniforms.tAdd.value = down[i].texture; upMat.uniforms.uTexel.value.set(1 / src.width, 1 / src.height);
         pass(upMat, up[i]);
       }
-      // 6. tone map + grade -> screen (or LDR for FXAA)
+      // 7. tone map + grade -> screen (or LDR for FXAA)
       const fu = finalMat.uniforms;
-      fu.tHDR.value = rtHDR.texture; fu.tBloom.value = (up[0] || down[0]).texture; fu.uExposure.value = exposure;
+      fu.tHDR.value = rtHDR.texture; fu.tAE.value = tAE; fu.tBloom.value = (up[0] || down[0]).texture; fu.uExposure.value = exposure;
       fu.uBloom.value = U.lerp(0.045, 0.11, night) / Math.max(1, down.length - 2); fu.uGrain.value = Q.grain;
       const eDeg = Env.state.sunEl / U.DEG, golden = U.smooth(22, 4, eDeg) * (1 - U.smooth(1, -6, eDeg));
       fu.uTint.value.set(1 + 0.03 * golden, 1, 1 - 0.035 * golden);
@@ -447,7 +491,7 @@ const Post = (() => {
   }
   setQuality('high');
   return {
-    render, setQuality, stats, debug, profile, rebuild() { W = H = 0; },
+    render, setQuality, stats, debug, profile, aeRead, rebuild() { W = H = 0; },
     get quality() { return quality; },
     get enabled() { return enabled && !failed; }, set enabled(v) { enabled = !!v; if (!enabled) R.info.autoReset = true; },
     get targets() { return { rtScene, rtHDR, rtFog, rtAO }; },
