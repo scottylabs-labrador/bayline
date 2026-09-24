@@ -781,7 +781,9 @@ const Flora = (() => {
   // added to the crown-blended lighting normal
   const FOL_NRM = `
     uniform sampler2D uFolNrm;
+    vec3 folN0;                          // the lighting normal before the per-leaf relief (translucency uses it: smoother)
     vec3 folPerturb(vec3 n) {
+      folN0 = n;
       vec2 f = fract(vFolUv); vec2 uv = vFolReg.xy + f * vFolReg.zw;
       vec2 gx = dFdx(vFolUv) * vFolReg.zw, gy = dFdy(vFolUv) * vFolReg.zw;
       vec3 t = textureGrad(uFolNrm, uv, gx, gy).xyz * 2.0 - 1.0;
@@ -796,11 +798,11 @@ const Flora = (() => {
     void RE_Direct_Foliage( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
       RE_Direct_Physical( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
       float back = pow( saturate( dot( -geometryViewDir, directLight.direction ) ), 4.0 );
-      float thru = saturate( dot( -geometryNormal, directLight.direction ) );
+      float thru = saturate( dot( -folN0, directLight.direction ) );
       // light through a leaf is filtered by chlorophyll: yellow-green whatever the colour of its surface (pale
       // eucalyptus leaves glowed white against the sun)
       vec3 tc = vec3( 0.5, 0.72, 0.14 ) * min( 0.2 + 3.5 * dot( material.diffuseColor, vec3( 0.3, 0.59, 0.11 ) ), 0.75 );
-      reflectedLight.directDiffuse += directLight.color * tc * vFolLeaf * ( back * 0.4 + thru * 0.2 );
+      reflectedLight.directDiffuse += directLight.color * tc * vFolLeaf * ( back * 0.32 + thru * 0.16 );
     }
     #undef RE_Direct
     #define RE_Direct RE_Direct_Foliage
