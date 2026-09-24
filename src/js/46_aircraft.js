@@ -17,8 +17,8 @@ const AIRCRAFT = (() => {
       const k = F / o.comp, m = F / G;
       return { x: p.x, y: p.y || 0, z: p.z, k, c: 2 * (o.zeta || 0.75) * Math.sqrt(k * m), maxComp: o.stroke || o.comp * 2.5, corner: 7, ...extra };
     };
-    return [leg(n, Fn, { steer: (o.steer || 60) * D, brake: false, nose: true, r: n.r || 0.4, wheels: n.wheels || 1 }),
-      ...mains.map(m => leg(m, Fm, { brake: true, r: m.r || 0.5, wheels: m.wheels || 2 }))];
+    return [leg(n, Fn, { steer: (o.steer || 60) * D * (n.x < 0 ? -1 : 1), brake: false, nose: true, tail: n.x < 0, fixed: !!n.fixed, r: n.r || 0.4, wheels: n.wheels || 1 }),
+      ...mains.map(m => leg(m, Fm, { brake: true, fixed: !!m.fixed, r: m.r || 0.5, wheels: m.wheels || 2 }))];
   }
   // flaps / slats table by notch: label, trailing-edge deflection (deg, for the model), slat deflection, and the
   // aerodynamic increments (lift at a given alpha, maximum lift, drag, pitching moment)
@@ -212,6 +212,195 @@ const AIRCRAFT = (() => {
         gear: { noseX: 3.4, mainX: -0.6, track: 1.18 }, cockpit: { x: 4.3, z: -0.95, y: 0, style: 'fighter' },
         windows: { style: 'fighter' }, livery: { base: '#8e969e', tail: '#6f777f', stripe: '#5d656d', belly: '#a3abb3', reg: 'BL 016' } },
     },
+
+    // ------------------------------------------------------------------ Airbus A380-800
+    { id: 'a388', name: 'Airbus A380-800', short: 'A380', maker: 'Airbus', cat: 'Wide-body jet',
+      blurb: 'The largest airliner ever built: two full-length decks, four engines, an 80 m wing. 500 seats, and gentle to land.',
+      facts: ['Span 79.8 m', '4 × 311 kN', 'Cruise M 0.85', 'MTOW 575 t'],
+      v: { r: 150, v2: 160, ref: 140, app: 145, cruise: 490, fe: [263, 222, 220, 196, 182], le: 250, mo: 340, mmo: 0.89, ceil: 43000, cruiseAlt: 37000 },
+      fdm: {
+        mass: 450000, S: 845, b: 79.75, c: 12.0, e: 0.88, CD0: 0.019,
+        CL0: 0.22, CLa: 5.5, CLmax: 1.35, CLq: 5.4, CLde: -0.3,
+        Cm0: 0.02, Cma: -1.3, Cmq: -22, Cmde: 1.3,
+        CYb: -1.0, CYdr: -0.17, Clb: -0.2, Clp: -0.45, Clr: 0.1, Clda: 0.11, Cldr: -0.007,
+        Cnb: 0.16, Cnp: -0.12, Cnr: -0.3, Cnda: 0, Cndr: 0.105,
+        maxElev: 25 * D, maxAil: 25 * D, maxRud: 25 * D,
+        flaps: [F('0', 0, 0, 0, 0, 0), F('1', 0, 20, 0.06, 0.35, 0.005), F('1+F', 8, 20, 0.3, 0.55, 0.012), F('2', 17, 20, 0.45, 0.72, 0.02, -0.02), F('3', 26, 23, 0.55, 0.82, 0.03, -0.04), F('FULL', 33, 23, 0.78, 0.98, 0.05, -0.07)],
+        flapTime: 8, retract: true, gearTime: 12, gearCD: 0.016, spoilerCL: 0.35, spoilerCD: 0.06, mcrit: 0.8, CDwave: 0.08,
+        engines: [{ type: 'fan', thrust: 311000, x: 1.5, y: -25.8, z: 2.6 }, { type: 'fan', thrust: 311000, x: 7.0, y: -15.1, z: 3.2 },
+          { type: 'fan', thrust: 311000, x: 7.0, y: 15.1, z: 3.2 }, { type: 'fan', thrust: 311000, x: 1.5, y: 25.8, z: 2.6 }],
+        thrustLine: 0, wingZ: 2.7,
+        gearLayout: { comp: 0.3, stroke: 0.6, zeta: 0.75, steer: 70,
+          nose: { x: 27.5, z: 7.0, r: 0.62, wheels: 2 },
+          main: [{ x: -2.0, y: -6.0, z: 7.0, r: 0.7, wheels: 4 }, { x: -2.0, y: 6.0, z: 7.0, r: 0.7, wheels: 4 }, { x: -5.5, y: -2.2, z: 7.0, r: 0.7, wheels: 4 }, { x: -5.5, y: 2.2, z: 7.0, r: 0.7, wheels: 4 }] },
+        strike: [[-29, 0, 1.3, 'tail'], [-16, -39.9, -0.5, 'tip'], [-16, 39.9, -0.5, 'tip'], [0, -25.8, 4.4, 'nacelle'], [0, 25.8, 4.4, 'nacelle'], [5.5, -15.1, 5.0, 'nacelle'], [5.5, 15.1, 5.0, 'nacelle'], [35, 0, 1.5, 'nose'], [0, 0, 4.2, 'belly'], [-15, 0, 3.6, 'belly']],
+        Ixx: 5.6e7, Iyy: 7.7e7, Izz: 1.3e8, gearVmax: 4.6, nMax: 2.5, qMax: 3.5 * D, pMax: 12 * D, alphaMax: 13 * D, fbw: 'airbus' },
+      model: {
+        kind: 'jet', L: 72.72, nose: 34.5, fus: { d: 7.14, h: 8.41, zc: 0.3, noseLen: 10, tailLen: 18.5, tailUp: 2.6 },
+        wing: { x: 8.8, y0: 3.6, span: 39.9, c0: 17.7, cK: 11.2, yK: 12.6, c1: 4.0, sweep: 33.5, dih: 5.6, z: 2.7, t: 0.14, tt: 0.09, twist: -4,
+          flap: [4.2, 25.5, 0.26], ail: [27, 37.5, 0.2], spoil: [[6, 25]], tip: 'winglet', slats: true, fairings: 4 },
+        htail: { x: -26.8, span: 15.2, c0: 9.6, c1: 3.2, sweep: 35, dih: 7, z: -1.4, t: 0.1, elev: 0.3 },
+        vtail: { x: -24.2, h: 14.2, c0: 14.5, c1: 4.6, sweep: 40, z: -4.2, t: 0.1, rud: 0.3 },
+        engines: [{ type: 'fan', x: 1.5, y: -25.8, z: 2.6, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' }, { type: 'fan', x: 7.0, y: -15.1, z: 3.2, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' },
+          { type: 'fan', x: 7.0, y: 15.1, z: 3.2, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' }, { type: 'fan', x: 1.5, y: 25.8, z: 2.6, d: 3.4, len: 7.2, pylon: 1.4, fanD: 2.95, style: 'long' }],
+        gear: {}, cockpit: { x: 30.6, z: -0.3, y: -0.6, style: 'airbus' },
+        windows: { x0: 29.5, x1: -21.5, pitch: 0.53, z: 1.2, doors: [30.5, 20.5, 8.5, -4.0, -15.5], upper: { x0: 27.5, x1: -19.5, z: -2.3 } },
+        livery: { base: '#f7f7f5', tail: '#1d3557', stripe: '#b3261e', belly: '#dfe2e6', reg: 'N380BL' } },
+    },
+    // ------------------------------------------------------------------ Concorde
+    { id: 'conc', name: 'Aérospatiale/BAC Concorde', short: 'Concorde', maker: 'Aérospatiale / BAC', cat: 'Supersonic',
+      blurb: 'Mach 2 at 55,000 ft: an ogival delta with elevons and four reheated Olympus 593s. Land it nose-high at 160 kt; no flaps.',
+      facts: ['Span 25.6 m', '4 × 169 kN (reheat)', 'Cruise M 2.02', 'MTOW 185 t'],
+      v: { r: 195, v2: 220, ref: 160, app: 165, cruise: 1150, fe: [], le: 270, mo: 530, mmo: 2.04, ceil: 60000, cruiseAlt: 55000 },
+      fdm: {
+        mass: 150000, S: 358.25, b: 25.6, c: 18.0, e: 0.62, CD0: 0.0075,
+        CL0: 0.02, CLa: 3.0, CLmax: 1.25, CLq: 2.0, CLde: -0.4,
+        Cm0: 0.0, Cma: -0.35, Cmq: -3.0, Cmde: 0.45,
+        CYb: -0.6, CYdr: -0.12, Clb: -0.1, Clp: -0.3, Clr: 0.05, Clda: 0.07, Cldr: -0.004,
+        Cnb: 0.12, Cnp: -0.05, Cnr: -0.25, Cnda: -0.005, Cndr: 0.08,
+        maxElev: 25 * D, maxAil: 20 * D, maxRud: 30 * D,
+        flaps: [F('—', 0, 0, 0, 0, 0)],
+        flapTime: 1, retract: true, gearTime: 12, gearCD: 0.02, spoilerCL: 0, spoilerCD: 0, mcrit: 0.93, CDwave: 0.009, waveDecay: 0.3,
+        engines: [-5.4, -3.6, 3.6, 5.4].map(y => ({ type: 'fan', thrust: 140000, ab: 169000, ram: 1.2, abRam: 1.2, cap: 3.0, fast: true, x: -13, y, z: 2.2 })),
+        thrustLine: 0, wingZ: 1.5,
+        gearLayout: { comp: 0.3, stroke: 0.6, zeta: 0.75, steer: 60,
+          nose: { x: 19.5, z: 5.3, r: 0.48, wheels: 2 }, main: [{ x: -3.0, y: -3.85, z: 5.3, r: 0.6, wheels: 4 }, { x: -3.0, y: 3.85, z: 5.3, r: 0.6, wheels: 4 }] },
+        strike: [[-25, 0, -0.5, 'tail'], [-14, -12.8, 1.3, 'tip'], [-14, 12.8, 1.3, 'tip'], [-15, -5.4, 1.8, 'nacelle'], [-15, 5.4, 1.8, 'nacelle'], [30, 0, 1.2, 'nose'], [0, 0, 1.6, 'belly']],
+        Ixx: 1.5e6, Iyy: 1.28e7, Izz: 1.4e7, gearVmax: 4.6, nMax: 2.5, qMax: 4 * D, pMax: 20 * D, alphaMax: 17 * D, fbw: 'airbus', toPitch: 13 },
+      model: {
+        kind: 'jet', L: 61.66, nose: 32.7, fus: { d: 2.88, h: 3.32, zc: 0.1, noseLen: 9, tailLen: 12, tailUp: 0.5, pointy: true },
+        wing: { x: 10.7, y0: 1.44, span: 12.8, c0: 27.7, c1: 3.0, sweep: 63, dih: 0, z: 1.5, t: 0.035, tt: 0.03, twist: 0, cam: 0.012,
+          flap: null, ail: [1.8, 12.3, 0.12], elevon: true, spoil: null, tip: 'round' },
+        htail: null,
+        vtail: { x: -12.5, h: 5.8, c0: 11.5, c1: 2.4, sweep: 57, z: -1.2, t: 0.045, rud: 0.3 },
+        engines: [-5.4, -3.6, 3.6, 5.4].map(y => ({ type: 'jet', x: -13, y, z: 2.2, d: 1.4, nozzle: true, box: [11, 1.75, 1.45] })),
+        gear: {}, cockpit: { x: 25.6, z: -0.35, y: -0.42, style: 'boeing' },
+        windows: { x0: 21.5, x1: -9.5, pitch: 0.55, z: -0.25, h: 0.24, doors: [22.3, 5.5] },
+        livery: { base: '#f8f8f7', tail: '#1d3557', stripe: '#b3261e', belly: '#eef0f2', reg: 'G-BLCN' } },
+    },
+    // ------------------------------------------------------------------ Beechcraft King Air 350
+    { id: 'b350', name: 'Beechcraft King Air 350', short: 'King Air', maker: 'Beechcraft', cat: 'Twin turboprop',
+      blurb: 'The corporate workhorse: two 1,050 shp PT6A turboprops, a T-tail and 300 knots at 24,000 ft, from runways a jet would refuse.',
+      facts: ['Span 17.7 m', '2 × 1,050 shp', 'Cruise 300 kt', 'MTOW 6.8 t'],
+      v: { r: 100, v2: 110, ref: 105, app: 110, cruise: 300, fe: [202, 158], le: 184, mo: 263, mmo: 0.58, ceil: 35000, cruiseAlt: 24000 },
+      fdm: {
+        mass: 6000, S: 28.8, b: 17.65, c: 1.7, e: 0.8, CD0: 0.024,
+        CL0: 0.25, CLa: 5.2, CLmax: 1.55, CLq: 4.0, CLde: -0.35,
+        Cm0: 0.02, Cma: -0.9, Cmq: -14, Cmde: 1.2,
+        CYb: -0.5, CYdr: -0.17, Clb: -0.1, Clp: -0.45, Clr: 0.1, Clda: 0.13, Cldr: -0.012,
+        Cnb: 0.09, Cnp: -0.04, Cnr: -0.15, Cnda: -0.01, Cndr: 0.08,
+        maxElev: 20 * D, maxAil: 18 * D, maxRud: 25 * D,
+        flaps: [F('UP', 0, 0, 0, 0, 0), F('APPR', 14, 0, 0.3, 0.3, 0.012), F('DOWN', 35, 0, 0.6, 0.62, 0.05, -0.03)],
+        flapTime: 5, retract: true, gearTime: 6, gearCD: 0.02, spoilerCL: 0, spoilerCD: 0, mcrit: 0.62, CDwave: 0.06,
+        engines: [{ type: 'turboprop', power: 783000, static: 12000, eta: 0.82, x: 2.9, y: -2.9, z: 0.0 }, { type: 'turboprop', power: 783000, static: 12000, eta: 0.82, x: 2.9, y: 2.9, z: 0.0 }],
+        thrustLine: 0, wingZ: 0.55,
+        gearLayout: { comp: 0.12, stroke: 0.3, zeta: 0.75, steer: 45,
+          nose: { x: 3.5, z: 1.7, r: 0.3, wheels: 1 }, main: [{ x: -0.35, y: -2.6, z: 1.7, r: 0.35, wheels: 2 }, { x: -0.35, y: 2.6, z: 1.7, r: 0.35, wheels: 2 }] },
+        strike: [[-7.5, 0, 0.5, 'tail'], [0.2, -8.8, 0.3, 'tip'], [0.2, 8.8, 0.3, 'tip'], [2.9, -2.9, 1.33, 'prop'], [2.9, 2.9, 1.33, 'prop'], [7.0, 0, 0.6, 'nose'], [0, 0, 0.8, 'belly']],
+        Ixx: 20000, Iyy: 30000, Izz: 45000, gearVmax: 3.5, nMax: 3.2, qMax: 10 * D, pMax: 40 * D, alphaMax: 15 * D },
+      model: {
+        kind: 'jet', L: 14.22, nose: 6.5, fus: { d: 1.57, h: 1.63, zc: -0.1, noseLen: 2.6, tailLen: 5.4, tailUp: 0.45 },
+        wing: { x: 1.3, y0: 0.7, span: 8.83, c0: 2.2, c1: 1.0, sweep: 3, dih: 6, z: 0.55, t: 0.18, tt: 0.12, twist: -3,
+          flap: [0.7, 5.2, 0.28], ail: [5.3, 8.3, 0.26], spoil: null, tip: 'round' },
+        htail: { x: -6.85, span: 2.8, c0: 1.5, c1: 0.9, sweep: 25, dih: 0, z: -3.2, t: 0.1, elev: 0.4, y0: 0.15 },
+        vtail: { x: -4.8, h: 2.6, c0: 2.3, c1: 1.3, sweep: 38, z: -0.6, t: 0.11, rud: 0.35, dorsal: 1.5 },
+        engines: [-2.9, 2.9].map(y => ({ type: 'prop', x: 2.9, y, z: 0.0, d: 2.67, blades: 4, spinner: 0.45, nacelle: { len: 3.8, d: 0.85 } })),
+        gear: {}, cockpit: { x: 4.1, z: -0.35, y: -0.3, style: 'boeing' },
+        windows: { x0: 2.7, x1: -1.9, pitch: 0.62, z: 0.1, h: 0.36, doors: [-2.6] },
+        livery: { base: '#f5f5f2', tail: '#1d3557', stripe: '#b3261e', belly: '#dfe2e6', reg: 'N350BL' } },
+    },
+    // ------------------------------------------------------------------ DHC-6 Twin Otter
+    { id: 'dhc6', name: 'de Havilland Canada DHC-6 Twin Otter', short: 'Twin Otter', maker: 'de Havilland Canada', cat: 'STOL utility',
+      blurb: 'The bush pilot’s airliner: a high wing, fixed gear and two PT6 turboprops that get it off a 400 m strip. Try Lukla in this.',
+      facts: ['Span 19.8 m', '2 × 620 shp', 'Cruise 160 kt', 'STOL'],
+      v: { r: 65, ref: 75, app: 80, cruise: 160, fe: [140, 120, 100], mo: 170, mmo: 0.4, ceil: 25000, cruiseAlt: 8000 },
+      fdm: {
+        mass: 5000, S: 39.0, b: 19.8, c: 1.98, e: 0.78, CD0: 0.034,
+        CL0: 0.3, CLa: 5.0, CLmax: 1.6, CLq: 4.0, CLde: -0.35,
+        Cm0: 0.02, Cma: -0.9, Cmq: -14, Cmde: 1.25,
+        CYb: -0.5, CYdr: -0.17, Clb: -0.11, Clp: -0.48, Clr: 0.1, Clda: 0.14, Cldr: -0.012,
+        Cnb: 0.08, Cnp: -0.04, Cnr: -0.14, Cnda: -0.012, Cndr: 0.08,
+        maxElev: 22 * D, maxAil: 20 * D, maxRud: 25 * D,
+        flaps: [F('UP', 0, 0, 0, 0, 0), F('10°', 10, 0, 0.25, 0.25, 0.01), F('20°', 20, 0, 0.45, 0.5, 0.03, -0.01), F('37°', 37, 0, 0.75, 0.9, 0.08, -0.03)],
+        flapTime: 4, retract: false, gearTime: 1, gearCD: 0, spoilerCL: 0, spoilerCD: 0, mcrit: 0.55, CDwave: 0.05,
+        engines: [{ type: 'turboprop', power: 462000, static: 9000, eta: 0.8, x: 1.9, y: -3.2, z: -0.9 }, { type: 'turboprop', power: 462000, static: 9000, eta: 0.8, x: 1.9, y: 3.2, z: -0.9 }],
+        thrustLine: 0, wingZ: -1.1,
+        gearLayout: { comp: 0.08, stroke: 0.25, zeta: 0.8, steer: 50,
+          nose: { x: 3.6, z: 1.55, r: 0.38, wheels: 1 }, main: [{ x: -0.6, y: -1.85, z: 1.55, r: 0.45, wheels: 1 }, { x: -0.6, y: 1.85, z: 1.55, r: 0.45, wheels: 1 }] },
+        strike: [[-9.5, 0, 0.3, 'tail'], [0.2, -9.9, -1.2, 'tip'], [0.2, 9.9, -1.2, 'tip'], [2.3, -3.2, 0.4, 'prop'], [2.3, 3.2, 0.4, 'prop'], [6.8, 0, 0.8, 'nose'], [0, 0, 0.9, 'belly']],
+        Ixx: 22000, Iyy: 30000, Izz: 48000, gearVmax: 3.8, nMax: 3.4, qMax: 12 * D, pMax: 35 * D, alphaMax: 16 * D },
+      model: {
+        kind: 'ga', L: 15.77, nose: 5.6, fus: { w: 1.6, h: 1.72, zc: 0.05, tailW: 0.3, tailH: 0.55, tailZ: -0.2, noseZ: 0.1, cowl: 2.3, ws: 0.8, cabin: 10.6 },
+        wing: { high: true, x: 1.05, y0: 0.8, span: 9.9, c0: 1.98, c1: 1.98, sweep: 0, dih: 1.5, z: -1.1, t: 0.16, tt: 0.14, twist: -2,
+          flap: [0.8, 6.3, 0.3], ail: [6.4, 9.7, 0.28], spoil: null, tip: 'round', strut: true },
+        htail: { x: -8.1, span: 3.2, c0: 1.9, c1: 1.6, sweep: 5, dih: 0, z: -0.45, t: 0.1, elev: 0.38 },
+        vtail: { x: -7.3, h: 2.6, c0: 2.5, c1: 1.3, sweep: 30, z: -0.7, t: 0.11, rud: 0.4, dorsal: 1.2 },
+        engines: [-3.2, 3.2].map(y => ({ type: 'prop', x: 2.4, y, z: -0.9, d: 2.59, blades: 3, spinner: 0.4, nacelle: { len: 3.6, d: 0.78 } })),
+        gear: { fixed: true }, cockpit: { x: 3.3, z: -0.5, y: -0.35, style: 'ga' },
+        windows: { style: 'ga' }, livery: { base: '#f5f5f2', stripe: '#b8322a', stripe2: '#1f3a5f', tail: '#b8322a', reg: 'C-FBLX' } },
+    },
+    // ------------------------------------------------------------------ Douglas DC-3
+    { id: 'dc3', name: 'Douglas DC-3', short: 'DC-3', maker: 'Douglas', cat: 'Classic taildragger',
+      blurb: 'The airliner that made flying pay: 1936, two Twin Wasp radials, a tailwheel and 21 seats. Push forward to raise the tail, fly it off at 85 kt.',
+      facts: ['Span 29.0 m', '2 × 1,200 hp radial', 'Cruise 160 kt', 'Tailwheel'],
+      v: { r: 85, ref: 85, app: 90, cruise: 160, fe: [135, 115, 105], le: 140, mo: 190, mmo: 0.4, ceil: 23000, cruiseAlt: 8000 },
+      fdm: {
+        mass: 11000, S: 91.7, b: 28.96, c: 3.4, e: 0.75, CD0: 0.029,
+        CL0: 0.25, CLa: 5.0, CLmax: 1.45, CLq: 4.0, CLde: -0.35,
+        Cm0: 0.02, Cma: -0.9, Cmq: -14, Cmde: 1.2,
+        CYb: -0.5, CYdr: -0.17, Clb: -0.12, Clp: -0.45, Clr: 0.1, Clda: 0.12, Cldr: -0.012,
+        Cnb: 0.08, Cnp: -0.04, Cnr: -0.14, Cnda: -0.012, Cndr: 0.08,
+        maxElev: 22 * D, maxAil: 20 * D, maxRud: 25 * D,
+        flaps: [F('UP', 0, 0, 0, 0, 0), F('1/4', 15, 0, 0.22, 0.2, 0.015), F('1/2', 30, 0, 0.42, 0.4, 0.035, -0.01), F('FULL', 45, 0, 0.6, 0.55, 0.07, -0.03)],
+        flapTime: 4, retract: true, gearTime: 8, gearCD: 0.02, spoilerCL: 0, spoilerCD: 0, mcrit: 0.55, CDwave: 0.05,
+        engines: [{ type: 'prop', power: 895000, static: 16000, eta: 0.75, x: 4.2, y: -5.0, z: 0.4 }, { type: 'prop', power: 895000, static: 16000, eta: 0.75, x: 4.2, y: 5.0, z: 0.4 }],
+        pfactor: 0.02, thrustLine: 0, wingZ: 1.0,
+        gearLayout: { comp: 0.12, stroke: 0.35, zeta: 0.75, steer: 30,
+          nose: { x: -12.5, z: -0.13, r: 0.35, wheels: 1, fixed: true }, main: [{ x: 0.9, y: -2.9, z: 2.6, r: 0.72, wheels: 1 }, { x: 0.9, y: 2.9, z: 2.6, r: 0.72, wheels: 1 }] },
+        strike: [[-13.6, 0, -1.2, 'tail'], [-1.5, -14.5, -0.8, 'tip'], [-1.5, 14.5, -0.8, 'tip'], [4.6, -5.0, 2.15, 'prop'], [4.6, 5.0, 2.15, 'prop'], [7.4, 0, 0.9, 'nose'], [0, 0, 1.3, 'belly']],
+        Ixx: 110000, Iyy: 120000, Izz: 210000, gearVmax: 3.6, nMax: 3.0, qMax: 10 * D, pMax: 25 * D, alphaMax: 15 * D },
+      model: {
+        kind: 'jet', L: 19.66, nose: 7.4, fus: { d: 2.35, h: 2.6, zc: 0.0, noseLen: 3.2, tailLen: 7.5, tailUp: 0.9 },
+        wing: { x: 2.3, y0: 1.2, span: 14.48, c0: 4.9, c1: 1.8, sweep: 15, dih: 7, z: 1.0, t: 0.18, tt: 0.1, twist: -2,
+          flap: [1.2, 5.5, 0.22], ail: [8.5, 13.8, 0.25], spoil: null, tip: 'round' },
+        htail: { x: -10.3, span: 4.3, c0: 2.5, c1: 1.2, sweep: 15, dih: 0, z: -0.4, t: 0.1, elev: 0.4 },
+        vtail: { x: -9.3, h: 3.3, c0: 3.3, c1: 1.2, sweep: 35, z: -0.8, t: 0.1, rud: 0.4, dorsal: 2.0 },
+        engines: [-5.0, 5.0].map(y => ({ type: 'prop', x: 4.2, y, z: 0.4, d: 3.53, blades: 3, spinner: 0.5, nacelle: { len: 4.8, d: 1.45, color: '#b9bec4' } })),
+        gear: {}, cockpit: { x: 5.6, z: -0.6, y: -0.35, style: 'boeing' },
+        windows: { x0: 3.6, x1: -6.5, pitch: 0.95, z: 0.0, h: 0.45, doors: [-7.5] },
+        livery: { base: '#dfe3e8', tail: '#b3261e', stripe: '#1d3557', belly: '#cfd4da', reg: 'N1936B' } },
+    },
+    // ------------------------------------------------------------------ Extra 330LX
+    { id: 'e330', name: 'Extra 330LX', short: 'Extra 330', maker: 'Extra Flugzeugproduktions', cat: 'Aerobatic',
+      blurb: 'Unlimited-class aerobatics: 315 hp, a symmetric wing, ±10 g and 400°/s of roll. Switch handling to direct (X) and loop the Golden Gate.',
+      facts: ['Span 7.5 m', '315 hp', 'Roll 400°/s', '±10 g'],
+      v: { r: 60, ref: 75, app: 80, cruise: 180, fe: [], mo: 220, mmo: 0.4, ceil: 16000, cruiseAlt: 5000 },
+      fdm: {
+        mass: 870, S: 10.7, b: 7.5, c: 1.45, e: 0.8, CD0: 0.028,
+        CL0: 0.0, CLa: 5.2, CLmax: 1.4, CLq: 3.8, CLde: -0.4,
+        Cm0: 0.0, Cma: -0.5, Cmq: -10, Cmde: 1.3,
+        CYb: -0.35, CYdr: -0.2, Clb: -0.02, Clp: -0.4, Clr: 0.05, Clda: 0.25, Cldr: -0.01,
+        Cnb: 0.07, Cnp: -0.02, Cnr: -0.12, Cnda: -0.005, Cndr: 0.08,
+        maxElev: 30 * D, maxAil: 30 * D, maxRud: 30 * D,
+        flaps: [F('—', 0, 0, 0, 0, 0)],
+        flapTime: 1, retract: false, gearTime: 1, gearCD: 0, spoilerCL: 0, spoilerCD: 0, mcrit: 0.6, CDwave: 0.05,
+        engines: [{ type: 'prop', power: 235000, static: 3600, eta: 0.75, x: 1.6, y: 0, z: -0.25 }],
+        pfactor: 0.04, thrustLine: 0, wingZ: 0.15,
+        gearLayout: { comp: 0.05, stroke: 0.15, zeta: 0.8, steer: 25,
+          nose: { x: -4.5, z: 0.25, r: 0.1, wheels: 1 }, main: [{ x: 0.35, y: -0.9, z: 1.05, r: 0.23, wheels: 1 }, { x: 0.35, y: 0.9, z: 1.05, r: 0.23, wheels: 1 }] },
+        strike: [[-4.8, 0, -0.15, 'tail'], [0, -3.75, 0.2, 'tip'], [0, 3.75, 0.2, 'tip'], [2.3, 0, 0.72, 'prop'], [2.0, 0, 0.5, 'nose'], [0, 0, 0.55, 'belly']],
+        Ixx: 700, Iyy: 1200, Izz: 1700, gearVmax: 3.0, nMax: 10, qMax: 80 * D, pMax: 400 * D, alphaMax: 16 * D, fbw: 'aerobatic' },
+      model: {
+        kind: 'ga', L: 6.95, nose: 2.3, fus: { w: 0.95, h: 1.05, zc: 0.0, tailW: 0.12, tailH: 0.3, tailZ: -0.35, noseZ: 0.05, cowl: 1.4, ws: 0.3, cabin: 2.9, low: true },
+        wing: { x: 0.75, y0: 0.45, span: 3.75, c0: 1.9, c1: 1.0, sweep: 3, dih: 0, z: 0.15, t: 0.16, tt: 0.12, twist: 0, cam: 0,
+          flap: null, ail: [0.6, 3.6, 0.3], spoil: null, tip: 'round' },
+        htail: { x: -3.8, span: 1.6, c0: 1.1, c1: 0.7, sweep: 5, dih: 0, z: -0.3, t: 0.1, elev: 0.45 },
+        vtail: { x: -3.35, h: 1.3, c0: 1.3, c1: 0.7, sweep: 25, z: -0.35, t: 0.1, rud: 0.45 },
+        engines: [{ type: 'prop', x: 2.25, y: 0, z: -0.25, d: 1.9, blades: 3, spinner: 0.35, cowl: true }],
+        gear: { fixed: true, pants: true }, cockpit: { x: -0.3, z: -0.7, y: 0, style: 'fighter' }, windows: { style: 'fighter' },
+        canopy: { x: -0.3, z: -0.55, len: 2.3, w: 0.44, h: 0.52 },
+        livery: { base: '#f4f4f2', stripe: '#b3261e', stripe2: '#1d3557', tail: '#b3261e', reg: 'N330BL' } },
+    },
   ];
   const byId = {};
   for (const a of list) {
@@ -221,8 +410,9 @@ const AIRCRAFT = (() => {
     f.strike = f.strike.map(s => ({ x: s[0], y: s[1], z: s[2], kind: s[3] }));
     // CG height above the ground at rest (gear at static compression)
     f.cgHeight = f.gearLayout.main[0].z - f.gearLayout.comp;
+    if (f.gearLayout.nose.x < 0) f.cgHeight = (f.gearLayout.main[0].z - f.gearLayout.comp) * 0.98;
     // attitude at rest: the line from the main gear to the nose gear (compressed alike)
-    f.restPitch = Math.atan2(f.gearLayout.main[0].z - f.gearLayout.nose.z, f.gearLayout.nose.x - f.gearLayout.main[0].x);
+    { const n = f.gearLayout.nose, mm = f.gearLayout.main[0]; f.restPitch = Math.atan((n.z - mm.z) / (n.x - mm.x)); }   // both gear on level ground (tail-draggers sit nose-up)
     byId[a.id] = a;
   }
   // reference landing speed (kt): 1.23 x the 1-g stall speed in the landing configuration (1.3 x for light aircraft)

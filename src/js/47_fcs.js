@@ -14,12 +14,12 @@ const FCS = (() => {
   const wrap = (a) => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
 
   function create(ac, type) {
-    const S = ac.spec, V = type.v, heavy = S.mass > 30000, fighter = S.fbw === 'fighter', ga = !S.retract;
+    const S = ac.spec, V = type.v, heavy = S.mass > 30000, fighter = S.fbw === 'fighter' || S.fbw === 'aerobatic', ga = !S.retract && S.mass < 8000;
     const K = { phi: 1.4, p: fighter ? 9 : ga ? 5 : 3.2, q: fighter ? 7 : ga ? 4.5 : 2.8, r: fighter ? 5 : ga ? 3 : 2.2, gam: ga ? 0.9 : 0.7 };
     const E = {};
     const f = {
       assist: 'full', pil: { pitch: 0, roll: 0, yaw: 0, thr: 0 },
-      gammaHold: 0, phiHold: 0, thetaHold: null, air: 0, flare: false, law: 'ground',
+      gammaHold: 0, phiHold: 0, thetaHold: null, air: 0, flare: false, law: 'ground', hdgHold: null,
       ap: { on: false, hdg: null, alt: null, vs: null, spd: null, athr: false, appr: false, rwy: null, mode: '', thrI: 0.5, gs: false, loc: false, flare: false, retard: false },
       autoSpoilers: true, autoBrake: 0, events: [],
       airStart(gamma) { f.air = 5; f.law = 'flight'; f.gammaHold = gamma; f.phiHold = 0; f.srs = false; f.wasGround = false; f.wasAir = true; },
@@ -118,7 +118,7 @@ const FCS = (() => {
       const qTurn = law === 'flight' && Math.abs(E.roll) < 80 * D ? (G / tas) * sp * Math.tan(E.roll) * Math.cos(gam) * cp : 0;
       let qCmd;
       const flareZone = law === 'flight' && o.agl < 14 && ac.gearPos > 0.9 && o.vs < 0.5 && !f.ap.on;
-      if (law === 'ground') qCmd = P.pitch * S.qMax * 0.75;
+      if (law === 'ground') qCmd = P.pitch * Math.min(S.qMax, 10 * D) * 0.75;
       else if (Math.abs(P.pitch) > 0.03 && !(f.ap.on)) { qCmd = qTurn + P.pitch * S.qMax; f.gammaHold = gam; f.flare = false; f.srs = false; }
       else if (f.srs && !f.ap.on && f.assist !== 'direct') {
         // takeoff: hold the initial climb attitude (speed-protected) until 1500 ft or the pilot takes over
@@ -147,7 +147,15 @@ const FCS = (() => {
       const qdot = K.q * (qCmd - ac.omega.y);
       if (o.B.q > 1e-4) c.elev = clamp(ac.surf.elev + (qdot - ac.omegaDot.y) / o.B.q * 0.5, -1, 1); else c.elev = P.pitch;
       // ---------------- yaw: turn coordination, sideslip and yaw damping; the pedals add a yaw rate
-      if (law === 'ground') c.rud = P.yaw;
+      if (law === 'ground') {
+        c.rud = P.yaw;
+        // assisted: hold the runway heading on the takeoff and landing roll while the pedals are free (rudder + steering)
+        if (f.assist === 'full' && o.gs > 4 && Math.abs(P.yaw) < 0.05) {
+          if (f.hdgHold === null) f.hdgHold = E.hdg;
+          const e = wrap(f.hdgHold - E.hdg), cmd = clamp(e * 4 - ac.omega.z * 1.6, -1, 1);
+          c.rud = cmd; c.steer = cmd * (gs < 6 ? 0.6 : gs > 30 ? 0.08 : 0.6 - 0.52 * (gs - 6) / 24);
+        } else f.hdgHold = null;
+      }
       else {
         const rCmd = (G / tas) * sp * Math.cos(E.pitch) + o.beta * 1.2 + P.yaw * (fighter ? 0.35 : 0.12);
         const rdot = K.r * (rCmd - ac.omega.z);

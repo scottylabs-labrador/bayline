@@ -19,7 +19,7 @@ const FHud = (() => {
   .fov{position:fixed;inset:0;display:grid;place-items:center;z-index:25;background:rgba(5,7,10,.45)}
   .fov .card{padding:22px 24px;max-height:90vh;overflow:auto;width:min(1080px,95vw)}
   .fov h2{font-family:var(--cond);font-size:32px;margin:2px 0 10px}
-  .fgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
   .fcard{text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.04)}
   .fcard:hover{background:rgba(255,255,255,.09)} .fcard.on{border-color:rgba(224,64,47,.8);background:rgba(224,64,47,.14)}
   .fcard b{display:block;font-size:16px} .fcard small{color:var(--ink-dim);font-size:12.5px;line-height:1.35;display:block;margin-top:3px}

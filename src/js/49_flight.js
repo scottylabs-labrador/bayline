@@ -70,7 +70,7 @@ const Flight = (() => {
       const pos = c.pos || 'runway';
       T = type; ac = FDM.create(T.fdm); fcs = FCS.create(ac, T); env.pre = fcs.pre;
       fcs.assist = c.assist || prefs.assist || 'full';
-      const nF = T.fdm.flaps.length - 1, toFlap = T.id === 'c172' ? 1 : T.id === 'f16' ? 0 : Math.min(nF, T.id === 'a320' ? 2 : 3);
+      const nF = T.fdm.flaps.length - 1, toFlap = Math.min(nF, { c172: 1, f16: 1, a320: 2, a388: 2, b350: 1, dhc6: 1, dc3: 1 }[T.id] ?? 3);
       const vref = AIRCRAFT.vref(T), vapp = vref + (T.fdm.retract ? 5 : 5);
       if (pos === 'runway') {
         const u0 = end ? g.len : 0, s = end ? -1 : 1, back = T.model.L * 0.55 + 12;

@@ -145,7 +145,7 @@ const FDM = (() => {
       const k = 1 / (Math.PI * S.e * S.AR);
       let CD = S.CD0 + fl.dCD + st.gearPos * S.gearCD + st.spoilerPos * S.spoilerCD + k * CLlin * CLlin * ge;
       const dM = mach - S.mcrit;
-      if (dM > 0) CD += Math.min(20 * dM ** 4, 0.04) + S.CDwave * sstep(S.mcrit + 0.08, 1.05, mach) / (1 + Math.max(0, mach - 1.3) * (S.waveDecay || 1.2));
+      if (dM > 0) CD += Math.min(20 * dM ** 4, 0.04) * (1 - sstep(1.0, 1.2, mach)) + S.CDwave * sstep(S.mcrit + 0.08, 1.05, mach) / (1 + Math.max(0, mach - 1.3) * (S.waveDecay || 1.2));   // Lock's law through the transonic rise, then wave drag
       CD = (1 - sig) * CD + sig * (1.9 * Math.sin(alpha) ** 2 + S.CD0 + fl.dCD + st.gearPos * S.gearCD);
       const CY = S.CYb * beta + S.CYdr * dr;
       // moments; the stall weakens the controls and brings a pitch break and a wing drop
@@ -165,7 +165,7 @@ const FDM = (() => {
       let thrust = 0;
       for (let i = 0; i < st.eng.length; i++) {
         const e = st.eng[i], E = S.engines[i];
-        const want = !e.on ? 0 : c.rev && out.onGround ? 0.78 : clamp(c.thr, 0, 1);
+        const want = !e.on ? 0 : c.rev && out.onGround ? (E.type === 'prop' ? 0 : 0.78) : clamp(c.thr, 0, 1);
         const target = e.on ? 0.2 + 0.8 * want : 0;
         let tau;
         if (E.type === 'fan') tau = target > e.n ? (E.fast ? 0.9 : 1.8) + (e.n < 0.55 ? (E.fast ? 1.0 : 2.4) : 0) : (E.fast ? 0.8 : 1.5);
@@ -180,11 +180,12 @@ const FDM = (() => {
         } else if (E.type === 'turboprop') {
           const P = E.power * Math.max(0.05, n) * Math.pow(atm.sigma, 0.7);
           T = Math.min(E.static * Math.max(0.05, n), E.eta * P / Math.max(V, 1));
+          if (c.rev && out.onGround) T = -E.static * 0.35 * Math.max(0.1, n);   // beta range: the props bite backwards
         } else {                          // turbofan / turbojet: idle ~5 %, lapse with density and speed (ram helps low-bypass engines)
-          const M = Math.min(mach, 2.2), lapse = Math.pow(atm.sigma, 0.8) * Math.min(1.6, 1 - 0.4 * Math.min(M, 1) + (E.ram || 0) * M * M * 0.5);
+          const M = Math.min(mach, 2.2), lapse = Math.pow(atm.sigma, 0.8) * Math.min(E.cap || 1.6, 1 - 0.4 * Math.min(M, 1) + (E.ram || 0) * M * M * 0.5);
           T = E.thrust * lapse * (0.05 + 0.95 * Math.pow(Math.min(n, 1), 1.7));
           if (!e.on) T = 0;
-          if (E.ab && c.thr > 1.001 && e.on) T += (E.ab - E.thrust) * Math.pow(atm.sigma, 0.8) * Math.min(1.6, 1 - 0.4 * Math.min(M, 1) + (E.abRam || 0) * M * M * 0.5) * clamp((c.thr - 1) * 12, 0, 1) * clamp((n - 0.9) * 10, 0, 1);
+          if (E.ab && c.thr > 1.001 && e.on) T += (E.ab - E.thrust) * Math.pow(atm.sigma, 0.8) * Math.min(E.cap || 1.6, 1 - 0.4 * Math.min(M, 1) + (E.abRam || 0) * M * M * 0.5) * clamp((c.thr - 1) * 12, 0, 1) * clamp((n - 0.9) * 10, 0, 1);
           if (c.rev && out.onGround) T = -T * 0.45;
         }
         if (!e.on && E.type !== 'fan') T = Math.min(T, 0);
@@ -203,7 +204,7 @@ const FDM = (() => {
       fwd.set(1, 0, 0).applyQuaternion(st.q); fwd.y = 0; if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0); fwd.normalize();
       for (let gi = 0; gi < legs.length; gi++) {
         const g = legs[gi]; g.contact = false;
-        if (S.retract && st.gearPos < 0.98) { g.was = false; continue; }
+        if (S.retract && !g.fixed && st.gearPos < 0.98) { g.was = false; continue; }
         arm.set(g.x, g.y, g.z).applyQuaternion(st.q);
         const px = st.pos.x + arm.x, py = st.pos.y + arm.y, pz = st.pos.z + arm.z;
         const gh = env.ground(px, pz); const pen = gh.h - py;

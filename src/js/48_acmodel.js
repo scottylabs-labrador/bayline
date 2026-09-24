@@ -135,7 +135,10 @@ const ACModel = (() => {
       const Rw = F.d / 2, Rh = F.h / 2, yc0 = -F.zc, NL = F.noseLen, TL = F.tailLen;
       return (s) => {
         let top = yc0 + Rh, bot = yc0 - Rh, hw = Rw;
-        if (s < NL) {
+        if (s < NL && F.pointy) {          // a needle nose (Concorde)
+          const t = s / NL, k = Math.pow(t, 0.72), tip = yc0 - 0.05 * Rh;
+          hw = Rw * k; top = tip + (yc0 + Rh - tip) * Math.pow(t, 0.62); bot = tip - (tip - (yc0 - Rh)) * Math.pow(t, 0.85);
+        } else if (s < NL) {
           const t = s / NL, tip = yc0 - 0.18 * Rh;
           const kw = Math.pow(1 - Math.pow(1 - t, F.smoothNose ? 2.0 : 2.3), 0.5);
           hw = Rw * kw;
@@ -156,14 +159,14 @@ const ACModel = (() => {
       };
     }
     if (m.kind === 'ga') {
-      const W = F.w / 2, H = F.h / 2, yc0 = -F.zc;
+      const W = F.w / 2, H = F.h / 2, yc0 = -F.zc, C = F.cowl || 1.5, WS = F.ws || 0.8, CB = F.cabin || 3.9, roof = F.low ? 1.0 : 1.2;
       return (s) => {
         let hw = W, top = yc0 + H, bot = yc0 - H;
         if (s < 0.35) { const t = s / 0.35; hw = W * (0.3 + 0.62 * Math.sqrt(t)); top = yc0 + H * (0.1 + 0.55 * Math.sqrt(t)); bot = yc0 - H * (0.35 + 0.55 * Math.sqrt(t)); }
-        else if (s < 1.5) { const t = (s - 0.35) / 1.15; hw = W * (0.92 + 0.08 * t); top = yc0 + H * (0.65 + 0.1 * t); bot = yc0 - H * (0.9 + 0.1 * t); }   // cowling
-        else if (s < 2.3) { const t = (s - 1.5) / 0.8; top = yc0 + H * (0.75 + 0.45 * sstep(0, 1, t)); }        // windshield up to the wing
-        else if (s < 3.9) { top = yc0 + H * 1.2; }                                                             // cabin under the wing
-        else { const u = (s - 3.9) / (L - 3.9); hw = W * (1 - (1 - F.tailW / F.w * 2) * Math.pow(u, 0.9)); top = yc0 + H * 1.2 - (H * 1.2 - (-F.tailZ + F.tailH / 2 - yc0)) * sstep(0, 0.55, u);
+        else if (s < C) { const t = (s - 0.35) / (C - 0.35); hw = W * (0.92 + 0.08 * t); top = yc0 + H * (0.65 + 0.1 * t); bot = yc0 - H * (0.9 + 0.1 * t); }   // cowling / nose
+        else if (s < C + WS) { const t = (s - C) / WS; top = yc0 + H * (0.75 + (roof - 0.75) * sstep(0, 1, t)); }   // windshield up to the roof or wing
+        else if (s < CB) { top = yc0 + H * roof; }                                                               // cabin
+        else { const u = (s - CB) / (L - CB); hw = W * (1 - (1 - F.tailW / F.w * 2) * Math.pow(u, 0.9)); top = yc0 + H * roof - (H * roof - (-F.tailZ + F.tailH / 2 - yc0)) * sstep(0, 0.55, u);
           bot = yc0 - H + (H + (-F.tailZ - F.tailH / 2) - yc0) * Math.pow(u, 0.7); }
         return { top, bot, hw };
       };
@@ -267,9 +270,10 @@ const ACModel = (() => {
       });
       // titles and registration
       both(r => {
-        g.save(); g.fillStyle = lv.stripe; g.font = `700 ${Math.round(0.95 * ppm)}px "Barlow Condensed", "Arial Narrow", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
-        const vt = vOf(L * 0.3, yAxis + (-wn.z) + 1.05);
-        g.fillText('BAYLINE AIR', X(F.noseLen + 5 + L * 0.08, r), Yc(vt, r));
+        const th = Math.min(0.95, F.h * 0.23);
+        g.save(); g.fillStyle = lv.stripe; g.font = `700 ${Math.round(th * ppm)}px "Barlow Condensed", "Arial Narrow", sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+        const vt = vOf(L * 0.3, yAxis + (-wn.z) + th * 1.1);
+        g.fillText('BAYLINE AIR', X(F.noseLen + L * 0.22, r), Yc(vt, r));
         g.fillStyle = '#6b7480'; g.font = `600 ${Math.round(0.36 * ppm)}px "Barlow Condensed", sans-serif`;
         g.fillText(lv.reg, X(L - F.tailLen * 0.62, r), Yc(vOf(L - F.tailLen * 0.62, yAxis + 0.2), r));
         g.restore();
@@ -405,7 +409,7 @@ const ACModel = (() => {
       for (const side of [1, -1]) addMesh(side > 0 ? gb.geo() : mirrorZ(gb.geo()), M.wing);
     }
     if (w.strut) {   // the C172 wing strut
-      for (const side of [1, -1]) { const a = P(-0.1, side * 0.5, 0.45), b = P(0.25, side * 2.9, -0.95); const len = a.distanceTo(b);
+      for (const side of [1, -1]) { const fh = (m.fus.h || 1.35) / 2, a = P(w.x - w.c0 * 0.45, side * ((m.fus.w || 1.1) / 2 - 0.05), fh * 0.65), b = P(w.x - w.c0 * 0.3, side * w.span * 0.52, w.z + 0.08); const len = a.distanceTo(b);
         const g = new THREE.CylinderGeometry(0.035, 0.045, len, 8); g.scale(1, 1, 2.2); const me = new THREE.Mesh(g, M.wing); me.position.copy(a).add(b).multiplyScalar(0.5); me.quaternion.setFromUnitVectors(new V3(0, 1, 0), b.clone().sub(a).normalize()); me.castShadow = true; root.add(me); }
     }
     if (w.lex) {     // F-16 leading-edge extensions: flat strakes blending the wing into the forebody
@@ -415,9 +419,9 @@ const ACModel = (() => {
         addMesh(gb, M.wing); }
     }
     // ---- tails
-    const ht = m.htail, hsurf = ht.allMoving ? [] : [{ y0: ht.y0 || 0.4, y1: ht.span, cf: ht.elev, kind: 'elev' }];
-    const hr = surface({ ...ht, y0: ht.y0 || (m.kind === 'jet' ? m.fus.d * 0.18 : 0.2), tt: ht.t, twist: 0, cam: 0 }, hsurf, { color: m.kind === 'jet' ? '#dfe3e8' : wingCol, noMetal: m.kind !== 'jet' });
-    for (const side of [1, -1]) {
+    const ht = m.htail, hsurf = ht && !ht.allMoving ? [{ y0: ht.y0 || 0.4, y1: ht.span, cf: ht.elev, kind: 'elev' }] : [];
+    const hr = ht ? surface({ ...ht, y0: ht.y0 || (m.kind === 'jet' ? m.fus.d * 0.18 : 0.2), tt: ht.t, twist: 0, cam: 0 }, hsurf, { color: m.kind === 'jet' ? (ht.color || '#dfe3e8') : wingCol, noMetal: m.kind !== 'jet' }) : null;
+    if (ht) for (const side of [1, -1]) {
       if (ht.allMoving) { const pv = new THREE.Group(); const g = side > 0 ? hr.gb.geo() : mirrorZ(hr.gb.geo()); const hx = ht.x - ht.c0 * 0.35; g.translate(-hx, 0, 0); pv.position.set(hx, 0, 0); const me = new THREE.Mesh(g, M.wing); me.castShadow = true; pv.add(me); root.add(pv); parts.elev.push({ pivot: pv, axis: new V3(0, 0, 1), side: 1, kind: 'stab' }); }
       else { addMesh(side > 0 ? hr.gb.geo() : mirrorZ(hr.gb.geo()), M.wing); for (const p of hr.parts) parts.elev.push(hingePart(p, side, M.wing)); }
     }
@@ -465,6 +469,7 @@ const ACModel = (() => {
         eng.push({ grp, sleeve: sm, R, Ln });
       } else if (e.type === 'prop') {
         const hub = new THREE.Group(); hub.position.x = 0; grp.add(hub);
+        if (e.nacelle) { const nd = e.nacelle.d / 2, nl = e.nacelle.len; const nb = lathe([[0, nd * 0.55], [-0.15, nd * 0.95], [-nl * 0.25, nd], [-nl * 0.7, nd * 0.85], [-nl, nd * 0.2]], 20, 0, (i) => i === 0 ? hex('#2b2f35') : hex(e.nacelle.color || m.livery.base)); addMesh(nb, M.nacelle, grp); }
         const sp = new THREE.Mesh(new THREE.ConeGeometry(e.spinner / 2, e.spinner * 1.1, 20), new THREE.MeshStandardMaterial({ color: m.livery.stripe, roughness: 0.35, metalness: 0.2 })); sp.rotation.z = -Math.PI / 2; sp.position.x = e.spinner * 0.45; hub.add(sp);
         const blades = new THREE.Group(); hub.add(blades);
         for (let k = 0; k < e.blades; k++) { const bg = new THREE.BoxGeometry(0.03, e.d / 2 - 0.1, 0.13); bg.translate(0, e.d / 4 + 0.05, 0); const b = new THREE.Mesh(bg, M.dark); b.rotation.x = k * Math.PI * 2 / e.blades; b.children.length; blades.add(b); }
@@ -493,10 +498,16 @@ const ACModel = (() => {
               float a = core * uAB * (0.8 + 0.2 * sin(uTime * 40.0 + x * 13.0));
               gl_FragColor = vec4(c * a * 2.2, 1.0); }` });
         const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 4.6, 24, 8, true), fm); flame.rotation.z = Math.PI / 2; flame.position.x = -1.2 - 2.3; flame.visible = false; grp.add(flame);
+        if (e.box) { const [bl, bw, bh] = e.box; const bx = new THREE.Mesh(new THREE.BoxGeometry(bl, bh, bw), M.wing); bx.position.set(bl / 2 - 0.6, 0.1, 0); bx.castShadow = true; grp.add(bx);
+          const mouth = new THREE.Mesh(new THREE.PlaneGeometry(bw * 0.86, bh * 0.8), new THREE.MeshBasicMaterial({ color: 0x07080a })); mouth.position.set(bl - 0.58, 0.1, 0); mouth.rotation.y = Math.PI / 2; grp.add(mouth); }
         eng.push({ grp, flame, fm });
         if (e.intake) { const it = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.75, 0.95), M.wing); it.position.copy(P(e.intake.x - 1.2, 0, e.intake.z)).sub(grp.position); it.castShadow = true; grp.add(it);
           const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.7), new THREE.MeshBasicMaterial({ color: 0x07080a })); mouth.position.copy(it.position).add(new V3(1.31, 0, 0)); mouth.rotation.y = Math.PI / 2; grp.add(mouth); }
       }
+    }
+    if (m.canopy) {               // a bubble canopy on a light aircraft (aerobatic)
+      const c = m.canopy, cg = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2); cg.scale(c.len / 2, c.h, c.w);
+      const cn = new THREE.Mesh(cg, M.glass); cn.position.copy(P(c.x, 0, c.z)); cn.renderOrder = 3; root.add(cn);
     }
     if (m.kind === 'fighter') {   // bubble canopy
       const cg = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2); cg.scale(1.9, 0.62, 0.45);
@@ -526,7 +537,7 @@ const ACModel = (() => {
       pivot.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       // retraction: mains fold inward (toward the centre line), the nose forward
       const foldAxis = L.nose ? new V3(0, 0, 1) : new V3(1, 0, 0), foldSign = L.nose ? 1 : (L.y > 0 ? 1 : -1);
-      gr.push({ pivot, leg, wheels, spinners, strutLen, oleo, foldAxis, foldSign, nose: !!L.nose, r: L.r, rot: 0, fixed: !f.retract });
+      gr.push({ pivot, leg, wheels, spinners, strutLen, oleo, foldAxis, foldSign, nose: !!L.nose, r: L.r, rot: 0, fixed: !f.retract || !!L.fixed });
     });
 
     // ---- lights: nav (red left, green right), white tail, strobes, beacons, landing / taxi, logo
@@ -576,7 +587,8 @@ const ACModel = (() => {
         if (m.kind === 'jet') p.pivot.position.copy(p.base).addScaledVector(p.cd.clone().setZ(0), p.c * 0.12 * ext).addScaledVector(new V3(0, -1, 0), p.c * 0.02 * ext);
       }
       const ailDeg = -s.ail * f.maxAil / D;                    // right aileron: TE up for roll right
-      for (const p of parts.ail) p.pivot.quaternion.setFromAxisAngle(p.axis, p.side * (p.side > 0 ? ailDeg : -ailDeg) * D + (m.kind === 'fighter' ? p.side * flapDeg * D : 0));
+      const elevonDeg = w.elevon ? -(s.elev * f.maxElev + ac.ctl.trim * f.maxElev * 0.5) / D * 0.8 : 0;   // deltas: elevons move together for pitch
+      for (const p of parts.ail) p.pivot.quaternion.setFromAxisAngle(p.axis, p.side * ((p.side > 0 ? ailDeg : -ailDeg) * 0.6 + elevonDeg) * D + (m.kind === 'fighter' ? p.side * flapDeg * D : 0));
       const rollSp = Math.max(0, Math.abs(s.ail) - 0.25) * 0.8;
       for (const p of parts.spoil) {
         const own = p.side > 0 ? (s.ail > 0 ? rollSp : 0) : (s.ail < 0 ? rollSp : 0);
@@ -588,7 +600,7 @@ const ACModel = (() => {
       // gear: fold with the gear position, compress, spin, steer
       const gp = ac.gearPos, vgs = ac.out.gs;
       gr.forEach((g, i) => {
-        const L = ac.legs[i]; const fold = (1 - gp) * Math.PI / 2 * 0.98;
+        const L = ac.legs[i]; const fold = g.fixed ? 0 : (1 - gp) * Math.PI / 2 * 0.98;
         g.pivot.quaternion.setFromAxisAngle(g.foldAxis, g.foldSign * fold);
         g.pivot.visible = g.fixed || gp > 0.02;
         g.wheels.position.y = -g.strutLen + (L ? L.comp : 0); g.oleo.position.y = -g.strutLen * 0.7 + (L ? L.comp * 0.5 : 0);
@@ -645,8 +657,8 @@ const ACModel = (() => {
     geos.push(g0);
     const w = m.wing, wc = m.kind === 'jet' ? '#d9dde2' : m.livery.base;
     const wr = surface(w, [], { color: wc, metal: '#c4cad1', noMetal: m.kind !== 'jet' }); const wg = wr.gb.geo(); geos.push(wg, mirrorZ(wg));
-    const ht = m.htail, hr = surface({ ...ht, y0: ht.y0 || (m.kind === 'jet' ? F.d * 0.18 : 0.2), tt: ht.t, twist: 0, cam: 0 }, [], { color: m.kind === 'jet' ? '#dfe3e8' : wc, noMetal: true });
-    const hg = hr.gb.geo(); geos.push(hg, mirrorZ(hg));
+    const ht = m.htail; if (ht) { const hr = surface({ ...ht, y0: ht.y0 || (m.kind === 'jet' ? F.d * 0.18 : 0.2), tt: ht.t, twist: 0, cam: 0 }, [], { color: m.kind === 'jet' ? '#dfe3e8' : wc, noMetal: true });
+    const hg = hr.gb.geo(); geos.push(hg, mirrorZ(hg)); }
     const vt = m.vtail, vr = surface({ x: vt.x, y0: 0, span: vt.h, c0: vt.c0, c1: vt.c1, sweep: vt.sweep, z: vt.z, t: vt.t, tt: vt.t, cam: 0 }, [], { vertical: true, noMetal: true, color: m.livery.tail });
     geos.push(vr.gb.geo());
     for (const e of m.engines) {

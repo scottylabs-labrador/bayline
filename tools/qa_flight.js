@@ -16,7 +16,7 @@ for (const T of AIRCRAFT.list) {
   const log = (m) => console.log(T.short.padEnd(8), m);
   // ---- takeoff and climb
   { const ac = FDM.create(T.fdm), f = FCS.create(ac, T); env.pre = f.pre;
-    const toFlap = T.id === 'c172' ? 1 : T.id === 'f16' ? 0 : T.id === 'a320' ? 2 : 3;
+    const nF = T.fdm.flaps.length - 1, toFlap = Math.min(nF, T.id === 'c172' || T.id === 'dhc6' || T.id === 'dc3' || T.id === 'b350' ? 1 : T.id === 'f16' ? 0 : T.id === 'a320' || T.id === 'a388' ? 2 : 3);
     ac.place({ x: 0, y: 0, z: 0, hdg: 0, onGround: true, flaps: toFlap }); ac.settle(env);
     ac.ctl.thr = T.id === 'f16' ? 1.1 : 1; let t = 0, lo = null, rot = false, gearUp = false; const E = {};
     while (t < 120) { const o = ac.out; ac.euler(E);
@@ -24,11 +24,12 @@ for (const T of AIRCRAFT.list) {
       if (rot && !lo && E.pitch > (T.id === 'c172' ? 8 : 12) * D) f.pil.pitch = 0;
       if (!o.onGround && !lo && t > 2) { lo = { d: Math.hypot(ac.pos.x, ac.pos.z), kt: o.cas / KT }; f.pil.pitch = 0; }
       if (lo && !gearUp && ac.pos.y > 15) { ac.ctl.gear = 0; gearUp = true; }
+      if (T.fdm.gearLayout.nose.x < 0 && !rot && o.cas > T.v.r * KT * 0.6) f.pil.pitch = -0.3;   // tail-draggers: raise the tail first
       ac.step(1 / 60, env); t += 1 / 60; if (ac.out.crashed) { log('CRASH on takeoff: ' + ac.out.crashed); fails++; break; } }
     log(`takeoff: liftoff ${lo ? lo.d.toFixed(0) + ' m at ' + lo.kt.toFixed(0) + ' kt' : 'NONE'}; after 120 s ${(ac.pos.y / FT).toFixed(0)} ft, ${(ac.out.cas / KT).toFixed(0)} kt`); if (!lo) fails++; }
   // ---- cruise and maximum level speed
   { const ac = FDM.create(T.fdm), f = FCS.create(ac, T); env.pre = f.pre;
-    const alt = T.v.cruiseAlt * FT, atm = FDM.atmosphere(alt), tas = T.id === 'c172' ? 62 : T.id === 'f16' ? 0.9 * atm.a : (T.v.mmo - 0.04) * atm.a;
+    const alt = T.v.cruiseAlt * FT, atm = FDM.atmosphere(alt), tas = !T.fdm.retract || T.v.mmo < 0.7 ? T.v.cruise * KT * 0.95 : T.id === 'f16' ? 0.9 * atm.a : T.id === 'conc' ? 2.0 * atm.a : (T.v.mmo - 0.04) * atm.a;
     ac.place({ x: 0, y: alt, z: 0, hdg: 0, fpa: 0, speed: tas, thr: 0.7, gear: 0, flaps: 0 }); ac.gearPos = T.fdm.retract ? 0 : 1; f.airStart(0);
     f.ap.on = true; f.ap.alt = alt; f.ap.hdg = 0; f.ap.athr = true; f.ap.spd = FDM.cas(tas, atm) / KT; f.ap.thrI = 0.7;
     for (let t = 0; t < 240; t += 1 / 60) ac.step(1 / 60, env);
