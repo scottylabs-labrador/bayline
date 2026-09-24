@@ -454,6 +454,27 @@ const Flight = (() => {
     return true;
   }
   const listeners = []; const on = (f) => listeners.push(f); const emit = (e, d) => { for (const f of listeners) f(e, d); };
+  // join a real flight: spawn beside a live ADS-B aircraft, same altitude, speed and track (the same type when we have it)
+  async function joinTraffic(t, typeId) {
+    const ll = Globe.w2ll(t.pos.x, t.pos.z);
+    const apt = (Airports.nearest(ll.lat, ll.lon, null, 300000) || {}).apt; if (!apt) { UI.toast('No airport near that aircraft'); return; }
+    const type = AIRCRAFT.byId[typeId || t.cls] ? (typeId || t.cls) : 'a320';
+    await start({ type, apt, pos: 'air', assist: prefs.assist });
+    const w = Globe.ll2w(ll.lat, ll.lon), trk = t.fix.trk, back = 160 + AIRCRAFT.byId[type].model.L, side = 45;
+    const x = w.x - Math.sin(trk) * back + Math.cos(trk) * side, z = w.z + Math.cos(trk) * back + Math.sin(trk) * side;
+    if (t.onGround) {
+      const gy = groundFn(x, z).h; ac.place({ x, y: gy, z, hdg: trk, onGround: true, flaps: 1, thr: 0 }); ac.settle(env); ac.ctl.park = 0;
+    } else {
+      const spd = Math.max(t.fix.gs, AIRCRAFT.vstall(AIRCRAFT.byId[type]) * KT * 1.3);
+      ac.place({ x, y: t.pos.y, z, hdg: trk, pitch: 2 * D, fpa: Math.atan2(t.fix.vs, Math.max(spd, 1)), speed: spd, gear: 0, flaps: 0, thr: 0.6 });
+      fcs.airStart(Math.atan2(t.fix.vs, Math.max(spd, 1)));
+      const atm = FDM.atmosphere(t.pos.y), cas = FDM.cas(spd, atm) / KT;
+      fcs.ap.on = true; fcs.ap.hdg = trk; fcs.ap.alt = Math.round(t.pos.y / FT / 100) * 100 * FT; fcs.ap.vs = Math.abs(t.fix.vs) > 1 ? t.fix.vs : 1500 * FT / 60;
+      fcs.ap.athr = fcs.assist !== 'direct'; fcs.ap.spd = Math.round(cas); fcs.ap.thrI = 0.6;
+    }
+    FDM.euler(ac.q, E); cam.set('chase'); cam.reset();
+    UI.toast(`Alongside ${t.cs || t.reg || t.hex.toUpperCase()} (${t.type || 'unknown type'}), ${t.onGround ? 'on the ground' : Math.round(t.pos.y / FT / 100) * 100 + ' ft, ' + Math.round(t.fix.gs / KT) + ' kt'}. The autopilot is holding its track: take it when you like`, 8);
+  }
   function restart() { if (typeof FMissions !== 'undefined' && FMissions.active) { FMissions.start(FMissions.active.m.id); return; } if (cfg) start({ ...cfg, rw: cfg.rw, end: cfg.end }); }
   function crashWith(why) {        // a crash found outside the physics (a bridge deck, a cable)
     if (crashed || !ac) return; crashed = { why, t: flightTime, vs: ac.out.vs, gs: ac.out.gs };
@@ -468,7 +489,7 @@ const Flight = (() => {
   const api = {
     init, start, stop, update, restart, fromHash, on, input, cam, warn, prefs,
     get active() { return active; }, get loading() { return loading; }, get ac() { return ac; }, get fcs() { return fcs; }, get type() { return T; }, get model() { return model; }, get cfg() { return cfg; },
-    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
+    get crashed() { return crashed; }, get landed() { return landed; }, get wind() { return wind; }, crashWith, joinTraffic, get euler() { return E; }, get flightTime() { return flightTime; }, groundFn, armApproach, toggleAP, findApproach,
   };
   return api;
 })();

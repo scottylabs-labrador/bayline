@@ -21,7 +21,7 @@ const FMap = (() => {
     el = document.createElement('div'); el.className = 'fov'; el.hidden = true;
     el.innerHTML = `<div class="card panel" style="width:min(1280px,96vw);padding:14px 16px"><button class="close" data-x>×</button><div class="kicker">World map</div>
       <canvas style="width:100%;height:76vh;display:block;border-radius:10px;background:#0c1116;cursor:grab"></canvas>
-      <p class="fnote" style="margin:8px 0 0">Wheel to zoom, drag to pan, double-click to follow the aircraft again. Click an airport to fly from it. Imagery: EOxCloudless 2025 (EOX IT Services GmbH, contains modified Copernicus Sentinel data); traffic: adsb.lol.</p></div>`;
+      <p class="fnote" style="margin:8px 0 0">Wheel to zoom, drag to pan, double-click to follow the aircraft again. Click an airport to fly from it, or a live aircraft (yellow) to join it in the air. Imagery: EOxCloudless 2025 (EOX IT Services GmbH, contains modified Copernicus Sentinel data); traffic: adsb.lol.</p></div>`;
     document.body.appendChild(el); cv = el.querySelector('canvas'); g = cv.getContext('2d');
     el.querySelector('[data-x]').onclick = () => toggle(false);
     el.addEventListener('mousedown', (e) => { if (e.target === el) toggle(false); });
@@ -53,7 +53,9 @@ const FMap = (() => {
   }
   function clickAt(e) {
     const r = cv.getBoundingClientRect(), mx = (e.clientX - r.left) * dpr(), my = (e.clientY - r.top) * dpr();
-    let best = null, bd = 14 * dpr();
+    let best = null, bd = 14 * dpr(), bestT = null, bdt = 12 * dpr();
+    if (typeof Traffic !== 'undefined') for (const t of Traffic.targets.values()) { const ll = Globe.w2ll(t.pos.x, t.pos.z), [x, y] = project(ll.lat, ll.lon); const d = Math.hypot(x - mx, y - my); if (d < bdt) { bdt = d; bestT = t; } }
+    if (bestT) { toggle(false); if (typeof World !== 'undefined' && !World.started && window.__bayline) window.__bayline.start('fly'); Flight.joinTraffic(bestT).catch(err => console.error(err)); return; }
     for (const n of airportsInView()) { const [x, y] = project(n.apt.lat, n.apt.lon); const d = Math.hypot(x - mx, y - my); if (d < bd) { bd = d; best = n.apt; } }
     if (best) { toggle(false); FHud.setup(true); FHud.pick(best); }
   }
@@ -99,6 +101,9 @@ const FMap = (() => {
     const hdg = typeof Flight !== 'undefined' && Flight.active ? Flight.euler.hdg : (() => { const d = Env.camera.getWorldDirection(new THREE.Vector3()); return Math.atan2(d.x, -d.z); })();
     g.save(); g.translate(x0, y0); g.rotate(hdg); g.fillStyle = '#ff5a3c'; g.strokeStyle = '#fff'; g.lineWidth = 1.5 * k;
     g.beginPath(); g.moveTo(0, -12 * k); g.lineTo(9 * k, 9 * k); g.lineTo(0, 5 * k); g.lineTo(-9 * k, 9 * k); g.closePath(); g.fill(); g.stroke(); g.restore();
+    if (!hov && hover && typeof Traffic !== 'undefined') for (const t of Traffic.targets.values()) { const l2 = Globe.w2ll(t.pos.x, t.pos.z), [x, y] = project(l2.lat, l2.lon);
+      if (Math.hypot(hover.x - x, hover.y - y) < 12 * k) { const txt = `${t.cs || t.reg || t.hex.toUpperCase()} · ${t.type || '?'} · ${t.onGround ? 'on the ground' : Math.round(t.pos.y / FT / 100) * 100 + ' ft · ' + Math.round(t.fix.gs / KT) + ' kt'} · click to fly alongside`;
+        g.font = `600 ${12 * k}px Barlow, sans-serif`; const w = g.measureText(txt).width + 16 * k; g.fillStyle = 'rgba(10,12,16,.85)'; g.fillRect(x + 10 * k, y + 10 * k, w, 24 * k); g.fillStyle = '#ffd166'; g.fillText(txt, x + 18 * k, y + 22 * k); break; } }
     if (hov) { const [x, y] = project(hov.lat, hov.lon); const txt = `${hov.ident} · ${hov.name} · ${Math.round(Math.max(...hov.runways.map(r => r.L)))} m · click to fly from here`; g.font = `600 ${12 * k}px Barlow, sans-serif`; const w = g.measureText(txt).width + 16 * k;
       g.fillStyle = 'rgba(10,12,16,.85)'; g.fillRect(x + 10 * k, y + 10 * k, w, 24 * k); g.fillStyle = '#fff'; g.fillText(txt, x + 18 * k, y + 22 * k); }
     // scale bar
