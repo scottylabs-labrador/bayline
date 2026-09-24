@@ -188,8 +188,15 @@ const ACParts = (() => {
       parts.pal = null;
     }
     // hub bone (spins), blades (each on its own bone: pitch, feathering), spinner
-    const hb = rig.add(eb, o.x, o.y, o.z), nb = e.blades, rs = e.spinner / 2;
-    const spin = [[rs * 1.25, 0.004], [rs * 1.08, rs * 0.45], [rs * 0.7, rs * 0.85], [rs * 0.25, rs], [-rs * 0.15, rs * 0.98]];
+    const hb = rig.add(eb, o.x, o.y, o.z), nb = e.blades, rs = e.spinner / 2, single = !e.y && m.kind !== 'jet';
+    const sl = single ? Math.max(rs * 1.25, (m.nose - e.x) * 0.97) : rs * 1.25;          // (a single's spinner is its nose)
+    const spin = [[sl, 0.004], [sl * 0.86, rs * 0.45], [sl * 0.56, rs * 0.85], [sl * 0.2, rs], [-rs * 0.15, rs * 0.98]];
+    if (single && e.cowl) {         // the cowl's two air inlets beside the spinner and the exhaust stack below
+      parts.bind(eb); parts.pal = pal('black');
+      for (const sd of [1, -1]) parts.at(mat4(new V3(o.x - 0.06, o.y + rs * 0.35, o.z + sd * (rs + 0.13)), new Q4().setFromUnitVectors(X1, new V3(-1, 0, 0)), new V3(1, 0.7, 1.25)), () => parts.lathe([[0, 0.11], [0, 0.11], [0.02, 0.1], [0.12, 0.06], [0.12, 0.001]], 12, { flip: false }));
+      parts.pal = pal('exhaust'); parts.cyl(new V3(o.x - 0.55, o.y - rs * 2.2, o.z + 0.12), new V3(o.x - 0.8, o.y - rs * 2.6, o.z + 0.16), 0.035, 0.04, 8, false);
+      parts.pal = null;
+    }
     parts.bind(hb); parts.pal = pal('spinner'); parts.at(mat4(o), () => parts.lathe(spin, seg));
     const blades = [], nr = [4, 5, 7, 9, 11][q], nc = [3, 3, 4, 5, 6][q];
     for (let k = 0; k < nb; k++) {
@@ -237,34 +244,54 @@ const ACParts = (() => {
     const o = P(e.x, e.y, e.z), parts = B.mb('parts'), rN = (e.d || 1.2) / 2, eb = rig.add(0, o.x, o.y, o.z);
     parts.bind(eb);
     if (e.box) {
-      // Concorde: the paired nacelle (built once per pair) with the intake mouth, and this engine's nozzle
-      const [bl, bw, bh] = e.box, pairY = Math.sign(e.y) * 4.5, first = Math.abs(e.y) < 4.5;
+      // Concorde: each pair of engines in one nacelle under the wing (built with the inboard engine): a rounded box
+      // whose top runs into the wing, the intakes raked back from the lower lip with a splitter between them, and
+      // each engine's nozzle and reverser buckets at the back
+      const [bl, bw, bh] = e.box, pairY = Math.sign(e.y) * (Math.abs(e.y) + bw / 2), first = Math.abs(e.y) < 4.5;
       if (first) {
-        const c = P(e.x + bl / 2 - 0.6, pairY, e.z - 0.1), w2 = bw * 2 / 2, h2 = bh / 2;
-        const nb = ctx.B.mb('nac'); nb.bind(0);
-        const sec = (u, v, out) => {       // a rounded box, the front raked (the intake ramp above)
-          const x = c.x + bl / 2 - u * bl - (1 - u) * 0 + (u < 0.1 ? 0 : 0), a = v * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-          const k = u < 0.08 ? 0.92 + u : u > 0.85 ? 1 - (u - 0.85) * 0.9 : 1, sy = Math.sign(ca) * Math.pow(Math.abs(ca), 0.35) * h2 * k, sz = Math.sign(sa) * Math.pow(Math.abs(sa), 0.35) * w2 * k;
-          const rake = u < 0.02 ? 0 : 0;
-          return out.set(x - (sy > 0 ? (u < 0.001 ? 0.9 * (sy / h2) : 0) : 0) + rake, c.y + sy, c.z + sz);
+        const cz = pairY, hw = bw * 0.98, hh = bh / 2, xF = o.x + bl - 0.6, xR = o.x - 0.55, yc = o.y, ramp = 1.2, nb = ctx.B.mb('nac'), ws = env.wings.find(w => w.side === Math.sign(e.y));
+        const wingLow = (x) => { if (!ws) return yc + hh; const span = Math.abs(cz), fr = ws.frame(span, { cd: new V3(), ud: new V3() }), xc = clamp((fr.lx - x) / fr.c, 0.001, 0.999); return ws.P(span, ACGeo.qAt(xc, -1), new V3()).y; };
+        const sec = (u, v, out, inset = 0) => {
+          const a = v * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), up = ca > 0;
+          const x0 = xF - (1 - ca) * 0.5 * 0 + (up ? -ramp * ca * 0 : 0);
+          const xx = lerp(xF + (ca + 1) * 0.5 * -ramp * -1 - ramp, xR, u) + (1 - u) * ramp * (ca + 1) * 0.5;
+          const top = Math.max(yc + hh, wingLow(xx) + 0.2), bot = yc - hh, ym = (top + bot) / 2, hy = (top - bot) / 2 - inset, hz = hw - inset;
+          void x0;
+          return out.set(xx, ym + Math.sign(ca) * Math.pow(Math.abs(ca), 0.25) * hy, cz + Math.sign(sa) * Math.pow(Math.abs(sa), 0.25) * hz);
         };
-        nb.surface(ACGeo.linSpace(0, 1, [6, 8, 10, 12, 14][q]), ACGeo.linSpace(0, 1, seg), sec, { eu: 1e-4, ev: 1e-4, flip: true, uv: () => [0.5, 0.62] });
-        parts.bind(0); parts.pal = pal('black');
-        parts.box(c.x + bl / 2 + 0.01, c.y - 0.05, c.z, 0.02, bh * 0.8, bw * 1.9);
+        nb.bind(0);
+        nb.surface(ACGeo.linSpace(0, 1, [6, 8, 12, 14, 18][q]), ACGeo.linSpace(0, 1, seg), (u, v, out) => sec(u, v, out), { eu: 1e-4, ev: 1e-4, uv: () => [0.5, 0.62] });
+        // the intake mouths (dark), the splitter, the lip
+        parts.bind(0); parts.pal = pal('inlet');
+        parts.surface(ACGeo.linSpace(0, 0.18, 2), ACGeo.linSpace(0, 1, seg), (u, v, out) => sec(u, v, out, 0.07), { eu: 1e-4, ev: 1e-4, flip: true, uv: () => [0, 0] });
+        parts.pal = pal('black'); parts.surface(ACGeo.linSpace(0, 1, 1), ACGeo.linSpace(0, 1, seg), (k, v, out) => sec(0.18, v, out, 0.07).lerp(sec(0.18, 0.25, new V3(), 0.07).setZ(cz), k), { eu: 1e-4, ev: 1e-4, uv: () => [0, 0] });
+        parts.pal = pal('base'); const sp0 = sec(0, 0.5, new V3()); parts.box(sp0.x - 0.6, yc, cz, 1.2, bh * 0.92, 0.05);
+        parts.pal = pal('aluDull'); parts.surface(ACGeo.linSpace(0, 1, 2), ACGeo.linSpace(0, 1, seg), (k, v, out) => sec(0, v, out, 0).lerp(sec(0, v, new V3(), 0.07), k), { eu: 1e-4, ev: 1e-4, flip: true, uv: () => [0, 0] });
+        parts.pal = null;
       }
-      parts.bind(eb); parts.pal = pal('afterburner'); parts.at(mat4(o), () => parts.lathe([[0.1, rN * 0.95], [-0.6, rN * 0.92], [-0.9, rN * 0.85], [-0.9, rN * 0.85], [-0.8, rN * 0.7], [0.05, rN * 0.72]], seg));
+      // this engine's nozzle, its reverser buckets
+      parts.bind(eb); parts.pal = pal('afterburner'); parts.at(mat4(o), () => parts.lathe([[0.1, rN * 0.9], [-0.6, rN * 0.88], [-0.9, rN * 0.82], [-0.9, rN * 0.82], [-0.8, rN * 0.7], [0.05, rN * 0.72]], seg));
+      parts.pal = pal('exhaust'); for (const sd of [1, -1]) parts.at(mat4(new V3(o.x - 0.95, o.y + sd * rN * 0.45, o.z)), () => parts.lathe([[0.25, rN * 0.95], [-0.35, rN * 0.85]], seg, { a0: sd > 0 ? -Math.PI / 2 : Math.PI / 2, a1: sd > 0 ? Math.PI / 2 : Math.PI * 1.5 }));
+      parts.pal = null;
     } else {
       // F-16: a convergent-divergent nozzle of petals, the afterburner liner inside
       parts.pal = pal('darkMetal'); parts.at(mat4(o), () => parts.lathe([[0.25, 0.62], [0, 0.6], [-0.5, 0.56], [-0.95, 0.5], [-0.95, 0.5], [-0.9, 0.44], [0, 0.46]], seg, { mod: (k, ph) => (k > 1 && k < 4 ? 1 + 0.02 * Math.cos(ph * 15) : 1) }));
       parts.pal = pal('afterburner'); parts.at(mat4(o), () => parts.lathe([[0, 0.46], [0.6, 0.44], [0.6, 0.44], [0.62, 0.001]], seg));
-      if (e.intake) {       // the chin intake: a rounded mouth under the forebody, its duct running aft
-        const ic = P(e.intake.x, 0, e.intake.z), nb = ctx.B.mb('body');
-        parts.bind(0); parts.pal = pal('base');
-        const lip = (u, v, out) => { const a = v * Math.PI * 2, x = ic.x - u * 3.2, s = 1 - u * 0.15, hw = 0.5 * s, hh = 0.38 * s;
-          return out.set(x + (Math.sin(a) > 0 ? 0 : 0) - (u === 0 ? 0 : 0), ic.y + Math.cos(a) * hh + (u * 0.25), ic.z + Math.sin(a) * hw); };
-        parts.surface(ACGeo.linSpace(0, 1, 6), ACGeo.linSpace(0, 1, seg), lip, { eu: 1e-4, ev: 1e-4, flip: true, uv: () => ctx.pal('base') });
-        parts.pal = pal('inlet'); parts.surface(ACGeo.linSpace(0, 0.6, 3), ACGeo.linSpace(0, 1, seg), (u, v, out) => lip(u, v, out).multiply(new V3(1, 1, 1)).add(new V3(0, 0, 0)).sub(new V3(0, 0, 0)), { eu: 1e-4, ev: 1e-4, uv: () => ctx.pal('inlet') });
-        void nb;
+      if (e.intake) {       // the chin intake: a wide rounded mouth under the forebody, its duct running aft into the belly
+        const H = ctx.H, x0 = e.intake.x, nb = ctx.B.mb('parts');
+        const duct = (u, v, out, inset) => {
+          const x = x0 - u * 3.6, s = H.nose - x, sc = H.sec(s), bot = sc.yc - sc.dn, a = v * Math.PI * 2;
+          const hw = lerp(0.5, 0.64, Math.min(1, u * 1.5)) - inset, hh = lerp(0.3, 0.26, u) - inset * 0.8, cy = Math.min(bot + 0.12, -0.2) - hh + 0.08;
+          const ca = Math.cos(a), sa = Math.sin(a), rx = Math.sign(sa) * Math.pow(Math.abs(sa), 0.7) * hw, ry = Math.sign(ca) * Math.pow(Math.abs(ca), 0.8) * hh;
+          const rake = (1 - ca) * 0.5 * 0.28 * (u === 0 ? 1 : Math.max(0, 1 - u * 20));        // (the lower lip reaches forward)
+          return out.set(x + rake, cy + ry, rx);
+        };
+        nb.bind(0); nb.pal = pal('base');
+        nb.surface(ACGeo.linSpace(0, 1, [4, 6, 8, 10, 12][q]), ACGeo.linSpace(0, 1, seg), (u, v, out) => duct(u, v, out, 0), { eu: 1e-4, ev: 1e-4 });
+        nb.pal = pal('alu'); nb.surface(ACGeo.linSpace(0, 1, 2), ACGeo.linSpace(0, 1, seg), (k, v, out) => { const a2 = duct(0, v, new V3(), 0), b2 = duct(0, v, new V3(), 0.04); return out.copy(a2).lerp(b2, k).add(new V3(0.02 * Math.sin(Math.PI * k), 0, 0)); }, { eu: 1e-4, ev: 1e-4, flip: true });
+        nb.pal = pal('inlet'); nb.surface(ACGeo.linSpace(0, 0.45, 3), ACGeo.linSpace(0, 1, seg), (u, v, out) => duct(u, v, out, 0.04), { eu: 1e-4, ev: 1e-4, flip: true });
+        nb.pal = pal('black'); nb.surface(ACGeo.linSpace(0, 1, 1), ACGeo.linSpace(0, 1, seg), (k, v, out) => duct(0.45, v, out, 0.04).lerp(duct(0.45, 0.25, new V3(), 0.5), k), { eu: 1e-4, ev: 1e-4 });
+        nb.pal = null;
       }
     }
     parts.pal = null; parts.bind(0);
@@ -293,7 +320,8 @@ const ACParts = (() => {
     const nb = B.mb('body'); nb.bind(0);
     const cw = (u, v, out) => { const x = R.x + 0.5 - u * 2.6, a = v * Math.PI, w2 = 0.55 * Math.sin(Math.PI * Math.min(1, 0.15 + u * 0.95)) + 0.1, h2 = 0.5 * Math.pow(Math.sin(Math.PI * Math.min(1, 0.1 + u * 0.95)), 0.8);
       return out.set(x, top - 0.2 + Math.sin(a) * h2, Math.cos(a) * w2); };
-    nb.surface(ACGeo.linSpace(0, 1, 10), ACGeo.linSpace(0, 1, 12), cw, { eu: 1e-4, ev: 1e-4, flip: true, uv: (u, v, i, j, p) => ctx.uvBody(ctx.type.model.nose - p.x, 0.4) });
+    nb.bind(0); const pb0 = B.mb('parts'); pb0.bind(0); pb0.pal = pal('base');
+    pb0.surface(ACGeo.linSpace(0, 1, 10), ACGeo.linSpace(0, 1, 12), cw, { eu: 1e-4, ev: 1e-4, flip: true }); pb0.pal = null;
     parts.bind(0); parts.pal = pal('exhaust'); parts.cyl(new V3(R.x - 2.0, top + 0.12, 0.25), new V3(R.x - 2.5, top + 0.2, 0.45), 0.16, 0.2, 12, false);
     parts.pal = pal('gearGrey'); parts.cyl(new V3(R.x, top + 0.1, 0), new V3(R.x, hubY - 0.05, 0), 0.1, 0.09, 12);
     // hub (spins) and the blades (each on a bone that cones)
@@ -376,17 +404,22 @@ const ACParts = (() => {
       // strut (upper cylinder), piston
       const gp = jet ? pal('gearPaint') : pal('gearGrey');
       parts.bind(legB); parts.pal = gp;
-      const cylBot = wc.y + Ls * 0.34 + (bogie ? r * 0.3 : 0);
-      parts.cyl(new V3(top.x, top.y + 0.2, top.z), new V3(top.x, cylBot, top.z), rc, rc * 1.05, seg, true);
+      const cylBot = wc.y + Ls * 0.34 + (bogie ? r * 0.3 : 0), spring = m.kind === 'ga' && !nose && !tail && fixed;
+      if (!spring) parts.cyl(new V3(top.x, top.y + 0.2, top.z), new V3(top.x, cylBot, top.z), rc, rc * 1.05, seg, true);
       if (!fixed && !tail && !nose && jet) {     // side stay: a brace from the strut to the structure outboard / aft
         const b0 = new V3(top.x, lerp(top.y, cylBot, 0.55), top.z), b1 = new V3(top.x - 0.25, top.y + 0.1, top.z + Math.sign(L.y || 1) * Ls * 0.45);
         parts.cyl(b0, b1, rc * 0.4, rc * 0.4, 8, true);
       }
-      if (m.kind === 'ga' && !nose && !tail) {   // spring steel leg: a flat, tapered blade out to the wheel
-        parts.bind(legB); parts.pal = pal('gearGrey');
+      if (m.kind === 'ga' && !nose && !tail && fixed) {   // spring steel leg: a flat, tapered blade from the belly edge out to the axle
+        parts.bind(pisB); parts.pal = pal('gearGrey');
+        const sd = Math.sign(L.y || 1), a0 = new V3(wc.x, keelY + 0.12, sd * Math.max(0.3, (m.fus.w || 1.1) * 0.36)), a1 = new V3(wc.x, wc.y + r * 0.15, wc.z - sd * (r * 0.35 + 0.02));
+        const ax = a1.clone().sub(a0), len = ax.length(); ax.normalize();
+        const side = new V3().crossVectors(ax, X1).normalize();
+        parts.surface(ACGeo.linSpace(0, 1, 4), ACGeo.linSpace(0, 1, 10), (u, v, out) => { const w2 = lerp(0.075, 0.045, u), t2 = lerp(0.022, 0.016, u), a = v * Math.PI * 2;
+          return out.copy(a0).addScaledVector(ax, u * len).addScaledVector(X1, Math.cos(a) * w2).addScaledVector(side, Math.sin(a) * t2); }, { eu: 1e-4, ev: 1e-4, flip: true });
       }
       parts.bind(pisB); parts.pal = pal('chrome');
-      parts.cyl(new V3(wc.x, cylBot + 0.25, wc.z), new V3(wc.x, wc.y + r * 0.15, wc.z), rp, rp, seg, false);
+      if (!spring) parts.cyl(new V3(wc.x, cylBot + 0.25, wc.z), new V3(wc.x, wc.y + r * 0.15, wc.z), rp, rp, seg, false);
       // torque links: two plates meeting at an apex in front of the strut (opening with the compression)
       parts.pal = gp;
       const linkUp = rig.add(legB, wc.x + rc * 1.2, cylBot + 0.02, wc.z), linkLo = rig.add(pisB, wc.x + rc * 1.2, wc.y + r * 0.25, wc.z);

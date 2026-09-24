@@ -141,6 +141,7 @@ const ACModel = (() => {
       nac: phys({ map: T.nac.map, roughness: matte ? 0.6 : 0.34, metalness: 0.04, clearcoat: matte ? 0 : 1, normalMap: tile, normalScale: ns }),
       parts: phys({ map: T.pal.map, roughnessMap: T.pal.orm, metalnessMap: T.pal.orm, clearcoatMap: T.pal.orm, clearcoatRoughness: 0.15 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x0b1015, roughness: 0.03, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 1.4 }),
+      canopy: new THREE.MeshPhysicalMaterial({ color: m.kind === 'fighter' ? 0x4a3f22 : 0x8fa3b5, roughness: 0.04, metalness: 0.2, transparent: true, opacity: 0.34, depthWrite: false, envMapIntensity: 1.6, side: THREE.DoubleSide }),
       disc: new THREE.MeshBasicMaterial({ map: discTexture(), color: 0x2a2d31, transparent: true, opacity: 0, depthWrite: false }),
       flame: new THREE.MeshBasicMaterial({ map: flameTexture(), color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }),
     };
@@ -174,8 +175,8 @@ const ACModel = (() => {
     if (cockpit) Object.assign(M, cockpit.materials(T));
     const size = Math.max(m.L, f.b || 0, m.rotor ? m.rotor.R * 2 : 0), sphere = new THREE.Sphere(new V3(0, 0, 0), size * 0.62 + 2);
     rig.build();
-    const meshes = B.meshes(M, rig, sphere, { noShadow: ['glass', 'cabin', 'screens', 'fcu', 'panels', 'ewd', 'disc', 'flame'] });
-    for (const me of meshes) { root.add(me); if (me.name === 'disc' || me.name === 'flame') me.renderOrder = 4; }
+    const meshes = B.meshes(M, rig, sphere, { noShadow: ['glass', 'canopy', 'cabin', 'screens', 'fcu', 'panels', 'ewd', 'disc', 'flame'] });
+    for (const me of meshes) { root.add(me); if (me.name === 'disc' || me.name === 'flame' || me.name === 'canopy') me.renderOrder = 4; }
     if (cockpit) cockpit.attach(root, meshes);
     for (const k in env.lamps) root.add(env.lamps[k]);
     if (env.spot) root.add(env.spot, env.spot.target);

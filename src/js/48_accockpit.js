@@ -143,8 +143,11 @@ const ACCockpit = (() => {
         shell(H, cab, shellS0, shellS1, panes, style === 'ga' || style === 'heli' || style === 'fighter' ? 0.03 : 0.06, q, () => cab.pal);
         cab.pal = null;
         // the rear wall (a door in the middle) and the floor
-        const rb = new V3(m.nose - shellS1 + 0.02, E.y - 0.2, 0), hw = halfW(shellS1, E.y - 0.2);
-        box(cab, 'cabinWall', rb, 0.04, 2.6, hw * 2 + 0.1);
+        // (the rear wall reaches from the floor to the roof, or to the rails under a canopy)
+        const sq = H.sec(shellS1), floorY = E.y - (style === 'ga' ? 0.95 : style === 'fighter' ? 0.75 : 1.12), rp = new V3(); H.pt(shellS1, 0.95, rp);
+        const wallTop = H.canopy ? rp.y : sq.yc + sq.up + (sq.lobe || 0), wallH = Math.max(0.3, wallTop - floorY);
+        const rb = new V3(m.nose - shellS1 + 0.02, floorY + wallH / 2, 0), hw = halfW(shellS1, floorY + wallH * 0.5);
+        box(cab, 'cabinWall', rb, 0.04, wallH, hw * 2 + 0.1);
         if (m.kind === 'jet') { box(cab, 'plastic', rb.clone().add(new V3(0.03, -0.2, 0)), 0.02, 1.9, 0.8); box(cab, 'lever', rb.clone().add(new V3(0.05, -0.25, 0.3)), 0.03, 0.03, 0.12); }
         const fl = new V3(m.nose - (shellS0 + shellS1) / 2, E.y - (style === 'ga' ? 0.95 : style === 'fighter' ? 0.75 : 1.12), 0);
         box(cab, 'carpet', fl, shellS1 - shellS0, 0.03, Math.max(style === 'fighter' ? 0.6 : 1.2, halfW(sE, fl.y + 0.1) * 2 + 0.2));
@@ -274,7 +277,16 @@ const ACCockpit = (() => {
       const tb = rig.add(0, px - 0.05, py - 0.17, 0); cab.bind(tb); cab.pal = pal('knob'); cab.cyl(new V3(px - 0.05, py - 0.17, -0.02), new V3(px - 0.13, py - 0.17, -0.02), 0.006, 0.006, 6, false); cab.box(px - 0.14, py - 0.17, -0.02, 0.02, 0.035, 0.035);
       cab.pal = pal('leverRed'); cab.box(px - 0.1, py - 0.17, 0.05, 0.02, 0.03, 0.03); cab.pal = null; cab.bind(0); L.thr.push({ bone: tb, k: 0, push: true });
     }
+    // a pilot under a bubble canopy: helmet, visor, shoulders (on a bone scaled away in the cockpit view)
+    function pilot() {
+      const pb = rig.add(0, E.x, E.y, E.z), pm = B.mb('parts'); bones.pilot = pb;
+      pm.bind(pb); pm.pal = pal('seat'); pm.box(E.x - 0.12, E.y - 0.42, E.z, 0.3, 0.5, 0.46);
+      pm.pal = pal('base'); pm.at(mat4(new V3(E.x - 0.04, E.y + 0.03, E.z), null, new V3(1.05, 1, 0.9)), () => pm.lathe([[0.15, 0.001], [0.13, 0.08], [0.02, 0.14], [-0.1, 0.12], [-0.15, 0.001]], 12));
+      pm.pal = pal('black'); pm.at(mat4(new V3(E.x + 0.07, E.y + 0.02, E.z), null, new V3(0.6, 0.55, 1)), () => pm.lathe([[0.08, 0.001], [0.07, 0.08], [0.02, 0.1], [-0.02, 0.001]], 12));
+      pm.pal = null; pm.bind(0);
+    }
     function fighter() {
+      pilot();
       // cockpit tub, instrument panel with two displays, the HUD combiner, side-stick and throttle, the seat
       const px = E.x + 0.62, py = E.y - 0.35;
       box(cab, 'panelBoeing', new V3(px + 0.05, py, 0), 0.08, 0.34, 0.62);
@@ -282,8 +294,8 @@ const ACCockpit = (() => {
       quad(scr, new V3(px, py - 0.02, -0.15), new V3(0, 0, 0.1), new V3(0, 0.1, 0), reg(0));
       quad(scr, new V3(px, py - 0.02, 0.15), new V3(0, 0, 0.1), new V3(0, 0.1, 0), reg(1));
       for (const sd of [-1, 1]) box(cab, 'panelBoeing', new V3(E.x - 0.1, E.y - 0.5, sd * 0.33), 0.9, 0.08, 0.14);
-      box(cab, 'seat', new V3(E.x - 0.45, E.y - 0.1, 0), 0.12, 0.9, 0.42); box(cab, 'leverRed', new V3(E.x - 0.2, E.y - 0.68, 0), 0.08, 0.1, 0.12);
-      const hudP = new V3(px - 0.02, py + 0.3, 0); const hg = B.mb('cabin'); hg.pal = pal('hudGlass'); hg.at(mat4(hudP, new Q4().setFromAxisAngle(Z1, -25 * D)), () => hg.box(0, 0, 0, 0.005, 0.14, 0.16)); hg.pal = null;
+      box(cab, 'seat', new V3(E.x - 0.42, E.y - 0.3, 0), 0.12, 0.72, 0.42); box(cab, 'leverRed', new V3(E.x - 0.2, E.y - 0.68, 0), 0.08, 0.1, 0.12);
+      const hudP = new V3(px - 0.02, py + 0.3, 0); const hg = B.mb('canopy'); hg.bind(0); hg.at(mat4(hudP, new Q4().setFromAxisAngle(Z1, -25 * D)), () => hg.box(0, 0, 0, 0.005, 0.14, 0.16));
       const sb = rig.add(0, E.x + 0.05, E.y - 0.47, 0.33); cab.bind(sb); cab.pal = pal('knob'); cab.cyl(new V3(E.x + 0.05, E.y - 0.47, 0.33), new V3(E.x + 0.07, E.y - 0.33, 0.33), 0.016, 0.02, 8, true); cab.pal = null; cab.bind(0); L.sticks.push({ bone: sb, side: 1 });
       const tb = rig.add(0, E.x - 0.05, E.y - 0.47, -0.33); cab.bind(tb); cab.pal = pal('knob'); cab.box(E.x - 0.05, E.y - 0.4, -0.33, 0.08, 0.12, 0.05); cab.pal = null; cab.bind(0); L.thr.push({ bone: tb, k: 0, slide: true });
     }
@@ -322,8 +334,9 @@ const ACCockpit = (() => {
     }
     let ewdT = 0;
     function update(ac, dt, st) {
-      group.visible = st.inside;
-      if (!st.inside) return;
+      group.visible = st.inside || !!H.canopy;              // (under a bubble canopy the cockpit shows from outside)
+      if (bones.pilot) rig.bone(bones.pilot).scale.setScalar(st.inside ? 0.001 : 1);
+      if (!group.visible) return;
       const s = ac.surf;
       for (const t of L.thr) { const b = rig.bone(t.bone), th = clamp(ac.ctl.thr, 0, 1.1), rev = ac.ctl.rev ? 1 : 0;
         if (t.push) { b.position.copy(b.userData.rest); b.position.x += th * 0.06; } else if (t.slide) { b.position.copy(b.userData.rest); b.position.x += th * 0.1; }

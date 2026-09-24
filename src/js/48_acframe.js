@@ -136,11 +136,16 @@ const ACFrame = (() => {
       const w = m.wing, high = w && w.high, wingLo = high ? -w.z - (w.t || 0.15) * w.c0 * 0.42 : 0;
       const roof = high ? Math.max(yc0 + Hh, wingLo + 0.04) : yc0 + Hh * (F.low ? 1.02 : 1.12);
       const tailTop = -F.tailZ + F.tailH / 2, tailBot = -F.tailZ - F.tailH / 2, tailW = F.tailW / 2;
-      const spin = (m.engines[0] && m.engines[0].spinner) || 0.35, cowlTop = yc0 + Hh * 0.72;
+      // a single's cowling starts just behind its propeller (the spinner is the nose); a twin has a rounded nose
+      const e0 = m.engines[0], single = e0 && e0.type === 'prop' && !e0.y, spin = single ? e0.spinner / 2 : 0;
+      const sF = single ? Math.max(0, m.nose - e0.x - 0.02) : 0, axisY = single ? -e0.z : yc0 - Hh * 0.1, cowlTop = yc0 + Hh * (single ? 0.72 : 0.62);
+      H.s0 = sF;
       fn = (s) => {
         let a = W, top = yc0 + Hh, bot = yc0 - Hh, e = 2.7;
-        if (s < 0.3) { const t = Math.max(0, s) / 0.3, k = Math.sqrt(1 - (1 - t) * (1 - t)); a = lerp(spin * 0.55, W * 0.93, k); top = lerp(-(m.engines[0] ? m.engines[0].z : 0) + spin * 0.55, cowlTop, k); bot = lerp(-(m.engines[0] ? m.engines[0].z : 0) - spin * 0.55, yc0 - Hh * 0.88, k); e = lerp(2.1, 2.6, t); }
-        else if (s < C) { const t = (s - 0.3) / (C - 0.3); a = W * (0.93 + 0.07 * sstep(0, 1, t)); top = lerp(cowlTop, yc0 + Hh * 0.8, t); bot = yc0 - Hh * (0.88 + 0.12 * sstep(0, 1, t)); e = 2.7; }
+        const fl = single ? 0.28 : 0.9;
+        if (s < sF) { a = spin * 0.3; top = axisY + spin * 0.3; bot = axisY - spin * 0.3; }
+        else if (s < sF + fl) { const t = (s - sF) / fl, k = Math.sqrt(Math.max(0, 1 - (1 - t) * (1 - t))); a = lerp(spin * 0.95, W * 0.93, k); top = lerp(axisY + spin * 0.95, cowlTop, k); bot = lerp(axisY - spin * 0.95, yc0 - Hh * 0.88, k); e = lerp(2.1, 2.6, t); }
+        else if (s < C) { const t = (s - sF - fl) / Math.max(0.1, C - sF - fl); a = W * (0.93 + 0.07 * sstep(0, 1, t)); top = lerp(cowlTop, yc0 + Hh * 0.8, t); bot = yc0 - Hh * (0.88 + 0.12 * sstep(0, 1, t)); e = 2.7; }
         else if (s < C + WS) { const t = sstep(0, 1, (s - C) / WS); top = lerp(yc0 + Hh * 0.8, roof, t); }
         else if (s < CB) { top = roof; }
         else { const u = clamp((s - CB) / (L - CB), 0, 1); a = lerp(W, tailW, Math.pow(u, 0.85)); top = lerp(roof, tailTop, sstep(0, 0.62, u) * 0.85 + 0.15 * u); bot = lerp(yc0 - Hh, tailBot, Math.pow(u, 0.72)); e = lerp(2.7, 2.2, u); }
@@ -148,36 +153,37 @@ const ACFrame = (() => {
         sec.yc = ym; sec.up = Math.max(1e-4, top - ym); sec.dn = Math.max(1e-4, ym - bot); sec.a = Math.max(1e-4, a); sec.eu = e; sec.ed = e; sec.lobe = 0; sec.fb = 0; sec.fk = 0;
         return sec;
       };
-      H.style = 'ga'; H.crown = roof; H.keel = yc0 - Hh; H.yc0 = yc0; H.Rw = W; H.Rh = Hh;
+      H.style = 'ga'; H.crown = roof; H.keel = yc0 - Hh; H.yc0 = yc0; H.Rw = W; H.Rh = Hh; H.ga = { C, WS, CB, roof, single, sF };
     } else if (kind === 'heli') {
-      // the H125: a rounded glazed cabin pod, the engine deck behind the rotor, the tail boom
-      const W = F.w / 2, Hh = F.h / 2, yc0 = -F.zc, pod = F.pod, bw = F.boomW / 2, bh = F.boomH / 2, byc = -F.boomZ;
+      // the H125: a glazed nose bubble, the cabin under a flat roof, the rear fairing sweeping up into the slim tail
+      // boom (heights in model y: the skids at -1.4, the rotor hub at +1.8)
+      const W = F.w / 2, Hh = F.h / 2, yc0 = -F.zc, T2 = (pts) => ACGeo.mono(pts), Ln = L;
+      const hTop = T2([[0, -0.2], [0.25, 0.32], [0.7, 0.72], [1.3, 0.97], [1.9, 1.07], [3.0, 1.1], [3.8, 1.07], [4.6, 0.94], [5.6, 0.7], [6.6, 0.66], [Ln, 0.56]]);
+      const hBot = T2([[0, -0.2], [0.25, -0.5], [0.7, -0.72], [1.3, -0.8], [3.2, -0.8], [3.9, -0.7], [4.6, -0.28], [5.6, 0.24], [6.6, 0.27], [Ln, 0.32]]);
+      const hA = T2([[0, 0], [0.25, 0.45], [0.7, 0.76], [1.3, 0.9], [1.9, 0.93], [3.4, 0.93], [4.0, 0.84], [4.8, 0.5], [5.6, 0.24], [6.6, 0.2], [Ln, 0.13]]);
+      const hEu = T2([[0, 2], [1, 2.1], [3, 2.5], [4.5, 2.2], [6, 2], [Ln, 2]]), hEd = T2([[0, 2], [1, 2.5], [3, 3], [4.5, 2.4], [6, 2], [Ln, 2]]);
       fn = (s) => {
-        let a, top, bot;
-        if (s < 1.9) { const t = Math.max(0, s) / 1.9, k = Math.sqrt(1 - (1 - t) * (1 - t)); a = W * (0.18 + 0.82 * Math.pow(k, 0.9)); top = yc0 + Hh * (-0.25 + 1.25 * Math.pow(k, 0.75)); bot = yc0 - Hh * (0.35 + 0.65 * Math.pow(k, 0.8)); }
-        else if (s < pod) { const t = (s - 1.9) / (pod - 1.9); a = W * (1 - 0.06 * t); top = yc0 + Hh * (1 - 0.04 * t); bot = yc0 - Hh * (1 - 0.18 * sstep(0.5, 1, t)); }
-        else if (s < pod + 2.2) { const u = sstep(0, 1, (s - pod) / 2.2); a = lerp(W * 0.94, bw * 1.15, u); top = lerp(yc0 + Hh * 0.96, byc + bh * 1.1, u); bot = lerp(yc0 - Hh * 0.82, byc - bh * 1.1, u); }
-        else { const u = clamp((s - pod - 2.2) / Math.max(0.1, L - pod - 2.2), 0, 1); a = bw * (1.15 - 0.45 * u); top = byc + bh * (1.1 - 0.3 * u); bot = byc - bh * (1.1 - 0.3 * u); }
-        const ym = (top + bot) / 2;
-        sec.yc = ym; sec.up = top - ym; sec.dn = ym - bot; sec.a = a; sec.eu = 2.15; sec.ed = 2.3; sec.lobe = 0; sec.fb = 0; sec.fk = 0;
+        const top = hTop(s), bot = hBot(s), ym = (top + bot) / 2;
+        sec.yc = ym; sec.up = Math.max(1e-4, top - ym); sec.dn = Math.max(1e-4, ym - bot); sec.a = Math.max(1e-4, hA(s)); sec.eu = hEu(s); sec.ed = hEd(s); sec.lobe = 0; sec.fb = 0; sec.fk = 0;
         return sec;
       };
-      H.style = 'heli'; H.crown = yc0 + Hh; H.keel = yc0 - Hh; H.yc0 = yc0; H.Rw = W; H.Rh = Hh;
+      H.style = 'heli'; H.crown = 1.1; H.keel = -0.8; H.yc0 = yc0; H.Rw = W; H.Rh = Hh;
     } else {
-      // fighter (F-16): radome, the canopy fairing, the chin intake trunk under the forebody, the aft body to the
-      // nozzle; the flat belly and the blended flanks come from a boxier lower half
-      const W = F.w / 2, Hh = F.h / 2, yc0 = -F.zc;
+      // fighter (the F-16): the radome, the forebody under the canopy, the centre body blended with the wing and
+      // the LEX (both built in wingDetails) over the chin intake's duct, the aft body tapering to the nozzle.
+      // Heights in model y (the CG at 0), from the ground up: intake lip ~0.9 m, the shoulders, the canopy on top.
+      const T2 = (pts) => ACGeo.mono(pts);
+      const fTop = T2([[0, 0.15], [0.8, 0.36], [1.8, 0.47], [2.9, 0.54], [3.6, 0.58], [5, 0.64], [7, 0.64], [11, 0.55], [13, 0.48], [14.35, 0.44]]);
+      const fBot = T2([[0, 0.15], [0.8, -0.06], [1.8, -0.15], [2.9, -0.19], [3.3, -0.2], [5, -0.3], [6.4, -0.62], [7.2, -0.74], [11, -0.75], [13, -0.72], [14.35, -0.72]]);
+      const fA = T2([[0, 0], [0.8, 0.2], [1.8, 0.31], [2.9, 0.39], [3.6, 0.44], [5, 0.54], [6.5, 0.72], [8.5, 0.84], [10.5, 0.82], [12, 0.7], [13.2, 0.62], [14.35, 0.6]]);
+      const fEu = T2([[0, 2], [3, 2], [5, 2.4], [8, 2.9], [11, 2.6], [13, 2.2], [14.35, 2]]), fEd = T2([[0, 2], [3, 2.1], [6, 2.8], [11, 3], [13.5, 2.2], [14.35, 2]]);
+      H.s1 = 14.35;
       fn = (s) => {
-        let a, top, bot, eu = 2.1, ed = 2.4;
-        if (s < 3.6) { const t = Math.max(0, s) / 3.6, k = Math.pow(1 - Math.pow(1 - t, 2.3), 0.5); a = 0.5 * k; top = yc0 + 0.05 + 0.44 * k; bot = yc0 + 0.05 - 0.44 * k; eu = 2; ed = 2; }
-        else if (s < 7.0) { const t = sstep(0, 1, (s - 3.6) / 3.4); a = lerp(0.5, W * 0.92, t); top = lerp(yc0 + 0.49, yc0 + 0.66, t); bot = lerp(yc0 - 0.39, yc0 - Hh * 0.62, t); ed = lerp(2, 2.6, t); }
-        else if (s < 11.2) { const t = (s - 7) / 4.2; a = lerp(W * 0.92, W, sstep(0, 0.5, t)); top = lerp(yc0 + 0.66, yc0 + 0.6, t); bot = yc0 - Hh * 0.62; ed = 2.6; }
-        else { const u = clamp((s - 11.2) / (L - 11.2), 0, 1); a = lerp(W, 0.62, sstep(0, 1, u)); top = lerp(yc0 + 0.6, yc0 + 0.55, u); bot = lerp(yc0 - Hh * 0.62, yc0 - 0.55, sstep(0, 1, u)); ed = lerp(2.6, 2.1, u); }
-        const ym = (top + bot) / 2;
-        sec.yc = ym; sec.up = top - ym; sec.dn = ym - bot; sec.a = a; sec.eu = eu; sec.ed = ed; sec.lobe = 0; sec.fb = 0; sec.fk = 0;
+        const top = fTop(s), bot = fBot(s), ym = (top + bot) / 2;
+        sec.yc = ym; sec.up = Math.max(1e-4, top - ym); sec.dn = Math.max(1e-4, ym - bot); sec.a = Math.max(1e-4, fA(s)); sec.eu = fEu(s); sec.ed = fEd(s); sec.lobe = 0; sec.fb = 0; sec.fk = 0;
         return sec;
       };
-      H.style = 'fighter'; H.crown = yc0 + 0.66; H.keel = yc0 - Hh * 0.62; H.yc0 = yc0; H.Rw = W; H.Rh = Hh;
+      H.style = 'fighter'; H.crown = 0.64; H.keel = -0.75; H.yc0 = -0.05; H.Rw = 0.7; H.Rh = 0.7;
     }
     // a small cache of sections: a surface asks for the same station many times (every point of a ring, and the
     // derivatives either side)
@@ -225,10 +231,10 @@ const ACFrame = (() => {
     };
     const E = m.cockpit;
     H.eye = new V3(E.x, -E.z, E.y);
-    if (!paneCache.has(type.id)) paneCache.set(type.id, kind === 'jet' ? cockpitPanes(H, H.noseSpec) : kind === 'ga' && m.windows.style === 'ga' ? cockpitPanes(H, LIGHT_PANES.ga) : kind === 'heli' ? cockpitPanes(H, LIGHT_PANES.heli) : []);
+    if (!paneCache.has(type.id)) paneCache.set(type.id, kind === 'jet' ? cockpitPanes(H, H.noseSpec) : kind === 'ga' && m.windows.style === 'ga' ? lightPanes(H) : kind === 'heli' ? heliPanes(H) : []);
     H.panes = paneCache.get(type.id);
     // a bubble canopy (fighters, the aerobatic single): its opening in the fuselage (for the cockpit shell)
-    H.canopy = m.canopy ? { x: m.canopy.x, z: m.canopy.z, len: m.canopy.len, w: m.canopy.w, h: m.canopy.h } : kind === 'fighter' ? { x: 3.75, z: -0.62, len: 3.7, w: 0.43, h: 0.68 } : null;
+    H.canopy = m.canopy ? { x: m.canopy.x, z: m.canopy.z, len: m.canopy.len, w: m.canopy.w, h: m.canopy.h, peak: 0.45 } : kind === 'fighter' ? { x: 3.35, z: -0.58, len: 3.6, w: 0.36, h: 0.62, peak: 0.42, tail: 0.3 } : null;
     if (H.canopy) {
       const c = H.canopy, sA = nose - (c.x + c.len * 0.47), sB = nose - (c.x - c.len * 0.47), t = 0.95;
       H.openings = [ACGeo.ccw([[sA, 0], [sB, 0], [sB, t], [sA, t]]), ACGeo.ccw([[sA, 2 * Math.PI - t], [sB, 2 * Math.PI - t], [sB, 2 * Math.PI], [sA, 2 * Math.PI]])];
@@ -236,6 +242,26 @@ const ACFrame = (() => {
     return H;
   }
 
+  // light aircraft: windscreen, door windows, rear or cabin windows, placed from the fuselage's landmarks
+  // (cowl, windscreen, cabin): corners as (s, height fraction from the keel to the roof) -> (s, th)
+  function lightPanes(H) {
+    const g = H.ga, m = H.m, th = (s, f) => { const q = H.sec(s), bot = q.yc - q.dn, top = q.yc + q.up; return H.thAt(s, bot + (top - bot) * f); };
+    const P = (pts) => ({ poly: ACGeo.ccw(pts.map(([s, f]) => [s, typeof f === 'number' && f > 1 ? f : th(s, f)])), front: false });
+    const out = [], ws0 = g.C + 0.03, ws1 = g.C + g.WS - 0.03, post = 0.012 / Math.max(0.3, H.sec(ws1).a);
+    // windscreen (to the corner posts), marked 'front' (its inboard edge on the centre line)
+    out.push({ poly: ACGeo.ccw([[ws0, post], [ws0 + 0.12, th(ws0 + 0.12, 0.74)], [ws1, th(ws1, 0.84)], [ws1, post]]), front: true });
+    const d0 = g.C + g.WS + 0.05, dl = Math.min(1.0, (g.CB - d0) * 0.45);
+    out.push(P([[d0, 0.46], [d0 + dl, 0.46], [d0 + dl, 0.9], [d0, 0.88]]));
+    if (g.CB - d0 > 3) {            // a long cabin (the Twin Otter): a row of square windows
+      for (let s = d0 + dl + 0.5; s < g.CB - 0.5; s += 0.95) out.push(P([[s, 0.52], [s + 0.46, 0.52], [s + 0.46, 0.82], [s, 0.82]]));
+    } else out.push(P([[d0 + dl + 0.1, 0.5], [g.CB + 0.35, 0.58], [g.CB + 0.25, 0.86], [d0 + dl + 0.1, 0.88]]));
+    return out;
+  }
+  // the H125: a bubble of glass: the windscreen halves, chin windows, the door windows
+  function heliPanes(H) {
+    const d = D, P = (pts, front) => ({ poly: ACGeo.ccw(pts.map(([s, t]) => [s, t * d])), front });
+    return [P([[0.14, 3], [0.55, 96], [1.9, 74], [2.03, 3]], true), P([[0.46, 110], [1.15, 101], [1.25, 150], [0.56, 167]]), P([[2.1, 48], [2.96, 48], [2.96, 110], [2.1, 112]]), P([[3.03, 50], [3.72, 54], [3.62, 100], [3.03, 108]])];
+  }
   // cockpit window panes in (s, th) (right side; mirrored for the left): the captain's panes from their view angles,
   // cast onto the nose from the eye, and mirrored to the other side (the first officer's)
   function cockpitPanes(H, N) {
@@ -270,11 +296,13 @@ const ACFrame = (() => {
     const NL = H.m.fus.noseLen || 2, TL = H.m.fus.tailLen || 3;
     const brk = [0, NL * 0.08, NL * 0.3, NL, L - TL, L - TL * 0.25, L];
     if (H.fair) brk.push(H.fair.s0 - 3, H.fair.s0 + 1.2, H.fair.s1 - 1.5, H.fair.s1 + 5);
-    for (const s of G.stations(brk.filter(v => v >= 0 && v <= L), L / nAlong)) ss.push(s);
+    const s0 = H.s0 || 0;
+    for (const s of G.stations([s0, ...brk.filter(v => v > s0 && v <= L)], L / nAlong)) ss.push(s);
     // nose: extra rings very close to the tip (a smooth, round radome)
-    ss.splice(1, 0, 0.004 * NL, 0.015 * NL, 0.035 * NL);
+    ss.splice(1, 0, s0 + 0.004 * NL, s0 + 0.015 * NL, s0 + 0.035 * NL);
     ss.sort((a, b) => a - b);
-    const S = [...new Set(ss.map(v => +v.toFixed(5)))].filter(v => v >= 0 && v <= L);
+    const sEnd = H.s1 || L;
+    const S = [...new Set(ss.map(v => +Math.min(v, sEnd).toFixed(5)))].filter(v => v >= s0 && v <= sEnd);
     const tile = ctx.tile || 2;
     const arc = (s, th) => { const qd = H.sec(s); return th * (qd.a + qd.up) / 2; };
     const half = (right) => {
@@ -285,34 +313,36 @@ const ACFrame = (() => {
     };
     half(true); half(false);
     mb.skin = null; mb.bind(0);
-    // the aft end: a short dark APU exhaust in the tail cone
-    const e0 = H.sec(L), p = new V3(); H.pt(L, Math.PI / 2, p);
-    const pc = ctx.pal('exhaustDark'), rX = Math.min(e0.a, (e0.up + e0.dn) / 2) * 0.8;
-    const pm = B.mb('parts'); pm.pal = pc; pm.bind(0);
-    pm.cyl(new V3(H.nose - L + 0.02, e0.yc, 0), new V3(H.nose - L - 0.12, e0.yc, 0), rX * 0.95, rX * 0.9, 16, false);
-    pm.pal = ctx.pal('black'); pm.cyl(new V3(H.nose - L - 0.02, e0.yc, 0), new V3(H.nose - L - 0.1, e0.yc, 0), rX * 0.8, rX * 0.8, 16, true);
-    pm.pal = null;
+    // the aft end of an airliner: the APU exhaust in the tail cone
+    if (H.m.engines.some(e => e.type === 'fan')) {
+      const e0 = H.sec(L), pc = ctx.pal('exhaustDark'), rX = Math.min(e0.a, (e0.up + e0.dn) / 2) * 0.8;
+      const pm = B.mb('parts'); pm.pal = pc; pm.bind(0);
+      pm.cyl(new V3(H.nose - L + 0.02, e0.yc, 0), new V3(H.nose - L - 0.12, e0.yc, 0), rX * 0.95, rX * 0.9, 16, false);
+      pm.pal = ctx.pal('black'); pm.cyl(new V3(H.nose - L - 0.02, e0.yc, 0), new V3(H.nose - L - 0.1, e0.yc, 0), rX * 0.8, rX * 0.8, 16, true);
+      pm.pal = null;
+    }
     // cockpit windows: glass slightly proud of the skin, dark frames around each pane
     if (H.panes.length) windscreen(H, ctx);
     if (H.canopy) canopy(H, ctx);
   }
-  // a bubble canopy over the cockpit opening: tinted glass, a frame at its base and its rear bow
+  // a bubble canopy over the cockpit opening: a slender tinted bubble from the rails, peaking ahead of its middle and
+  // fairing down into the spine behind; a frame along the rails and the rear bow
   function canopy(H, ctx) {
-    const c = H.canopy, B = ctx.B, q = ctx.q, glass = B.mb('glass'), fr = B.mb('parts'), cx = c.x, n = H.nose;
-    const baseY = (x) => { const s = n - x, th = 0.95, p = new V3(); H.pt(ACGeo.clamp(s, 0, H.L), th, p); return p; };
-    const P2 = (u, v, out) => {       // u along the canopy (0 front, 1 back), v around (0 left rail .. 1 right rail)
-      const x = cx + c.len * (0.47 - 0.94 * u), rail = baseY(x), k = Math.sin(Math.PI * clamp(u * 0.94 + 0.03, 0, 1)), kf = u < 0.5 ? Math.pow(k, 0.55) : Math.pow(k, 0.35);
-      const a = Math.PI * v, top = -c.z + c.h * kf, hw = Math.max(rail.z, c.w * kf * 0.98);
-      return out.set(x, rail.y + (top - rail.y) * Math.sin(a) * (0.35 + 0.65 * kf), -Math.cos(a) * hw * (0.4 + 0.6 * Math.pow(kf, 0.6)));
+    const c = H.canopy, q = ctx.q, glass = ctx.B.mb('canopy'), fr = ctx.B.mb('parts'), n = H.nose, th0 = 0.95;
+    const rail = (x) => { const p = new V3(); H.pt(ACGeo.clamp(n - x, 0, H.L), th0, p); return p; };
+    const prof = (u) => { const pk = c.peak || 0.45, tl = c.tail || 0.4; return u < pk ? Math.sin(Math.PI / 2 * u / pk) ** 0.7 : 1 - (1 - tl) * Math.pow((u - pk) / (1 - pk), 1.6); };
+    const P2 = (u, v, out) => {
+      const x = c.x + c.len * (0.5 - u), r = rail(x), k = prof(u), top = r.y + (-c.z + c.h - r.y) * k, a = Math.PI * v, bulge = 0.04 * k;
+      return out.set(x, r.y + (top - r.y) * Math.sin(a), -Math.cos(a) * (r.z + bulge * Math.sin(a) + (c.w - r.z) * 0.15 * k * Math.sin(a)));
     };
     glass.bind(0);
     glass.surface(ACGeo.linSpace(0, 1, [8, 12, 18, 24, 32][q]), ACGeo.linSpace(0, 1, [10, 14, 20, 28, 36][q]), P2, { eu: 1e-4, ev: 1e-4, flip: true, uv: (u, v) => [u, v] });
     fr.bind(0); fr.pal = ctx.pal('canopyFrame');
-    for (const u of [0.72]) { const pts = []; for (let k = 0; k <= 10; k++) pts.push(P2(u, k / 10, new V3())); for (let k = 0; k < 10; k++) fr.cyl(pts[k], pts[k + 1], 0.03, 0.03, 6, false); }
-    for (const v of [0, 1]) { const pts = []; for (let k = 0; k <= 10; k++) pts.push(P2(k / 10, v, new V3())); for (let k = 0; k < 10; k++) fr.cyl(pts[k], pts[k + 1], 0.025, 0.025, 6, false); }
+    const line = (pts, r) => { for (let k = 0; k + 1 < pts.length; k++) fr.cyl(pts[k], pts[k + 1], r, r, 6, false); };
+    line(ACGeo.linSpace(0, 1, 12).map(v => P2(0.8, v, new V3())), 0.03);
+    for (const v of [0, 1]) line(ACGeo.linSpace(0, 1, 12).map(u => P2(u, v, new V3())), 0.022);
     fr.pal = null;
   }
-
   // map a polygon in (s, th) onto the surface, subdivided by a grid, offset along the normal
   function paint(H, mb, polys, off, cell, uvFn) {
     const G = ACGeo, p = new V3(), a = new V3(), b = new V3(), n = new V3();
@@ -627,6 +657,39 @@ const ACFrame = (() => {
       mb.pal = ctx.pal('aluDull'); mb.cyl(new V3(fr0.lx + 0.9, fr0.ly - 0.13, ws.span + 0.06), new V3(fr0.lx - 2.1, fr0.ly - 0.13, ws.span + 0.06), 0.063, 0.063, 12, true);
       mb.pal = ctx.pal('base'); mb.cyl(new V3(fr0.lx + 1.25, fr0.ly - 0.13, ws.span + 0.06), new V3(fr0.lx + 0.9, fr0.ly - 0.13, ws.span + 0.06), 0.002, 0.063, 12, false);
       mb.pal = null; mb.mirror = false; mb.bind(0);
+    }
+    // ---- the F-16's leading-edge extension: a thin strake from under the canopy out to the wing root's leading
+    // edge, blending the forebody into the wing; the ventral fins under the aft body
+    if (w.lex) {
+      const mb = ctx.B.mb('wing'), H = ctx.H, xF = 4.9, xW = ws.leX(ws.y0), yW = -w.z;
+      mb.bind(0); mb.mirror = side < 0;
+      const lex = (u, v, out) => {
+        const x = lerp(xF, xW - 1.2, u), s = H.nose - x, side0 = H.sec(s).a * 0.9, reach = (ws.y0 + 0.15 - side0) * Math.pow(Math.sin(Math.PI / 2 * clamp(u * 1.25, 0, 1)), 1.3) + 0.02;
+        const th2 = 0.018 + 0.06 * u, a = v * Math.PI * 2;
+        return out.set(x, yW + 0.03 + Math.sin(a) * th2, side0 + reach * (0.5 - 0.5 * Math.cos(a)));
+      };
+      mb.surface(G.linSpace(0, 1, [6, 8, 12, 14, 18][q]), G.linSpace(0, 1, 12), lex, { eu: 1e-4, ev: 1e-4, flip: true, uv: (u, v, i, j, p) => ctx.uv(p, Math.sin(v * Math.PI * 2) >= 0) });
+      const pm = ctx.B.mb('parts'); pm.bind(0); pm.pal = ctx.pal('base'); pm.mirror = side < 0;
+      const vf = [[-3.1, -0.72], [-4.7, -0.72], [-4.95, -1.15], [-4.1, -1.12]].map(([x, y]) => new V3(x, y, 0.42));
+      const cant = 16 * D, pv = vf[0].clone();
+      pm.at(new THREE.Matrix4().makeTranslation(pv.x, pv.y, pv.z).multiply(new THREE.Matrix4().makeRotationX(-cant)).multiply(new THREE.Matrix4().makeTranslation(-pv.x, -pv.y, -pv.z)), () => {
+        for (const sd of [1, -1]) { const n = new V3(0, 0, sd); const ids = vf.map(p => pm.v(p.x, p.y, p.z + sd * 0.015, n.x, n.y, n.z)); if (sd > 0) { pm.tri(ids[0], ids[1], ids[2]); pm.tri(ids[0], ids[2], ids[3]); } else { pm.tri(ids[0], ids[2], ids[1]); pm.tri(ids[0], ids[3], ids[2]); } }
+      });
+      pm.pal = null; pm.mirror = false; mb.mirror = false;
+    }
+    // ---- the wing strut of the high-wing types: a streamlined tube from the lower fuselage to mid-span
+    if (w.strut && !ctx.far) {
+      const mb = ctx.B.mb('parts'), H = ctx.H, yS = ws.span * 0.52, fr = ws.frame(yS, { cd: new V3(), ud: new V3() });
+      const xT = fr.lx - fr.c * 0.3, top = ws.P(yS, ACGeo.qAt(0.3, -1), new V3()), sB = H.nose - xT, qb = H.sec(sB), bot = new V3(xT, qb.yc - qb.dn * 0.55, qb.a * 0.92);
+      top.x = xT; top.z = yS; top.y += 0.02;
+      const ax = top.clone().sub(bot), len = ax.length(); ax.normalize(); const side = new V3().crossVectors(ax, new V3(1, 0, 0)).normalize();
+      const fb = ws.flex ? ws.flex.bones[0] : 0;
+      mb.bind(fb); mb.pal = ctx.pal('base'); mb.mirror = side < 0 && false;
+      for (const sd of [ws.side]) {
+        mb.mirror = sd < 0;
+        mb.surface(ACGeo.linSpace(0, 1, 6), ACGeo.linSpace(0, 1, 10), (u, v, out) => { const a = v * Math.PI * 2; return out.copy(bot).addScaledVector(ax, u * len).addScaledVector(new V3(1, 0, 0), Math.cos(a) * 0.075).addScaledVector(side, Math.sin(a) * 0.025); }, { eu: 1e-4, ev: 1e-4, flip: true });
+      }
+      mb.mirror = false; mb.pal = null; mb.bind(0);
     }
     // ---- flap-track fairings: canoes under the flaps; the aft part rides on the flap
     const nF = w.fairings || 0, flaps = ws.panels.filter(p => p.kind === 'flap');
