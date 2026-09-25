@@ -4,9 +4,10 @@
 // one image per frame. Streaming keeps loading between frames, so a scene is warmed up in real time first.
 //   node tools/capture.mjs --shot tools/trailer/shots/<name>.mjs --out <dir> [--w 1920 --h 1080 --dsf 2]
 //        [--fps 30] [--fmt jpeg|png] [--quality 94] [--settle ms] [--base http://localhost:8123/lead.html]
-// A shot module exports { hash, setup?, warm?, prime?, frames, fps?, settle?, before?, cam?, css? } (setup / before / cam are page-side
+// A shot module exports { hash, setup?, warm?, prime?, frames, fps?, settle?, before?, cam?, css?, ui? } (setup / before / cam are page-side
 // function sources: setup runs once (may be async), before(t, dt) before each frame, cam(t, camera, dt) just
-// before each render). The UI is hidden; the scene canvas, rain on the glass and lightning stay.
+// before each render). The UI is hidden (the scene canvas, rain on the glass and lightning stay), unless the shot sets
+// ui: true (gameplay: the HUD stays; `css` can still hide parts of it). Eye adaptation snaps to the first captured frame.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -63,8 +64,9 @@ await send('Page.navigate', { url: BASE + (shot.hash || '#auto') });
 const T = () => ((Date.now() - t0) / 1000).toFixed(0) + 's';
 await ev(`new Promise(r => { const f = () => window.__bayline && window.__bayline.capture && window.__bayline.Sim && window.__bayline.Sim.TT ? r(1) : setTimeout(f, 200); f(); })`, 'boot');
 console.log(T(), 'booted');
-// hide the interface (keep the scene, rain on the glass and lightning)
-await ev(`(() => { const s = document.createElement('style'); s.textContent = 'body > *:not(#gl):not(#wdrops):not(#wflash) { visibility: hidden !important; } #gl { visibility: visible !important; } ${(shot.css || '').replace(/`/g, '')}'; document.head.appendChild(s); document.body.classList.add('photo'); return 1; })()`, 'css');
+// hide the interface (keep the scene, rain on the glass and lightning), or for gameplay shots only what `css` hides
+const hideAll = shot.ui ? '' : 'body > *:not(#gl):not(#wdrops):not(#wflash) { visibility: hidden !important; } #gl { visibility: visible !important; } ';
+await ev(`(() => { const s = document.createElement('style'); s.textContent = '${hideAll}${(shot.css || '').replace(/[`']/g, '"')}'; document.head.appendChild(s); ${shot.ui ? '' : "document.body.classList.add('photo');"} return 1; })()`, 'css');
 if (shot.setup) { const r = await ev(`(${shot.setup})()`, 'setup'); console.log(T(), 'setup', r ?? ''); }
 // warm up in real time: tiles, trees, buildings stream around the camera (and until the queue drains, up to 3x)
 const warm = shot.warm ?? 25;
@@ -73,7 +75,9 @@ await ev(`new Promise(r => { const B = window.__bayline, S = B.Stream, t0 = perf
 console.log(T(), 'warm');
 if (shot.prime) { const r = await ev(`(${shot.prime})()`, 'prime'); console.log(T(), 'prime', r ?? ''); }
 // capture
-await ev(`(() => { const C = window.__bayline.capture; C.dt = 1 / ${FPS}; C.t = 0; C.before = ${shot.before || 'null'}; C.cam = ${shot.cam || 'null'}; C.on = true; return 1; })()`, 'hooks');
+await ev(`(() => { const B = window.__bayline, C = B.capture; C.dt = 1 / ${FPS}; C.t = 0; C.before = ${shot.before || 'null'}; C.cam = ${shot.cam || 'null'}; C.on = true;
+  if (B.Post) B.Post.rebuild();     // fresh targets: eye adaptation snaps to the first captured frame instead of easing in from the warm-up view
+  return 1; })()`, 'hooks');
 const N = +opt('frames', shot.frames || 90), ext = FMT === 'png' ? 'png' : 'jpg';
 const keep = PREVIEW ? new Set(Array.from({ length: PREVIEW }, (_, k) => Math.round(k * (N - 1) / Math.max(1, PREVIEW - 1)))) : null;
 for (let i = 0; i < N; i++) {
