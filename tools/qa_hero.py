@@ -71,7 +71,7 @@ def sheet(pairs, path, labels, W, title=True):
         if title:
             d = ImageDraw.Draw(row)
             for k in range(2):
-                d.text((k * (W + 6) + 8, 7), f'{VIEWS[name][2]} — {labels[k]}', fill=(236, 236, 236))
+                d.text((k * (W + 6) + 8, 7), f'{VIEWS[name][2]}  |  {labels[k]}', fill=(236, 236, 236))
         rows.append(row)
     out = Image.new('RGB', (rows[0].width, sum(r.height for r in rows) + 4 * (len(rows) - 1)), (0, 0, 0)); y = 0
     for r in rows:
