@@ -131,6 +131,7 @@ const Flight = (() => {
       if (typeof FVfx !== 'undefined') { FVfx.clear(); FVfx.attach(model, T); }
       cfg = { ...c, type: T.id, rw, end, apt: a, e, vref, vapp };
       active = true; paused = false; crashed = null; landed = null; airTime = 0; flightTime = 0; maxAgl = 0; gLast = null; warn.clear(); callout.reset();
+      Player.releaseLock();                                                    // a pointer the free camera captured would stop the drag-to-look
       if (typeof FMap !== 'undefined') FMap.trail.length = 0;
       rec.buf.length = 0; rec.t = 0; rec.last = -1; replay = null;
       input.reset(); atc.reset(); cam.mode = prefs.cam || 'chase'; cam.reset();

@@ -39,6 +39,7 @@ const Player = (() => {
     let drag = null;
     c.addEventListener('mousedown', (e) => {
       c.focus();
+      if (typeof Flight !== 'undefined' && Flight.active) return;    // flying: the aircraft cameras take a plain drag (a captured pointer would freeze it)
       if (needsLock() && !pointerLocked && e.button === 0) { try { c.requestPointerLock(); } catch (err) {} return; }
       drag = { x: e.clientX, y: e.clientY, b: e.button };
     });
