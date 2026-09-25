@@ -355,7 +355,7 @@ const Flora = (() => {
     const mk = (data, srgb) => { const t = new THREE.DataTexture(new Uint8Array(data.buffer), AT, AT, THREE.RGBAFormat, THREE.UnsignedByteType);
       t.flipY = true; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
       t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
-    const t = mk(cd, true); t.userData.canvas = c; nrmTex = mk(nd, false); nrmTex.userData.canvas = cn;
+    const t = mk(cd, true); nrmTex = mk(nd, false);   // (the canvases go: the arrays are the textures' images)
     atlasTex = t; return t;
   }
 
