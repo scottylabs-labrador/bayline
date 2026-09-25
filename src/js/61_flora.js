@@ -782,16 +782,18 @@ const Flora = (() => {
   const FOL_NRM = `
     uniform sampler2D uFolNrm;
     vec3 folN0;                          // the lighting normal before the per-leaf relief (translucency uses it: smoother)
+    // (only within ~60 m: beyond, the relief is below a pixel and the fetch is wasted on layers of cards)
     vec3 folPerturb(vec3 n) {
       folN0 = n;
+      vec2 du1 = dFdx(vFolUv), du2 = dFdy(vFolUv); vec3 dp1 = dFdx(vViewPosition), dp2 = dFdy(vViewPosition);
+      float k = 1.0 - smoothstep(35.0, 60.0, length(vViewPosition));
+      if (k <= 0.0) return n;
       vec2 f = fract(vFolUv); vec2 uv = vFolReg.xy + f * vFolReg.zw;
-      vec2 gx = dFdx(vFolUv) * vFolReg.zw, gy = dFdy(vFolUv) * vFolReg.zw;
-      vec3 t = textureGrad(uFolNrm, uv, gx, gy).xyz * 2.0 - 1.0;
-      vec3 dp1 = dFdx(vViewPosition), dp2 = dFdy(vViewPosition); vec2 du1 = dFdx(vFolUv), du2 = dFdy(vFolUv);
+      vec3 t = textureGrad(uFolNrm, uv, du1 * vFolReg.zw, du2 * vFolReg.zw).xyz * 2.0 - 1.0;
       vec3 N0 = normalize(cross(dp1, dp2)), p2 = cross(dp2, N0), p1 = cross(N0, dp1);
       vec3 T = p2 * du1.x + p1 * du2.x, B = p2 * du1.y + p1 * du2.y;
       float im = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-24));
-      return normalize(n + (T * t.x + B * t.y) * im * mix(1.3, 0.9, vFolLeaf));
+      return normalize(n + (T * t.x + B * t.y) * im * mix(1.3, 0.9, vFolLeaf) * k);
     }
   `;
   const FOL_TRANSLUCENT = `

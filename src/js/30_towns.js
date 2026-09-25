@@ -361,16 +361,16 @@ const Towns = (() => {
             // recessed windows: the glass sits ~13 cm behind the wall, so at an angle the reveal (the opening's side and
             // head) hides part of it. Parallax: sample the glass mask where the view ray reaches the glass plane.
             float rev = 0.0; vec3 room = vec3(0.0); float roomK = 0.0, roomL = 0.2, roomH = 0.0;
-            if (glassM > 0.01 && dcam < 180.0) {
+            if (glassM > 0.01 && dcam < 105.0) {
               float det = qdx.x * qdy.y - qdx.y * qdy.x;
               if (abs(det) > 1e-10) {
                 vec3 Tw = normalize((pdx * qdy.y - pdy * qdx.y) / det), Bw = normalize((pdy * qdx.x - pdx * qdy.x) / det);
                 vec3 V = normalize(-vViewPosition);
                 vec3 vt = vec3(dot(V, Tw), dot(V, Bw), abs(dot(V, normalize(vNormal))));
-                if (style != 3.0 && dcam < 160.0) {
+                if (style != 3.0 && dcam < 100.0) {
                   vec2 off = -vt.xy / max(vt.z, 0.2) * 0.13;
                   float g2 = textureGrad(uFac, vec3(fuvW + off * gsc, lay), qdx * gsc, qdy * gsc).g;
-                  rev = clamp(glassM - g2, 0.0, 1.0) * (1.0 - smoothstep(110.0, 160.0, dcam));
+                  rev = clamp(glassM - g2, 0.0, 1.0) * (1.0 - smoothstep(70.0, 100.0, dcam));
                 }
                 // interior mapping: the view ray goes on through the glass into a room one facade cell wide, one floor
                 // high and 3-6.5 m deep; the face it reaches (back wall, floor, ceiling, side walls) is drawn per room
@@ -410,7 +410,7 @@ const Towns = (() => {
                   }
                   c *= 1.0 - 0.5 * clamp(-hp.z / D, 0.0, 1.0);                                   // light falls off into the room
                   room = c;
-                  roomK = (1.0 - smoothstep(110.0, 170.0, dcam)) * (style == 3.0 ? 0.55 : 1.0);
+                  roomK = (1.0 - smoothstep(65.0, 100.0, dcam)) * (style == 3.0 ? 0.55 : 1.0);
                   roomL = shop ? 0.26 : office ? 0.13 : 0.075;                                      // daylight inside (dim next to outside)
                 }
               }

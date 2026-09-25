@@ -9,7 +9,7 @@ const Post = (() => {
   const R = Env.renderer, scene = Env.scene, camera = Env.camera;
   const QUALITY = {
     ultraplus: { samples: 4, ao: 16, aoSlices: 4, aoSteps: 10, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014, ssr: true, shafts: 40 },
-    high:   { samples: 4, ao: 12, aoSlices: 2, aoSteps: 7, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016, shafts: 24 },
+    high:   { samples: 4, ao: 12, aoSlices: 2, aoSteps: 6, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016, shafts: 24 },
     medium: { samples: 2, ao: 8,  aoSlices: 2, aoSteps: 5, fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012, shafts: 16 },
     low:    { samples: 0, ao: 0,  fogSteps: 8,  fogScale: 0.25, bloom: 4, fxaa: true, shadow: 2048, grain: 0.0 },
   };
