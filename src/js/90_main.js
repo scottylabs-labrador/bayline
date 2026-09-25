@@ -250,7 +250,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (p === 'auto') { Gfx.setPref('auto'); pinned = qForced >= 0; calm = 0; if (tier === TI('ultraplus')) tier = TI('ultra'); applyTier(); return; }
     if (p === 'ultraplus') {
       Gfx.renderChips($('gfxchips'), 'ultraplus', pickGfx); UI.toast('Testing your GPU for Ultra+…', 3);
-      const r = await Gfx.probe();
+      const r = await Gfx.probe({ force: !!(Gfx.probeResult && Gfx.probeResult.slow) });   // a too-slow result: test again
       if (!r.ok) { UI.toast(r.reason, 6); gfxUi(); return; }
     }
     Gfx.setPref(p); pinned = true; tier = TI(p); slow = 0; applyTier();

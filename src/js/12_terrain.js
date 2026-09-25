@@ -159,7 +159,7 @@ const Terrain = (() => {
     r.p = Stream.image(r.path, prio).then((bmp) => {
       const t = new THREE.Texture(bmp); t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = maxAniso; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
-      r.texel = tileSize(L) / (bmp.width || 512);                               // metres per imagery texel
+      r.texel = tileSize(L) / (bmp.width || 512); r.px = bmp.width || 512;        // metres per imagery texel; texels across
       t.onUpdate = () => { if (bmp.close) bmp.close(); t.onUpdate = null; };   // once on the GPU, drop the decoded CPU copy
       r.tex = t; r.bytes = bmp.width * bmp.height * 4 * 1.34; imgBytes += r.bytes; r.state = 2; stats.img++; return r;
     }, () => { r.state = 3; return r; });
@@ -189,12 +189,14 @@ const Terrain = (() => {
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9);
     return g;
   }
+  let anisoCap = 12;
   function buildShared() {
     geo = buildGeo(G);
-    try { maxAniso = Math.min(12, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+    try { anisoCap = Env.renderer.capabilities.getMaxAnisotropy(); maxAniso = Math.min(12, anisoCap); } catch (e) {}
   }
-  // Ultra+: lidar nodes (L8/L9) get 128x128 quads, so on L9 every vertex sits on a 1.56 m lidar sample
-  function setFine(on) { fine = !!on; if (fine && !geoFine && geo) geoFine = buildGeo(G * 2); }
+  // Ultra+: lidar nodes (L8/L9) get 128x128 quads, so on L9 every vertex sits on a 1.56 m lidar sample, and imagery
+  // streamed from now on gets 16x anisotropic filtering (grazing ground stays sharp farther out)
+  function setFine(on) { fine = !!on; if (fine && !geoFine && geo) geoFine = buildGeo(G * 2); maxAniso = Math.min(fine ? 16 : 12, anisoCap); }
   const SKY_GLSL = () => (typeof Sky !== 'undefined' && Sky.glsl) ? Sky.glsl : '';
   // ---------- water: a tileable wind-wave slope map, LEAN-encoded (RG = mean slope, B = mean squared slope) ----------
   // ~70 directional waves with integer wavevectors (so the tile repeats seamlessly), a Phillips-like spectrum and
@@ -377,14 +379,15 @@ const Terrain = (() => {
   function makeMaterial() {
     const u = {
       hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
-      iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 },
+      iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 }, iSize: { value: 512 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
       skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind, uWaveT: U.uTime, uGround: { value: groundDetailTexture() },
       uMat: { value: matDummyTex() }, uMatUV: { value: new THREE.Vector4(0, 0, 1, 1) }, uMatOn: { value: 0 }, uGround2: { value: mat ? groundDetail2Texture() : groundDetailTexture() },
+      uSunT: { value: typeof Env !== 'undefined' && Env.sunDir ? Env.sunDir : new THREE.Vector3(0, 1, 0) },
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
-    m.customProgramCacheKey = () => 'bayline-terrain-v3';
+    m.customProgramCacheKey = () => 'bayline-terrain-v5';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
@@ -405,10 +408,10 @@ const Terrain = (() => {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
           uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo;
-          uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel;
+          uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel; uniform float iSize;
           uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
           uniform float night; uniform float time; uniform sampler2D uGround;
-          uniform sampler2D uMat; uniform vec4 uMatUV; uniform float uMatOn; uniform sampler2D uGround2;
+          uniform sampler2D uMat; uniform vec4 uMatUV; uniform float uMatOn; uniform sampler2D uGround2; uniform vec3 uSunT;
           ${WATER_GLSL()}
           // ground material class (tiles/mat) -> surface weights: A = (asphalt, concrete, grass, soil),
           // B = (dry grass, gravel, sand, leaf litter). 0 none, 1 lawn, 2 dry grass, 3 shrub, 4 leaf litter, 5 soil, 6 gravel,
@@ -434,14 +437,45 @@ const Terrain = (() => {
             return m == w0 ? c0 : m == w1 ? c1 : m == w2 ? c2 : c3;
           }
           varying vec3 vW; varying vec2 vUV;
-          float th(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+          // integer hash of a cell (the fract(sin)-style float hash lost its precision tens of km from the origin, which
+          // drew contour-like lines through the finer noise in San Francisco and the hills)
+          uint ih(vec2 c){ uvec2 q = uvec2(ivec2(c) + 1048576); uint h = q.x * 0x8da6b343u ^ q.y * 0xd8163841u;
+            h ^= h >> 15; h *= 0x2c1b3c6du; h ^= h >> 12; h *= 0x297a2d39u; h ^= h >> 15; return h; }
+          float th(vec2 p){ return float(ih(floor(p)) >> 8) * (1.0 / 16777216.0); }
           float tn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
             return mix(mix(th(i), th(i+vec2(1,0)), f.x), mix(th(i+vec2(0,1)), th(i+vec2(1,1)), f.x), f.y); }
           // band-limited noise: fades to its mean as the pattern nears the pixel footprint (fw = footprint in noise
           // units), so no term can alias into stripes or radial streaks at grazing angles
           float tnb(vec2 p, float fw) { return mix(0.5, tn(p), 1.0 - smoothstep(0.15, 0.4, fw)); }
           float thb(vec2 p, float fw) { return mix(0.5, th(floor(p)), 1.0 - smoothstep(0.06, 0.2, fw)); }
+          // round blobs on a jittered grid (cell C m, radius rMin..rMax m, a fraction dens of the cells filled), for
+          // shrubs and crowns; one hash per cell gives its presence, centre and size. x = cover (soft edge), yz = offset
+          // from the nearest blob's centre in radii (also outside it, for its shadow), w = a per-blob random
+          vec4 blobs(vec2 p, float C, float rMin, float rMax, float dens) {
+            vec2 g = p / C, i = floor(g), f = g - i, o0 = step(0.5, f) - 1.0; vec4 best = vec4(0.0, 9.0, 9.0, 0.0); float bd = 81.0;
+            for (int k = 0; k < 4; k++) {
+              vec2 cid = i + o0 + vec2(float(k & 1), float(k >> 1)); uint h = ih(cid);
+              if (float(h & 255u) > dens * 255.0) continue;
+              vec2 c = cid + 0.22 + 0.56 * vec2(float((h >> 8) & 255u), float((h >> 16) & 255u)) * (1.0 / 255.0);
+              vec2 dv = (g - c) / (mix(rMin, rMax, float(h >> 24) * (1.0 / 255.0)) / C); float d2 = dot(dv, dv);
+              if (d2 < bd) { bd = d2; best = vec4(1.0 - smoothstep(0.49, 1.0, d2), dv, float((h >> 4) & 255u) * (1.0 / 255.0)); }
+            }
+            return best;
+          }
           vec3 gN; float gRough; vec3 gEmis; float gWater;
+          // the photo magnified with crisp, wandering edges: the bilinear weights are pushed toward the nearer texel (a
+          // smoothstep of the fraction, still one hardware fetch) and the lookup is nudged by world-space noise, so a
+          // 1.5-3 m photo seen from a low flight shows sharp, irregular boundaries between canopy, grass and road where
+          // plain filtering smears them into soft blobs. magn: photo texels per pixel footprint
+          vec3 photoSharp(vec2 iuv, float magn, vec3 c) {
+            float k = smoothstep(1.3, 2.6, magn) * smoothstep(0.7, 1.3, iTexel);   // the coarse levels (L7 and up: 1.5 m texels +)
+            if (k < 0.01) return c;
+            vec2 tp = iuv * iSize - 0.5, w = vW.xz / (iTexel * 1.15);
+            tp += (vec2(tn(w), tn(w + 7.31)) - 0.5) * 0.9 + (vec2(tn(w * 2.9 + 3.1), tn(w * 2.9 + 9.2)) - 0.5) * 0.35;
+            vec2 i = floor(tp), f = fract(tp);
+            f = smoothstep(0.22, 0.78, f);
+            return mix(c, textureLod(iTex, (i + f + 0.5) / iSize, 0.0).rgb, k);
+          }
           // one wave layer: LEAN sample of the slope map in a frame rotated by (c, s); returns the slope rotated back
           // (xy) and the unresolved slope variance inside the pixel footprint (z)
 `)
@@ -459,56 +493,77 @@ const Terrain = (() => {
             vec2 qdx = dFdx(vW.xz), qdy = dFdy(vW.xz);                         // taken here, outside any branch
             float fwq = abs(qdx.x) + abs(qdy.x) + abs(qdx.y) + abs(qdy.y);
             // ---- albedo: the photograph (or a quiet fallback before it streams in) ----
-            vec3 col;
+            vec3 col; float nearK = 0.0;
             if (iHas > 0.5) {
               vec2 iuv = iUV.xy + vUV * iUV.zw;
-              col = texture2D(iTex, iuv).rgb;
-              // eye level: the photo's baked-in cars, shadows and lines smear into blobs at grazing angles, so near a low
-              // camera the ground becomes a synthesized surface (asphalt, concrete, grass, dry grass, dirt) whose colour is
-              // the photo's local ~5 m average; aerial views keep the photograph untouched
-              // only a camera at eye/cab height (walking, platforms, the cab) sees the smear; from trackside, chase and
-              // helicopter heights the super-resolved photograph itself looks better, so it stays
+              col = photoSharp(iuv, iTexel / max(max(length(qdx), length(qdy)), 1e-3), texture2D(iTex, iuv).rgb);
+              // ---- near ground, at any camera height: the photo holds the colour down to its own resolution; below that,
+              // what the ground IS (tiles/mat classes, or a guess from the photo) supplies its texture: fine detail,
+              // mid-scale features (asphalt patches and cracks, concrete slab joints, grass clumps), and a bump normal.
+              // Strength follows the photo's magnification on screen (a texel over more than ~1.5 pixels reads as blur).
+              // Near a low camera (eye, cab, platform) the photo's baked-in cars, shadows and smears go altogether: the
+              // surface is synthesized in the photo's local ~5 m colour.
               float lowCam = 1.0 - smoothstep(5.0, 16.0, cameraPosition.y - vW.y);
-              // ...and only within ~100 m: farther out the photograph (parking lots, stripes, yards) is as sharp as it gets
               float eye = lowCam * (1.0 - smoothstep(0.45, 0.6, mk.r)) * (1.0 - smoothstep(45.0, 130.0, dcam));
-              if (eye > 0.01) {
+              float magK = smoothstep(1.4, 4.5, iTexel / max(fwq * 0.5, 1e-4)) * (1.0 - smoothstep(0.45, 0.6, mk.r)) * (1.0 - smoothstep(150.0, 190.0, dcam));
+              nearK = max(eye, magK);
+              if (nearK > 0.01) {
                 vec3 lf = textureLod(iTex, iuv, clamp(log2(5.0 / iTexel), 0.0, 10.0)).rgb;
                 vec3 lf2 = textureLod(iTex, iuv, clamp(log2(14.0 / iTexel), 0.0, 10.0)).rgb;   // wider context
                 lf = mix(lf, lf2, 0.35);
-                float lum = dot(lf, vec3(0.299, 0.587, 0.114));
-                float sat = (max(lf.r, max(lf.g, lf.b)) - min(lf.r, min(lf.g, lf.b))) / max(lum, 0.03);
-                float veg = smoothstep(-0.005, 0.03, lf.g - max(lf.r * 0.96, lf.b));
-                float grey = 1.0 - smoothstep(0.1, 0.24, sat);
-                vec2 q = vW.xz;
-                // real surface texture: two rotated scales of the detail tile (no visible repeat), mip-filtered
+                vec2 q = vW.xz, fwv = vec2(fwq);
+                // material weights: A = (asphalt, concrete, grass, soil), B = (dry grass, gravel, sand, leaf litter)
+                vec4 wA = vec4(0.0), wB = vec4(0.0);
+                if (uMatOn > 0.5) { vec2 jit = (vec2(tnb(q * 0.9, fwq * 0.9), tnb(q.yx * 0.9 + 7.3, fwq * 0.9)) - 0.5) * 0.9; matWeights(vUV, jit, wA, wB); }
+                float ws = dot(wA, vec4(1.0)) + dot(wB, vec4(1.0));
+                if (ws < 0.05) {                          // no class map here: a guess from the photo's colour
+                  float lum = dot(lf, vec3(0.299, 0.587, 0.114)), sat = (max(lf.r, max(lf.g, lf.b)) - min(lf.r, min(lf.g, lf.b))) / max(lum, 0.03);
+                  float veg = smoothstep(-0.005, 0.03, lf.g - max(lf.r * 0.96, lf.b)), grey = 1.0 - smoothstep(0.1, 0.24, sat), dk = 1.0 - smoothstep(0.07, 0.2, lum);
+                  wA = vec4(grey * dk, grey * (1.0 - dk), veg * (1.0 - grey * 0.6), (1.0 - grey) * (1.0 - veg)); wB = vec4(0.0); ws = dot(wA, vec4(1.0));
+                }
+                wA /= max(ws, 1e-3); wB /= max(ws, 1e-3);
+                // fine detail: two rotated scales of the detail tiles (no visible repeat), mip-filtered
                 vec2 q2 = vec2(0.8 * q.x + 0.6 * q.y, -0.6 * q.x + 0.8 * q.y) / ${(GTILE * 2.9).toFixed(2)};
                 vec2 q2dx = vec2(0.8 * qdx.x + 0.6 * qdx.y, -0.6 * qdx.x + 0.8 * qdx.y) / ${(GTILE * 2.9).toFixed(2)};
                 vec2 q2dy = vec2(0.8 * qdy.x + 0.6 * qdy.y, -0.6 * qdy.x + 0.8 * qdy.y) / ${(GTILE * 2.9).toFixed(2)};
-                vec4 gd = mix(textureGrad(uGround, q / ${GTILE.toFixed(1)}, qdx / ${GTILE.toFixed(1)}, qdy / ${GTILE.toFixed(1)}), textureGrad(uGround, q2, q2dx, q2dy), 0.38) - 0.5;
-                // pavement: asphalt (dark) or concrete (light) with its aggregate and soft wear; the photo gives the tint
-                float wear = tnb(q * 0.35, fwq * 0.35), asph = 1.0 - smoothstep(0.07, 0.2, lum);
-                vec3 pave = lf * (1.0 + mix(gd.a * 1.3, gd.r * 1.8, asph) + 0.12 * (wear - 0.5));
-                // vegetation: grass blades over soil, clumps, straw patches where the photo is golden
+                vec2 q1 = q / ${GTILE.toFixed(1)}, q1dx = qdx / ${GTILE.toFixed(1)}, q1dy = qdy / ${GTILE.toFixed(1)};
+                vec4 gd = mix(textureGrad(uGround, q1, q1dx, q1dy), textureGrad(uGround, q2, q2dx, q2dy), 0.38) - 0.5;
+                vec4 g2 = mix(textureGrad(uGround2, q1, q1dx, q1dy), textureGrad(uGround2, q2, q2dx, q2dy), 0.38) - 0.5;
+                // mid-scale features, each band-limited by the pixel footprint (they fade to their mean before aliasing)
+                float macro = tnb(q * 0.11, fwq * 0.11), macro2 = tnb(q * 0.029 + 5.1, fwq * 0.029);
+                float crackN = tnb(q * 0.37 + 11.3, fwq * 0.37), cw0 = 0.012 + fwq * 0.3;
+                float crack = (1.0 - smoothstep(cw0, cw0 * 2.2, abs(crackN - 0.5))) * (1.0 - smoothstep(0.1, 0.35, fwq)) * smoothstep(0.35, 0.75, tnb(q * 0.05 + 2.0, fwq * 0.05));
+                float patchA = smoothstep(0.64, 0.68, tnb(q * 0.085 + 3.1, fwq * 0.085));
+                float slab = mix(1.5, 3.0, step(0.5, tnb(floor(q / 40.0) * 0.37, 0.0)));                // slab size per ~40 m area
+                vec2 sg = abs(fract(q / slab) - 0.5); float jw = (0.005 + fwq * 0.25) / slab;
+                float joint = smoothstep(0.5 - jw * 2.0, 0.5 - jw, max(sg.x, sg.y)) * (1.0 - smoothstep(0.05, 0.2, fwq));
+                float stain = smoothstep(0.7, 0.85, tnb(q * 0.21 + 7.7, fwq * 0.21));
                 float clump = tnb(q * 1.3, fwq * 1.3);
-                vec3 grass = lf * (0.86 + 0.28 * clump) * (1.0 + gd.b * 1.9);
-                grass = mix(grass, grass * vec3(1.08, 1.02, 0.86), smoothstep(0.5, 0.8, tnb(q * 0.23, fwq * 0.23)) * 0.6);
-                // bare ground: soil with grit and pebbles
-                vec3 dirt = lf * (0.9 + 0.2 * tnb(q * 1.9, fwq * 1.9)) * (1.0 + gd.g * 1.8);
-                vec3 synth = mix(mix(dirt, pave, grey), grass, veg * (1.0 - grey * 0.6));
-                if (uMatOn > 0.5) {                     // what the ground IS (tiles/mat) instead of a guess from its colour
-                  vec2 jit = (vec2(tnb(q * 0.9, fwq * 0.9), tnb(q.yx * 0.9 + 7.3, fwq * 0.9)) - 0.5) * 0.9;
-                  vec4 wA, wB; matWeights(vUV, jit, wA, wB); float ws = dot(wA, vec4(1.0)) + dot(wB, vec4(1.0));
-                  if (ws > 0.05) {
-                    vec4 g2 = mix(textureGrad(uGround2, q / ${GTILE.toFixed(1)}, qdx / ${GTILE.toFixed(1)}, qdy / ${GTILE.toFixed(1)}), textureGrad(uGround2, q2, q2dx, q2dy), 0.38) - 0.5;
-                    float wv = 0.12 * (wear - 0.5);
-                    vec3 asphS = lf * (1.0 + gd.r * 1.8 + wv), concS = lf * (1.0 + gd.a * 1.3 + wv);
-                    vec3 dryS = lf * (0.9 + 0.2 * clump) * (1.0 + g2.g * 2.0);
-                    vec3 gravS = lf * (1.0 + g2.r * 2.2), sandS = lf * (1.0 + g2.b * 1.8), litS = lf * (0.92 + 0.16 * clump) * (1.0 + g2.a * 1.9);
-                    vec3 m = asphS * wA.x + concS * wA.y + grass * wA.z + dirt * wA.w + dryS * wB.x + gravS * wB.y + sandS * wB.z + litS * wB.w;
-                    synth = mix(synth, m / ws, smoothstep(0.05, 0.6, ws));
-                  }
-                }
-                col = mix(col, synth, eye * 0.96);
+                float vA = gd.r * 1.8 - patchA * 0.16 - crack * 0.4 - stain * 0.08 + (macro - 0.5) * 0.16 + (macro2 - 0.5) * 0.1;
+                float vC = gd.a * 1.3 - joint * 0.13 - stain * 0.1 + (macro - 0.5) * 0.12 + (macro2 - 0.5) * 0.08 - crack * 0.2;
+                float vG = gd.b * 1.9 + (clump - 0.5) * 0.28 + (macro - 0.5) * 0.18;
+                float vS = gd.g * 1.8 + (tnb(q * 1.9, fwq * 1.9) - 0.5) * 0.2 + (macro - 0.5) * 0.14;
+                float vD = g2.g * 2.0 + (clump - 0.5) * 0.2 + (macro - 0.5) * 0.16;
+                float vR = g2.r * 2.2 + (macro - 0.5) * 0.1, vN = g2.b * 1.8 + (macro2 - 0.5) * 0.12, vL = g2.a * 1.9 + (clump - 0.5) * 0.16;
+                float v = dot(wA, vec4(vA, vC, vG, vS)) + dot(wB, vec4(vD, vR, vN, vL));
+                // tint: grass clumps greener, dry spots straw, soil and litter a little warmer in the macro variation
+                vec3 tint = mix(vec3(1.0), mix(vec3(0.94, 1.05, 0.9), vec3(1.08, 1.02, 0.86), smoothstep(0.5, 0.8, tnb(q * 0.23, fwq * 0.23))), wA.z * 0.6)
+                          * mix(vec3(1.0), vec3(1.04, 1.0, 0.94), (wA.w + wB.w) * (macro - 0.3));
+                // bump: the detail tiles' own slope, weighted by how rough each material is (1 cm steps, or the pixel)
+                float e = max(0.012, fwq * 0.35);
+                vec4 gdx = textureGrad(uGround, q1 + vec2(e / ${GTILE.toFixed(1)}, 0.0), q1dx, q1dy) - 0.5, gdz = textureGrad(uGround, q1 + vec2(0.0, e / ${GTILE.toFixed(1)}), q1dx, q1dy) - 0.5;
+                vec4 g2x = textureGrad(uGround2, q1 + vec2(e / ${GTILE.toFixed(1)}, 0.0), q1dx, q1dy) - 0.5, g2z = textureGrad(uGround2, q1 + vec2(0.0, e / ${GTILE.toFixed(1)}), q1dx, q1dy) - 0.5;
+                vec4 g1 = textureGrad(uGround, q1, q1dx, q1dy) - 0.5, g21 = textureGrad(uGround2, q1, q1dx, q1dy) - 0.5;
+                vec4 bA = vec4(0.012, 0.006, 0.03, 0.02), bB = vec4(0.03, 0.04, 0.012, 0.025);                 // m of relief per unit
+                vec4 hA0 = vec4(g1.r, g1.a, g1.b, g1.g), hB0 = vec4(g21.g, g21.r, g21.b, g21.a);
+                vec4 hAx = vec4(gdx.r, gdx.a, gdx.b, gdx.g), hBx = vec4(g2x.g, g2x.r, g2x.b, g2x.a);
+                vec4 hAz = vec4(gdz.r, gdz.a, gdz.b, gdz.g), hBz = vec4(g2z.g, g2z.r, g2z.b, g2z.a);
+                float gxs = (dot(wA * bA, hAx - hA0) + dot(wB * bB, hBx - hB0)) / e, gzs = (dot(wA * bA, hAz - hA0) + dot(wB * bB, hBz - hB0)) / e;
+                float bk = nearK * (1.0 - smoothstep(0.06, 0.25, fwq));
+                nW = normalize(nW + vec3(-gxs, 0.0, -gzs) * 6.0 * bk);
+                vec3 synth = lf * tint * (1.0 + v);
+                col = mix(col, col * tint * (1.0 + v * 0.85), magK * (1.0 - eye));   // above eye level: the photo, detailed
+                col = mix(col, synth, eye * 0.96);                                     // eye level: the synthesized surface
               }
             } else {
               float n1 = tn(vW.xz * 0.0015);
@@ -516,8 +571,8 @@ const Terrain = (() => {
               col = mix(col, vec3(0.36, 0.35, 0.33), smoothstep(0.1, 0.5, mk.g));
               col = mix(col, vec3(0.08, 0.16, 0.2), water);
             }
-            // ---- near-camera detail so the photo never looks like a blurry decal ----
-            float det = smoothstep(420.0, 25.0, dcam) * (1.0 - water);
+            // ---- mid-distance detail (up to ~420 m, where the near-ground texture has handed back to the photo) ----
+            float det = smoothstep(420.0, 25.0, dcam) * (1.0 - water) * (1.0 - nearK);
             if (det > 0.0) {
               // surface-aware micro detail from the landcover class (mask A): each pattern fades before it can alias
               vec2 p = vW.xz; float cls = floor(mk.a * 255.0 + 0.5);
@@ -549,6 +604,38 @@ const Terrain = (() => {
               col *= 1.0 + gain;
               float a = tn(p * 2.1), b = tn((p + vec2(0.3, 0.0)) * 2.1), c = tn((p + vec2(0.0, 0.3)) * 2.1);
               nW = normalize(nW + vec3(a - b, 0.0, a - c) * bump * det * bf);
+            }
+            // ---- a coarse photo seen from the air (the hills beyond the imagery tiles: 1.5-3 m texels, a smooth wash from a
+            // low flight): the texture between the pixel and the texel that it lacks. Grass mottling, and shrubs / crowns
+            // as round-topped blobs (lit on their sunward side by their normals, a short shadow on the other), denser where
+            // the canopy mask or a dark photo says wooded. Natural land cover only; each pattern fades before it aliases.
+            float coarse = smoothstep(1.3, 2.8, iTexel / max(fwq, 0.05)) * smoothstep(0.9, 1.5, iTexel) * (1.0 - water) * (1.0 - nearK) * iHas;
+            float clsC = floor(mk.a * 255.0 + 0.5);
+            if (coarse > 0.01 && (clsC < 0.5 || clsC > 6.5 || (clsC > 3.5 && clsC < 5.5) || (clsC > 0.5 && clsC < 1.5))) {
+              vec2 p = vW.xz; float lum = dot(col, vec3(0.299, 0.587, 0.114));
+              float fp = max(length(qdx), length(qdy));                                   // the pixel's footprint (m)
+              float wood = clamp(mk.b * 1.3 + smoothstep(0.16, 0.06, lum) * 0.6, 0.0, 1.0);
+              vec2 sd = uSunT.xz / max(length(uSunT.xz), 1e-3) / max(uSunT.y, 0.25);      // shadows fall away from the sun (in radii)
+              float sunUp = smoothstep(0.02, 0.15, uSunT.y);
+              // open ground: grass mottling in three octaves and tufts / stones as small dark dots
+              float m1 = tnb(p / 11.0, fp / 11.0), m2 = tnb(p / 3.4 + 4.7, fp / 3.4), m3 = tnb(p / 1.2 + 9.1, fp / 1.2);
+              float gain = (m1 - 0.5) * 0.24 + (m2 - 0.5) * 0.2 + (m3 - 0.5) * 0.18;
+              float tuft = (1.0 - smoothstep(0.3, 0.7, fp / 0.5)) * (1.0 - wood) > 0.01 ? blobs(p, 1.7, 0.3, 0.75, 0.4).x * (1.0 - smoothstep(0.3, 0.7, fp / 0.5)) : 0.0;
+              col = mix(col, col * mix(vec3(1.08, 1.02, 0.88), vec3(0.92, 1.04, 0.93), m2), 0.5 * (1.0 - wood));   // straw / green
+              col *= (1.0 + gain * coarse) * (1.0 - 0.28 * tuft * coarse * (1.0 - wood));
+              // shrubs on open ground (sparse), crowns where it is wooded (dense, two sizes, dark gaps between them); each
+              // big one casts a short shadow away from the sun
+              float rA = mix(1.0, 2.6, wood);
+              vec4 b = blobs(p, mix(6.5, 7.5, wood), rA, mix(2.6, 4.2, wood), mix(0.13, 0.96, wood));
+              float visB = 1.0 - smoothstep(0.35, 0.9, fp / rA), visC = 1.0 - smoothstep(0.3, 0.8, fp / 0.9);
+              vec4 c = visC > 0.01 ? blobs(p + 17.3, 3.1, 0.9, 1.6, 0.25 + 0.65 * wood) : vec4(0.0);
+              float crown = max(b.x * visB, c.x * visC * 0.9);
+              vec2 sv = b.yz + sd * 0.8; float shadow = max((1.0 - smoothstep(0.49, 1.0, dot(sv, sv))) - b.x, 0.0) * visB * sunUp;
+              vec3 green = mix(vec3(0.46, 0.54, 0.4), vec3(0.66, 0.74, 0.56), b.w) * mix(1.0, 1.5, wood);
+              col = mix(col, col * green, crown * coarse * mix(0.8, 0.3, wood));
+              col *= 1.0 - coarse * (shadow * 0.38 + wood * (1.0 - crown) * 0.32 * visB);   // cast shadows; gaps in a canopy
+              vec2 bn = b.x * visB > c.x * visC * 0.9 ? b.yz : c.yz;
+              nW = normalize(nW + vec3(bn.x, 0.0, bn.y) * crown * coarse * 0.55);
             }
             // ---- water: keep the photo's tint (South Bay silt, Pacific blue); wind waves from the LEAN slope map ----
             gWater = water;
@@ -652,7 +739,7 @@ const Terrain = (() => {
       else { const n2 = 1 << L; const sc = SIZE / ((N - 1) * S); u.mTex.value = texFM; u.mUV.value.set(x / n2 * sc, y / n2 * sc, sc / n2, sc / n2); u.mTC.value.set((N - 1) / N, 0.5 / N); }
       // imagery
       const fi = index ? finest(irec, L, x, y, LMAX) : null;
-      if (fi) { const [r, s, ox, oy] = fi; u.iTex.value = r.tex; u.iUV.value.set(ox, oy, s, s); u.iHas.value = 1; u.iTexel.value = r.texel || 1; r.used = frameNo; }
+      if (fi) { const [r, s, ox, oy] = fi; u.iTex.value = r.tex; u.iUV.value.set(ox, oy, s, s); u.iHas.value = 1; u.iTexel.value = r.texel || 1; u.iSize.value = r.px || 512; r.used = frameNo; }
       else { u.iHas.value = 0; u.iTex.value = null; }
       // ground materials: the node's L7 class map, near the camera only (the detail it drives fades out by ~420 m)
       u.uMatOn.value = 0;

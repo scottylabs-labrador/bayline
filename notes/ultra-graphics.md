@@ -55,9 +55,52 @@ canopy height model (CC BY 4.0), in three steps (`tools/bake_trees2.py all`):
 Not done: the SF Street Tree List (DataSF, ODC-PDDL) — the portal answered 403 to scripted requests from this machine;
 download the CSV in a browser and merge like the model peaks (skip within 3 m of an existing crown, species map).
 
-## Facades (`30_towns.js`, cache key `towns-bld-v4`)
+## Facades (`30_towns.js`, cache key `towns-bld-v6`)
 Per-building seed → window width/height scale, column spacing, pairing; blinds and curtains; string courses,
 spandrels, darker bases, cornices. Shader only, no data change.
+
+## Round 2: shader and geometry work, no new data
+Every round-2 change is client code. No data layer was added or changed, and `tiles/{h9,mat,t2}` are untouched.
+- **GTAO** (`14_post.js`): ground-truth AO (Jimenez 2016 / XeGTAO) at half resolution, with 2 slices × 7 steps on
+  high and 4 × 10 on Ultra+. The radius grows with distance, and there's a thin-occluder heuristic. Grass blades and
+  leaf cards write scene alpha 0, and the composite keeps only a quarter of the AO on them. Sunlit pixels keep most of
+  their light. QA: `Post.debug.showAO`.
+- **Eye adaptation** (`14_post.js`): the centre-weighted log-average of the HDR frame (16×9 jittered grid → 1×1)
+  is eased toward over about 1 s. Scenes darker than a sunlit street are lifted by up to 1.1 EV (1.3× at night).
+  Only scenes over twice that bright are pulled down, by at most 15%. QA: `Post.aeRead()`, `Post.debug.ae`,
+  `Post.debug.aeKey`, `Post.debug.expo`.
+- **Light shafts** (`14_post.js`): a half-res march toward the sun's screen position measures the open-sky fraction.
+  It uses 24 taps on high, 40 on Ultra+, 16 on medium, and none on low. Lit haze is added in front of surfaces, and
+  the shadowed part of the glare is taken out of the sky. It runs only with the sun up and near the screen.
+  QA: `Post.debug.shafts`, `Post.stats.shaftK`.
+- **SSR** (Ultra+ only, `BL_SSR`): screen-space reflections on open water at sea level, with a Fresnel blend.
+- **Interiors** (`30_towns.js`): interior mapping behind every window cell. The ray goes into a room one cell wide,
+  one floor high and 3-6.5 m deep: back wall with furniture, floor, ceiling lamp, side walls, and shop shelving at
+  street level. Blinds cover part of the room. Each room is lit or dark on its own at night.
+- **Roofs and building geometry** (`30_towns.js`): procedural roof materials by class (membrane, gravel, bitumen,
+  standing seam, shingles, clay barrel tile, slate), and near the camera the photo roofs keep only their ~3 m tone.
+  Geometry at detail level 2: mitred cornices, storefront awnings, SF bay windows, stair bulkheads, SF wooden water
+  tanks, and rooftop units on photo roofs.
+- **Ground near the camera** (`12_terrain.js`): when the photo is magnified, per-material detail takes over at any
+  camera height: asphalt patches and cracks, concrete slabs and joints, grass clumps, and a bump normal.
+- **Ground from the air** (`12_terrain.js`): on photos of 1.5 m or coarser (L7+, the hills), magnification gets
+  crisp, noise-wandered edges (one fetch). Natural land cover also gets grass mottling, tufts, shrubs and two-size
+  crowns with shadows. The terrain noise uses an integer hash, because the float hash drew contour lines far from
+  the origin.
+- **Trees** (`61_flora.js`):
+  - A repainted atlas: lobed clusters and depth-shaded leaves.
+  - A normal atlas: painted per-leaf tilt and fold, plus normals derived for conifers, palms and barks. Both atlases
+    upload from arrays with a pull-push fill, so there are no dark fringes, and start-up is 0.6 s.
+  - Clump-aware lighting normals.
+  - Chlorophyll-tinted translucency from the smooth crown normal, and two-sided sky light on leaves.
+  - Cards outside the crown envelope are dropped, and grazing cards fade. This removes the pale discs over the line.
+- **Ultra+**: 16× anisotropic ground and the above at higher sample counts, on top of round 1's 2× render scale,
+  terrain shadows and far cascade.
+- **Probe**: a too-slow benchmark is cached for 1 day, not 30, and the chip stays clickable to re-test
+  (`bayline.gfx.probe.v2`).
+
+QA: `tools/qa_hero.py OUT --a URL --b URL [--hash q=high] [--views ...]` shoots gameplay-framed before/after pairs
+(the cab from a paused train, photo mode) and writes `hero.jpg`, `hero_thumbs.jpg` and `pair_*.jpg`.
 
 ## Ultra+ (opt-in)
 - `13_gfx.js`: preference (`localStorage bayline.gfx`), `Gfx.probe()` = WebGPU hardware adapter + WebGL limits + the

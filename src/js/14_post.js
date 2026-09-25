@@ -1,5 +1,5 @@
 // Render pipeline (atmosphere agent). Scene -> HDR (half-float, MSAA) target with a resolved (logarithmic) depth
-// texture -> SSAO (half res, bilateral) -> marine-layer raymarch (half res) -> composite (AO, cloud shadows, aerial
+// texture -> GTAO (half res, bilateral) -> marine-layer raymarch (half res) -> composite (AO, cloud shadows, aerial
 // perspective, cloud deck, cirrus, fog) -> bloom mip chain -> ACES + grading + vignette + grain -> screen (+FXAA on low).
 //   Post.render(dt)                         call instead of renderer.render(scene, camera)
 //   Post.setQuality('ultraplus'|'high'|'medium'|'low')  Post.quality
@@ -8,14 +8,15 @@
 const Post = (() => {
   const R = Env.renderer, scene = Env.scene, camera = Env.camera;
   const QUALITY = {
-    ultraplus: { samples: 4, ao: 16, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014 },
-    high:   { samples: 4, ao: 12, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016 },
-    medium: { samples: 2, ao: 8,  fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012 },
+    ultraplus: { samples: 4, ao: 16, aoSlices: 4, aoSteps: 10, fogSteps: 24, fogScale: 0.5, bloom: 7, fxaa: false, shadow: 4096, grain: 0.014, ssr: true, shafts: 40 },
+    high:   { samples: 4, ao: 12, aoSlices: 2, aoSteps: 6, fogSteps: 16, fogScale: 0.5, bloom: 6, fxaa: false, shadow: 4096, grain: 0.016, shafts: 24 },
+    medium: { samples: 2, ao: 8,  aoSlices: 2, aoSteps: 5, fogSteps: 12, fogScale: 0.5, bloom: 5, fxaa: false, shadow: 2048, grain: 0.012, shafts: 16 },
     low:    { samples: 0, ao: 0,  fogSteps: 8,  fogScale: 0.25, bloom: 4, fxaa: true, shadow: 2048, grain: 0.0 },
   };
   let quality = 'high', Q = QUALITY.high, enabled = true, W = 0, H = 0, frame = 0;
   const stats = { calls: 0, triangles: 0 };
-  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true };   // per-pass switches (profiling)
+  // per-pass switches (profiling); showAO: the AO buffer alone; expo: an exposure multiplier; aeKey: overrides the eye-adaptation key
+  const debug = { ao: true, fog: true, bloom: true, clouds: true, msaa: true, showAO: false, ae: true, expo: 1, shafts: true, aeKey: 0 };
   const sz = new THREE.Vector2();
 
   // ---------------------------------------------------------------- full-screen plumbing
@@ -54,13 +55,13 @@ const Post = (() => {
   `;
 
   // ---------------------------------------------------------------- targets
-  let rtScene = null, rtAO = [null, null], rtFog = null, rtHDR = null, rtLDR = null, down = [], up = [];
+  let rtScene = null, rtAO = [null, null], rtFog = null, rtHDR = null, rtLDR = null, down = [], up = [], rtLum = null, rtAE = [null, null], aeSnap = true, rtShaft = null;
   const HF = THREE.HalfFloatType;
   function mkRT(w, h, opts = {}) {
     const rt = new THREE.WebGLRenderTarget(Math.max(1, w), Math.max(1, h), Object.assign({ type: HF, depthBuffer: false, stencilBuffer: false }, opts));
     rt.texture.minFilter = rt.texture.magFilter = THREE.LinearFilter; rt.texture.generateMipmaps = false; rt.texture.wrapS = rt.texture.wrapT = THREE.ClampToEdgeWrapping; return rt;
   }
-  function disposeAll() { for (const rt of [rtScene, rtAO[0], rtAO[1], rtFog, rtHDR, rtLDR, ...down, ...up]) if (rt) { if (rt.depthTexture) rt.depthTexture.dispose(); rt.dispose(); } down = []; up = []; }
+  function disposeAll() { for (const rt of [rtScene, rtAO[0], rtAO[1], rtFog, rtHDR, rtLDR, rtLum, rtAE[0], rtAE[1], rtShaft, ...down, ...up]) if (rt) { if (rt.depthTexture) rt.depthTexture.dispose(); rt.dispose(); } down = []; up = []; }
   function build(w, h) {
     disposeAll(); W = w; H = h;
     const maxS = R.capabilities.maxSamples || 4;
@@ -68,43 +69,75 @@ const Post = (() => {
     const dt = new THREE.DepthTexture(w, h, THREE.FloatType); dt.format = THREE.DepthFormat; dt.minFilter = dt.magFilter = THREE.NearestFilter;
     rtScene = mkRT(w, h, { depthBuffer: true, depthTexture: dt, samples });
     const hw = Math.ceil(w / 2), hh = Math.ceil(h / 2);
-    rtAO = [mkRT(hw, hh), mkRT(hw, hh)];
+    rtAO = [mkRT(hw, hh), mkRT(hw, hh)]; rtShaft = mkRT(hw, hh);
     rtFog = mkRT(Math.ceil(w * Q.fogScale), Math.ceil(h * Q.fogScale));
     rtHDR = mkRT(w, h);
+    rtLum = mkRT(1, 1); rtAE = [mkRT(1, 1), mkRT(1, 1)]; aeSnap = true;
     rtLDR = Q.fxaa ? mkRT(w, h, { type: THREE.UnsignedByteType }) : null;
     let bw = hw, bh = hh; for (let i = 0; i < Q.bloom; i++) { down.push(mkRT(bw, bh)); if (i < Q.bloom - 1) up.push(mkRT(bw, bh)); bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); }
     cam.uTexel.value.set(1 / w, 1 / h);
   }
 
   // ---------------------------------------------------------------- passes
-  const aoMat = mk(Object.assign({ tDepth: { value: null }, uSamples: { value: 12 }, uRadius: { value: 1.1 }, uStrength: { value: 1.25 } }, cam), CAMGLSL + /* glsl */`
-    uniform sampler2D tDepth; uniform int uSamples; uniform float uRadius, uStrength; varying vec2 vUv;
-    vec3 vp(vec2 uv) { return viewPosAt(uv, texture2D(tDepth, uv).r); }
+  // Ground-truth ambient occlusion (GTAO: Jimenez et al. 2016, as in XeGTAO): per pixel, uSlices screen-space slices
+  // through the view vector; in each, the highest horizon on both sides (uSteps depth samples each, quadratic spacing)
+  // and the cosine-weighted visible arc above the normal. The world radius grows with distance: ~2.5 m of contact
+  // occlusion up close (door reveals, kerbs, under cars, tree bases), street-canyon scale in aerial views.
+  const aoMat = mk(Object.assign({ tDepth: { value: null }, uSlices: { value: 2 }, uSteps: { value: 6 }, uRadius: { value: 2.4 }, uStrength: { value: 1.0 } }, cam), CAMGLSL + /* glsl */`
+    uniform sampler2D tDepth; uniform int uSlices, uSteps; uniform float uRadius, uStrength; varying vec2 vUv;
+    // every depth read is snapped to a full-res texel centre and its ray taken through that same centre: this pass runs
+    // at half resolution, and a ray half a pixel off its depth sample reads grazing walls as occluded (stripes)
+    vec2 snapUv(vec2 uv) { return (floor(uv / uTexel) + 0.5) * uTexel; }
+    vec3 vp(vec2 uv) { uv = snapUv(uv); return viewPosAt(uv, texture2D(tDepth, uv).r); }
+    float facos(float x) { x = clamp(x, -1.0, 1.0); float r = (-0.1565827 * abs(x) + 1.5707963) * sqrt(1.0 - abs(x)); return x >= 0.0 ? r : 3.1415927 - r; }
     void main() {
-      float d = texture2D(tDepth, vUv).r;
+      vec2 uv0 = snapUv(vUv);
+      float d = texture2D(tDepth, uv0).r;
       if (d >= 0.99999) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }
-      vec3 P = viewPosAt(vUv, d);
-      vec2 tx = vec2(uTexel.x * 2.0, 0.0), ty = vec2(0.0, uTexel.y * 2.0);
-      vec3 pr = vp(vUv + tx) - P, pl = P - vp(vUv - tx), pu = vp(vUv + ty) - P, pd = P - vp(vUv - ty);
+      vec3 P = viewPosAt(uv0, d);
+      vec2 tx = vec2(uTexel.x, 0.0), ty = vec2(0.0, uTexel.y);
+      vec3 pr = vp(uv0 + tx) - P, pl = P - vp(uv0 - tx), pu = vp(uv0 + ty) - P, pd = P - vp(uv0 - ty);
       vec3 dx = abs(pr.z) < abs(pl.z) ? pr : pl, dy = abs(pu.z) < abs(pd.z) ? pu : pd;
       vec3 Nc = cross(dx, dy); float nl = length(Nc);
-      if (!(nl > 1e-9)) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }        // degenerate / NaN guard
-      vec3 N = Nc / nl;
-      float w = -P.z; float rad = min(uRadius * (1.0 + w * 0.01), 7.0);
-      float rpx = rad * uFocal / w;
-      if (rpx < 1.2) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }
-      rpx = min(rpx, 90.0);
-      float ang = ign(gl_FragCoord.xy) * 6.2831853, occ = 0.0;
-      for (int i = 0; i < 16; i++) {
-        if (i >= uSamples) break;
-        float f = (float(i) + 0.5) / float(uSamples); float r = sqrt(f) * rpx; ang += 2.3999632;
-        vec2 suv = vUv + vec2(cos(ang), sin(ang)) * r * uTexel;
-        vec3 v = vp(suv) - P; float dist = length(v);
-        occ += max(dot(N, v / max(dist, 1e-4)) - 0.1, 0.0) * (1.0 - smoothstep(rad * 0.55, rad, dist));
+      if (!(nl > 1e-12)) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }       // degenerate / NaN guard
+      vec3 N = Nc / nl, V = normalize(-P);
+      float w = -P.z;
+      float R = uRadius * clamp(1.0 + w * 0.012, 1.0, 8.0);                      // m
+      float rpx = R * uFocal / w;                                                  // full-res pixels
+      if (rpx < 1.5) { gl_FragColor = vec4(1.0, d, 0.0, 1.0); return; }
+      rpx = min(rpx, 140.0);
+      float noise = ign(gl_FragCoord.xy), jit = fract(noise * 7.1307 + 0.37);
+      float vis = 0.0, fm = 1.0 / (0.4 * R);
+      for (int s = 0; s < 4; s++) {
+        if (s >= uSlices) break;
+        float phi = (float(s) + noise) * 3.1415927 / float(uSlices);
+        vec2 om = vec2(cos(phi), sin(phi));
+        vec3 dir3 = vec3(om, 0.0), orthoDir = dir3 - dot(dir3, V) * V;
+        vec3 axis = normalize(cross(orthoDir, V)), projN = N - axis * dot(N, axis);
+        float pnl = length(projN), cosN = clamp(dot(projN, V) / max(pnl, 1e-5), 0.0, 1.0);
+        float n = sign(dot(orthoDir, projN)) * facos(cosN);
+        float hc0 = -1.0, hc1 = -1.0;
+        for (int k = 0; k < 12; k++) {
+          if (k >= uSteps) break;
+          float t = (float(k) + jit) / float(uSteps); t *= t;
+          vec2 o = om * max(t * rpx, float(k) + 1.0) * uTexel;
+          vec3 sa = vp(uv0 + o) - P, sb = vp(uv0 - o) - P;
+          // thin-occluder compensation (XeGTAO): the depth difference counts 2x toward the falloff distance, so blades of
+          // grass and leaf cards in front of a pixel shade it far less than a wall at the same screen offset would
+          float la = length(vec3(sa.xy, sa.z * 2.0)), lb = length(vec3(sb.xy, sb.z * 2.0));
+          hc0 = max(hc0, mix(-1.0, dot(sa, V) / max(length(sa), 1e-4), clamp((R - la) * fm, 0.0, 1.0)));
+          hc1 = max(hc1, mix(-1.0, dot(sb, V) / max(length(sb), 1e-4), clamp((R - lb) * fm, 0.0, 1.0)));
+        }
+        float h0 = -facos(hc1), h1 = facos(hc0);
+        h0 = n + clamp(h0 - n, -1.5707963, 1.5707963); h1 = n + clamp(h1 - n, -1.5707963, 1.5707963);
+        float sn = sin(n);
+        vis += pnl * 0.25 * ((cosN + 2.0 * h0 * sn - cos(2.0 * h0 - n)) + (cosN + 2.0 * h1 * sn - cos(2.0 * h1 - n)));
       }
-      float ao = 1.0 - uStrength * occ / float(uSamples); if (!(ao >= 0.0 && ao <= 1.0)) ao = 1.0;
-      ao = mix(1.0, ao, 1.0 - smoothstep(500.0, 1400.0, w));
-      gl_FragColor = vec4(clamp(ao, 0.0, 1.0), d, 0.0, 1.0);
+      float ao = clamp(vis / float(uSlices), 0.0, 1.0);
+      ao = pow(ao, uStrength);
+      if (!(ao >= 0.0 && ao <= 1.0)) ao = 1.0;
+      ao = mix(1.0, ao, 1.0 - smoothstep(1500.0, 3200.0, w));
+      gl_FragColor = vec4(ao, d, 0.0, 1.0);
     }`);
   const blurMat = mk(Object.assign({ tAO: { value: null }, uDir: { value: new THREE.Vector2() } }, cam), CAMGLSL + /* glsl */`
     uniform sampler2D tAO; uniform vec2 uDir; varying vec2 vUv;
@@ -161,10 +194,55 @@ const Post = (() => {
       }
       gl_FragColor = vec4(L, T);
     }`);
+  // light shafts (Mitchell, GPU Gems 3): from each half-res pixel, march toward the sun's place on screen and measure how
+  // much of the way is open sky; the composite scatters that much sunlight into the haze in front of the pixel, so the sun
+  // behind trees, towers or a ridge throws beams through the gaps. r = open fraction (decay-weighted)
+  const shaftMat = mk(Object.assign({ tDepth: { value: null }, uSunUv: { value: new THREE.Vector2() }, uShaftN: { value: 24 } }, cam), CAMGLSL + /* glsl */`
+    uniform sampler2D tDepth; uniform vec2 uSunUv; uniform int uShaftN; varying vec2 vUv;
+    void main() {
+      vec2 dv = uSunUv - vUv; float n = float(uShaftN);
+      vec2 st = dv / n; float jit = ign(gl_FragCoord.xy);
+      float open = 0.0, wsum = 0.0, w = 1.0;
+      for (int i = 0; i < 48; i++) {
+        if (i >= uShaftN) break;
+        vec2 uv = vUv + st * (float(i) + jit);
+        float sky = (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? 0.5 : step(0.99999, texture2D(tDepth, uv).r);
+        open += sky * w; wsum += w; w *= 0.965;
+      }
+      gl_FragColor = vec4(open / max(wsum, 1e-4), 0.0, 0.0, 1.0);
+    }`);
   const compMat = mk(Object.assign({
-    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() },
+    tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 }, uTimeS: U.uTime, uExpo: { value: 1 },
+    tShaft: { value: null }, uShaftK: { value: 0 },
   }, cam, Sky.uniforms), Sky.glsl + Sky.glslFx + CAMGLSL + /* glsl */`
-    uniform sampler2D tScene, tDepth, tAO, tFog; uniform float uUseAO; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
+    uniform sampler2D tScene, tDepth, tAO, tFog, tShaft; uniform float uUseAO, uShowAO, uExpo, uShaftK; uniform vec2 uAOHalf, uFogTexel; varying vec2 vUv;
+    #ifdef BL_SSR
+    uniform float uTimeS;
+    float ssrH(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    float ssrN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(ssrH(i), ssrH(i + vec2(1, 0)), f.x), mix(ssrH(i + vec2(0, 1)), ssrH(i + vec2(1, 1)), f.x), f.y); }
+    // screen-space reflection of a view-space ray from P along R: the reflected colour and how sure we are (0 = no hit)
+    vec4 ssrTrace(vec3 P, vec3 R) {
+      float t = 1.0 + 0.006 * -P.z, tPrev = 0.0;                     // ~40 geometric steps reach ~4.5 km
+      for (int k = 0; k < 40; k++) {
+        vec3 X = P + R * t;
+        if (X.z > -0.2) break;
+        vec2 uv = (X.xy / -X.z) / uTanHalf * 0.5 + 0.5;
+        if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) break;
+        float ds = texture2D(tDepth, uv).r; float sd = depthW(ds), rz = -X.z;
+        if (ds < 0.99999 && rz > sd && rz - sd < max(1.5, 0.06 * sd) + t * 0.03) {
+          float a = tPrev, b = t;                                   // refine: binary search between the last two steps
+          for (int j = 0; j < 5; j++) { float m = 0.5 * (a + b); vec3 Y = P + R * m; vec2 u2 = (Y.xy / -Y.z) / uTanHalf * 0.5 + 0.5;
+            if (-Y.z > depthW(texture2D(tDepth, u2).r)) b = m; else a = m; }
+          vec3 Y = P + R * b; vec2 uh = (Y.xy / -Y.z) / uTanHalf * 0.5 + 0.5;
+          vec2 e = min(uh, 1.0 - uh); float edge = smoothstep(0.0, 0.08, min(e.x, e.y));
+          return vec4(texture2D(tScene, uh).rgb, edge * (1.0 - smoothstep(0.7, 1.0, float(k) / 40.0)));
+        }
+        tPrev = t; t = t * 1.2 + 0.4;
+      }
+      return vec4(0.0);
+    }
+    #endif
     float aoUp(vec2 uv, float d) {       // joint bilateral upsample of the half-res AO (depth stored in .g)
       vec2 hp = uv / uAOHalf - 0.5; vec2 f = fract(hp); vec2 b = (floor(hp) + 0.5) * uAOHalf;
       float w0 = depthW(d); float s = 0.0, ws = 0.0;
@@ -177,19 +255,46 @@ const Post = (() => {
       return ws > 0.0 ? s / ws : 1.0;
     }
     void main() {
-      vec3 col = texture2D(tScene, vUv).rgb;
+      vec4 sc = texture2D(tScene, vUv); vec3 col = sc.rgb;   // alpha 0 = thin geometry (leaves, grass blades)
       float d = texture2D(tDepth, vUv).r; bool sky = d >= 0.99999;
       vec3 vr = viewRay(vUv); float tS = sky ? 1e9 : depthW(d) * length(vr);
       vec3 rd = normalize(mat3(uCamWorld) * vr), ro = uCamPos;
       float mu = dot(rd, uSkySunDir);
       if (!sky) {
-        if (uUseAO > 0.5) col *= aoUp(vUv, d);
+        if (uShowAO > 0.5) { gl_FragColor = vec4(vec3(uUseAO > 0.5 ? aoUp(vUv, d) : 1.0) * 0.18, 1.0); return; }   // (QA: Post.debug.showAO)
+        // AO occludes sky and bounce light, not the sun: bright, directly lit pixels keep most of their light
+        // (and thin cards would pile up far too much of it on each other)
+        if (uUseAO > 0.5) { float ao = aoUp(vUv, d), lx = dot(col, vec3(0.2126, 0.7152, 0.0722)) * uExpo;
+          ao = mix(ao, 1.0, (1.0 - clamp(sc.a, 0.0, 1.0)) * 0.75);
+          col *= mix(ao, 1.0, 0.65 * smoothstep(0.08, 0.5, lx)); }
         vec3 wp = ro + rd * tS;
+        #ifdef BL_SSR
+        // open water sits at sea level (the terrain draws it at y = 0): a pixel within ~0.4 m of it, seen from above,
+        // reflects what the depth buffer holds along its mirrored ray, broken up by the wind's ripples (Ultra+)
+        { float yU = blUnbentY(wp, ro);
+          if (abs(yU) < 0.4 && rd.y < -0.004 && tS < 30000.0) {
+            vec2 wq = wp.xz * 0.045 + vec2(uTimeS * 0.08, uTimeS * 0.05);
+            vec3 nW = normalize(vec3((ssrN(wq) - 0.5) * 0.09 + (ssrN(wq * 3.7 + 9.1) - 0.5) * 0.05, 1.0, (ssrN(wq + 5.3) - 0.5) * 0.09 + (ssrN(wq * 3.3 + 2.7) - 0.5) * 0.05));
+            vec3 R = reflect(rd, nW); R.y = max(R.y, 0.002);
+            vec3 Pv = viewRay(vUv) * depthW(d), Rv = normalize(transpose(mat3(uCamWorld)) * R);
+            vec4 h = ssrTrace(Pv, Rv);
+            float F = 0.02 + 0.98 * pow(1.0 - clamp(-rd.y, 0.0, 1.0), 5.0);
+            col = mix(col, h.rgb * 0.94, clamp(F, 0.0, 0.9) * h.a);
+          } }
+        #endif
         if (uSkySunDir.y > 0.02 && uCloudCover > 0.01) {       // moving cloud shadows on the land
           vec3 cp = wp + uSkySunDir * ((uCloudBase + 250.0 - wp.y) / uSkySunDir.y);
           col *= 1.0 - 0.55 * skyCloudDens(cp.xz) * smoothstep(0.02, 0.2, uSkySunDir.y);
         }
         vec3 T; vec3 ins = skyAerial(ro.y, rd, tS, T); col = col * T + ins;
+      }
+      // light shafts: in front of a surface, the haze scatters sunlight toward the eye where the way to the sun is open (lit
+      // beams between the shadows of trunks, crowns, towers); the sky itself already holds that light, so there only the
+      // shadowed part is taken out (dark beams behind a crown against the glare)
+      if (uShaftK > 0.0) {
+        float sh = texture2D(tShaft, vUv).r, ph = skyPhaseHG(mu, 0.85);
+        if (sky) col = max(col - uSkySunColor * ph * (1.0 - sh) * uShaftK * 0.35, col * 0.55);
+        else col += uSkySunColor * ph * sh * (1.0 - exp(-tS * 0.03)) * uShaftK;
       }
       // cumulus deck: three slices through the 1.6-2.3 km layer (domed tops, darker bases, silver lining)
       bool above = ro.y > uCloudBase + 500.0; vec4 cl = vec4(0.0);
@@ -226,13 +331,41 @@ const Post = (() => {
       col = max(col, vec3(0.0));
       gl_FragColor = vec4(min(col, vec3(60000.0)), 1.0);
     }`);
-  // bloom
-  const brightMat = mk({ tSrc: { value: null }, uThreshold: { value: 1.0 }, uExposure: { value: 1 }, uTexel: { value: new THREE.Vector2() } }, /* glsl */`
-    uniform sampler2D tSrc; uniform float uThreshold, uExposure; uniform vec2 uTexel; varying vec2 vUv;
-    vec3 fetch(vec2 o) { vec3 c = texture2D(tSrc, vUv + o * uTexel).rgb; if (any(isnan(c))) c = vec3(0.0); return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure * 0.25); }   // Karis-style firefly tamer
+  // eye adaptation: the frame's centre-weighted log-average luminance (with the time-of-day exposure applied) from a
+  // jittered 16x9 grid of the HDR frame, eased toward over ~1 s. A scene darker than a sunlit street (a meadow in the
+  // shade of oaks, the line under a canopy) is lifted by up to ~1.1 EV (less at night); only one over twice as bright
+  // is pulled down, gently. The factor (.g of the 1x1 target) scales the exposure of the bloom and final passes.
+  const lumMat = mk({ tSrc: { value: null }, uExpo: { value: 1 }, uJit: { value: new THREE.Vector2() } }, /* glsl */`
+    uniform sampler2D tSrc; uniform float uExpo; uniform vec2 uJit; varying vec2 vUv;
     void main() {
+      float s = 0.0, ws = 0.0;
+      for (int j = 0; j < 9; j++) for (int i = 0; i < 16; i++) {
+        vec2 p = (vec2(float(i), float(j)) + uJit) / vec2(16.0, 9.0);
+        vec3 c = texture2D(tSrc, p).rgb;
+        float l = clamp(dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExpo, 1e-4, 64.0);
+        vec2 q = (p - vec2(0.5, 0.56)) * vec2(1.0, 1.5); float w = exp(-dot(q, q) * 4.0);
+        s += log2(l) * w; ws += w;
+      }
+      gl_FragColor = vec4(s / ws, 0.0, 0.0, 1.0);
+    }`);
+  const adaptMat = mk({ tCur: { value: null }, tPrev: { value: null }, uK: { value: 1 }, uKey: { value: 0.1 }, uMaxB: { value: 2.1 }, uOn: { value: 1 } }, /* glsl */`
+    uniform sampler2D tCur, tPrev; uniform float uK, uKey, uMaxB, uOn; varying vec2 vUv;
+    void main() {
+      float a = mix(texture2D(tPrev, vec2(0.5)).r, texture2D(tCur, vec2(0.5)).r, uK);
+      if (!(abs(a) < 30.0)) a = log2(uKey);                              // NaN / first-frame guard
+      float f = uKey / exp2(a);
+      f = f >= 1.0 ? min(pow(f, 0.72), uMaxB) : clamp(f * 2.2, 0.85, 1.0);
+      gl_FragColor = vec4(a, mix(1.0, f, uOn), 0.0, 1.0);
+    }`);
+  // bloom
+  const brightMat = mk({ tSrc: { value: null }, tAE: { value: null }, uThreshold: { value: 1.0 }, uExposure: { value: 1 }, uTexel: { value: new THREE.Vector2() } }, /* glsl */`
+    uniform sampler2D tSrc, tAE; uniform float uThreshold, uExposure; uniform vec2 uTexel; varying vec2 vUv;
+    float ex;
+    vec3 fetch(vec2 o) { vec3 c = texture2D(tSrc, vUv + o * uTexel).rgb; if (any(isnan(c))) c = vec3(0.0); return c / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * ex * 0.25); }   // Karis-style firefly tamer
+    void main() {
+      ex = uExposure * texture2D(tAE, vec2(0.5)).g;
       vec3 c = 0.25 * (fetch(vec2(-1.0, -1.0)) + fetch(vec2(1.0, -1.0)) + fetch(vec2(-1.0, 1.0)) + fetch(vec2(1.0, 1.0)));
-      float l = dot(c, vec3(0.2126, 0.7152, 0.0722)) * uExposure; float knee = uThreshold * 0.5;
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722)) * ex; float knee = uThreshold * 0.5;
       float soft = clamp(l - uThreshold + knee, 0.0, 2.0 * knee); soft = soft * soft / (4.0 * knee + 1e-4);
       gl_FragColor = vec4(c * max(soft, l - uThreshold) / max(l, 1e-4), 1.0);
     }`);
@@ -253,10 +386,10 @@ const Post = (() => {
       gl_FragColor = vec4(r / 16.0 * uMix + texture2D(tAdd, vUv).rgb, 1.0);
     }`);
   const finalMat = mk({
-    tHDR: { value: null }, tBloom: { value: null }, uExposure: { value: 1 }, uBloom: { value: 0.06 }, uTime: U.uTime, uGrain: { value: 0.016 }, uVignette: { value: 0.22 },
+    tHDR: { value: null }, tBloom: { value: null }, tAE: { value: null }, uExposure: { value: 1 }, uBloom: { value: 0.06 }, uTime: U.uTime, uGrain: { value: 0.016 }, uVignette: { value: 0.22 },
     uTint: { value: new THREE.Vector3(1, 1, 1) }, uGrade: { value: 1 }, uSat: { value: 1.06 }, uNight: U.uNight,
   }, /* glsl */`
-    uniform sampler2D tHDR, tBloom; uniform float uExposure, uBloom, uTime, uGrain, uVignette, uGrade, uSat, uNight; uniform vec3 uTint; varying vec2 vUv;
+    uniform sampler2D tHDR, tBloom, tAE; uniform float uExposure, uBloom, uTime, uGrain, uVignette, uGrade, uSat, uNight; uniform vec3 uTint; varying vec2 vUv;
     vec3 RRTAndODTFit(vec3 v) { vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
     vec3 aces(vec3 c) {
       const mat3 I = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
@@ -267,7 +400,7 @@ const Post = (() => {
     float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
     void main() {
       vec3 c = texture2D(tHDR, vUv).rgb + texture2D(tBloom, vUv).rgb * uBloom;
-      c = aces(c * uTint * uExposure);
+      c = aces(c * uTint * uExposure * texture2D(tAE, vec2(0.5)).g);
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
       c = max(mix(vec3(l), c, uSat), 0.0);
       // split toning: cool shadows, warm highlights (night: deeper blue shadows)
@@ -297,6 +430,14 @@ const Post = (() => {
 
   // ---------------------------------------------------------------- frame
   let failed = false;
+  const AE_KEY = 0.1;         // the metered log-average a sunlit street view gives (eye adaptation leaves it alone)
+  const SHAFT_K = 0.6, _sv = new THREE.Vector3();
+  // QA: the adapted state { lum (metered log-average), f (exposure factor) }; reads back a 1x1 target (stalls: debug only)
+  function aeRead() {
+    if (!rtAE[0]) return null; const b = new Uint16Array(4), rt = rtAE[frame & 1];
+    const h2f = (x) => { const e = (x >> 10) & 31, m = x & 1023, sg = x & 0x8000 ? -1 : 1; return e === 0 ? sg * Math.pow(2, -14) * m / 1024 : e === 31 ? NaN : sg * Math.pow(2, e - 15) * (1 + m / 1024); };
+    R.readRenderTargetPixels(rt, 0, 0, 1, 1, b); return { lum: +Math.pow(2, h2f(b[0])).toFixed(4), f: +h2f(b[1]).toFixed(3) };
+  }
   function render(dt) {
     if (!enabled || failed) { R.setRenderTarget(null); R.render(scene, camera); return; }
     try {
@@ -315,19 +456,41 @@ const Post = (() => {
       // 2. SSAO (half res) + bilateral blur
       const useAO = Q.ao > 0 && debug.ao;
       if (useAO) {
-        aoMat.uniforms.tDepth.value = depth; aoMat.uniforms.uSamples.value = Q.ao; pass(aoMat, rtAO[0]);
+        aoMat.uniforms.tDepth.value = depth; aoMat.uniforms.uSlices.value = Q.aoSlices || 2; aoMat.uniforms.uSteps.value = Q.aoSteps || 6; pass(aoMat, rtAO[0]);
         blurMat.uniforms.tAO.value = rtAO[0].texture; blurMat.uniforms.uDir.value.set(1 / rtAO[0].width, 0); pass(blurMat, rtAO[1]);
         blurMat.uniforms.tAO.value = rtAO[1].texture; blurMat.uniforms.uDir.value.set(0, 1 / rtAO[0].height); pass(blurMat, rtAO[0]);
       }
+      // 2b. light shafts (half res), when the sun is up and on or near the screen
+      let shaftK = 0;
+      if (Q.shafts && debug.shafts && Env.sunDir.y > -0.02) {
+        _sv.copy(Env.sunDir).transformDirection(camera.matrixWorldInverse);
+        if (_sv.z < -0.05) {
+          const ux = (_sv.x / -_sv.z) / cam.uTanHalf.value.x * 0.5 + 0.5, uy = (_sv.y / -_sv.z) / cam.uTanHalf.value.y * 0.5 + 0.5;
+          const off = Math.max(0, -ux, ux - 1, -uy, uy - 1);
+          const hz = Env.state.wx ? U.clamp((Env.state.wx.haze || 2) / 2.2, 0.5, 2) : 1;
+          shaftK = SHAFT_K * (1 - U.smooth(0.2, 1.0, off)) * U.smooth(-0.02, 0.08, Env.sunDir.y) * hz * (1 - 0.6 * U.uNight.value);
+          if (shaftK > 1e-4) { shaftMat.uniforms.tDepth.value = depth; shaftMat.uniforms.uSunUv.value.set(ux, uy); shaftMat.uniforms.uShaftN.value = Q.shafts; pass(shaftMat, rtShaft); }
+        }
+      }
+      compMat.uniforms.tShaft.value = rtShaft.texture; compMat.uniforms.uShaftK.value = shaftK > 1e-4 ? shaftK : 0; stats.shaftK = +shaftK.toFixed(4);
       // 3. marine layer raymarch (half res)
       fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; pass(fogMat, rtFog);
       // 4. composite -> HDR
       compMat.uniforms.tScene.value = rtScene.texture; compMat.uniforms.tDepth.value = depth; compMat.uniforms.tAO.value = rtAO[0].texture;
-      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
+      compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uShowAO.value = debug.showAO ? 1 : 0;
+      compMat.uniforms.uExpo.value = Env.state.exposure || 1; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
       pass(compMat, rtHDR);
-      // 5. bloom
-      const exposure = Env.state.exposure || 1, night = U.uNight.value;
-      brightMat.uniforms.tSrc.value = rtHDR.texture; brightMat.uniforms.uExposure.value = exposure; brightMat.uniforms.uTexel.value.set(1 / W, 1 / H);
+      const exposure = (Env.state.exposure || 1) * debug.expo, night = U.uNight.value;
+      // 5. eye adaptation (two 1x1 passes)
+      lumMat.uniforms.tSrc.value = rtHDR.texture; lumMat.uniforms.uExpo.value = exposure;
+      lumMat.uniforms.uJit.value.set((frame * 0.618034) % 1, (frame * 0.754878) % 1); pass(lumMat, rtLum);
+      const ai = frame & 1, au = adaptMat.uniforms;
+      au.tCur.value = rtLum.texture; au.tPrev.value = rtAE[1 - ai].texture; au.uOn.value = debug.ae ? 1 : 0;
+      au.uK.value = aeSnap ? 1 : 1 - Math.exp(-Math.max(0, Math.min(dt || 0, 0.5)) / 0.9); aeSnap = false;
+      au.uKey.value = debug.aeKey || AE_KEY; au.uMaxB.value = U.lerp(2.1, 1.3, night);
+      pass(adaptMat, rtAE[ai]); const tAE = rtAE[ai].texture;
+      // 6. bloom
+      brightMat.uniforms.tSrc.value = rtHDR.texture; brightMat.uniforms.tAE.value = tAE; brightMat.uniforms.uExposure.value = exposure; brightMat.uniforms.uTexel.value.set(1 / W, 1 / H);
       brightMat.uniforms.uThreshold.value = U.lerp(1.15, 0.8, night); pass(brightMat, down[0]);
       for (let i = 1; i < down.length; i++) { downMat.uniforms.tSrc.value = down[i - 1].texture; downMat.uniforms.uTexel.value.set(1 / down[i - 1].width, 1 / down[i - 1].height); pass(downMat, down[i]); }
       for (let i = up.length - 1; i >= 0; i--) {
@@ -335,9 +498,9 @@ const Post = (() => {
         upMat.uniforms.tSrc.value = src.texture; upMat.uniforms.tAdd.value = down[i].texture; upMat.uniforms.uTexel.value.set(1 / src.width, 1 / src.height);
         pass(upMat, up[i]);
       }
-      // 6. tone map + grade -> screen (or LDR for FXAA)
+      // 7. tone map + grade -> screen (or LDR for FXAA)
       const fu = finalMat.uniforms;
-      fu.tHDR.value = rtHDR.texture; fu.tBloom.value = (up[0] || down[0]).texture; fu.uExposure.value = exposure;
+      fu.tHDR.value = rtHDR.texture; fu.tAE.value = tAE; fu.tBloom.value = (up[0] || down[0]).texture; fu.uExposure.value = exposure;
       fu.uBloom.value = U.lerp(0.045, 0.11, night) / Math.max(1, down.length - 2); fu.uGrain.value = Q.grain;
       const eDeg = Env.state.sunEl / U.DEG, golden = U.smooth(22, 4, eDeg) * (1 - U.smooth(1, -6, eDeg));
       fu.uTint.value.set(1 + 0.03 * golden, 1, 1 - 0.035 * golden);
@@ -364,11 +527,12 @@ const Post = (() => {
   }
   function setQuality(q) {
     if (!QUALITY[q]) return; quality = q; Q = QUALITY[q]; W = H = 0;       // rebuild targets next frame
+    const ssr = !!Q.ssr; if (!!compMat.defines.BL_SSR !== ssr) { if (ssr) compMat.defines.BL_SSR = 1; else delete compMat.defines.BL_SSR; compMat.needsUpdate = true; }
     const s = Env.sun.shadow; if (s.mapSize.x !== Q.shadow) { s.mapSize.set(Q.shadow, Q.shadow); if (s.map) { s.map.dispose(); s.map = null; } }
   }
   setQuality('high');
   return {
-    render, setQuality, stats, debug, profile, rebuild() { W = H = 0; },
+    render, setQuality, stats, debug, profile, aeRead, rebuild() { W = H = 0; },
     get quality() { return quality; },
     get enabled() { return enabled && !failed; }, set enabled(v) { enabled = !!v; if (!enabled) R.info.autoReset = true; },
     get targets() { return { rtScene, rtHDR, rtFog, rtAO }; },

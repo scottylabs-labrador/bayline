@@ -60,43 +60,66 @@ const Flora = (() => {
     } else { g.bezierCurveTo(L * 0.2, W * 1.05, L * 0.75, W * 0.95, L, 0); g.bezierCurveTo(L * 0.75, -W * 0.95, L * 0.2, -W * 1.05, 0, 0); }
     g.closePath();
   }
-  function drawLeaf(g, x, y, ang, L, W, c, shape, r, gloss = 0.25) {
+  // normal-atlas colour for a canvas-space normal (x right, y down): stored as texture-space xyz * 0.5 + 0.5 (v up)
+  const nrmCol = (nx, ny, nz) => { const l = Math.hypot(nx, ny, nz) || 1; return col((nx / l * 0.5 + 0.5) * 255, (-ny / l * 0.5 + 0.5) * 255, (nz / l * 0.5 + 0.5) * 255); };
+  const FLAT_N = 'rgb(128,128,255)';
+  // gN: the normal atlas (same blade: a random tilt plus a fold along the midrib); shade: darker deeper in the cluster
+  function drawLeaf(g, x, y, ang, L, W, c, shape, r, gloss = 0.25, gN = null, shade = 1) {
+    const under = r() < 0.12;                                                 // a few show their paler underside
+    const bc = under ? [c[0] * 1.18 + 20, c[1] * 1.12 + 20, c[2] * 1.1 + 16] : c;
+    const hi = jitterColor(bc, r, 0.1, gloss).map(v => v * shade), lo = jitterColor(bc, r, 0.1, -0.24).map(v => v * shade);
     g.save(); g.translate(x, y); g.rotate(ang);
     leafPath(g, L, W, shape);
-    const gr = g.createLinearGradient(0, -W, 0, W);
-    const hi = jitterColor(c, r, 0.1, gloss), lo = jitterColor(c, r, 0.1, -0.22);
-    gr.addColorStop(0, col(...hi)); gr.addColorStop(1, col(...lo));
+    const gr = g.createLinearGradient(0, -W, 0, W);                            // the two halves either side of the midrib
+    gr.addColorStop(0, col(...hi)); gr.addColorStop(0.48, col(...hi.map((v, i) => lerp(v, lo[i], 0.3)))); gr.addColorStop(0.52, col(...lo)); gr.addColorStop(1, col(...lo.map(v => v * 0.86)));
     g.fillStyle = gr; g.fill();
-    if (L > 10) { g.strokeStyle = col(...jitterColor(c, r, 0.1, 0.3), 0.55); g.lineWidth = Math.max(0.6, W * 0.08); g.beginPath(); g.moveTo(L * 0.05, 0); g.lineTo(L * 0.9, 0); g.stroke(); }
+    if (L > 10) { g.strokeStyle = col(...jitterColor(bc, r, 0.1, 0.3).map(v => v * shade), 0.55); g.lineWidth = Math.max(0.6, W * 0.08); g.beginPath(); g.moveTo(L * 0.05, 0); g.lineTo(L * 0.9, 0); g.stroke(); }
     g.restore();
+    if (gN) {
+      const tx = (r() - 0.5) * 1.0, ty = (r() - 0.5) * 1.0, fold = 0.3 + r() * 0.3, ca = Math.cos(ang), sa = Math.sin(ang);
+      const enc = (lx, ly) => nrmCol(lx * ca - ly * sa, lx * sa + ly * ca, 1);   // blade-local tilt -> canvas space
+      gN.save(); gN.translate(x, y); gN.rotate(ang); leafPath(gN, L, W, shape);
+      const gn = gN.createLinearGradient(0, -W, 0, W);
+      gn.addColorStop(0, enc(tx, ty - fold)); gn.addColorStop(0.5, enc(tx, ty)); gn.addColorStop(1, enc(tx, ty + fold));
+      gN.fillStyle = gn; gN.fill(); gN.restore();
+    }
   }
   // a dense spray of leaves on twigs radiating from the bottom centre of the region. Nothing crosses the circle of
   // radius 0.46*S around the region centre, so cards never show a straight cut edge.
-  function paintCluster(g, x0, y0, o, seed) {
+  function paintCluster(g, x0, y0, o, seed, gN) {
     const r = rng(seed); const S = RS, cx = x0 + S / 2, cy = y0 + S * 0.93, mx = x0 + S / 2, my = y0 + S / 2, R = S * 0.46;
-    const inside = (x, y, pad) => Math.hypot(x - mx, y - my) < R - pad;
-    const leaf = (x, y, a, L, W, c) => { const tx = x + Math.cos(a) * L, ty = y + Math.sin(a) * L; if (!inside(x, y, 2) || !inside(tx, ty, 2)) return; drawLeaf(g, x, y, a, L, W, c, o.shape, r, o.gloss); };
+    // a lobed outline (still inside the circle of radius R, which the octagon cards keep) and leaves thinning toward it:
+    // a card seen on its own against the sky reads as a ragged spray, not a disc
+    const k1 = 3 + Math.floor(r() * 3), p1 = r() * TAU, p2 = r() * TAU;
+    const rim = (a) => R * (0.74 + 0.18 * Math.sin(a * k1 + p1) + 0.08 * Math.sin(a * (k1 * 2 + 1) + p2));
+    const inside = (x, y, pad) => Math.hypot(x - mx, y - my) < rim(Math.atan2(y - my, x - mx)) - pad;
+    // leaves are queued with a depth and drawn back to front: the ones behind are darker (the cluster shades itself)
+    const queue = [];
+    const leaf = (x, y, a, L, W, c, dep) => { const tx = x + Math.cos(a) * L, ty = y + Math.sin(a) * L; if (!inside(x, y, 2) || !inside(tx, ty, 2)) return; queue.push([x, y, a, L, W, c, dep]); };
     const twigs = o.twigs || 7;
     for (let t = 0; t < twigs; t++) {
       const a = -Math.PI / 2 + (t / (twigs - 1) - 0.5) * (o.spread || 2.3) + (r() - 0.5) * 0.25;
       const len = S * lerp(0.5, 0.72, r());
       const pts = []; let px = cx + (r() - 0.5) * 24, py = cy, aa = a;
       for (let i = 0; i <= 10; i++) { pts.push([px, py]); aa += (r() - 0.5) * 0.18 + (o.droop || 0) * 0.04; px += Math.cos(aa) * len / 10; py += Math.sin(aa) * len / 10; }
-      g.strokeStyle = col(...o.twig); g.lineCap = 'round';
-      for (let i = 0; i < 10; i++) { if (!inside(pts[i + 1][0], pts[i + 1][1], 6)) break; g.lineWidth = lerp(o.twigW || 5, 1, i / 10); g.beginPath(); g.moveTo(...pts[i]); g.lineTo(...pts[i + 1]); g.stroke(); }
+      g.strokeStyle = col(...o.twig); g.lineCap = 'round'; if (gN) { gN.strokeStyle = FLAT_N; gN.lineCap = 'round'; }
+      for (let i = 0; i < 10; i++) { if (!inside(pts[i + 1][0], pts[i + 1][1], 6)) break; g.lineWidth = lerp(o.twigW || 5, 1, i / 10); g.beginPath(); g.moveTo(...pts[i]); g.lineTo(...pts[i + 1]); g.stroke();
+        if (gN) { gN.lineWidth = g.lineWidth; gN.beginPath(); gN.moveTo(...pts[i]); gN.lineTo(...pts[i + 1]); gN.stroke(); } }
       const n = o.perTwig || 18;
       for (let k = 0; k < n; k++) {
         const u = Math.pow(r(), 0.7) * 0.95 + 0.05; const i = Math.min(9, Math.floor(u * 10)); const f = u * 10 - i;
         const x = lerp(pts[i][0], pts[i + 1][0], f), y = lerp(pts[i][1], pts[i + 1][1], f);
         const side = k % 2 ? 1 : -1; const la = aa + side * lerp(0.5, 1.2, r()) + (o.leafDroop || 0) * (r() * 0.8 + 0.4);
-        leaf(x, y, la, o.leafL * lerp(0.75, 1.2, r()), o.leafW * lerp(0.8, 1.2, r()), o.palette[Math.floor(r() * o.palette.length)]);
+        leaf(x, y, la, o.leafL * lerp(0.75, 1.2, r()), o.leafW * lerp(0.8, 1.2, r()), o.palette[Math.floor(r() * o.palette.length)], 0.3 + 0.7 * r());
       }
     }
     // fill the body so the cluster reads as a foliage mass, densest in the middle, ragged toward the rim
     for (let k = 0; k < (o.fill || 60); k++) {
-      const a = r() * TAU, d = Math.pow(r(), 0.8) * R * 0.92;
-      leaf(mx + Math.cos(a) * d, my + Math.sin(a) * d, r() * TAU, o.leafL * lerp(0.7, 1.1, r()), o.leafW * lerp(0.8, 1.2, r()), o.palette[Math.floor(r() * o.palette.length)]);
+      const a = r() * TAU, d = Math.pow(r(), 1.15) * rim(a) * 0.96;
+      leaf(mx + Math.cos(a) * d, my + Math.sin(a) * d, r() * TAU, o.leafL * lerp(0.7, 1.1, r()), o.leafW * lerp(0.8, 1.2, r()), o.palette[Math.floor(r() * o.palette.length)], r());
     }
+    queue.sort((a, b) => a[6] - b[6]);
+    for (const [x, y, a, L, W, c, dep] of queue) drawLeaf(g, x, y, a, L, W, c, o.shape, r, o.gloss, gN, lerp(0.58, 1.1, dep) * lerp(1.06, 0.92, (y - y0) / S));
   }
   function paintRedwood(g, x0, y0, seed) {   // fern-like flat sprays: branchlets with alternate twigs, each twig two rows of short flat needles
     const r = rng(seed); const S = RS; g.save(); g.beginPath(); g.rect(x0 + 4, y0 + 4, S - 8, S - 8); g.clip();
@@ -242,58 +265,97 @@ const Flora = (() => {
     g.putImageData(img, x0, y0);
   }
   function hash2(x, y, s) { let h = (x * 374761393 + y * 668265263 + s * 144665) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
-  // spread leaf colours into transparent pixels (alpha stays 0) so filtering never pulls in black fringes
-  function dilate(g, x0, y0, passes) {
-    const S = RS, img = g.getImageData(x0, y0, S, S), d = img.data; const A = new Uint8Array(S * S);
-    for (let i = 0; i < S * S; i++) A[i] = d[i * 4 + 3] > 8 ? 1 : 0;
-    for (let p = 0; p < passes; p++) {
-      const next = A.slice();
-      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
-        const i = y * S + x; if (A[i]) continue;
-        let r = 0, gg = 0, b = 0, n = 0;
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= S || yy >= S) continue; const j = yy * S + xx; if (!A[j]) continue; r += d[j * 4]; gg += d[j * 4 + 1]; b += d[j * 4 + 2]; n++; }
-        if (n) { d[i * 4] = r / n; d[i * 4 + 1] = gg / n; d[i * 4 + 2] = b / n; next[i] = 1; }
+  // spread leaf colours into transparent pixels (alpha stays 0) so filtering never pulls in dark fringes: pull-push
+  // (average the covered texels down a pyramid, then fill every empty texel from the nearest coarser level), on the raw
+  // RGBA arrays of the whole atlas (width AT). A canvas keeps no colour under alpha 0, so the atlas is uploaded from
+  // these arrays. arrs: arrays to fill (same layout); mask: the alpha source
+  function fillEmpty(arrs, mask, x0, y0) {
+    const at = (x, y) => ((y0 + y) * AT + x0 + x) * 4, nA = arrs.length;
+    const levels = []; let S = RS;
+    // level 0: covered texels' values (premultiplied by coverage weight 1/0)
+    let W = new Float32Array(S * S), V = arrs.map(() => new Float32Array(S * S * 3));
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const i = y * S + x, o = at(x, y); if (mask[o + 3] > 8) { W[i] = 1; for (let k = 0; k < nA; k++) { const d = arrs[k]; V[k][i * 3] = d[o]; V[k][i * 3 + 1] = d[o + 1]; V[k][i * 3 + 2] = d[o + 2]; } } }
+    levels.push({ S, W, V });
+    while (S > 1) {
+      const S2 = S >> 1, W2 = new Float32Array(S2 * S2), V2 = arrs.map(() => new Float32Array(S2 * S2 * 3));
+      for (let y = 0; y < S2; y++) for (let x = 0; x < S2; x++) {
+        const j = y * S2 + x; let w = 0;
+        for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) { const i = (y * 2 + dy) * S + x * 2 + dx, wi = W[i]; if (!wi) continue; w += wi; for (let k = 0; k < nA; k++) { V2[k][j * 3] += V[k][i * 3]; V2[k][j * 3 + 1] += V[k][i * 3 + 1]; V2[k][j * 3 + 2] += V[k][i * 3 + 2]; } }
+        W2[j] = w;
       }
-      A.set(next);
+      S = S2; W = W2; V = V2; levels.push({ S, W, V });
     }
-    // everything still empty: the region's mean leaf colour
-    let mr = 0, mg = 0, mb = 0, mn = 0; for (let i = 0; i < S * S; i++) if (d[i * 4 + 3] > 8) { mr += d[i * 4]; mg += d[i * 4 + 1]; mb += d[i * 4 + 2]; mn++; }
-    if (mn) { mr /= mn; mg /= mn; mb /= mn; }
-    for (let i = 0; i < S * S; i++) if (!A[i]) { d[i * 4] = mr; d[i * 4 + 1] = mg; d[i * 4 + 2] = mb; }
-    for (let i = 0; i < S * S; i++) if (d[i * 4 + 3] <= 8) d[i * 4 + 3] = 0;
-    g.putImageData(img, x0, y0);
+    // push: each level's empty texels take their parent's (normalised) value; level 0 writes back into the arrays
+    for (let l = levels.length - 2; l >= 0; l--) {
+      const L = levels[l], P = levels[l + 1];
+      for (let y = 0; y < L.S; y++) for (let x = 0; x < L.S; x++) {
+        const i = y * L.S + x; if (L.W[i]) continue;
+        const pi = Math.min(y >> 1, P.S - 1) * P.S + Math.min(x >> 1, P.S - 1), pw = P.W[pi] || 1e-9;
+        for (let k = 0; k < nA; k++) { L.V[k][i * 3] = P.V[k][pi * 3] / pw; L.V[k][i * 3 + 1] = P.V[k][pi * 3 + 1] / pw; L.V[k][i * 3 + 2] = P.V[k][pi * 3 + 2] / pw; }
+        L.W[i] = 1;
+      }
+      if (l > 0) for (let i = 0; i < L.S * L.S; i++) { const w = L.W[i]; if (w > 0 && w !== 1) { for (let k = 0; k < nA; k++) { L.V[k][i * 3] /= w; L.V[k][i * 3 + 1] /= w; L.V[k][i * 3 + 2] /= w; } L.W[i] = 1; } }
+    }
+    const L0 = levels[0];
+    for (let y = 0; y < RS; y++) for (let x = 0; x < RS; x++) { const i = y * RS + x, o = at(x, y); if (mask[o + 3] > 8) continue;
+      for (let k = 0; k < nA; k++) { const d = arrs[k]; d[o] = L0.V[k][i * 3]; d[o + 1] = L0.V[k][i * 3 + 1]; d[o + 2] = L0.V[k][i * 3 + 2]; } }
   }
-  let atlasTex = null;
+  // tangent-space normals from a height field: h = alpha-blurred silhouette (rounded needles, knots, leaflets) plus
+  // luminance (bark ridges). wrap: tileable regions (barks) sample across the edges
+  function deriveNormals(c, nd, x0, y0, wrap, kA, kL) {
+    const S = RS, H = new Float32Array(S * S), at = (x, y) => ((y0 + y) * AT + x0 + x) * 4;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const o = at(x, y); H[y * S + x] = (c[o + 3] / 255) * kA + ((0.2126 * c[o] + 0.7152 * c[o + 1] + 0.0722 * c[o + 2]) / 255) * kL; }
+    const B = new Float32Array(S * S);                                        // 3x3 box blur softens the steps
+    const hv = (x, y) => { if (wrap) { x = (x + S) % S; y = (y + S) % S; } else { x = clamp(x, 0, S - 1); y = clamp(y, 0, S - 1); } return H[y * S + x]; };
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { let t = 0; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) t += hv(x + i, y + j); B[y * S + x] = t / 9; }
+    const bv = (x, y) => { if (wrap) { x = (x + S) % S; y = (y + S) % S; } else { x = clamp(x, 0, S - 1); y = clamp(y, 0, S - 1); } return B[y * S + x]; };
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const dx = (bv(x + 1, y) - bv(x - 1, y)) * 0.5, dy = (bv(x, y + 1) - bv(x, y - 1)) * 0.5;   // canvas space (y down)
+      const nx = -dx * 16, ny = dy * 16, l = Math.hypot(nx, ny, 1);                              // texture space: v = -y
+      const o = at(x, y); nd[o] = (nx / l * 0.5 + 0.5) * 255; nd[o + 1] = (ny / l * 0.5 + 0.5) * 255; nd[o + 2] = (1 / l * 0.5 + 0.5) * 255; nd[o + 3] = 255;
+    }
+  }
+  let atlasTex = null, nrmTex = null;
   function buildAtlas() {
     if (atlasTex) return atlasTex;
     const c = document.createElement('canvas'); c.width = AT; c.height = AT; const g = c.getContext('2d', { willReadFrequently: true });
     g.clearRect(0, 0, AT, AT);
+    const cn = document.createElement('canvas'); cn.width = AT; cn.height = AT; const gN = cn.getContext('2d', { willReadFrequently: true });
+    gN.fillStyle = FLAT_N; gN.fillRect(0, 0, AT, AT);
     const at = (reg) => [(reg % 4) * RS, Math.floor(reg / 4) * RS];
     // leaf clusters (September: late-summer greens, a touch of yellowing on the plane trees)
     paintCluster(g, ...at(REG.oakLeaf), { shape: 'oak', leafL: 24, leafW: 10, perTwig: 40, twigs: 9, fill: 230, spread: 2.6, twig: [78, 64, 50], twigW: 5,
-      palette: [[54, 70, 36], [62, 80, 40], [46, 62, 32], [72, 88, 46], [58, 72, 34]], gloss: 0.35 }, 11);
+      palette: [[54, 70, 36], [62, 80, 40], [46, 62, 32], [72, 88, 46], [58, 72, 34]], gloss: 0.35 }, 11, gN);
     paintCluster(g, ...at(REG.planeLeaf), { shape: 'palmate', leafL: 44, leafW: 22, perTwig: 16, twigs: 7, fill: 60, spread: 2.4, twig: [110, 100, 76], twigW: 5,
-      palette: [[92, 116, 58], [104, 128, 62], [84, 106, 50], [120, 132, 66], [132, 128, 70]], gloss: 0.2 }, 12);
+      palette: [[92, 116, 58], [104, 128, 62], [84, 106, 50], [120, 132, 66], [132, 128, 70]], gloss: 0.2 }, 12, gN);
     paintCluster(g, ...at(REG.streetLeaf), { shape: 'oval', leafL: 32, leafW: 14, perTwig: 26, twigs: 9, fill: 110, spread: 2.6, twig: [96, 82, 64], twigW: 4,
-      palette: [[98, 128, 62], [110, 140, 68], [88, 116, 54], [120, 146, 74]], gloss: 0.25 }, 13);
+      palette: [[98, 128, 62], [110, 140, 68], [88, 116, 54], [120, 146, 74]], gloss: 0.25 }, 13, gN);
     paintCluster(g, ...at(REG.eucLeaf), { shape: 'lance', leafL: 78, leafW: 11, perTwig: 16, twigs: 7, fill: 36, spread: 1.6, droop: 1, leafDroop: 1.0, twig: [150, 110, 80], twigW: 3,
-      palette: [[112, 128, 106], [124, 138, 112], [98, 114, 92], [136, 146, 118], [104, 118, 86]], gloss: 0.3 }, 14);
+      palette: [[112, 128, 106], [124, 138, 112], [98, 114, 92], [136, 146, 118], [104, 118, 86]], gloss: 0.3 }, 14, gN);
     paintRedwood(g, ...at(REG.redwoodSpray), 15);
     paintPine(g, ...at(REG.pineTuft), 16);
     paintCypress(g, ...at(REG.cypressClump), 17);
     paintFrond(g, ...at(REG.palmFrond), 18, false);
     paintFan(g, ...at(REG.fanLeaf), 19);
     paintFrond(g, ...at(REG.deadFrond), 20, true);
-    for (const reg of [REG.oakLeaf, REG.planeLeaf, REG.streetLeaf, REG.eucLeaf, REG.redwoodSpray, REG.pineTuft, REG.cypressClump, REG.palmFrond, REG.fanLeaf, REG.deadFrond]) dilate(g, ...at(reg), 10);
     paintBark(g, ...at(REG.barkOak), 21, 'barkOak');
     paintBark(g, ...at(REG.barkRedwood), 22, 'barkRedwood');
     paintBark(g, ...at(REG.barkEuc), 23, 'barkEuc');
     paintBark(g, ...at(REG.barkPlane), 24, 'barkPlane');
     paintBark(g, ...at(REG.barkPalm), 25, 'barkPalm');
     paintBark(g, ...at(REG.barkPine), 26, 'barkPine');
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-    t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.premultiplyAlpha = false;
-    t.userData.canvas = c;
+    const cd = g.getImageData(0, 0, AT, AT).data, nd = gN.getImageData(0, 0, AT, AT).data;
+    // conifers and palms: normals from their rounded silhouettes; barks: from their ridges (tileable)
+    for (const reg of [REG.redwoodSpray, REG.pineTuft, REG.cypressClump, REG.palmFrond, REG.fanLeaf, REG.deadFrond]) deriveNormals(cd, nd, ...at(reg), false, 0.3, 0.3);
+    for (const reg of [REG.barkOak, REG.barkRedwood, REG.barkEuc, REG.barkPlane, REG.barkPalm, REG.barkPine]) deriveNormals(cd, nd, ...at(reg), true, 0, 1.0);
+    for (const reg of [REG.oakLeaf, REG.planeLeaf, REG.streetLeaf, REG.eucLeaf, REG.redwoodSpray, REG.pineTuft, REG.cypressClump, REG.palmFrond, REG.fanLeaf, REG.deadFrond]) {
+      fillEmpty([cd, nd], cd, ...at(reg));
+      for (let y = 0; y < RS; y++) for (let x = 0; x < RS; x++) { const o = ((at(reg)[1] + y) * AT + at(reg)[0] + x) * 4; if (cd[o + 3] <= 8) cd[o + 3] = 0; }
+    }
+    const mk = (data, srgb) => { const t = new THREE.DataTexture(new Uint8Array(data.buffer), AT, AT, THREE.RGBAFormat, THREE.UnsignedByteType);
+      t.flipY = true; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+      t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true; return t; };
+    const t = mk(cd, true); nrmTex = mk(nd, false);   // (the canvases go: the arrays are the textures' images)
     atlasTex = t; return t;
   }
 
@@ -302,7 +364,7 @@ const Flora = (() => {
   // Attributes: position, normal, uv (region-local, bark tiles), aReg (atlas rect), color (AO + variation),
   // aFol (x = wind flex 0 base..1 tips, y = 1 for leaves / 0 for bark)
   // ==========================================================================================
-  const _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3(), _n = new V3(), _t = new V3(), _o = new V3();
+  const _a = new V3(), _b = new V3(), _c = new V3(), _d = new V3(), _n = new V3(), _t = new V3(), _o = new V3(), _k = new V3(), _kc = new V3();
   const QUAD = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   const OCT = Array.from({ length: 8 }, (_, i) => { const a = (i + 0.5) / 8 * TAU, R = 0.92 / Math.cos(Math.PI / 8); return [clamp(Math.cos(a) * R, -1, 1), clamp(Math.sin(a) * R, -1, 1)]; });
   const OCT_REGS = new Set([REG.oakLeaf, REG.planeLeaf, REG.streetLeaf, REG.eucLeaf, REG.pineTuft, REG.cypressClump]);
@@ -353,11 +415,17 @@ const Flora = (() => {
       const oct = OCT_REGS.has(regIdx);
       const corners = oct ? OCT : QUAD;
       const cb = opts.crownBlend !== undefined ? opts.crownBlend : 0.78;
+      // shell cards know their clump: lighting normals bend around the clump as well as the crown, and the clump's
+      // inner side is darker, so a crown reads as lit and shaded clusters instead of one smooth ball
+      const cl = opts.clump;
+      if (cl) _kc.set((cl.x - cx) / (this.crown[3] * this.crown[3]), (cl.y - cy) / (this.crown[4] * this.crown[4]), (cl.z - cz) / (this.crown[5] * this.crown[5])).normalize();
       for (const [sr, su] of corners) {
         _a.copy(center).addScaledVector(r, sr).addScaledVector(u, su);
         _o.set((_a.x - cx) / (this.crown[3] * this.crown[3]), (_a.y - cy) / (this.crown[4] * this.crown[4]), (_a.z - cz) / (this.crown[5] * this.crown[5])).normalize();
+        let side = 1;
+        if (cl) { _k.subVectors(_a, cl); const kl = _k.length(); if (kl > 1e-3) { _k.multiplyScalar(1 / kl); side = 0.5 + 0.5 * _k.dot(_kc); _o.multiplyScalar(0.45).addScaledVector(_k, 0.55).normalize(); } }
         _n.copy(cn).multiplyScalar(1 - cb).addScaledVector(_o, cb).normalize();
-        const shade = this.ao(_a) * (opts.shade || 1) * cv;
+        const shade = this.ao(_a) * (opts.shade || 1) * cv * lerp(0.7, 1.0, side);
         const flex = Math.max(0.45, clamp(_a.y / this.H, 0, 1) ** 1.5);
         const uu = (sr + 1) / 2, vv = (su + 1) / 2;
         this.vert(_a, _n, lerp(0.008, 0.992, flipU ? 1 - uu : uu), lerp(0.008, 0.992, vv), reg, shade, flex, 1);
@@ -478,7 +546,7 @@ const Flora = (() => {
     for (const bp of tips) for (let k = 0; k < p.perTwig; k++) {
       const f = lerp(0.35, 1, r()); const i = Math.min(bp.length - 2, Math.floor(f * (bp.length - 1)));
       const at = bp[i].clone().lerp(bp[i + 1], r()); const out = at.clone().sub(new V3(cx, cy - ry * 0.3, cz));
-      const e = Math.hypot((at.x - cx) / rx, (at.y - cy) / ry, (at.z - cz) / rz); if (e < 0.58) continue;   // hidden deep inside the crown
+      const e = Math.hypot((at.x - cx) / rx, (at.y - cy) / ry, (at.z - cz) / rz); if (e < 0.58 || e > 1.04) continue;   // hidden deep inside / standing out of the crown
       cards.push(['att', at, out, p.leafSize * lerp(0.8, 1.2, r())]);
     }
     const nClumps = p.clumps || 12, cr = Math.min(rx, ry) * (p.clumpR || 0.34);
@@ -488,7 +556,8 @@ const Flora = (() => {
     for (let k = 0; k < Math.round(p.shell * 0.85); k++) {
       const c = clumps[k % nClumps]; const g = () => (r() + r() + r() - 1.5) * 1.15;
       const pt = new V3(c.x + g() * cr, c.y + g() * cr * 0.8, c.z + g() * cr);
-      cards.push(['shell', pt, null, p.leafSize * lerp(0.85, 1.25, r())]);
+      const e = Math.hypot((pt.x - cx) / rx, (pt.y - cy) / ry, (pt.z - cz) / rz); if (e > 1.06) pt.sub(new V3(cx, cy, cz)).multiplyScalar(1.06 / e).add(new V3(cx, cy, cz));
+      cards.push(['shell', pt, c, p.leafSize * lerp(0.85, 1.25, r())]);   // (the third slot: the clump centre)
     }
     return { B, cards, skeleton, p, r };
   }
@@ -496,7 +565,7 @@ const Flora = (() => {
     for (let i = 0; i < cards.length; i += every) {
       const [kind, at, out, size] = cards[i];
       if (kind === 'att') attachedCard(B, at, out, size * grow, p.leaf, r, { hang: p.hang, aspect: p.aspect, up: p.leafUp });
-      else shellCard(B, at, size * grow, p.leaf, r, { hang: p.hang, aspect: p.aspect, flatten: p.flatten });
+      else shellCard(B, at, size * grow, p.leaf, r, { hang: p.hang, aspect: p.aspect, flatten: p.flatten, clump: out });
     }
   }
 
@@ -668,7 +737,7 @@ const Flora = (() => {
   // alpha-sharpened leaf cutouts (stable coverage across mips), leaf translucency against the sun,
   // no back-face normal flip (leaf cards are lit by their crown normals from both sides)
   // ==========================================================================================
-  const uFol = { uFolAtlas: { value: null }, uFolTime: U.uTime, uFolWind: U.uWind, uFolNight: U.uNight, uFolFade: { value: new THREE.Vector4(0, 1e9, 0, 0) } };
+  const uFol = { uFolAtlas: { value: null }, uFolNrm: { value: null }, uFolTime: U.uTime, uFolWind: U.uWind, uFolNight: U.uNight, uFolFade: { value: new THREE.Vector4(0, 1e9, 0, 0) } };
   const FOL_VHEAD = `
     attribute vec4 aReg; attribute vec2 aFol;
     uniform float uFolTime; uniform float uFolWind;
@@ -708,12 +777,34 @@ const Flora = (() => {
       return c;
     }
   `;
+  // per-leaf tilt and fold, bark ridges: the normal atlas in the card's own tangent frame (from screen derivatives),
+  // added to the crown-blended lighting normal
+  const FOL_NRM = `
+    uniform sampler2D uFolNrm;
+    vec3 folN0;                          // the lighting normal before the per-leaf relief (translucency uses it: smoother)
+    // (only within ~60 m: beyond, the relief is below a pixel and the fetch is wasted on layers of cards)
+    vec3 folPerturb(vec3 n) {
+      folN0 = n;
+      vec2 du1 = dFdx(vFolUv), du2 = dFdy(vFolUv); vec3 dp1 = dFdx(vViewPosition), dp2 = dFdy(vViewPosition);
+      float k = 1.0 - smoothstep(35.0, 60.0, length(vViewPosition));
+      if (k <= 0.0) return n;
+      vec2 f = fract(vFolUv); vec2 uv = vFolReg.xy + f * vFolReg.zw;
+      vec3 t = textureGrad(uFolNrm, uv, du1 * vFolReg.zw, du2 * vFolReg.zw).xyz * 2.0 - 1.0;
+      vec3 N0 = normalize(cross(dp1, dp2)), p2 = cross(dp2, N0), p1 = cross(N0, dp1);
+      vec3 T = p2 * du1.x + p1 * du2.x, B = p2 * du1.y + p1 * du2.y;
+      float im = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-24));
+      return normalize(n + (T * t.x + B * t.y) * im * mix(1.3, 0.9, vFolLeaf) * k);
+    }
+  `;
   const FOL_TRANSLUCENT = `
     void RE_Direct_Foliage( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
       RE_Direct_Physical( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
-      float back = pow( saturate( dot( -geometryViewDir, directLight.direction ) ), 5.0 );
-      float thru = saturate( dot( -geometryNormal, directLight.direction ) );
-      reflectedLight.directDiffuse += directLight.color * material.diffuseColor * vFolLeaf * ( back * 0.85 + thru * 0.35 );
+      float back = pow( saturate( dot( -geometryViewDir, directLight.direction ) ), 4.0 );
+      float thru = saturate( dot( -folN0, directLight.direction ) );
+      // light through a leaf is filtered by chlorophyll: yellow-green whatever the colour of its surface (pale
+      // eucalyptus leaves glowed white against the sun)
+      vec3 tc = vec3( 0.5, 0.72, 0.14 ) * min( 0.2 + 3.5 * dot( material.diffuseColor, vec3( 0.3, 0.59, 0.11 ) ), 0.75 );
+      reflectedLight.directDiffuse += directLight.color * tc * vFolLeaf * ( back * 0.32 + thru * 0.16 );
     }
     #undef RE_Direct
     #define RE_Direct RE_Direct_Foliage
@@ -724,20 +815,25 @@ const Flora = (() => {
     vs = vs.replace('#include <common>', '#include <common>\n' + FOL_VHEAD)
       .replace('#include <uv_vertex>', '#include <uv_vertex>\n vFolReg = aReg; vFolUv = uv; vFolLeaf = aFol.y;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n folWind(transformed);');
-    fs = fs.replace('#include <common>', '#include <common>\n' + FOL_FHEAD)
+    fs = fs.replace('#include <common>', '#include <common>\n' + FOL_FHEAD + (opts.depth ? '' : FOL_NRM))
       .replace('#include <map_fragment>', opts.depth ? 'vec4 folTex = folSample(); diffuseColor *= folTex;' :
-        'vec4 folTex = folSample();\n vec3 folGN = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));\n folTex.a *= mix(1.0, smoothstep(0.07, 0.3, abs(dot(folGN, normalize(vViewPosition)))), vFolLeaf);\n diffuseColor *= folTex;');
+        'vec4 folTex = folSample();\n vec3 folGN = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));\n folTex.a *= mix(1.0, smoothstep(0.16, 0.42, abs(dot(folGN, normalize(vViewPosition)))), vFolLeaf);\n diffuseColor *= folTex;');
     if (!opts.depth) {
-      fs = fs.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0'))
+      fs = fs.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0') + '\n normal = folPerturb(normal);')
         .replace('#include <lights_physical_pars_fragment>', '#include <lights_physical_pars_fragment>\n' + FOL_TRANSLUCENT)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(0.86, 0.62, vFolLeaf);');
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(0.86, 0.62, vFolLeaf);')
+        // a thin leaf takes sky light through its back face as well: shaded foliage was near black
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n reflectedLight.indirectDiffuse *= 1.0 + 0.6 * vFolLeaf;')
+        // scene alpha 0 marks leaves (vFolLeaf) as thin for Post, which spares them most of the screen-space AO that
+        // thin cards would otherwise pile on each other; bark stays solid
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n gl_FragColor.a = 1.0 - vFolLeaf;');
     }
     sh.vertexShader = vs; sh.fragmentShader = fs;
   }
   let folMat = null, folDepth = null;
   function foliageMaterial() {
     if (folMat) return folMat;
-    uFol.uFolAtlas.value = buildAtlas();
+    uFol.uFolAtlas.value = buildAtlas(); uFol.uFolNrm.value = nrmTex;
     folMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.5, envMapIntensity: 0.55 });
     folMat.onBeforeCompile = (sh) => patchFoliage(sh);
     folMat.customProgramCacheKey = () => 'flora-fol';
@@ -822,7 +918,8 @@ const Flora = (() => {
           float lod = max(0.0, 0.5 * log2(max(dot(dFdx(vImpUv * ${IC}.0), dFdx(vImpUv * ${IC}.0)), dot(dFdy(vImpUv * ${IC}.0), dFdy(vImpUv * ${IC}.0)))));
           it.a *= 1.0 + lod * 0.3;
           vec3 tint = mix(vec3(0.86, 0.9, 0.84), vec3(1.12, 1.08, 1.0), vImpTint);
-          diffuseColor *= vec4(it.rgb * tint, it.a);`);
+          diffuseColor *= vec4(it.rgb * tint, it.a);`)
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n gl_FragColor.a = 0.0;');   // thin (see patchFoliage)
     };
     m.customProgramCacheKey = () => 'flora-far';
     uImp.uMidF.value = Array.from(MIDF);
@@ -1271,6 +1368,6 @@ const Flora = (() => {
   return {
     init, update, hasData, covers: hasData, setQuality, dispose, group, stats, KINDS, DIM, treesNear,
     get ready() { return ready; }, get quality() { return qName; }, get radii() { return { near: q.near, mid: q.mid, far: q.far, load: q.load }; },
-    _geo: { near: geoNear, mid: geoMid }, _atlas: () => atlasTex, _imp: () => impTex, _tiles: tiles, addTestTile,
+    _geo: { near: geoNear, mid: geoMid }, _atlas: () => atlasTex, _nrm: () => nrmTex, _imp: () => impTex, _tiles: tiles, addTestTile,
   };
 })();

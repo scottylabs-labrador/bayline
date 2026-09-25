@@ -99,7 +99,8 @@ const GroundCover = (() => {
         .replace('#include <map_fragment>', `#include <map_fragment>
           diffuseColor.rgb = vTuftCol * 2.6 * diffuseColor.rgb * vTuftAO;`)
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-          normal = normalize(vNormal);                          // both faces lit like the ground (no flipped, dark backs)`);
+          normal = normalize(vNormal);                          // both faces lit like the ground (no flipped, dark backs)`)
+        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n gl_FragColor.a = 0.0;');   // thin: Post spares it most of its AO
     };
     m.customProgramCacheKey = () => 'bayline-groundcover-v1';
     return m;

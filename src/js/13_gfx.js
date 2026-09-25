@@ -8,7 +8,9 @@
 //   Gfx.SHADOW_WGSL               the terrain sun-shadow kernel (the benchmark runs the real workload)
 //   Gfx.renderChips(el, current, onPick)   draw a chip row (Ultra+ disabled with the probe's reason when ineligible)
 const Gfx = (() => {
-  const LS_PREF = 'bayline.gfx', LS_PROBE = 'bayline.gfx.probe.v1', PROBE_DAYS = 30;
+  // a passed benchmark is kept 30 days; a too-slow one only a day (it may have run while something else loaded the GPU),
+  // and the Ultra+ chip stays clickable to test again. Hard failures (no WebGPU, software adapter, limits) aren't cached.
+  const LS_PREF = 'bayline.gfx', LS_PROBE = 'bayline.gfx.probe.v2', PROBE_DAYS = 30, SLOW_DAYS = 1;
   const LEVELS = ['auto', 'low', 'medium', 'high', 'ultra', 'ultraplus'];
   const LABEL = { auto: 'Auto', low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra', ultraplus: 'Ultra+' };
   // benchmark: the terrain-shadow kernel on a 512² fractal field, 160 steps, BENCH_REP dispatches per timed run, with the
@@ -124,7 +126,8 @@ const Gfx = (() => {
       const wg = webglOk(); if (wg) return done({ ok: false, reason: 'Ultra+ unavailable: ' + wg, adapter: info && info.vendor });
       if (a.limits.maxTextureDimension2D < 8192 || a.limits.maxComputeInvocationsPerWorkgroup < 64) return done({ ok: false, reason: 'Ultra+ unavailable: GPU limits too low', adapter: info && info.vendor });
       if (!opts.force) {
-        try { const c = JSON.parse(ls.get(LS_PROBE) || 'null'); if (c && c.key === key && Date.now() - c.t < PROBE_DAYS * 864e5) return done(Object.assign({}, c.res, { cached: true })); } catch (e) {}
+        try { const c = JSON.parse(ls.get(LS_PROBE) || 'null'); const days = c && c.res && c.res.ok ? PROBE_DAYS : SLOW_DAYS;
+          if (c && c.key === key && Date.now() - c.t < days * 864e5) return done(Object.assign({}, c.res, { cached: true })); } catch (e) {}
       }
       const d = await device(); if (!d) return done({ ok: false, reason: 'Ultra+ unavailable: WebGPU device could not start', adapter: info && info.vendor });
       // the page stops drawing for the ~0.3 s of the test (Gfx.benchmarking): a GPU shared with 60 fps rendering would
@@ -133,7 +136,7 @@ const Gfx = (() => {
       try { await new Promise(r => setTimeout(r, 120)); ms = await bench(d); } catch (e) { console.warn('gfx: benchmark failed', e); return done({ ok: false, reason: 'Ultra+ unavailable: benchmark failed', adapter: info && info.vendor }); }
       finally { benching = false; }
       const res = ms <= BENCH_MAX_MS ? { ok: true, reason: `GPU benchmark ${ms.toFixed(1)} ms`, ms, adapter: info && info.vendor }
-        : { ok: false, reason: `GPU too slow for Ultra+ (benchmark ${ms.toFixed(1)} ms, needs ≤ ${BENCH_MAX_MS.toFixed(1)})`, ms, adapter: info && info.vendor };
+        : { ok: false, slow: true, reason: `GPU too slow for Ultra+ (benchmark ${ms.toFixed(1)} ms, needs ≤ ${BENCH_MAX_MS.toFixed(1)})`, ms, adapter: info && info.vendor };
       ls.set(LS_PROBE, JSON.stringify({ key, t: Date.now(), res }));
       return done(res);
     })();
@@ -149,7 +152,8 @@ const Gfx = (() => {
       if (p === 'ultraplus') {
         const r = probeRes;
         const noGpu = typeof navigator === 'undefined' || !navigator.gpu;
-        if ((r && !r.ok) || noGpu) { b.disabled = true; b.title = r ? r.reason : 'Ultra+ needs WebGPU (not available in this browser)'; b.classList.add('off'); }
+        if ((r && !r.ok && !r.slow) || noGpu) { b.disabled = true; b.title = r ? r.reason : 'Ultra+ needs WebGPU (not available in this browser)'; b.classList.add('off'); }
+        else if (r && r.slow) { b.title = r.reason + ' · click to test again'; b.classList.add('off'); }
         else b.title = 'WebGPU terrain lighting, far shadows, lidar-resolution terrain, supersampling — ' + (r ? r.reason : 'runs a quick GPU test first');
       }
       b.addEventListener('click', () => onPick(p));
