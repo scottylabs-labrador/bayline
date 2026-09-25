@@ -3,7 +3,7 @@
 import { cine } from './_lib.mjs';
 const C0 = [37.6150, -122.3900];
 export default {
-  hash: '#auto&t=18:40&q=ultra&w=clear', warm: 60, frames: 240,
+  hash: '#auto&t=18:40&q=ultraplus!&w=clear', warm: 60, frames: 240,
   setup: `async () => { ${cine}; const C = __cine, c = C.ll(${C0}, 0); C.put({ x: c.x + 300, y: 120, z: c.z + 300 }, { x: c.x, y: 0, z: c.z }); document.body.classList.remove('photo'); return 1; }`,
   prime: `() => { const B = window.__bayline, T = B.Traffic, C = __cine, c = C.ll(${C0}, 0); B.Env.setClock(18 * 3600 + 40 * 60);
     const rank = { a388: 9, b744: 8, b789: 7, a320: 4, b738: 4 }; let best = null, bs = -1;

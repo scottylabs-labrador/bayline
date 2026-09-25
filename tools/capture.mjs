@@ -3,7 +3,9 @@
 // (__bayline.capture / stepFrame: a fixed time step, quality tiers frozen, an optional per-frame camera hook),
 // one image per frame. Streaming keeps loading between frames, so a scene is warmed up in real time first.
 //   node tools/capture.mjs --shot tools/trailer/shots/<name>.mjs --out <dir> [--w 1920 --h 1080 --dsf 2]
-//        [--fps 30] [--fmt jpeg|png] [--quality 94] [--settle ms] [--base http://localhost:8123/lead.html]
+//        [--fps 30] [--fmt jpeg|png] [--quality 94] [--settle ms] [--lod f] [--base http://localhost:8123/lead.html]
+// --lod: the terrain's LOD factor for the capture (lower = finer; the tiers use 3.2 for Ultra+ up to 5.6 for low):
+// offline, frame time doesn't matter, so the terrain can refine further than the game does in real time
 // A shot module exports { hash, setup?, warm?, prime?, frames, fps?, settle?, before?, cam?, css?, ui? } (setup / before / cam are page-side
 // function sources: setup runs once (may be async), before(t, dt) before each frame, cam(t, camera, dt) just
 // before each render). The UI is hidden (the scene canvas, rain on the glass and lightning stay), unless the shot sets
@@ -23,7 +25,7 @@ const PREVIEW = +opt('preview', 0);                     // --preview K: step eve
 // GPU readback, while 1.5x (2880x1620) is fine
 const W = +opt('w', 1920), H = +opt('h', 1080), DSF = PREVIEW ? 1 : Math.min(+opt('dsf', 2), shot.maxDsf || 99), FPS = +opt('fps', shot.fps || 30);
 const FMT = opt('fmt', 'jpeg'), QUAL = +opt('quality', 94), BASE = opt('base', 'http://localhost:8123/lead.html');
-const SETTLE = +opt('settle', shot.settle || 0);          // ms per frame at most: wait for streaming to catch up before each shot
+const SETTLE = +opt('settle', shot.settle || 0), LOD = +opt('lod', 0);          // ms per frame at most: wait for streaming to catch up before each shot
 mkdirSync(out, { recursive: true });
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const prof = mkdtempSync(join(tmpdir(), 'shot-'));
@@ -55,7 +57,7 @@ ws.onmessage = ev => { const m = JSON.parse(ev.data);
 // every call times out (a wedged GPU process otherwise hangs a capture forever): fail loudly so the batch can retry
 const send = (method, params = {}, ms = 120000) => new Promise((r, j) => { const i = ++id; const to = setTimeout(() => { pending.delete(i); j(new Error(`${method} timed out`)); }, ms);
   pending.set(i, (m) => { clearTimeout(to); r(m); }); ws.send(JSON.stringify({ id: i, method, params })); });
-const ev = async (code, what) => { const r = await send('Runtime.evaluate', { expression: code, awaitPromise: true, returnByValue: true });
+const ev = async (code, what, ms) => { const r = await send('Runtime.evaluate', { expression: code, awaitPromise: true, returnByValue: true }, ms);
   if (r.result?.exceptionDetails) throw new Error(`${what}: ` + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text));
   return r.result?.result?.value; };
 await send('Runtime.enable'); await send('Page.enable');
@@ -71,12 +73,13 @@ if (shot.setup) { const r = await ev(`(${shot.setup})()`, 'setup'); console.log(
 // warm up in real time: tiles, trees, buildings stream around the camera (and until the queue drains, up to 3x)
 const warm = shot.warm ?? 25;
 await ev(`new Promise(r => { const B = window.__bayline, S = B.Stream, t0 = performance.now(); const f = () => { const busy = S && S.stats ? S.stats.active + S.stats.queued : 0, el = (performance.now() - t0) / 1000;
-  if ((el > ${warm} && busy === 0) || el > ${warm * 3}) r(1); else setTimeout(f, 250); }; f(); })`, 'warm');
+  if ((el > ${warm} && busy === 0) || el > ${warm * 3}) r(1); else setTimeout(f, 250); }; f(); })`, 'warm', (warm * 3 + 60) * 1000);
 console.log(T(), 'warm');
-if (shot.prime) { const r = await ev(`(${shot.prime})()`, 'prime'); console.log(T(), 'prime', r ?? ''); }
+if (shot.prime) { const r = await ev(`(${shot.prime})()`, 'prime', 240000); console.log(T(), 'prime', r ?? ''); }
 // capture
 await ev(`(() => { const B = window.__bayline, C = B.capture; C.dt = 1 / ${FPS}; C.t = 0; C.before = ${shot.before || 'null'}; C.cam = ${shot.cam || 'null'}; C.on = true;
   if (B.Post) B.Post.rebuild();     // fresh targets: eye adaptation snaps to the first captured frame instead of easing in from the warm-up view
+  if (${LOD} > 0 && B.Terrain && B.Terrain.lodFactor) B.Terrain.lodFactor.value = Math.min(B.Terrain.lodFactor.value, ${LOD});
   return 1; })()`, 'hooks');
 const N = +opt('frames', shot.frames || 90), ext = FMT === 'png' ? 'png' : 'jpg';
 const keep = PREVIEW ? new Set(Array.from({ length: PREVIEW }, (_, k) => Math.round(k * (N - 1) / Math.max(1, PREVIEW - 1)))) : null;

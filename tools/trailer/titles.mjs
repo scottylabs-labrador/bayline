@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // Trailer title cards: HTML (the site's own fonts and colours) rendered to transparent 1920x1080 PNGs.
-//   node tools/trailer/titles.mjs <outdir> [scale]      (scale 2: 3840x2160 cards for a 4K master)
+//   node tools/trailer/titles.mjs <outdir> [scale] [cards.mjs]   (scale 2: 3840x2160 cards for a 4K master)
+// cards.mjs (another video's titles) exports { css?, cards, layers? }: extra CSS, { name: html }, and for layered
+// cards { source: { layerName: [classes shown] } }
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const out = resolve(process.argv[2] || 'titles'); mkdirSync(out, { recursive: true }); const SCALE = +(process.argv[3] || 1);
 const CSS = `
@@ -26,7 +29,7 @@ html, body { margin: 0; width: 1920px; height: 1080px; background: transparent; 
         background: radial-gradient(ellipse at center, rgba(4,7,12,.62) 0%, rgba(4,7,12,.38) 42%, rgba(4,7,12,0) 72%); }
 .fine { position: absolute; left: 0; right: 0; bottom: 46px; font-family: 'Barlow'; font-size: 19px; color: rgba(243,239,230,.55); text-align: center; line-height: 1.5; }
 `;
-const cards = {
+let cards = {
   kicker: `<div class="c" style="justify-content:flex-end;padding-bottom:150px"><div class="k">An unofficial rail &amp; flight simulator</div></div>`,
   every_train: `<div class="c"><div class="w">Every train</div></div>`,
   on_schedule: `<div class="c"><div class="w">On <em>schedule</em></div></div>`,
@@ -42,8 +45,11 @@ const cards = {
 };
 
 // the end card again as separate layers (same layout, the other parts hidden) so the edit can reveal them one by one
-{ const parts = { endcard_logo: ['scrim', 'logo'], endcard_tag: ['tag'], endcard_url: ['url', 'play'], endcard_fine: ['fine'] };
-  for (const [name, show] of Object.entries(parts)) cards[name] = cards.endcard.replace(/class="(scrim|logo|tag|url|play|fine)"/g, (m, c) => show.includes(c) ? m : `class="${c}" style="visibility:hidden"`); }
+let layers = { endcard: { endcard_logo: ['scrim', 'logo'], endcard_tag: ['tag'], endcard_url: ['url', 'play'], endcard_fine: ['fine'] } }, extraCss = '';
+if (process.argv[4]) { const spec = await import(pathToFileURL(resolve(process.argv[4])).href); cards = spec.cards; layers = spec.layers || {}; extraCss = spec.css || ''; }
+for (const [src, parts] of Object.entries(layers)) { const known = new Set(Object.values(parts).flat());      // (other classes, e.g. the container, stay)
+  for (const [name, show] of Object.entries(parts))
+    cards[name] = cards[src].replace(/class="([a-z0-9-]+)"/g, (m, c) => !known.has(c) || show.includes(c) ? m : `class="${c}" style="visibility:hidden"`); }
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const prof = mkdtempSync(join(tmpdir(), 'shot-'));
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run', '--hide-scrollbars', '--window-size=1920,1080', 'about:blank'], { stdio: 'ignore' });
@@ -60,7 +66,7 @@ await send('Page.enable'); await send('Runtime.enable');
 await send('Emulation.setDeviceMetricsOverride', { width: 1920, height: 1080, deviceScaleFactor: SCALE, mobile: false });
 await send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
 for (const [name, html] of Object.entries(cards)) {
-  const doc = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>${html}</body></html>`;
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}${extraCss}</style></head><body>${html}</body></html>`;
   await send('Page.navigate', { url: 'data:text/html;base64,' + Buffer.from(doc).toString('base64') });
   await send('Runtime.evaluate', { expression: 'document.fonts.ready.then(() => new Promise(r => setTimeout(r, 300)))', awaitPromise: true });
   const s = await send('Page.captureScreenshot', { format: 'png' });

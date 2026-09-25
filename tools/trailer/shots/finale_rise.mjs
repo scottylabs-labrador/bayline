@@ -7,7 +7,7 @@ const path = `(t) => { const C = __cine, k = C.ease(t / ${DUR}), kh = C.ease(Mat
   const a = C.ll(${A}, 0), b = C.ll(${B}, 0), p = C.mix(a, b, Math.pow(k, 1.4)); p.y = y;
   const q0 = C.ll(${T0}, 60), q1 = C.ll(${T1}, 0), kq = C.ease(Math.min(1, t / ${DUR * 0.7})), q = C.mix(q0, q1, kq); return { p, q }; }`;
 export default {
-  hash: '#auto&t=19:24&q=ultra&w=clear', warm: 50, frames: 600, settle: 2500,
+  hash: '#auto&t=19:24&q=ultraplus!&w=clear', warm: 50, frames: 600, settle: 2500,
   setup: `async () => { ${cine}; window.__path = ${path}; const P = window.__path(0); __cine.put(P.p, P.q); return 1; }`,
   prime: `() => { window.__bayline.Env.setClock(19 * 3600 + 24 * 60); return 1; }`,
   before: `(t) => { const P = window.__path(t); __cine.put(P.p, P.q); }`,

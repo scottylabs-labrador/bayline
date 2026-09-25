@@ -208,6 +208,13 @@ Every shot in the trailer is real gameplay, rendered by the game itself and capt
   captured at 120 fps), lightning, impact jolts, animated title cards (`titles.mjs`, the site's own fonts), a
   2.2:1 letterbox, and the sound design, mixed and loudness-normalised to -14 LUFS.
 
+The gameplay video (the title screen's trailer button plays it) is cut the same way, with gameplay shots that keep the
+HUD (`ui: true` in a shot: driving from the cab, the departure board, flying with the flight HUD, the world map with
+the flight's recorded track), a letterbox that opens for gameplay and closes for the cinematic acts, and one-line
+captions (`cards_gameplay.mjs`). `make_edl_gameplay.py` times the cuts to the music's beat grid; `extend_music.py`
+repeated 4 bars of it for the map scene. Captures ran on Ultra+ at 4K with a finer terrain LOD (`--lod 2.6`) and a
+per-frame settle, and `capture_all.py EDL=...` captures only the frames the cuts use.
+
 Music: "The Sound of Arrows" by Bonnie Grace, and sound effects, from Epidemic Sound.
 
 ## Multiplayer, safely

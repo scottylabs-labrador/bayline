@@ -1,0 +1,652 @@
+{
+ "name": "bayline_gameplay",
+ "music": "fate_ext.wav",
+ "letterbox": 2.2,
+ "lra": 20,
+ "cuts": [
+  {
+   "shot": "g_dawn_hills",
+   "in": 0.3,
+   "dur": 5.201,
+   "lb": 1,
+   "fade_in": 1.6
+  },
+  {
+   "shot": "g_bay_dawn",
+   "in": 1.0,
+   "dur": 4.175,
+   "lb": 1
+  },
+  {
+   "shot": "g_platform_morning",
+   "in": 4.8,
+   "dur": 3.652,
+   "lb": 1
+  },
+  {
+   "shot": "g_board",
+   "in": 0.3,
+   "dur": 3.131,
+   "lb": 0,
+   "lb_t": 0.8
+  },
+  {
+   "shot": "g_arrival",
+   "in": 3.2,
+   "dur": 4.174,
+   "lb": 0
+  },
+  {
+   "shot": "g_drive_depart",
+   "in": 2.4,
+   "dur": 4.175,
+   "lb": 0
+  },
+  {
+   "shot": "g_drone_train",
+   "in": 2.0,
+   "dur": 3.131,
+   "lb": 0
+  },
+  {
+   "shot": "g_trackside",
+   "in": 1.3,
+   "dur": 4.174,
+   "lb": 0,
+   "speed": 0.35
+  },
+  {
+   "shot": "g_drive_speed",
+   "in": 0.5,
+   "dur": 4.174,
+   "lb": 0
+  },
+  {
+   "shot": "g_drive_stop",
+   "in": 1.0,
+   "dur": 3.313,
+   "lb": 0
+  },
+  {
+   "shot": "g_lineup",
+   "in": 0.4,
+   "dur": 3.993,
+   "lb": 0,
+   "fade_out": 0.9,
+   "flash": 0.35
+  },
+  {
+   "shot": "g_takeoff_744",
+   "in": 3.9,
+   "dur": 4.174,
+   "lb": 0,
+   "speed": 0.6,
+   "shake": [
+    [
+     0.0,
+     7,
+     0.6
+    ]
+   ]
+  },
+  {
+   "shot": "g_gear_up",
+   "in": 0.2,
+   "dur": 4.174,
+   "lb": 0,
+   "speed": 0.9
+  },
+  {
+   "shot": "g_fly_hud",
+   "in": 0.5,
+   "dur": 2.088,
+   "lb": 0
+  },
+  {
+   "shot": "f16_chase",
+   "in": 1.0,
+   "dur": 2.087,
+   "lb": 0
+  },
+  {
+   "shot": "heli_skyline",
+   "in": 2.0,
+   "dur": 2.087,
+   "lb": 0
+  },
+  {
+   "shot": "traffic_sfo",
+   "in": 1.0,
+   "dur": 4.174,
+   "lb": 0
+  },
+  {
+   "shot": "g_map",
+   "in": 0.0,
+   "dur": 8.36,
+   "lb": 0,
+   "zoom": [
+    1.0,
+    0.5,
+    0.49
+   ],
+   "zoom_end": 1.3,
+   "zoom_t": [
+    1.9,
+    8.3
+   ]
+  },
+  {
+   "shot": "concorde_mach2",
+   "in": 2.0,
+   "dur": 2.088,
+   "lb": 0
+  },
+  {
+   "shot": "storm_night",
+   "in": 1.0,
+   "dur": 2.087,
+   "lb": 0,
+   "lightning": [
+    [
+     0.35,
+     1.0
+    ],
+    [
+     1.35,
+     0.6
+    ]
+   ],
+   "vf": "eq=brightness=-0.05:contrast=1.12:saturation=0.85"
+  },
+  {
+   "shot": "storm_cockpit",
+   "in": 1.0,
+   "dur": 2.087,
+   "lb": 0,
+   "lightning": [
+    [
+     0.9,
+     0.8
+    ]
+   ],
+   "vf": "eq=brightness=-0.06:contrast=1.1:saturation=0.8"
+  },
+  {
+   "shot": "gg_fog",
+   "in": 2.0,
+   "dur": 2.087,
+   "lb": 0
+  },
+  {
+   "shot": "g_under_gg",
+   "in": 6.0,
+   "dur": 2.087,
+   "lb": 0,
+   "speed": 0.7,
+   "zoom": [
+    1.14,
+    0.5,
+    0.0
+   ]
+  },
+  {
+   "shot": "g_a380_final",
+   "in": 2.0,
+   "dur": 2.088,
+   "lb": 0
+  },
+  {
+   "shot": "g_touchdown_744",
+   "in": 5.0,
+   "dur": 3.13,
+   "lb": 0,
+   "speed": 0.8
+  },
+  {
+   "shot": "g_hills_gold",
+   "in": 1.5,
+   "dur": 4.175,
+   "lb": 1,
+   "lb_t": 0.6,
+   "flash": 0.3
+  },
+  {
+   "shot": "g_pa_golden",
+   "in": 2.0,
+   "dur": 2.087,
+   "lb": 1
+  },
+  {
+   "shot": "g_street_sunset",
+   "in": 2.5,
+   "dur": 2.087,
+   "lb": 1
+  },
+  {
+   "shot": "g_night_fly",
+   "in": 2.0,
+   "dur": 2.087,
+   "lb": 1
+  },
+  {
+   "shot": "g_bay_night",
+   "in": 2.0,
+   "dur": 4.175,
+   "lb": 1
+  },
+  {
+   "shot": "night_train",
+   "in": 2.5,
+   "dur": 2.087,
+   "lb": 1
+  },
+  {
+   "shot": "salesforce_night",
+   "in": 2.0,
+   "dur": 2.091,
+   "lb": 1,
+   "fade_out": 0.25
+  },
+  {
+   "shot": "black",
+   "in": 0.0,
+   "dur": 1.04,
+   "lb": 1
+  },
+  {
+   "shot": "g_finale",
+   "in": 1.0,
+   "dur": 5.218,
+   "lb": 1,
+   "ramp": [
+    [
+     0,
+     1.0
+    ],
+    [
+     0.9,
+     1.0
+    ],
+    [
+     1.4,
+     0.45
+    ],
+    [
+     4.2,
+     0.45
+    ],
+    [
+     4.9,
+     0.9
+    ]
+   ],
+   "shake": [
+    [
+     2.9,
+     5,
+     0.9
+    ]
+   ]
+  },
+  {
+   "shot": "g_end_bg",
+   "in": 0.5,
+   "dur": 10.222,
+   "lb": 1
+  }
+ ],
+ "titles": [
+  {
+   "png": "kicker_open.png",
+   "t0": 1.9,
+   "t1": 5.0,
+   "style": "drift",
+   "fade": 0.5
+  },
+  {
+   "png": "lt_timetable.png",
+   "t0": 16.509,
+   "t1": 20.083,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "t_line.png",
+   "t0": 20.583,
+   "t1": 23.464,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "lt_drive.png",
+   "t0": 24.758,
+   "t1": 27.489,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "t_sky.png",
+   "t0": 39.55,
+   "t1": 42.55,
+   "style": "drift",
+   "fade": 0.35
+  },
+  {
+   "png": "logo_drop.png",
+   "t0": 43.293,
+   "t1": 46.845,
+   "style": "slam",
+   "fade": 0.35
+  },
+  {
+   "png": "lt_fly.png",
+   "t0": 47.767,
+   "t1": 51.391,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "lt_traffic.png",
+   "t0": 58.203,
+   "t1": 61.827,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "lt_map.png",
+   "t0": 64.377,
+   "t1": 69.977,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "lt_weather.png",
+   "t0": 72.725,
+   "t1": 76.449,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "lt_world.png",
+   "t0": 86.441,
+   "t1": 90.016,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "lt_night.png",
+   "t0": 94.74,
+   "t1": 98.365,
+   "style": "drift",
+   "fade": 0.3
+  },
+  {
+   "png": "t_alive.png",
+   "t0": 104.31,
+   "t1": 105.86,
+   "style": "drift",
+   "fade": 0.25
+  },
+  {
+   "layers": [
+    [
+     "endcard_logo.png",
+     0.0
+    ],
+    [
+     "endcard_tag.png",
+     0.9
+    ],
+    [
+     "endcard_url.png",
+     1.9
+    ],
+    [
+     "endcard_fine.png",
+     2.9
+    ]
+   ],
+   "t0": 111.66,
+   "t1": 121.36,
+   "fade": 0.8,
+   "style": "drift"
+  }
+ ],
+ "sfx": [
+  {
+   "wav": "birds.wav",
+   "at": 0.0,
+   "from": 4.0,
+   "dur": 13.8,
+   "gain": 0.22,
+   "fin": 2.5,
+   "fout": 2.5
+  },
+  {
+   "wav": "wind_high.wav",
+   "at": 0.0,
+   "from": 20.0,
+   "dur": 13.5,
+   "gain": 0.35,
+   "fin": 3.0,
+   "fout": 2.5
+  },
+  {
+   "wav": "horn_pass.wav",
+   "at": 16.359,
+   "from": 12.93,
+   "dur": 4.6,
+   "gain": 0.35,
+   "fin": 0.25,
+   "fout": 1.4
+  },
+  {
+   "wav": "doors.wav",
+   "at": 20.433,
+   "from": 2.6,
+   "dur": 4.2,
+   "gain": 0.55,
+   "fin": 0.1,
+   "fout": 0.6
+  },
+  {
+   "wav": "train_pass.wav",
+   "at": 27.439,
+   "from": 3.9,
+   "dur": 4.6,
+   "gain": 0.55,
+   "fin": 0.3,
+   "fout": 1.2
+  },
+  {
+   "wav": "riser.wav",
+   "at": 36.32,
+   "from": 0.0,
+   "dur": 2.98,
+   "gain": 0.45,
+   "fin": 0.8,
+   "fout": 0.05
+  },
+  {
+   "wav": "impact.wav",
+   "at": 39.3,
+   "from": 0.0,
+   "dur": 3.2,
+   "gain": 0.5,
+   "fin": 0.02,
+   "fout": 1.4
+  },
+  {
+   "wav": "takeoff.wav",
+   "at": 39.9,
+   "from": 20.0,
+   "dur": 2.6,
+   "gain": 0.28,
+   "fin": 0.6,
+   "fout": 0.6
+  },
+  {
+   "wav": "boom_deep.wav",
+   "at": 43.273,
+   "from": 0.0,
+   "dur": 2.8,
+   "gain": 0.55,
+   "fin": 0.05,
+   "fout": 0.8
+  },
+  {
+   "wav": "takeoff.wav",
+   "at": 43.293,
+   "from": 29.5,
+   "dur": 7.5,
+   "gain": 0.55,
+   "fin": 0.15,
+   "fout": 1.2
+  },
+  {
+   "wav": "whoosh.wav",
+   "at": 52.429,
+   "from": 0.0,
+   "dur": 2.2,
+   "gain": 0.35,
+   "fin": 0.05,
+   "fout": 0.8
+  },
+  {
+   "wav": "jet_pass.wav",
+   "at": 53.329,
+   "from": 6.8,
+   "dur": 3.2,
+   "gain": 0.45,
+   "fin": 0.3,
+   "fout": 0.9
+  },
+  {
+   "wav": "heli.wav",
+   "at": 55.816,
+   "from": 8.0,
+   "dur": 2.6,
+   "gain": 0.3,
+   "fin": 0.3,
+   "fout": 0.7
+  },
+  {
+   "wav": "whoosh.wav",
+   "at": 62.117,
+   "from": 0.0,
+   "dur": 2.2,
+   "gain": 0.25,
+   "fin": 0.05,
+   "fout": 0.8
+  },
+  {
+   "wav": "rain.wav",
+   "at": 72.525,
+   "from": 10.0,
+   "dur": 8.4,
+   "gain": 0.3,
+   "fin": 0.4,
+   "fout": 1.2
+  },
+  {
+   "wav": "thunder.wav",
+   "at": 72.825,
+   "from": 0.0,
+   "dur": 5.0,
+   "gain": 0.55,
+   "fin": 0.02,
+   "fout": 1.5
+  },
+  {
+   "wav": "landing.wav",
+   "at": 80.873,
+   "from": 29.0,
+   "dur": 10.0,
+   "gain": 0.5,
+   "fin": 0.5,
+   "fout": 1.0
+  },
+  {
+   "wav": "whoosh.wav",
+   "at": 84.691,
+   "from": 0.0,
+   "dur": 2.2,
+   "gain": 0.35,
+   "fin": 0.05,
+   "fout": 0.8
+  },
+  {
+   "wav": "boom_rumble.wav",
+   "at": 86.041,
+   "from": 0.0,
+   "dur": 5.3,
+   "gain": 0.6,
+   "fin": 0.05,
+   "fout": 0.8
+  },
+  {
+   "wav": "wind_high.wav",
+   "at": 86.091,
+   "from": 30.0,
+   "dur": 8.0,
+   "gain": 0.3,
+   "fin": 1.0,
+   "fout": 2.0
+  },
+  {
+   "wav": "whoosh.wav",
+   "at": 103.66,
+   "from": 0.0,
+   "dur": 2.2,
+   "gain": 0.3,
+   "fin": 0.05,
+   "fout": 0.8
+  },
+  {
+   "wav": "impact.wav",
+   "at": 105.92,
+   "from": 0.0,
+   "dur": 5.0,
+   "gain": 0.6,
+   "fin": 0.02,
+   "fout": 2.0
+  },
+  {
+   "wav": "boom_rumble.wav",
+   "at": 105.86,
+   "from": 0.0,
+   "dur": 5.3,
+   "gain": 0.5,
+   "fin": 0.05,
+   "fout": 0.8
+  },
+  {
+   "wav": "train_pass.wav",
+   "at": 106.26,
+   "from": 4.5,
+   "dur": 3.8,
+   "gain": 0.5,
+   "fin": 0.2,
+   "fout": 1.4
+  },
+  {
+   "wav": "takeoff.wav",
+   "at": 107.36,
+   "from": 31.0,
+   "dur": 5.0,
+   "gain": 0.55,
+   "fin": 0.5,
+   "fout": 1.6
+  },
+  {
+   "wav": "wind_high.wav",
+   "at": 111.138,
+   "from": 4.0,
+   "dur": 10.2,
+   "gain": 0.6,
+   "fin": 2.5,
+   "fout": 3.0
+  }
+ ]
+}

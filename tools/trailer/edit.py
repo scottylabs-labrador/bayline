@@ -12,7 +12,14 @@ A cut is {shot, in, dur} plus optional:
   fade_in / fade_out (s), flash (white flash on the cut, 0..1)
   lightning [[t, strength], ...] flickering flashes; shake [[t, px, duration], ...] impact jolts (t from the cut's start)
   vf      extra ffmpeg filters for this cut's grade (e.g. 'eq=brightness=-0.06:saturation=0.85')
-A title is {png, t0, t1, fade?, style: 'slam' | 'drift'} or {layers: [[png, delay], ...], ...} (revealed in turn).
+  zoom    [z, ax, ay] a z-times closer crop anchored at (ax, ay) (0..1 across the frame), e.g. [1.14, 0.5, 0] loses the bottom;
+          zoom_end (and zoom_t [t0, t1]) ease it to another factor over that window: a digital push-in
+  lb      letterbox amount 0..1 (only when the EDL sets `letterbox`, the bars' aspect, e.g. 2.2): the bars ease from the
+          previous cut's amount over lb_t s (default 0.7) at the start of this cut; cuts default to 1
+A title is {png, t0, t1, fade?, style: 'slam' | 'drift' | 'slide'} or {layers: [[png, delay], ...], ...} (revealed in turn).
+The EDL may also set name (output base name), music (file in WORKDIR/music), lra (loudness range, default 11) and
+letterbox (see lb); without letterbox
+the whole picture gets 2.2:1 bars (the first trailer).
 The capture rate of each shot comes from its shot module (fps, default 30)."""
 import os, sys, subprocess, json, re, glob
 import numpy as np
@@ -24,7 +31,8 @@ OUT_W, OUT_H = (1280, 720) if DRAFT else (3840, 2160) if UHD else (1920, 1080)
 TITLES = 'titles4k' if UHD and os.path.isdir(os.path.join(W, 'titles4k')) else 'titles'   # cards rendered at scale 2 for 4K
 HERE = os.path.dirname(os.path.abspath(__file__))
 EDL = json.load(open(sys.argv[sys.argv.index('--edl') + 1] if '--edl' in sys.argv else os.path.join(HERE, 'edl.json')))
-MUSIC = os.path.join(W, 'music', 'arrows.wav')
+MUSIC = os.path.join(W, 'music', EDL.get('music', 'arrows.wav'))
+NAME = EDL.get('name', 'bayline_trailer'); LB_ASPECT = EDL.get('letterbox')
 # grade: a touch more contrast and colour, warm highlights / cool shadows, gentle vignette
 GRADE = ('eq=contrast=1.06:saturation=1.10:gamma=0.98,'
          'colorbalance=rs=-0.02:gs=0.0:bs=0.035:rh=0.035:gh=0.01:bh=-0.03,'
@@ -95,6 +103,13 @@ def render_cut(i, cut):
             ks = [int(round(k0 - (blur - 1) / 2 + j)) for j in range(blur)]
             img = sum(frame(shot, k) for k in ks) / blur
         u = fi / FPS
+        if cut.get('zoom'):      # [z, ax, ay]: a z-times closer crop anchored at (ax, ay) in 0..1, e.g. to lose an edge;
+            z, ax, ay = cut['zoom']  # with zoom_end the crop eases to zoom_end over zoom_t = [t0, t1] (s into the cut): a push-in
+            if 'zoom_end' in cut:
+                za, zb = cut.get('zoom_t', [0, cut['dur']]); e = min(1.0, max(0.0, (u - za) / max(1e-6, zb - za))); e = e * e * (3 - 2 * e)
+                z = z + (cut['zoom_end'] - z) * e
+            cw, ch = OUT_W / z, OUT_H / z; x0, y0 = (OUT_W - cw) * ax, (OUT_H - ch) * ay
+            img = np.asarray(Image.fromarray(np.clip(img, 0, 255).astype(np.uint8)).resize((OUT_W, OUT_H), Image.LANCZOS, box=(x0, y0, x0 + cw, y0 + ch)), np.float32)
         # lightning: [[t, strength], ...] a double flicker (flash, dip, second flash, decay), cold white
         L = 0.0
         for tb, st in bolts:
@@ -110,6 +125,11 @@ def render_cut(i, cut):
                 im = im.resize((round(OUT_W * z), round(OUT_H * z)), Image.BILINEAR)
                 ox, oy = (im.width - OUT_W) / 2 + dx, (im.height - OUT_H) / 2 + dy
                 img = np.asarray(im.crop((round(ox), round(oy), round(ox) + OUT_W, round(oy) + OUT_H)), np.float32)
+        if LB_ASPECT:      # per-cut letterbox: ease from the previous cut's amount at the start of this cut
+            a0, a1, lt = cut.get('_lb_from', cut.get('lb', 1)), cut.get('lb', 1), cut.get('lb_t', 0.7)
+            e = min(1.0, u / lt) if lt > 0 else 1.0; e = e * e * (3 - 2 * e); amt = a0 + (a1 - a0) * e
+            bar = int(round(amt * OUT_H * (1 - (OUT_W / LB_ASPECT) / OUT_H) / 2))
+            if bar > 0: img = img.copy(); img[:bar] = 0; img[-bar:] = 0
         p.stdin.write(np.clip(img + 0.5, 0, 255).astype(np.uint8).tobytes())
     p.stdin.close(); p.wait()
     if p.returncode: print('ffmpeg failed on cut', i, shot); sys.exit(1)
@@ -128,20 +148,25 @@ def animate_title(j, ti):
     d = os.path.join(W, 'titles_anim', f'{j:02d}_{OUT_H}'); sigf = d + '.sig'
     n = max(1, round((t1 - t0) * FPS))
     if os.path.isdir(d) and os.path.exists(sigf) and open(sigf).read() == sig: return d, n
+    if os.path.isdir(d):         # a stale set (e.g. titles renumbered): old frames past this title's length would play on
+        import shutil; shutil.rmtree(d)
     os.makedirs(d, exist_ok=True)
     for i in range(n):
         u = i / FPS; frame_ = Image.new('RGBA', (OUT_W, OUT_H), (0, 0, 0, 0))
         for im, dl in imgs:
             v = u - dl
             if v < 0: continue
+            dx = 0
             if style == 'slam': sc = 1.10 - 0.10 * ease_out(v / 0.2) - 0.015 * min(1, v / max(0.3, t1 - t0)); a = min(1, v / 0.06)
+            elif style == 'slide': sc = 1.0; a = min(1, v / 0.35); dx = round(-70 * (1 - ease_out(v / 0.6)) * OUT_W / 1920)
             else: sc = 1.03 - 0.03 * ease_out(v / max(0.8, t1 - t0 - dl)); a = min(1, v / fd)
             a = min(a, max(0.0, (t1 - t0 - u) / fd))
             if a <= 0: continue
             w, h = round(OUT_W * sc), round(OUT_H * sc); lay = im.resize((w, h), Image.BICUBIC)
             lay = lay.crop(((w - OUT_W) // 2, (h - OUT_H) // 2, (w - OUT_W) // 2 + OUT_W, (h - OUT_H) // 2 + OUT_H)) if sc >= 1 else lay
             if a < 1: al = lay.getchannel('A').point(lambda x: int(x * a)); lay.putalpha(al)
-            if sc >= 1: frame_.alpha_composite(lay)
+            if dx: frame_.alpha_composite(lay.crop((max(0, -dx), 0, OUT_W, OUT_H)) if dx < 0 else lay, (max(0, dx), 0))
+            elif sc >= 1: frame_.alpha_composite(lay)
             else: frame_.alpha_composite(lay, ((OUT_W - w) // 2, (OUT_H - h) // 2))
         frame_.save(os.path.join(d, f'{i:04d}.png'), compress_level=1)
     open(sigf, 'w').write(sig)
@@ -153,11 +178,17 @@ def render_cut_job(a):
 def main():
     from concurrent.futures import ProcessPoolExecutor
     jobs = os.cpu_count() // 2 or 2
+    if LB_ASPECT:
+        prev = EDL['cuts'][0].get('lb', 1)
+        for c in EDL['cuts']: c['_lb_from'] = prev; prev = c.get('lb', 1)
     if '--cuts-only' in sys.argv:        # pre-render the cuts whose shots are fully captured, nothing else
         done = lambda sh: os.path.exists(os.path.join(W, 'frames', sh + '.done')) and os.path.isdir(os.path.join(W, 'frames', sh)) and os.listdir(os.path.join(W, 'frames', sh))
         ready = [(i, c) for i, c in enumerate(EDL['cuts']) if done(c['shot'])]
         with ProcessPoolExecutor(jobs) as ex: list(ex.map(render_cut_job, ready))
         print(f'pre-rendered {len(ready)} of {len(EDL["cuts"])} cuts'); return
+    if LB_ASPECT:
+        prev = EDL['cuts'][0].get('lb', 1)
+        for c in EDL['cuts']: c['_lb_from'] = prev; prev = c.get('lb', 1)
     with ProcessPoolExecutor(jobs) as ex:
         clips = list(ex.map(render_cut_job, list(enumerate(EDL['cuts']))))
         titles = list(ex.map(animate_title, range(len(EDL['titles'])), EDL['titles']))
@@ -176,8 +207,10 @@ def main():
         f += f',setsar=1[v{i}]'; filt.append(f); labels.append(f'[v{i}]')
     filt.append(''.join(labels) + f'concat=n={len(segs)}:v=1:a=0[pic]')
     # 2. letterbox (2.2:1) on the picture
-    bar = round(OUT_H * (1 - (OUT_W / 2.2) / OUT_H) / 2)
-    filt.append(f"[pic]drawbox=x=0:y=0:w=iw:h={bar}:color=black:t=fill,drawbox=x=0:y=ih-{bar}:w=iw:h={bar}:color=black:t=fill[lb]")
+    if LB_ASPECT: filt.append('[pic]null[lb]')          # (bars already drawn per cut)
+    else:
+        bar = round(OUT_H * (1 - (OUT_W / 2.2) / OUT_H) / 2)
+        filt.append(f"[pic]drawbox=x=0:y=0:w=iw:h={bar}:color=black:t=fill,drawbox=x=0:y=ih-{bar}:w=iw:h={bar}:color=black:t=fill[lb]")
     # 3. animated titles over it, then the final fade to black
     last = 'lb'
     for j, (ti, (d, n)) in enumerate(zip(EDL['titles'], titles)):
@@ -186,7 +219,7 @@ def main():
         filt.append(f"[{k}:v]format=rgba,setpts=PTS-STARTPTS+{ti['t0']:.4f}/TB[t{j}]")
         filt.append(f"[{last}][t{j}]overlay=0:0:eof_action=pass:format=auto[o{j}]"); last = f'o{j}'
     filt.append(f"[{last}]fade=t=out:st={total - 1.6:.3f}:d=1.6,format=yuv420p[vout]")     # (no synthetic grain: it costs 5x the bitrate)
-    base = os.path.join(W, 'bayline_trailer' + ('_draft' if DRAFT else '_4k' if UHD else ''))
+    base = os.path.join(W, NAME + ('_draft' if DRAFT else '_4k' if UHD else ''))
     open(base + '.vf.txt', 'w').write(';'.join(filt))
     venc = ['-c:v', 'libx264', '-preset', 'veryfast' if DRAFT else 'slow', '-crf', '22' if DRAFT else '17' if UHD else '16', '-profile:v', 'high', '-pix_fmt', 'yuv420p']
     run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', *inputs, '-filter_complex_script', base + '.vf.txt', '-map', '[vout]', *venc, '-t', f'{total:.3f}', base + '.video.mp4'])
@@ -201,7 +234,7 @@ def main():
     afilt.append(''.join(mix) + f'amix=inputs={len(mix)}:normalize=0:duration=first,alimiter=limit=0.97:level=false[aout]')
     open(base + '.af.txt', 'w').write(';'.join(afilt))
     run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', *ain, '-filter_complex_script', base + '.af.txt', '-map', '[aout]', '-t', f'{total:.3f}', '-c:a', 'pcm_s24le', '-ar', '48000', base + '.mix.wav'])
-    LN = 'loudnorm=I=-14:TP=-1.0:LRA=11'
+    LN = f"loudnorm=I=-14:TP=-1.0:LRA={EDL.get('lra', 11)}"      # (lra 20: keep the music's dynamics, so the drops still hit)
     r = run(['ffmpeg', '-hide_banner', '-i', base + '.mix.wav', '-af', LN + ':print_format=json', '-f', 'null', '-'])
     m = json.loads(r.stderr[r.stderr.rindex('{'):r.stderr.rindex('}') + 1])
     ln2 = (f"{LN}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}"
