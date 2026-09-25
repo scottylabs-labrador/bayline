@@ -11,7 +11,7 @@ serves a small dashboard. Standard library only.
 "Online" is the relay's open connections. Every open game tab holds one (a tab hidden for a minute lets go),
 so it counts people with the game open. "Sessions" are new connections, reconnects included.
 """
-import base64, hmac, json, os, sqlite3, threading, time, urllib.request
+import base64, hmac, json, os, socket, sqlite3, threading, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -196,10 +196,20 @@ class Handler(BaseHTTPRequestHandler):
     do_HEAD = do_GET
 
 
+class DualStack(ThreadingHTTPServer):
+    address_family = socket.AF_INET6               # one socket for IPv6 and IPv4 ('localhost' can mean ::1)
+
+    def server_bind(self):
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
+
 if __name__ == '__main__':
     if not SITES: raise SystemExit('set SITES, e.g. SITES="main=https://bayline.example.com"')
     os.makedirs(os.path.dirname(os.path.abspath(DB)), exist_ok=True)
     c = db(); c.execute('PRAGMA journal_mode = WAL'); c.executescript(SCHEMA); c.close()
     threading.Thread(target=poller, daemon=True).start()
+    try: server = DualStack(('::', PORT), Handler)
+    except OSError: server = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)     # no IPv6 here
     print(f'bayline-monitor on :{PORT}, polling {len(SITES)} site(s) every {POLL} s', flush=True)
-    ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
+    server.serve_forever()
