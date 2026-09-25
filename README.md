@@ -248,6 +248,14 @@ game **and** a small realtime backend.
   health check `/healthz`, domain `https://bayline.sheltie.scottylabs.org`, with a memory limit.
 - Every push to `main` redeploys automatically through a GitHub webhook.
 
+### Monitor
+
+`monitor/` is a separate small app: a standard-library Python service that samples each deployment's
+`/mp/stats` every 15 seconds, keeps the history in SQLite (raw samples for 14 days, hourly roll-ups
+forever) and serves a dashboard showing who's online now, peaks, sessions and uptime. It builds from
+`monitor/Dockerfile`, needs a persistent volume at `/data`, and is configured by environment variables
+(`SITES`, `MONITOR_USER`, `MONITOR_PASSWORD`; see the top of `monitor/monitor.py`).
+
 ## Data and credits
 
 - Timetable: the agency's public GTFS feed (via Trillium Transit), June 2026 edition.

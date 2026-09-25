@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0e1116">
+<title>Bayline live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #0e1116; --ink: #f3efe6; --dim: rgba(243,239,230,.62); --faint: rgba(243,239,230,.36); --line: rgba(255,255,255,.1);
+    --green: #7ee2a8; --red: #e0402f; --blue: #8cc8ff; --amber: #ffb347;
+    --font: 'Barlow', system-ui, -apple-system, 'Segoe UI', sans-serif; --cond: 'Barlow Condensed', 'Barlow', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+  main { max-width: 1080px; margin: 0 auto; padding: 28px 16px 56px; }
+  a { color: inherit; text-decoration-color: var(--faint); text-underline-offset: 3px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0; font: 600 24px/1 var(--cond); letter-spacing: .01em; }
+  h1 span { color: var(--dim); font-weight: 500; }
+  #updated { color: var(--faint); font-size: 14px; }
+  #updated.stale { color: var(--amber); }
+  .hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px 40px; flex-wrap: wrap; padding: 30px 0 26px; border-bottom: 1px solid var(--line); }
+  .big { display: flex; align-items: baseline; gap: 14px; }
+  .big b { font: 600 clamp(84px, 16vw, 132px)/.85 var(--cond); font-variant-numeric: tabular-nums; }
+  .big span { color: var(--dim); font-size: 18px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); margin-right: 8px; vertical-align: 1px; }
+  .dot.up { background: var(--green); }
+  .dot.down { background: var(--red); }
+  .persite { display: grid; gap: 6px; color: var(--dim); font-size: 15px; }
+  .persite b { color: var(--ink); font: 500 15px var(--mono); margin-left: 6px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+  .stat { padding: 18px 18px 18px 0; }
+  .stat + .stat { padding-left: 18px; border-left: 1px solid var(--line); }
+  .stat div { color: var(--dim); font-size: 14px; }
+  .stat b { display: block; font: 600 38px/1.1 var(--cond); font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .stat small { color: var(--faint); font-size: 13px; }
+  section { padding-top: 30px; }
+  .bar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  h2 { margin: 0; font: 600 20px/1 var(--cond); letter-spacing: .01em; }
+  .ranges { display: flex; gap: 2px; }
+  .ranges button { background: none; border: 0; color: var(--dim); font: 500 14px var(--mono); padding: 4px 9px; border-radius: 6px; cursor: pointer; }
+  .ranges button:hover { color: var(--ink); }
+  .ranges button.on { color: var(--ink); background: rgba(255,255,255,.08); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--dim); font-size: 14px; margin: -2px 0 10px; }
+  .legend i { display: inline-block; width: 14px; height: 2px; margin-right: 7px; vertical-align: 4px; }
+  .chartwrap { position: relative; }
+  canvas { display: block; width: 100%; height: 280px; }
+  #tip { position: absolute; top: 6px; pointer-events: none; background: #171b22; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.5; white-space: nowrap; display: none; }
+  #tip .t { color: var(--dim); }
+  #tip b { font: 500 13px var(--mono); float: right; margin-left: 18px; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; font-size: 14px; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th.n { text-align: right; }
+  td.n { text-align: right; font-family: var(--mono); font-size: 14px; }
+  td .sub { color: var(--faint); font-size: 13px; margin-left: 8px; }
+  .scroll { overflow-x: auto; }
+  .empty { color: var(--faint); padding: 14px 0; }
+  footer { margin-top: 34px; color: var(--faint); font-size: 13px; max-width: 70ch; }
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: 1fr 1fr; }
+    .stat:nth-child(3) { padding-left: 0; border-left: 0; }
+    .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+    canvas { height: 220px; }
+    .opt { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Bayline <span>live</span></h1>
+    <div id="updated">Loading…</div>
+  </header>
+
+  <div class="hero">
+    <div class="big"><b id="online">–</b><span>online now</span></div>
+    <div class="persite" id="persite"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div>Peak today</div><b id="peakToday">–</b><small id="peakTodayNote">&nbsp;</small></div>
+    <div class="stat"><div>Peak, last 7 days</div><b id="peak7">–</b><small id="peak7Note">&nbsp;</small></div>
+    <div class="stat"><div>All-time peak</div><b id="peakAll">–</b><small id="peakAllNote">&nbsp;</small></div>
+    <div class="stat"><div>Sessions today</div><b id="sessToday">–</b><small id="sessNote">&nbsp;</small></div>
+  </div>
+
+  <section>
+    <div class="bar">
+      <h2>Online over time</h2>
+      <div class="ranges" id="ranges">
+        <button data-r="6h">6H</button><button data-r="24h">24H</button><button data-r="7d">7D</button><button data-r="30d">30D</button><button data-r="all">All</button>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+    <div class="chartwrap"><canvas id="chart"></canvas><div id="tip"></div></div>
+  </section>
+
+  <section>
+    <div class="bar"><h2>Sites</h2></div>
+    <div class="scroll"><table>
+      <thead><tr><th>Site</th><th>Status</th><th class="n">Online</th><th class="n">Response</th><th class="n opt">Relay running</th></tr></thead>
+      <tbody id="sites"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <div class="bar"><h2>By day</h2></div>
+    <div class="scroll"><table>
+      <thead><tr><th>Day</th><th class="n">Peak online</th><th class="n">Sessions</th><th class="n opt">Turned away</th><th class="n">Uptime</th></tr></thead>
+      <tbody id="days"></tbody>
+    </table></div>
+  </section>
+
+  <footer>
+    Online counts the open connections to each site's multiplayer relay: every open game tab holds one, and a tab left in
+    the background for a minute lets go. Sessions are new connections, reconnects included. Turned away means the relay was full.
+    Sampled every <span id="poll">15</span> seconds<span id="since"></span>.
+  </footer>
+</main>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const INK = '#f3efe6', COLORS = ['#8cc8ff', '#ffb347', '#7ee2a8', '#d6a2ff'];
+  const fmt = (n) => (n === null || n === undefined ? '–' : Number(n).toLocaleString());
+  const time = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const date = (ts, o) => new Date(ts * 1000).toLocaleDateString([], o || { month: 'short', day: 'numeric' });
+  const dur = (s) => { if (s == null) return '–'; const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d} d ${h} h` : h ? `${h} h ${m} m` : `${m} m`; };
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  let range = ['6h', '24h', '7d', '30d', 'all'].includes(store.get('range')) ? store.get('range') : '24h';
+  let now = null, series = null, poll = 15;
+
+  async function get(u) { const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error(r.status); return r.json(); }
+
+  // ---------------------------------------------------------------- now
+  async function loadNow() {
+    try { now = await get('/api/now'); } catch (e) { $('#updated').textContent = 'Can\'t reach the monitor'; $('#updated').className = 'stale'; return; }
+    poll = now.poll || 15; $('#poll').textContent = poll;
+    if (now.since) $('#since').textContent = ', since ' + date(now.since, { month: 'short', day: 'numeric', year: 'numeric' });
+    $('#online').textContent = fmt(now.online);
+    document.title = (now.online === null ? '' : now.online + ' online · ') + 'Bayline live';
+    const age = now.ts ? Date.now() / 1000 - now.ts : Infinity;
+    $('#updated').textContent = now.ts ? 'Updated ' + new Date(now.ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : 'Waiting for the first sample';
+    $('#updated').className = age > poll * 4 ? 'stale' : '';
+    $('#persite').innerHTML = now.sites.map((s) => `<div><span class="dot ${s.ok === true ? 'up' : s.ok === false ? 'down' : ''}"></span>${esc(s.site)}<b>${s.ok ? fmt(s.online) : s.ok === false ? 'down' : '–'}</b></div>`).join('');
+    $('#sites').innerHTML = now.sites.map((s) => `<tr>
+      <td><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.site)}</a></td>
+      <td><span class="dot ${s.ok === true ? 'up' : s.ok === false ? 'down' : ''}"></span>${s.ok === true ? 'Up' : s.ok === false ? 'Not responding' : 'No data yet'}</td>
+      <td class="n">${s.ok ? fmt(s.online) + (s.cap ? `<span class="sub">of ${fmt(s.cap)}</span>` : '') : '–'}</td>
+      <td class="n">${s.ok ? fmt(s.ms) + ' ms' : '–'}</td>
+      <td class="n opt">${s.ok ? dur(s.uptime) : '–'}</td></tr>`).join('');
+    if (now.peak) { $('#peakAll').textContent = fmt(now.peak.conn); $('#peakAllNote').textContent = date(now.peak.ts, { month: 'short', day: 'numeric' }) + ', ' + time(now.peak.ts); }
+  }
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // ---------------------------------------------------------------- days
+  async function loadDays() {
+    let d; try { d = await get('/api/daily?off=' + new Date().getTimezoneOffset()); } catch (e) { return; }
+    const midnight = new Date(); midnight.setHours(0, 0, 0, 0); const today = midnight.getTime() / 1000;
+    const T = (x) => (x.sites._total || {});
+    const td = d.days.find((x) => Math.abs(x.day - today) < 4000);
+    $('#peakToday').textContent = td ? fmt(T(td).peak) : '0';
+    $('#peakTodayNote').textContent = 'since midnight';
+    $('#sessToday').textContent = td ? fmt(T(td).sessions) : '0';
+    $('#sessNote').textContent = 'new connections';
+    const week = d.days.filter((x) => x.day > today - 6.5 * 86400);
+    const best = week.reduce((a, x) => (T(x).peak > (a ? T(a).peak : -1) ? x : a), null);
+    $('#peak7').textContent = best ? fmt(T(best).peak) : '–';
+    $('#peak7Note').textContent = best ? (best === td ? 'today' : date(best.day + 43200, { weekday: 'long' })) : ' ';
+    const sites = now ? now.sites.map((s) => s.site) : [];
+    $('#days').innerHTML = d.days.length ? d.days.slice(0, 30).map((x) => {
+      const ups = sites.map((s) => x.sites[s] && x.sites[s].up).filter((v) => v !== null && v !== undefined);
+      const up = ups.length ? Math.min(...ups) : null;
+      const detail = sites.map((s) => x.sites[s] ? `${s}: ${fmt(x.sites[s].peak)} peak, ${pct(x.sites[s].up)} up` : '').filter(Boolean).join('\n');
+      return `<tr title="${esc(detail)}"><td>${date(x.day + 43200, { weekday: 'short', month: 'short', day: 'numeric' })}</td>
+        <td class="n">${fmt(T(x).peak)}</td><td class="n">${fmt(T(x).sessions)}</td><td class="n opt">${fmt(T(x).full || 0)}</td><td class="n">${pct(up)}</td></tr>`;
+    }).join('') : '<tr><td colspan="5" class="empty">No full days recorded yet.</td></tr>';
+  }
+  const pct = (v) => (v === null || v === undefined ? '–' : v >= 0.9995 ? '100%' : (v * 100).toFixed(1) + '%');
+
+  // ---------------------------------------------------------------- chart
+  async function loadSeries() { try { series = await get('/api/series?range=' + range); } catch (e) { return; } draw(); }
+
+  function lines() {
+    if (!series) return [];
+    const out = [{ key: '_total', name: series.sites.length > 1 ? 'All sites' : series.sites[0], color: INK, w: 2, fill: true }];
+    if (series.sites.length > 1) series.sites.forEach((s, i) => out.push({ key: s, name: s, color: COLORS[i % COLORS.length], w: 1.25 }));
+    return out.map((l) => ({ ...l, pts: (series.series[l.key] || []) }));
+  }
+  let geo = null;
+  function draw() {
+    const cv = $('#chart'), W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const L = lines();
+    $('#legend').innerHTML = L.length > 1 ? L.map((l) => `<span><i style="background:${l.color}"></i>${esc(l.name)}</span>`).join('') : '';
+    const all = L.flatMap((l) => l.pts);
+    if (!all.length) { geo = null; g.fillStyle = 'rgba(243,239,230,.36)'; g.font = '15px Barlow, system-ui'; g.fillText('Collecting data. The chart fills in as samples arrive.', 4, 24); return; }
+    const t0 = series.range === 'all' ? Math.min(...all.map((p) => p[0])) : series.from, t1 = series.to;
+    let ymax = Math.max(4, ...all.map((p) => p[1] || 0)); const step = niceStep(ymax / 4); ymax = Math.ceil(ymax / step) * step;
+    const padL = 40, padR = 10, padT = 10, padB = 26, pw = W - padL - padR, ph = H - padT - padB;
+    const X = (t) => padL + (t - t0) / Math.max(1, t1 - t0) * pw, Y = (v) => padT + ph - v / ymax * ph;
+    g.font = '12px "IBM Plex Mono", ui-monospace, monospace'; g.textBaseline = 'middle';
+    for (let v = 0; v <= ymax + 1e-9; v += step) {
+      g.strokeStyle = v === 0 ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.07)'; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(padL, Math.round(Y(v)) + .5); g.lineTo(W - padR, Math.round(Y(v)) + .5); g.stroke();
+      g.fillStyle = 'rgba(243,239,230,.45)'; g.textAlign = 'right'; g.fillText(fmt(v), padL - 8, Y(v));
+    }
+    g.textAlign = 'center'; g.textBaseline = 'top';
+    for (const [t, label] of xticks(t0, t1, pw)) { const x = X(t); if (x < padL + 12 || x > W - padR - 12) continue; g.fillStyle = 'rgba(243,239,230,.45)'; g.fillText(label, x, H - padB + 8); }
+    const gap = series.step * 2.5;
+    for (const l of [...L].reverse()) {
+      const runs = []; let run = [];
+      for (const p of l.pts) { if (p[1] === null || (run.length && p[0] - run[run.length - 1][0] > gap)) { if (run.length) runs.push(run); run = []; } if (p[1] !== null) run.push(p); }
+      if (run.length) runs.push(run);
+      for (const r of runs) {
+        if (l.fill) { g.beginPath(); g.moveTo(X(r[0][0]), Y(0)); r.forEach((p) => g.lineTo(X(p[0]), Y(p[1]))); g.lineTo(X(r[r.length - 1][0]), Y(0)); g.closePath(); g.fillStyle = 'rgba(243,239,230,.07)'; g.fill(); }
+        g.beginPath(); r.forEach((p, i) => (i ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1])))); g.strokeStyle = l.color; g.lineWidth = l.w; g.lineJoin = 'round'; g.stroke();
+        if (r.length === 1) { g.fillStyle = l.color; g.beginPath(); g.arc(X(r[0][0]), Y(r[0][1]), 2.5, 0, 7); g.fill(); }
+      }
+    }
+    geo = { X, Y, t0, t1, padL, pw, L, W };
+  }
+  function niceStep(raw) { const p = 10 ** Math.floor(Math.log10(Math.max(raw, 1))); for (const m of [1, 2, 5, 10]) if (m * p >= raw) return m * p; return 10 * p; }
+  function xticks(t0, t1, pw) {
+    const span = t1 - t0, want = Math.max(4, Math.floor(pw / 90)), H = 3600, D = 86400;
+    const steps = [H, 2 * H, 3 * H, 6 * H, 12 * H, D, 2 * D, 5 * D, 7 * D, 14 * D, 30 * D, 91 * D];
+    const st = steps.find((s) => span / s <= want) || steps[steps.length - 1], out = [];
+    const d = new Date(t0 * 1000); d.setMinutes(0, 0, 0);
+    if (st >= D) d.setHours(0);
+    while (d.getTime() / 1000 <= t1) {
+      const t = d.getTime() / 1000;
+      const ok = st >= D ? Math.round((t - new Date(2020, 0, 1).getTime() / 1000) / D) % (st / D) === 0 : d.getHours() % (st / H) === 0;
+      if (t >= t0 && ok) out.push([t, st >= D ? date(t) : time(t).replace(':00', '')]);
+      if (st >= D) d.setDate(d.getDate() + 1); else d.setHours(d.getHours() + 1);
+      if (out.length > 60) break;
+    }
+    return out;
+  }
+  const cv = $('#chart'), tip = $('#tip');
+  cv.addEventListener('mousemove', (e) => {
+    if (!geo) return; const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
+    const t = geo.t0 + (x - geo.padL) / geo.pw * (geo.t1 - geo.t0);
+    const main = geo.L[0].pts; if (!main.length) return;
+    let best = main[0]; for (const p of main) if (Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
+    draw();
+    const g = cv.getContext('2d'), bx = geo.X(best[0]);
+    g.strokeStyle = 'rgba(243,239,230,.3)'; g.lineWidth = 1; g.beginPath(); g.moveTo(Math.round(bx) + .5, 10); g.lineTo(Math.round(bx) + .5, cv.clientHeight - 26); g.stroke();
+    const rows = geo.L.map((l) => { const p = l.pts.find((q) => q[0] === best[0]); if (p && p[1] !== null) { g.fillStyle = l.color; g.beginPath(); g.arc(bx, geo.Y(p[1]), 3, 0, 7); g.fill(); } return `<div>${esc(l.name)}<b>${p && p[1] !== null ? fmt(p[1]) : '–'}</b></div>`; });
+    const span = series.step >= 86400 ? date(best[0], { weekday: 'short', month: 'short', day: 'numeric' }) : series.step >= 3600 ? date(best[0], { weekday: 'short', month: 'short', day: 'numeric' }) + ', ' + time(best[0]) + '–' + time(best[0] + series.step) : time(best[0]) + (series.step > 60 ? '–' + time(best[0] + series.step) : '');
+    tip.innerHTML = `<div class="t">${span}</div>${rows.join('')}<div>Sessions<b>${fmt(best[3])}</b></div>`;
+    tip.style.display = 'block';
+    const w = tip.offsetWidth; tip.style.left = Math.min(Math.max(0, bx + 14), cv.clientWidth - w) + 'px';
+  });
+  cv.addEventListener('mouseleave', () => { tip.style.display = 'none'; draw(); });
+  window.addEventListener('resize', () => draw());
+
+  // ---------------------------------------------------------------- wiring
+  const btns = [...document.querySelectorAll('#ranges button')];
+  const mark = () => btns.forEach((b) => b.classList.toggle('on', b.dataset.r === range));
+  btns.forEach((b) => b.addEventListener('click', () => { range = b.dataset.r; store.set('range', range); mark(); loadSeries(); }));
+  mark();
+  (async () => { await loadNow(); loadDays(); loadSeries(); })();
+  let tick = 0;
+  setInterval(() => { tick++; loadNow(); if (tick % 4 === 0) loadSeries(); if (tick % 20 === 0) loadDays(); }, 15000);
+})();
+</script>
+</body>
+</html>
