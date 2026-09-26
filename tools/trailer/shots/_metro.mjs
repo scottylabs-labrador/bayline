@@ -221,6 +221,7 @@ export const metro = `window.__m = window.__m || (() => {
     await ready();
     const [y, m, d] = ymd.split('-').map(Number); B.Env.setClock(sec, new Date(Date.UTC(y, m - 1, d, 19)));   // (19 UTC: noon in the Bay, that date)
     if (S() && S().replan) S().replan();
+    if (B.Traffic) B.Traffic.enabled = false;   // (the live ADS-B traffic is today's real sky: off on a pinned date, so every capture sees the same sky)
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); await new Promise(r => setTimeout(r, 250));
     return B.Env.serviceDay();
   }
