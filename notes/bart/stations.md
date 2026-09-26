@@ -5,6 +5,40 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## M3.4 (src/js frozen for M3.3 at b220f6f; lead 18:00)
+
+- **Non-hero sweep after today's changes** (29 stations + the Coliseum connector, a platform view and an aerial view
+  each, all built, no console errors): no regressions. One transient far LOD band (trees over unloaded far terrain) at
+  Glen Park from the air belongs to WORLD's streaming.
+- **Side platforms' track edge** (d24dbe4, taken into M3.3 as df9f36f): every side platform drew its coping, yellow
+  tactile strip and edge recess at the back (the platform profile's left/right flag was inverted since stage 1) and a
+  plain face at the track. Now at the track edge; the plain back face reaches the trackbed level. Verified on 16 views
+  (Hayward, Fruitvale, West Oakland, San Leandro, Union City, Millbrae 3, 12th/19th lower levels).
+- **Exit signs** (db6f2d8, M3.4): the signs over an escalator bank's foot faced sideways (a navy back to one side of
+  the platform, e.g. 12th St lower level); they now hang across the platform facing the people walking up to the bank
+  (an up bank from behind its foot, a down bank's well from its head), and a street stair's sign faces the concourse
+  (or its passage beside the box). Convention checked numerically; before/after views once the GPU is free.
+- **Platform end faces** (working tree, to verify): the transverse face at each end of every platform faced into the
+  platform (culled from the track and the cab: a platform's end showed its hollow); turned outward.
+- **Millbrae cross-platform island** (2fde725, WIP, written while the GPU is reserved; not yet run, not for merge).
+  Facts from the data: the Peninsula lanes spread 5.4-7.4 m at Millbrae (the fallback island was 2-4 m wide);
+  platform 3's back runs 5.6-7.6 m east of the northbound edge; Caltrain's rails are 1.3 m over the metro's, so a
+  Caltrain face (rail + 0.25) stands 0.35-0.56 m over platform 3 (rail + 0.991); OSM maps validators, ticket machines,
+  help points and bins at 3.5-5 m east of the northbound lane (the island) and benches, validators, machines, bike racks
+  and an info case 4.8-6 m west of the southbound lane (a west side platform), i.e. exactly the real layout.
+  As built: `25_stations.js layout()` (guard: `Metro.on && st.id === 'place_MLBR'`) lays out R (southbound, 4.5 m) and
+  L (northbound, 4.5 m, `xplat`: no outer fence, four step openings and a ramp landing kept clear of furniture, OSM
+  furniture on its outer 0.3 m left to the metro side); if the metro fails, the fallback island comes back (rebuilt).
+  `50_landmarks.js`: the Caltrain-era depot's six platform lamps join its hall group with the metro on (they would
+  stand in the island, their heads 1.6 m over it). `27_stationtypes.js`: the strip from platform 3's back to the face
+  at platform 3's level (1.1-3.1 m), a glass railing on the face's edge, flights of 2-3 steps at the openings, a 1:12
+  ramp with a landing, walk data (the strip 3 cm under the face's edge: no gap), platform 3's back open onto the strip,
+  its roof carried across the strip (lapped under the face's canopy edge), the vault springing from between Caltrain's
+  tracks with its columns on the strip and between the tracks, the footbridge supports clear of the steps, keep-out
+  zones for the strip and the new southbound platform. QA to run: the walk across at every opening (and blocked between
+  them), the ramp, before/after views metro on and off (`#metro=0` must be pixel-identical), the Peninsula suite with
+  `METRO=1`/`METRO=0` (stops, door sides, boarding), P14b's framing.
+
 ## Since the M3 report (09:10)
 
 - **M2b round 2 re-verified** (`#metrodir=metro-next/`, 08:06 data): platform check clean on 52 records (the guard
