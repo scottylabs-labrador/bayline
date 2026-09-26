@@ -347,7 +347,13 @@ const MetroStations = (() => {
       const eff = Math.hypot(st.dist, alt);
       st.root.visible = st.root.userData.warm !== false && eff < FAR_R;
       const r = st.res;
-      if (r && r.nears) { const nv = eff < Q.nearR; for (const g of r.nears) g.visible = nv; }
+      // near detail (furniture, signs, boards, escalator steps): within nearR at eye level; from the air (the camera
+      // more than 20 m over the station's platform or street, whichever is higher) only within 60 m (M3.1 perf: the
+      // aerial views paid ~20 calls a station for detail too small to see)
+      if (r && r.nears) { const i = r.info, yRef = i ? Math.max(i.yT, isFinite(i.street) ? i.street : i.yT) : 0, aerial = i && camPos.y - yRef > 20;
+        const nv = eff < (aerial ? Math.min(Q.nearR, 60) : Q.nearR); for (const g of r.nears) g.visible = nv;
+        // departure boards: one draw call each, unreadable past ~90 m
+        if (nv && r.boardMeshes) for (const b of r.boardMeshes) b.m.visible = (b.c.x - camPos.x) ** 2 + (b.c.y - camPos.y) ** 2 + (b.c.z - camPos.z) ** 2 < 8100; }
       if (r && r.update) r.update(dt, camPos, night);
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
@@ -742,6 +748,15 @@ const MetroStations = (() => {
     if (o.lobby !== undefined && st.res && st.res.info && isFinite(st.res.info.cu0)) aim(st.res.info.cu0 + o.lobby);
     // o.conc: at the concourse floor + o.h (the mezzanine above a subway, the lobby below a deck, a footbridge)
     if (o.conc && st.res && st.res.info && isFinite(st.res.info.yCF)) aim(o.u || 0, o.v || 0, st.res.info.yCF);
+    // o.under: 'in' -> inside an underpass at its passage, looking along the box (o.yaw turns); 'W' / 'E' -> 3 m past
+    // that mouth's approach, o.h over its far end, looking back in
+    const UPi = o.under && st.res && st.res.info ? st.res.info.underpass : null;
+    if (UPi && o.under === 'in') aim(UPi.cu0 + 1.2, o.v || 0, st.res.info.yCF);
+    else if (UPi) { const q = UPi.sides.find(x => x[0] === o.under); if (q) { o.yaw = (o.yaw || 0) - q[4] * Math.PI / 2; aim(UPi.um + (o.du || 0), q[6] + q[4] * (o.back ?? 3), st.res.info.yCF + q[3]); } }
+    // o.hall: 'in' -> in an end hall 3 m past the platforms' ends looking toward its far end; 'back' -> at its far end
+    // looking back at the platforms
+    const HLi = o.hall && st.res && st.res.info ? st.res.info.hall : null;
+    if (HLi) { const back = o.hall === 'back'; o.yaw = (o.yaw || 0) + ((HLi.dir > 0) === back ? Math.PI : 0); aim(back ? HLi.uH - HLi.dir * 3 : HLi.uE + HLi.dir * 3, o.v || 0, st.res.info.yCF); }
     // o.onPlat: k -> on platform k's middle line at o.u (station-local v from the built platform)
     const PK = o.onPlat !== undefined && st.res && st.res.crowd ? st.res.crowd.plats[Math.min(o.onPlat, st.res.crowd.plats.length - 1)] : null;
     if (PK) { const u = U.clamp(o.u || 0, PK.u0 + 2, PK.u1 - 2); aim(u, (PK.eL(u) + PK.eR(u)) / 2 + (o.dv || 0), PK.y); }

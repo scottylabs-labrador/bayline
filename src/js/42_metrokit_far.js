@@ -61,14 +61,16 @@
   // ------------------------------------------------------------------------------------------ billboards (lamps)
   // Instanced camera-facing quads with a soft glow; one draw for all lamps of a batch. Instance attributes:
   // iPos (xyz world, w size in m), iCol (rgb, a unused). Works with the logarithmic depth buffer and the earth bend.
+  // (uGain: shared by every glow, MetroKit.look({ glow }))
+  const GLOW_GAIN = K.glowGain = { value: 1 };
   function glowMaterial() {
     return new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: true,
-      uniforms: { uMinPx: { value: 2.5 }, uRes: { value: new THREE.Vector2(1600, 900) } },
+      uniforms: { uMinPx: { value: 2.5 }, uRes: { value: new THREE.Vector2(1600, 900) }, uGain: GLOW_GAIN },
       vertexShader: `
         #include <common>
         #include <logdepthbuf_pars_vertex>
-        attribute vec4 iPos; attribute vec4 iCol; varying vec2 vQ; varying vec3 vC; uniform float uMinPx; uniform vec2 uRes;
+        attribute vec4 iPos; attribute vec4 iCol; varying vec2 vQ; varying vec3 vC; uniform float uMinPx, uGain; uniform vec2 uRes;
         void main() {
           vec4 mv = modelViewMatrix * vec4(iPos.xyz, 1.0);
           if ( ! isOrthographic ) mv = blBend( mv );
@@ -76,7 +78,7 @@
           float d = max(-mv.z, 1.0), px = iPos.w / d * projectionMatrix[1][1] * uRes.y * 0.5;
           float grow = max(1.0, uMinPx / max(px, 1e-4));
           mv.xy += position.xy * iPos.w * grow;
-          vQ = position.xy * 2.0; vC = iCol.rgb / grow;
+          vQ = position.xy * 2.0; vC = iCol.rgb / grow * uGain;
           gl_Position = projectionMatrix * mv;
           #include <logdepthbuf_vertex>
         }`,

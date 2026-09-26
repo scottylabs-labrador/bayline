@@ -497,6 +497,27 @@ const Terrain = (() => {
             }
             return best;
           }
+          // city lights seen from the air, resolved (Bayline Metro world): at most one lamp per cell, cells of ~4 px and more
+          // (octaves of 11 m x 2^k, the two nearest blended by the pixel footprint fp m), each lamp a Gaussian of 0.8 px
+          // carrying its cell's light, so the field is world-stable (nothing crawls or shimmers as the camera moves) and
+          // reads as points of light with dark gaps between them; a lamp exists where the lamp density beats its cell's
+          // hash, with a soft edge (lamps fade, never pop). x: radiance per unit average; y: the lamps' LED share (0..1)
+          vec2 farLamps(vec2 p, float fp, float dens) {
+            float lv = max(0.0, log2(4.0 * fp / 11.0)), k0 = floor(lv), kf = lv - k0, sg = 0.8 * fp, inv = 1.0 / (2.0 * sg * sg);
+            float e = 0.0, led = 0.0;
+            for (int o = 0; o < 2; o++) {
+              float w = o == 0 ? 1.0 - kf : kf; if (w < 0.002) continue;
+              float cs = 11.0 * exp2(k0 + float(o)); vec2 g = p / cs, i0 = floor(g - 0.5);
+              for (int k = 0; k < 4; k++) {
+                vec2 cid = i0 + vec2(float(k & 1), float(k >> 1)); uint h = ih(cid + vec2(7919.0 * float(o), 0.0));
+                float on = smoothstep(-0.06, 0.06, dens - float(h & 1023u) * (1.0 / 1023.0)); if (on <= 0.0) continue;
+                vec2 d = (g - cid - 0.15 - 0.7 * vec2(float((h >> 10) & 255u), float((h >> 18) & 255u)) * (1.0 / 255.0)) * cs;
+                float gs = exp(-dot(d, d) * inv) * on * w * cs * cs;
+                e += gs; led += gs * float(h >> 26) * (1.0 / 63.0);
+              }
+            }
+            return vec2(e * inv * 0.31830989, e > 1e-6 ? led / e : 0.5);
+          }
           vec3 gN; float gRough; vec3 gEmis; float gWater;
           // the photo magnified with crisp, wandering edges: the bilinear weights are pushed toward the nearer texel (a
           // smoothstep of the fraction, still one hardware fetch) and the lookup is nudged by world-space noise, so a
@@ -706,6 +727,33 @@ const Terrain = (() => {
             float haze = pow(smoothstep(0.25, 0.95, gl), 2.2) * 0.15;
             float far = 1.0 - 0.25 * smoothstep(8.0, 40.0, fwl);                          // (a little dimmer where a pixel spans a block)
             gEmis = lamp * (haze + pts * 1.1) * nk * far * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
+            // from the air (pixels of more than ~2 m): the resolved lamp field instead of an average. Density from the street
+            // mask with a gamma (freeways, arterials and downtowns dense; residential sparse; parks, hills and water dark),
+            // LED white where the mask is brightest (downtowns, freeways, ports and aprons) and a per-lamp sodium / LED mix
+            // elsewhere, warmer residential; a faint glow over the densest cores only. The near look is unchanged.
+            float wFar = smoothstep(3.0, 6.0, fwl) * step(0.001, nk);
+            if (wFar > 0.0) {
+              float fpx = max(max(length(qdx), length(qdy)), 0.5);
+              // where the lamps stand: the street mask (coarse far away) sharpened by the photograph, which still shows the
+              // streets at any distance: asphalt (dark, grey) takes the lamps, roofs and vegetation lose most of them
+              vec3 pc = pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)); float pl = dot(pc, vec3(0.299, 0.587, 0.114));
+              float psat = (max(pc.r, max(pc.g, pc.b)) - min(pc.r, min(pc.g, pc.b))) / max(pl, 0.03);
+              float asph = (1.0 - smoothstep(0.12, 0.28, psat)) * (1.0 - smoothstep(0.30, 0.5, pl));
+              float vegF = smoothstep(-0.01, 0.05, pc.g - max(pc.r * 0.97, pc.b));
+              float densF = pow(smoothstep(0.12, 0.85, gl), 2.0) * (0.6 + 0.8 * wtn(vW.xz / 300.0 + 17.0)) * mix(0.25, 1.6, asph) * (1.0 - 0.75 * vegF);
+              vec2 fl = farLamps(vW.xz, fpx, densF);
+              float ledK = clamp(smoothstep(0.35, 0.75, wtn(vW.xz / 420.0)) * 0.55 + (fl.y - 0.5) * 0.9 + smoothstep(0.7, 1.0, gl) * 0.45 - (1.0 - smoothstep(0.3, 0.6, gl)) * 0.25, 0.0, 1.0);
+              vec3 lampF = mix(mix(vec3(1.0, 0.6, 0.28), vec3(0.95, 0.9, 0.84), ledK), vec3(1.0, 0.58, 0.26), (1.0 - nk) * 0.5);
+              // the street network itself where the mask resolves it (the Peninsula's lit grid from a few km: arterials and
+              // freeways as lines of light), with a steep gamma so a coarse, pooled mask (a flat mid value) adds almost nothing
+              // there and the lamps carry the texture; the photo's asphalt on a bright stretch of mask adds the arterials
+              // where the mask is coarse; a faint glow over the densest cores
+              float mTexel = nodeSize / (128.0 * max(mUV.z, 1e-4));                            // (the mask's texel, m)
+              float lines = pow(smoothstep(0.3, 0.95, gl), 2.5) * 0.12 * (1.0 - smoothstep(14.0, 40.0, mTexel));
+              float glow = pow(smoothstep(0.55, 1.0, gl), 2.0) * 0.02 + asph * pow(smoothstep(0.4, 0.95, gl), 1.6) * 0.05;
+              vec3 eFar = lampF * (fl.x * 0.10 + lines + glow) * nk * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
+              gEmis = mix(gEmis, eFar, wFar);
+            }
             diffuseColor.rgb = col;
             gN = nW;
           }`)

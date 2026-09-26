@@ -662,7 +662,7 @@ const MetroGuide = (() => {
 
   // ------------------------------------------------------------------ instanced small parts around the camera
   // fastener pairs (DF), ties (ballast), third-rail insulators; rebuilt when the camera moves 12 m
-  let inst = null; const lastC = new THREE.Vector3(1e9, 0, 0);
+  let inst = null; const lastC = new THREE.Vector3(1e9, 0, 0), lastDir = new THREE.Vector3(), _sph = new THREE.Sphere(); let lastFov = 0, lastCap = 1;
   const _m4 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _flip = new THREE.Matrix4().makeRotationY(Math.PI);   // (field side: turned, not mirrored)
   // (per gauge: rc = the rail head centre's offset, 0.8545 m broad gauge, 0.7335 m standard gauge (eBART))
   function fastenerGeo(full, RC) {
@@ -734,22 +734,33 @@ const MetroGuide = (() => {
     if (!MATS) return;
     if (clear || low) { pend = null; if (inst) for (const m of Object.values(inst)) { m.count = 0; m.visible = false; } MT.stats.inst = 0; lastC.set(1e9, 0, 0); return; }
     if (pend) { placeSlice(); return; }
-    if (cam.distanceToSquared(lastC) < 144) return; lastC.copy(cam);
+    // (lens-aware, MetroTrack.lens: in the view frustum of a long lens every distance is scaled by k, and by 1/3 in
+    // capture mode everywhere; with a long lens the placement is redone when the view turns 1.5° or zooms, too)
+    const L = MT.lens || { k: 1, cap: 1, tele: false, dir: lastDir, fov: 55 };
+    const turned = L.tele && (lastDir.dot(L.dir) < 0.99966 || Math.abs(lastFov - L.fov) > 0.3);
+    if (cam.distanceToSquared(lastC) < 144 && !turned && lastCap === L.cap) return; lastC.copy(cam); lastDir.copy(L.dir); lastFov = L.fov; lastCap = L.cap;
+    const fIn = (L.tele ? L.k : 1) / L.cap, fOut = 1 / L.cap, RR = Math.min(1500, MID / fIn);
+    const fAt = (Rk, sq) => { if (!L.tele) return fOut; MT.frameAt(Rk, sq, F2); _sph.center.set(F2.x, F2.y + 1, F2.z); _sph.radius = 14; return L.frustum.intersectsSphere(_sph) ? fIn : fOut; };
     const t0 = performance.now(), I = ensureInst(); let nI = 0, nD = 0, tIns = 0;
     cand.length = 0;
-    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, MID) : []; const t1 = performance.now();
+    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, RR) : []; const t1 = performance.now();
     for (const q of near) {
       const R = MT.trackOf(q.track); if (!R) continue;
-      MT.frameAt(R, q.s, F); if (Math.abs(F.y - cam.y) > 60) continue;
-      const w = Math.sqrt(Math.max(0, MID * MID - q.dist * q.dist)); const a = Math.max(0, q.s - w), b = Math.min(R.len, q.s + w);
+      MT.frameAt(R, q.s, F); if (Math.abs(F.y - cam.y) * fIn > 60) continue;
+      const w = Math.sqrt(Math.max(0, RR * RR - q.dist * q.dist)); const a = Math.max(0, q.s - w), b = Math.min(R.len, q.s + w);
       for (const run of R.runs) {
         if (run.s1 <= a || run.s0 >= b) continue; const df = DF.has(run.type), sp = df ? DIM.fastSpacing : isStd(R) ? STD.tieSpacing : DIM.tieSpacing;
-        for (let s = Math.ceil(Math.max(a, run.s0) / sp) * sp; s < Math.min(b, run.s1); s += sp) { const d = Math.hypot(s - q.s, q.dist); cand.push(d, s, R.k, df ? 1 : 0); }
+        // (in 20 m pieces: each piece in or out of the frustum)
+        for (let p0 = Math.max(a, run.s0), pe = Math.min(b, run.s1); p0 < pe; p0 += 20) {
+          const p1 = Math.min(pe, p0 + 20), f = fAt(R, (p0 + p1) / 2);
+          for (let s = Math.ceil(p0 / sp) * sp; s < p1; s += sp) { const d = Math.hypot(s - q.s, q.dist) * f; if (d < MID) cand.push(d, s, R.k, df ? 1 : 0); }
+        }
       }
-      // insulators every T3.insulator m along the third rail's pieces (lowered with the rail on its end ramps), within 150 m
-      const ia = Math.max(a, q.s - 120), ib = Math.min(b, q.s + 120); const ti = performance.now();
+      // insulators every T3.insulator m along the third rail's pieces (lowered with the rail on its end ramps), within 120 m
+      const ia = Math.max(a, q.s - 120 / fIn), ib = Math.min(b, q.s + 120 / fIn); const ti = performance.now();
       if (ib > ia) for (const pc of thirdPieces(R, ia, ib)) {
         for (let s = Math.ceil((pc.a + 0.3) / T3.insulator) * T3.insulator; s < pc.b - 0.3; s += T3.insulator) {
+          if (Math.hypot(s - q.s, q.dist) * fAt(R, s) > 120) continue;
           const run = R.runs.find(r => s >= r.s0 && s < r.s1), df = !!run && DF.has(run.type), mesh = df ? I.insDF : I.ins;
           const k = df ? nD : nI; if (k >= 900) continue;
           if (df) nD++; else nI++;

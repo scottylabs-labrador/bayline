@@ -48,6 +48,38 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   (the station's white fascia, its honey wood soffit, downlights) and panes of coloured art glass on the upper level
   that glow at night; the ground graded to its floor and kept clear (`shots/stations/warm_rotunda_day.jpg`,
   `warm_rotunda_dusk.jpg`).
+- **Underpasses** (`access: 'under'`, 27_stationtypes.js `underpass()`): Richmond, Union City, Fremont, South Hayward and
+  Lafayette are reached from a passage under the tracks (research: "a pedestrian passage under the platforms", "a
+  tiled pedestrian underpass", "an underpass ~75 m long under both carriageways"); ours were footbridges 6.2 m over the
+  platforms with 11.5-14.7 m landing towers (their platforms stand only 1.8-5.2 m over the ground at the middle, which
+  is the fill itself). Now a concrete box under the tracks at the entrances' ground level (3DEP lidar at the GTFS
+  entrances, in the config: RICH 8.3 (the sunken east plaza), UCTY 14.6, FRMT 18.5, SHAY 8.0, LAFY 107.2), 3 m clear,
+  its own Under cell; the public passage across its entrance end lines up with the nearest entrance, the fare line
+  behind it, the banks come down through wells in the platform toward it (their wells cut through the fill); a mouth in
+  each side with a headwall and an open approach cut through MetroGround's 1:2 fill between wing walls, its apron
+  graded; a side platform on the outside stands on a retained-fill podium wall (South Hayward, Union City: research
+  "a raised retained-fill embankment") with the mouth in it. Richmond: buff tile with a brown band, white mushroom
+  columns, a shell relief, and its west side climbs 4.1 m by two flights to the ground there under the white
+  semicircular canopy with the red cylindrical elevator. Lafayette: the passage runs on in tunnels (own cells) under
+  both freeway carriageways to mouths 38 m out; blue mosaic columns in the fare lobby. Probe (`tools/metro_cellpoke.js`):
+  no road sample inside any of the new volumes (RICH, LAFY, UCTY).
+- **MacArthur's islands** (hero): its four platform faces were paired first-found, so the outer tracks' faces (25.6 m
+  apart) became one island spanning the two inner tracks, with the inner faces as side platforms. Research: "track 2 |
+  WEST ISLAND | track 4 - track 3 | EAST ISLAND | track 1". Faces now pair with the nearest facing face that has no
+  track (platform, storage or pocket) between them: two ~9 m islands. The platform check only looked 2.5 m into each
+  face's body; the audit now flags any island wider than 14 m. MacArthur's lobby is now at street level too (the
+  underpass mode, floor 30.4 m from the lidar at its entrance; it was 26.1 m, the terrain sampled before the lidar
+  streamed, and stood in a pit graded 4.4 m under the plaza).
+- **Opening rims faced outward**: the walls round an opening in a slab (escalator wells through a platform or a
+  concourse roof) were wound to look out of the opening, so from inside the well they were culled and whatever stood
+  beside it showed through (found at Richmond's new well: the fill's gravel beside the escalators; also the rims of the
+  subway concourses' roof openings, the backface tool's zone-conc hits at 16th/24th St). Now they look in.
+- **Aerial level of detail (M3.1 perf)**: from the air (camera > 20 m over the platform or street) a station's near
+  detail (furniture, signs, boards, escalator steps) shows only within 60 m (320 m at eye level on High); departure
+  boards (one draw call each) only within 90 m. From the air at MacArthur and Millbrae the stations now add 12 draw
+  calls each (`tools/metro_share.js`: paired readings with time held; guideway and tunnels +29..+48, stations
+  +12..+25, whole metro +45..+73 in those views; at the Peninsula's Millbrae camera stations +14 calls / +43 k
+  triangles of the metro's +34 / +279 k).
 - **Memory**: the geometry builders' working arrays are released once a station's meshes exist (every zone's
   builders, several MB each, stayed alive through the update closure): about 4 MB per built station
   (`metro_shots.mjs --gc` for exact heap numbers).
@@ -69,16 +101,25 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
    circles and arrows, the 16th/24th St Mitchell reliefs.
    Also seen: at Balboa Park the terrain slopes beside the cover carry the orthophoto's red platforms (MetroGround's
    carve; pre-existing, only from the air).
+6. **SFO's access**: the real station has no street-level lobby: riders leave the platforms at the east (bumper) end
+   into the International Terminal's departures level, and at the west end go up through the Wind Portal to the
+   AirTrain. Ours has a lobby on the ground under the deck with stairs down (the generic aerial pattern). Plan: an
+   `end` access (a glazed fare hall at platform level beyond the bumpers, opening into the terminal building), the
+   ground lobby removed; the Wind Portal once an AirTrain level exists. (Data: the three tracks end at bumpers at
+   x = +99..+105 m from the station point; GTFS 'San Francisco International Airport' 33 m beyond them is the
+   terminal door; 'International Terminal, Level 3' at -64 m is the west half's AirTrain side.)
+   Tried 2026-09-26 (`access: 'end'`, `endHall()` in 27_stationtypes.js, off in the config as `endHallWip`): the hall
+   itself reads right (fare line, glass sides, roof, the terminal door) but (a) the station plan's spine ends 40 m past
+   the platforms, and SFO's side platform already reaches it (its extent maps to 264 m against the island's 216 m), so
+   a hall past it has no frames (they clamp): the spine margin must grow by the hall; (b) the island's tracks end 24 m
+   short of the side platform's, so the hall's floor must start at the island's bumpers with an opening over the side
+   platform's last 24 m, and each track needs its own buffer stop.
+7. (done) MacArthur's lobby level and islands. Still open: `groundC0` (the ground at a station's middle, cached at its
+   first plan) can come from a coarse tile when the plan is made far away; a lobby that depends on it may stand off
+   the ground (the audit's 'lobby off the ground' flag catches it).
 4. Minor surfaces seen from behind (`tools/metro_backfaces.js`, a few rays each): well-end faces at 12th/19th St, the
    shed canopy's end caps at SFO; low visibility, left for after the gate.
-5. **Richmond's underpass**: the real concourse is a pedestrian underpass under the tracks (the island is reached from
-   below, street entrances at both ends; research: "concourse ~-3 under the tracks"). Ours is a footbridge 6.2 m over
-   the platform with 11.7 m landing towers, because the platform is only 5.2 m over the ground at its middle and a
-   lobby under a deck needs 6.2 m. Plan: an `under` access mode for stations on a fill (MetroGround's 1:2 embankment):
-   a concrete box across the embankment at street level (ceiling rail - 1.2 m, ~2.9 m clear), headwalls and wing
-   walls where the fill slopes meet it, open approach cuts to the toe, escalators and stair down through the platform
-   body, fare gates in the box, the west plaza's semicircular canopy at its west mouth. The passage under the UP /
-   Amtrak tracks to the west plaza needs those tracks (not modelled): the west mouth would open beside them.
+5. (done, see "Since the M3 report") Underpasses at Richmond, Union City, Fremont, South Hayward and Lafayette.
 
 ## M3 gate (2026-09-26 08:30 EDT): items 2-4 done, Millbrae shared hall done (09:40)
 
