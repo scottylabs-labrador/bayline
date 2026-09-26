@@ -58,6 +58,7 @@ const MetroTrack = (() => {
     fence: P(0x8b9094, 0.45, 0.6, 7), bearing: P(0x202020, 0.8, 0, 9), steel: P(0x4a4d50, 0.55, 0.55, 0),
     steelRing: P(0x55595c, 0.62, 0.55, 11), exitSign: P(0x2fb35a, 0.4, 0, 5), blueLamp: P(0x3a6cff, 0.3, 0, 5),
     doorYellow: P(0xe0b21e, 0.5, 0.2, 0), jacket: P(0x9a9d9e, 0.5, 0.55, 7), blueSign: P(0x1f4f8f, 0.4, 0.1, 0),
+    frog: P(0x4a4442, 0.55, 0.7, 2), steelGreen: P(0x3b4a3e, 0.55, 0.35, 0),
   };
 
   // ---------------------------------------------------------------- geometry builder

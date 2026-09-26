@@ -371,6 +371,82 @@ const MetroGuide = (() => {
     return out;
   }
 
+  // ------------------------------------------------------------------ junctions (turnouts, crossovers, diamonds)
+  // MetroNet splits tracks at junctions, so near one two tracks' rails coincide (the switch points) or cross (the frog).
+  // Within 45 m of a junction: coincident rails are drawn once (the lexically smaller track keeps its rail), a rail
+  // crossing another track's rail gets a manganese frog casting and a guard rail opposite, a switch machine stands at the
+  // points, and the third rail gaps wherever it would foul another track (with its 76 mm end ramps) [BFS, CLEMONS].
+  function zonesOf(R) {
+    if (R.jz) return R.jz; const z = [];
+    for (const j of MT.net.junctions || []) for (const [tid, sj] of j.tracks) if (tid === R.id) z.push([sj - 45, sj + 45]);
+    if (R.cls === 'crossover') z.push([-1, R.len + 1]);
+    z.sort((a, b) => a[0] - b[0]); const m = [];
+    for (const r of z) { if (m.length && r[0] <= m[m.length - 1][1]) m[m.length - 1][1] = Math.max(m[m.length - 1][1], r[1]); else m.push(r.slice()); }
+    return (R.jz = m);
+  }
+  const inZone = (R, s) => { for (const z of zonesOf(R)) if (s >= z[0] && s <= z[1]) return true; return false; };
+  // other tracks near a world point (same level): [{ Q, s, lat (the point's lateral from Q's centreline), dot }]
+  const _oth = [];
+  function others(R, x, y, z, r, tx, tz) {
+    _oth.length = 0;
+    for (const q of MT.net.nearAll(x, z, r)) {
+      const Q = MT.trackOf(q.track); if (!Q || Q === R) continue;
+      MT.frameAt(Q, q.s, F2); if (Math.abs(F2.y - y) > 2.5) continue;
+      _oth.push({ Q, s: q.s, lat: q.lat, dot: tx * F2.tx + tz * F2.tz });
+    }
+    return _oth;
+  }
+  // is my rail (side k) at s drawn by another track (coincident within 5.5 cm, and the other track's id is smaller)?
+  function railDup(R, s, k) {
+    MT.frameAt(R, s, F); const x = F.x + F.rx * k * DIM.railC, z = F.z + F.rz * k * DIM.railC;
+    for (const o of others(R, x, F.y, z, 1.6, F.tx, F.tz)) if (Math.abs(Math.abs(o.lat) - DIM.railC) < 0.055 && o.Q.id < R.id) return true;
+    return false;
+  }
+  // third rail at s (side sd) fouls another track's envelope?  (cached per 1.5 m)
+  function thirdFoul(R, s, sd) {
+    if (!inZone(R, s)) return false;
+    const key = Math.round(s / 1.5) * 2 + (sd > 0 ? 1 : 0); R.tfc = R.tfc || new Map(); const c = R.tfc.get(key); if (c !== undefined) return c;
+    MT.frameAt(R, s, F); const x = F.x + F.rx * sd * T3.lat, z = F.z + F.rz * sd * T3.lat; let foul = false;
+    for (const o of others(R, x, F.y, z, 2.6, F.tx, F.tz)) if (Math.abs(o.lat) < 2.25) { foul = true; break; }
+    R.tfc.set(key, foul); return foul;
+  }
+  // frogs on my rail k between s0 and s1: [{ s, Q, qs }] where my rail crosses a rail of a track at >= 2 degrees
+  function frogsOn(R, s0, s1, k) {
+    const out = []; let prev = null;
+    for (let s = s0; s <= s1 + 1e-6; s += 0.5) {
+      MT.frameAt(R, s, F); const x = F.x + F.rx * k * DIM.railC, z = F.z + F.rz * k * DIM.railC; const cur = new Map();
+      for (const o of others(R, x, F.y, z, 2.2, F.tx, F.tz)) { if (Math.abs(o.dot) > 0.99939) continue; cur.set(o.Q, [o.lat - DIM.railC, o.lat + DIM.railC, o.s]); }
+      if (prev) for (const [Q, v] of cur) { const pv = prev.get(Q); if (!pv) continue;
+        for (let m = 0; m < 2; m++) if (Math.sign(pv[m]) !== Math.sign(v[m]) && Math.abs(pv[m] - v[m]) < 0.4) { const t = pv[m] / (pv[m] - v[m]); out.push({ s: s - 0.5 + 0.5 * t, Q, qs: v[2] }); } }
+      prev = cur;
+    }
+    return out;
+  }
+  function buildJunctionParts(ctx, gb, a, b) {
+    const R = ctx.R;
+    for (const k of [-1, 1]) for (const fr of frogsOn(R, a, b, k)) {
+      MT.frameAt(R, fr.s, F); const T = [F.tx, F.ty, F.tz], Up = [F.ux, F.uy, F.uz], Rt = [F.rx, F.ry, F.rz];
+      // frog casting (once per crossing), then my guard rail on the other rail, 48 mm inside its gauge face
+      if (R.id < fr.Q.id) { const c = [F.x + F.rx * k * DIM.railC - ctx.ox, F.y - 0.086, F.z + F.rz * k * DIM.railC - ctx.oz];
+        gb.box(c[0], c[1], c[2], T, Up, Rt, 2.1, 0.086, 0.24, PAL.frog);
+        gb.box(c[0], c[1] + 0.084, c[2], T, Up, Rt, 1.6, 0.003, 0.07, PAL.railTop); }
+      const gl = -k * (DIM.railC - DIM.railHead - 0.048), ss = [fr.s - 2.4, fr.s - 1.6, fr.s + 1.6, fr.s + 2.4].filter(v => v > ctx.s0 && v < ctx.s1);
+      if (ss.length >= 2) { const rows = ctx.rowsAt(ctx, ss, gl, 0, true); rows.forEach((rw, i) => { if (i === 0 || i === rows.length - 1) { rw.o[0] += F.rx * -k * 0.05; rw.o[2] += F.rz * -k * 0.05; } }); gb.sweep(rows, RAILS[-k], RAILC); }
+    }
+    // switch machines: where one of my rails stops being drawn by another track (the switch points)
+    let prevDup = null;
+    for (let s = a; s <= b; s += 1.0) {
+      for (const k of [-1, 1]) {
+        const d = railDup(R, s, k), key = k > 0 ? 1 : 0; if (prevDup && prevDup[key] && !d) {
+          MT.frameAt(R, s - 1.5, F); const lat = k * (DIM.railC + 1.05), c = [F.x + F.rx * lat - ctx.ox, F.y - 0.1, F.z + F.rz * lat - ctx.oz];
+          gb.box(c[0], c[1], c[2], [F.tx, F.ty, F.tz], [F.ux, F.uy, F.uz], [F.rx, F.ry, F.rz], 0.75, 0.16, 0.22, PAL.steelGreen);
+          gb.box(c[0] - F.rx * k * 0.55, c[1] - 0.06, c[2] - F.rz * k * 0.55, [F.tx, F.ty, F.tz], [F.ux, F.uy, F.uz], [F.rx, F.ry, F.rz], 0.03, 0.02, 0.5, PAL.galvDark);
+        }
+        if (!prevDup) prevDup = [false, false]; prevDup[key] = d;
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ detail layer: rails, plinths, third rail
   const DF = new Set(['aerial', 'bridge', 'trench', 'portal', 'cutcover', 'bored', 'tube']);
   function* detail(ctx) {
@@ -380,9 +456,18 @@ const MetroGuide = (() => {
       const a = Math.max(run.s0, s0), b = Math.min(run.s1, s1); if (b - a < 0.05) continue;
       const under = MT.UNDERGROUND.has(run.type), gb = under ? ctx.B.tunnel : ctx.B.infra;
       if (under && typeof MetroTube !== 'undefined') gb.fix = MetroTube.fixFor(R, (a + b) / 2, run.type);
-      // rails (banked frame), dense sampling for smooth curves
+      // rails (banked frame), dense sampling for smooth curves; near junctions a rail another track draws is skipped
       const ss = ctx.sampleS(R, a, b, 6, 0.8);
-      for (const side of [-1, 1]) { const rows = ctx.rowsAt(ctx, ss, side * DIM.railC, 0, true); gb.wear = 0.4; gb.sweep(rows, RAILS[side], RAILC); }
+      const zoned = zonesOf(R).some(z => z[1] > a && z[0] < b);
+      for (const side of [-1, 1]) {
+        gb.wear = 0.4;
+        if (!zoned) { gb.sweep(ctx.rowsAt(ctx, ss, side * DIM.railC, 0, true), RAILS[side], RAILC); continue; }
+        const fine = []; for (const q of ss) { if (fine.length && inZone(R, q)) { const p0 = fine[fine.length - 1]; for (let t = p0 + 0.5; t < q - 0.25; t += 0.5) fine.push(t); } fine.push(q); }
+        let piece = [];
+        for (const q of fine) { if (inZone(R, q) && railDup(R, q, side)) { if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC); piece = []; } else piece.push(q); }
+        if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC);
+      }
+      if (zoned) for (const z of zonesOf(R)) { const za = Math.max(a, z[0]), zb = Math.min(b, z[1]); if (zb > za) buildJunctionParts(ctx, gb, za, zb); }
       // plinths (DF structures) under each rail, broken every 4.6 m for drainage; ties are instanced
       const PL = run.type === 'aerial' || run.type === 'bridge' ? 22.5 : 9.14;       // plinths break at deck joints / every 30 ft
       if (DF.has(run.type)) for (let q = Math.floor(a / PL) * PL; q < b; q += PL) {
@@ -403,21 +488,24 @@ const MetroGuide = (() => {
   function buildThird(ctx, gb, a0, b0) {
     const R = ctx.R, s0 = Math.max(a0, 14), s1 = Math.min(b0, R.len - 14);
     if (s1 - s0 < 2) return;
-    // split where the side changes
+    // pieces of constant side, not fouling another track; each piece end that is a real gap end gets the end approach ramp
     const pieces = []; let cur = null;
-    for (let s = s0; s <= s1 + 1e-6; s += 2) { const sd = ctx.thirdSide(R, Math.min(s, s1)); if (!cur || cur.side !== sd) { if (cur) pieces.push(cur); cur = { a: s, b: s, side: sd }; } else cur.b = Math.min(s, s1); if (s >= s1) break; }
+    for (let s = s0; ; s = Math.min(s1, s + 1.5)) {
+      const sd = ctx.thirdSide(R, s), ok = !thirdFoul(R, s, sd);
+      if (ok && cur && cur.side === sd) cur.b = s;
+      else { if (cur) pieces.push(cur); cur = ok ? { a: s, b: s, side: sd } : null; }
+      if (s >= s1) break;
+    }
     if (cur) pieces.push(cur);
     for (const pc of pieces) {
-      if (pc.b - pc.a < 6) continue;
-      const a = pc.a + (pc.a > s0 + 1 ? 3 : 0), b = pc.b - (pc.b < s1 - 1 ? 3 : 0); if (b - a < 1) continue;
+      const gapA = pc.a > a0 + 0.8 || pc.a <= 14.01, gapB = pc.b < b0 - 0.8 || pc.b >= R.len - 14.01;       // (a chunk edge is not a gap)
+      const a = pc.a + (gapA && pc.a > 14.01 ? 1.5 : 0), b = pc.b - (gapB && pc.b < R.len - 14.01 ? 1.5 : 0); if (b - a < 1) continue;
       const ss = ctx.sampleS(R, a, b, 6, 1.0);
       const lat = pc.side * T3.lat;
       const rows = ctx.rowsAt(ctx, ss, lat, T3.top, true);
-      // end approaches: the contact surface ramps down 7 cm over the last 1.5 m where the run starts/ends at a gap
-      const ramp = (row) => { const e = Math.min(row.s - a, b - row.s); const k = U.clamp(e / 3.5, 0, 1); row.o[1] -= (1 - k) * 0.076; };   // end approach: 3 in over ~3.5 m
-      if (a <= 14.5 || pc.a > s0 + 1) rows.forEach(ramp); else if (b >= R.len - 14.5 || pc.b < s1 - 1) rows.forEach(ramp);
+      // end approaches: the contact surface ramps down 76 mm over ~3.5 m at every gap
+      for (const row of rows) { const e = Math.min(gapA ? row.s - a : 1e9, gapB ? b - row.s : 1e9); const k = U.clamp(e / 3.5, 0, 1); row.o[1] -= (1 - k) * 0.076; }
       gb.wear = 0.5; gb.sweep(rows, CONTACT, CONTACTC);
-      // coverboard: a fibreglass board above the rail (clearance for the shoe), carried by brackets every insulator
       // coverboard: fibreglass, light grey, ~8 cm over the contact surface, reaching past the rail toward the track (the
       // shoes slide under it) and turned down on the field side where its brackets hold it
       const cw = T3.coverW, ch = 0.08;
@@ -527,7 +615,7 @@ const MetroGuide = (() => {
         if (Math.abs(s - q.s) > 150) continue;
         const run = R.runs.find(r => s >= r.s0 && s < r.s1), df = !!run && DF.has(run.type), mesh = df ? I.insDF : I.ins;
         const k = df ? nD++ : nI++; if (k >= 900) continue;
-        const sd = MT.thirdSide(R, s); place(mesh, k, R, s, sd * T3.lat);
+        const sd = MT.thirdSide(R, s); if (thirdFoul(R, s, sd)) { if (df) nD--; else nI--; continue; } place(mesh, k, R, s, sd * T3.lat);
         if (sd < 0) { mesh.getMatrixAt(k, _m4); _m4.multiply(_flip); mesh.setMatrixAt(k, _m4); }
       }
     }
