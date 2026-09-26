@@ -2392,14 +2392,22 @@ const StationTypes = (() => {
       const nx = N0[0] - S[0], nz = N0[1] - S[1], nl = Math.hypot(nx, nz) || 1; const straight = (dx * nx + dz * nz) / nl > 0.82;
       const A = straight ? S : N0;
       if (straight) { dx = E[0] - S[0]; dz = E[1] - S[1]; dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl; }
-      const gy = Terrain.h(E[0] + T.OX, E[1] + T.OZ); const rise = T.yCF - gy; if (rise < -1.2 || rise > 25) { T.landDbg.skipped.push(['rise', +rise.toFixed(1)]); continue; }
+      let gy = Terrain.h(E[0] + T.OX, E[1] + T.OZ), rise = T.yCF - gy; if (rise < -1.2 || rise > 25) { T.landDbg.skipped.push(['rise', +rise.toFixed(1)]); continue; }
       // (the ground at the entrance level with the walkway: it just ends there; a short rise: one flight)
-      const flush = rise < 0.35, single = !flush && rise < 2.6;
-      const n1 = flush ? 0 : single ? Math.max(1, Math.round(rise / SP.RISER)) : Math.max(1, Math.round(rise / 2 / SP.RISER));
-      const n2 = flush || single ? 0 : Math.max(1, Math.round((rise - n1 * SP.RISER) / SP.RISER));
-      const run = flush ? 0 : (n1 + n2) * SP.TREAD + (n2 ? 1.6 : 0);
+      let flush, single, n1, n2, run;
+      const flights = () => { flush = rise < 0.35; single = !flush && rise < 2.6;
+        n1 = flush ? 0 : single ? Math.max(1, Math.round(rise / SP.RISER)) : Math.max(1, Math.round(rise / 2 / SP.RISER));
+        n2 = flush || single ? 0 : Math.max(1, Math.round((rise - n1 * SP.RISER) / SP.RISER));
+        run = flush ? 0 : (n1 + n2) * SP.TREAD + (n2 ? 1.6 : 0); };
+      flights();
       const toE = Math.hypot(E[0] - A[0], E[1] - A[1]);
-      const Lw = Math.max(1.5, toE - run);
+      let Lw = Math.max(1.5, toE - run);
+      // (Millbrae's island: on Caltrain's side the stairs come down past the southbound side platform, not onto it or
+      // over its track; the walkway carries on over them and the foot moves out with it)
+      const X = T.xp;
+      if (X && X.PR && c.side === -X.o) { const past = (L) => { const q = toUV(T, A[0] + dx * L, A[1] + dz * L); if (!q) return true; const r = c.side < 0 ? Math.min(X.r0(q[0]), X.r1(q[0])) : Math.max(X.r0(q[0]), X.r1(q[0])); return c.side * (q[1] - r) >= 1.5; };
+        let L = Lw; while (!past(L) && L < Lw + 40) L += 0.5;
+        if (L > Lw) { Lw = L; for (let k = 0; k < 2; k++) { const f = [A[0] + dx * (Lw + run), A[1] + dz * (Lw + run)]; gy = Terrain.h(f[0] + T.OX, f[1] + T.OZ); rise = T.yCF - gy; flights(); } } }
       const top = [A[0] + dx * Lw, A[1] + dz * Lw], foot = [top[0] + dx * run, top[1] + dz * run];
       const segs = straight ? [[S, top]] : [[S, N0], [N0, top]];
       // walkway supports every ~20 m (one near each end of a segment), moved up to 6 m to stand clear of a street
