@@ -87,10 +87,10 @@ drawing in the strip wherever Towns has no tile), `66_ui.js` (map rows), `16_air
 
 ## Budget (<= ~18 GB raw + published)
 
-**Measured 08:05 (everything baked):** raw **+7.0 GB** (files written since the pre-Metro snapshot: NAIP cache +5.05 GB,
-lidar +1.10 GB, OSM +0.32 GB, terrarium +0.33 GB, tile work files +0.21 GB); published **+2.35 GB** in 56,327 tile files
-(+ 5 index files), **+~0.3 GB** more when the 1706 L8 tiles still at 512 px are replaced by their 1024 px versions.
-Total **~9.7 GB**. The staging folders (`data/raw/tiles/sr_l8_stage` ~0.45 GB, `fix_dropouts` 6 MB) go once applied.
+**Final (12:55):** raw **+7.0 GB** (NAIP cache +5.05 GB, lidar +1.10 GB, OSM +0.32 GB, terrarium +0.33 GB, tile work
+files +0.21 GB); published **+2.66 GB** (56,327 new tile files 2.35 GB, the L8 set to 1024 px +0.31 GB net; the JPEG,
+water and plaza sets replace files at about the same size). Total **~9.7 GB** of the ~18 GB budget. The staging folders
+(`sr_l8_stage` ~0.47 GB, `fix_*` ~0.17 GB) go once both servers have everything.
 
 ## Publish list
 
