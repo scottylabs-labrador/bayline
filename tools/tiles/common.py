@@ -196,7 +196,92 @@ def _aoi_tiles(L, lvl_min):
     return out
 
 
+# ------------------------------------------------------------------ Bayline Metro: BART corridors and the north strip
+# The world square ends at lat 37.8429; BART runs to 38.019 (Pittsburg / Bay Point). The grid is extended north with
+# NEGATIVE tile rows (same formulas: z0 = Z0 + ty * T): the "north strip" is Z in [Z0 - 25600, Z0), i.e. rows
+# ty = -1 .. -(2^L / 4) at every level L >= 2 (lat 37.8429 .. 38.0736, the full width of the square). L2-L5 are complete
+# over the strip; L0/L1 have no strip tiles. Indexes list strip tiles under a separate `north` key (old clients ignore it).
+NORTH_M = SIZE / 4.0                         # 25600 m
+NORTH_Z0 = Z0 - NORTH_M                      # -74752
+NORTH_COMPLETE = (2, 5)
+# coverage stages (BAYLINE_STAGE when coverage.json is (re)computed): '' = the Peninsula-era coverage only,
+# 'bart1' = + every BART corridor + the strip's L2-L5 roots, 'bart2' = + the whole strip at L6 and L7
+BART_R6, BART_R7, BART_R8 = 8000.0, 3000.0, 1200.0
+
+
+def north_rows(L):
+    return (1 << L) >> 2 if L >= 2 else 0
+
+
+def in_north(L, tx, ty):
+    return L >= 2 and 0 <= tx < (1 << L) and -north_rows(L) <= ty < 0
+
+
+def in_square(L, tx, ty):
+    n = 1 << L
+    return 0 <= tx < n and 0 <= ty < n
+
+
+def north_tiles(L):
+    n = 1 << L
+    return [(x, y) for y in range(-north_rows(L), 0) for x in range(n)]
+
+
+def _cand_near(L, pts, r, rows):
+    """Tiles at level L (rows = iterable of ty) within r m of any point in pts (N,2): KD prefilter + exact rect distance."""
+    from scipy.spatial import cKDTree
+    t = T(L); n = 1 << L
+    xs = X0 + (np.arange(n) + 0.5) * t
+    rows = list(rows)
+    zs = Z0 + (np.asarray(rows, np.float64) + 0.5) * t
+    gx, gz = np.meshgrid(xs, zs)
+    cen = np.stack([gx.ravel(), gz.ravel()], 1)
+    kd = cKDTree(pts)
+    d, _ = kd.query(cen, distance_upper_bound=r + t * 0.7072 + 1.0)
+    ok = np.isfinite(d)
+    ix = np.arange(n)[None, :].repeat(len(rows), 0).ravel()[ok]
+    iy = np.asarray(rows)[:, None].repeat(n, 1).ravel()[ok]
+    return _level_tiles_near(L, list(zip(ix.tolist(), iy.tolist())), pts, r)
+
+
+def _coverage_bart(stage):
+    """BART corridor tiles (square + strip) for the given stage: {6: set, 7: set, 8: set}."""
+    from . import metro
+    pts = metro.points()
+    out = {}
+    for L, r in ((6, BART_R6), (7, BART_R7), (8, BART_R8)):
+        rows = range(-north_rows(L), 1 << L)
+        out[L] = _cand_near(L, pts, r, rows)
+    if stage == 'bart2':
+        out[6] |= set(north_tiles(6))
+        out[7] |= set(north_tiles(7))
+    return out
+
+
 def compute_coverage():
+    """Coverage for BAYLINE_STAGE (see above): {6: [...], 7: [...], 8: [...], 'north': [2, 5] or None}."""
+    stage = os.environ.get('BAYLINE_STAGE', '')
+    cov = _compute_coverage_peninsula()
+    if not stage:
+        cov['north'] = None
+        return cov
+    b = _coverage_bart(stage)
+    L6 = set(cov[6]) | b[6]; L7 = set(cov[7]) | b[7]; L8 = set(cov[8]) | b[8]
+    # monotonic: a recompute (next stage, or a new corridor source) never drops what an earlier stage listed
+    for f in ('coverage_bart1.json', 'coverage_bart2.json'):
+        pf = os.path.join(WORK, f)
+        if os.path.exists(pf):
+            j = json.load(open(pf))
+            L6 |= {tuple(c) for c in j.get('6', [])}; L7 |= {tuple(c) for c in j.get('7', [])}; L8 |= {tuple(c) for c in j.get('8', [])}
+    for (x, y) in L8:
+        L7.add((x >> 1, y >> 1))
+    for (x, y) in L7:
+        L6.add((x >> 1, y >> 1))
+    key = lambda c: (c[1], c[0])
+    return {6: sorted(L6, key=key), 7: sorted(L7, key=key), 8: sorted(L8, key=key), 'north': list(NORTH_COMPLETE)}
+
+
+def _compute_coverage_peninsula():
     """Sets of (tx,ty) for L6, L7, L8 per SPEC_v2 (with ancestor closure), plus the AOI list."""
     tr = track()
     pts = np.stack([tr['X'][::10], tr['Z'][::10]], 1)       # every 50 m
@@ -241,20 +326,26 @@ def coverage():
     cp = os.path.join(WORK, 'coverage.json')
     if os.path.exists(cp):
         j = json.load(open(cp))
-        _COV = {int(k): [tuple(c) for c in v] for k, v in j.items()}
+        _COV = {int(k): [tuple(c) for c in v] for k, v in j.items() if k.isdigit()}
+        _COV['north'] = j.get('north')
         return _COV
     cov = compute_coverage()
     os.makedirs(WORK, exist_ok=True)
-    json.dump({str(k): [list(c) for c in v] for k, v in cov.items()}, open(cp, 'w'))
+    json.dump({str(k): ([list(c) for c in v] if isinstance(k, int) else v) for k, v in cov.items()}, open(cp, 'w'))
     _COV = cov
     return cov
 
 
+def north_enabled():
+    return bool(coverage().get('north'))
+
+
 def level_tiles(L):
-    """All tiles that exist at level L (L0-L5 complete)."""
+    """All tiles that exist at level L (L0-L5 complete over the square, L2-L5 over the north strip when enabled)."""
     if L <= 5:
         n = 1 << L
-        return [(x, y) for y in range(n) for x in range(n)]
+        sq = [(x, y) for y in range(n) for x in range(n)]
+        return (north_tiles(L) + sq) if (L >= 2 and north_enabled()) else sq
     return coverage()[L]
 
 
@@ -263,7 +354,7 @@ def exists(L, tx, ty):
         return False
     if L <= 5:
         n = 1 << L
-        return 0 <= tx < n and 0 <= ty < n
+        return (0 <= tx < n and 0 <= ty < n) or (north_enabled() and in_north(L, tx, ty))
     s = _cov_sets().get(L)
     return s is not None and (tx, ty) in s
 
@@ -274,7 +365,7 @@ _COVS = None
 def _cov_sets():
     global _COVS
     if _COVS is None:
-        _COVS = {L: set(v) for L, v in coverage().items()}
+        _COVS = {L: set(v) for L, v in coverage().items() if isinstance(L, int)}
     return _COVS
 
 

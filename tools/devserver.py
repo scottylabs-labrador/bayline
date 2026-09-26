@@ -57,6 +57,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(body))); self.end_headers()
             if not head: self.wfile.write(body)
             return
+        if self.path.split('?', 1)[0] == '/bartrt/tripupdate':   # Bayline Metro live mode: production nginx proxies the GTFS-RT feed (no CORS)
+            import urllib.request
+            try:
+                req = urllib.request.Request('https://api.bart.gov/gtfsrt/tripupdate.aspx', headers={'User-Agent': 'Bayline dev'})
+                body = urllib.request.urlopen(req, timeout=8).read(); code = 200
+            except Exception as e:
+                body = b''; code = 502
+            self.send_response(code); self.send_header('Content-Type', 'application/octet-stream'); self.send_header('Content-Length', str(len(body))); self.end_headers()
+            if not head: self.wfile.write(body)
+            return
         fp = os.path.realpath(resolve(self.path))
         if not any(fp.startswith(a + os.sep) for a in ALLOWED) or not os.path.isfile(fp):
             body = b'not found\n'

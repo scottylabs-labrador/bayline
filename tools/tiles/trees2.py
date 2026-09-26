@@ -38,7 +38,7 @@ NO_TREE = {MT.ROOF, MT.ASPHALT, MT.CONCRETE, MT.WATER, MT.SALT, MT.GRAVEL}
 
 
 def _kind_for(reg, elev, h, r, rng):
-    if elev > 150 and h > 26 and reg in ('mid', 'north', 'sf'):
+    if elev > 150 and h > 26 and reg in ('mid', 'north', 'sf', 'eastbay'):
         return TR.KIND['redwood'] if rng.random() < 0.6 else TR.KIND['eucalyptus']
     if h > 30:
         return TR.KIND['eucalyptus'] if rng.random() < 0.55 else (TR.KIND['redwood'] if reg in ('mid', 'north', 'sf') else TR.KIND['pine'])
@@ -128,6 +128,8 @@ def build(tx, ty, shift=(0.0, 0.0)):
         # the track bed (same clearance as the photo detector)
         dtr, _ = TR._trk().query(np.stack([x0 + PX, z0 + PZ], 1), distance_upper_bound=200.0)
         keep &= ~(dtr < 12.0)
+        dtb, _ = TR._bart().query(np.stack([x0 + PX, z0 + PZ], 1), distance_upper_bound=60.0)
+        keep &= ~(dtb < TR.BART_CLEAR + 2.0)
         py, px, PX, PZ = py[keep], px[keep], PX[keep], PZ[keep]
     if len(px):
         # crown extent: CHM pixels >= 2.5 m (and >= 45 % of the peak) assigned to the nearest new peak within 12 m
@@ -144,11 +146,11 @@ def build(tx, ty, shift=(0.0, 0.0)):
         py, px, PX, PZ, r, pk, top = py[ok], px[ok], PX[ok], PZ[ok], r[ok], pk[ok], top[ok]
         rng = np.random.default_rng((tx * 91138233) ^ (ty * 2971215073 & 0xffffffff) ^ 0x7ee5)
         H7 = H_.load(7, tx, ty)
-        lat, _ = w2ll(x0 + PX, z0 + PZ)
+        lat, lon = w2ll(x0 + PX, z0 + PZ)
         add = np.zeros(len(px), dtype=TR.DT)
         for i in range(len(px)):
             elev = float(H7[min(128, int(PZ[i] / TT * 128)), min(128, int(PX[i] / TT * 128))]) if H7 is not None else 0.0
-            add['kind'][i] = _kind_for(TR.region_of(lat[i]), elev, float(top[i]) * CHM_K, float(r[i]), rng)
+            add['kind'][i] = _kind_for(TR.region_of(lat[i], lon[i]), elev, float(top[i]) * CHM_K, float(r[i]), rng)
         add['x'] = np.clip(np.round(PX / TT * 65536.0), 0, 65535); add['z'] = np.clip(np.round(PZ / TT * 65536.0), 0, 65535)
         add['r'] = np.clip(np.round(r * 10.0), 13, 255); add['h'] = np.clip(np.round(top * CHM_K * 4.0), 16, 255)
         add['tint'] = rng.integers(40, 150, len(px))
@@ -184,6 +186,8 @@ def build_chm_only(tx, ty, shift=(0.0, 0.0)):
         keep &= m6[cj, ci, 0] < 128
     dtr, _ = TR._trk().query(np.stack([x0 + PX, z0 + PZ], 1), distance_upper_bound=200.0)
     keep &= ~(dtr < 12.0)
+    dtb, _ = TR._bart().query(np.stack([x0 + PX, z0 + PZ], 1), distance_upper_bound=60.0)
+    keep &= ~(dtb < TR.BART_CLEAR + 2.0)
     py, px, PX, PZ = py[keep], px[keep], PX[keep], PZ[keep]
     if not len(px):
         return None
@@ -198,13 +202,13 @@ def build_chm_only(tx, ty, shift=(0.0, 0.0)):
     r = np.clip(np.sqrt(area / np.pi), 1.3, 12.0)
     rng = np.random.default_rng((tx * 91138233) ^ (ty * 2971215073 & 0xffffffff) ^ 0x6c11)
     L6h = H_.load(6, tx >> 1, ty >> 1)
-    lat, _ = w2ll(x0 + PX, z0 + PZ)
+    lat, lon = w2ll(x0 + PX, z0 + PZ)
     out = np.zeros(len(PX), dtype=TR.DT)
     for i in range(len(PX)):
         elev = 0.0
         if L6h is not None:
             elev = float(L6h[min(128, int(((ty & 1) * TT + PZ[i]) / (2 * TT) * 128)), min(128, int(((tx & 1) * TT + PX[i]) / (2 * TT) * 128))])
-        out['kind'][i] = _kind_for(TR.region_of(lat[i]), elev, float(top[i]) * CHM_K, float(r[i]), rng)
+        out['kind'][i] = _kind_for(TR.region_of(lat[i], lon[i]), elev, float(top[i]) * CHM_K, float(r[i]), rng)
     out['x'] = np.clip(np.round(PX / TT * 65536.0), 0, 65535); out['z'] = np.clip(np.round(PZ / TT * 65536.0), 0, 65535)
     out['r'] = np.clip(np.round(r * 10.0), 13, 255); out['h'] = np.clip(np.round(top * CHM_K * 4.0), 16, 255)
     out['tint'] = rng.integers(40, 150, len(PX))

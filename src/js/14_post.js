@@ -211,6 +211,17 @@ const Post = (() => {
       }
       gl_FragColor = vec4(open / max(wsum, 1e-4), 0.0, 0.0, 1.0);
     }`);
+  // Underground hook (Bayline Metro, 24_metrounder.js; attached only with #metro=1, otherwise inert and compiled out):
+  // the composite reads the under map to know which pixels lie inside an underground volume (no marine fog, aerial
+  // perspective, cloud shadows or cloud deck there, a faint dusty haze instead); while the camera is underground with no
+  // opening to the outdoors in view (outside = false) every pixel counts as inside and the fog and light-shaft passes are
+  // skipped; eye adaptation may lift up to maxBoost at depth 1.
+  const under = { on: false, depth: 0, outside: true, maxBoost: 4, uniforms: null,
+    attach(o) {
+      if (this.uniforms) return; this.uniforms = o.uniforms; Object.assign(compMat.uniforms, o.uniforms, { uUnderAll: uUnderAll });
+      compMat.fragmentShader = o.glsl + 'uniform float uUnderAll;\n' + compMat.fragmentShader; compMat.defines.BL_UNDER = 1; compMat.needsUpdate = true;
+    } };
+  const uUnderAll = { value: 0 };
   const compMat = mk(Object.assign({
     tScene: { value: null }, tDepth: { value: null }, tAO: { value: null }, tFog: { value: null }, uUseAO: { value: 1 }, uAOHalf: { value: new THREE.Vector2() }, uFogTexel: { value: new THREE.Vector2() }, uShowAO: { value: 0 }, uTimeS: U.uTime, uExpo: { value: 1 },
     tShaft: { value: null }, uShaftK: { value: 0 },
@@ -256,6 +267,10 @@ const Post = (() => {
     }
     void main() {
       vec4 sc = texture2D(tScene, vUv); vec3 col = sc.rgb;   // alpha 0 = thin geometry (leaves, grass blades)
+      float blIn = 0.0;                                     // (underground: 1 inside a volume, see Post.under)
+      #ifdef BL_UNDER
+      blIn = uUnderAll;
+      #endif
       float d = texture2D(tDepth, vUv).r; bool sky = d >= 0.99999;
       vec3 vr = viewRay(vUv); float tS = sky ? 1e9 : depthW(d) * length(vr);
       vec3 rd = normalize(mat3(uCamWorld) * vr), ro = uCamPos;
@@ -268,6 +283,9 @@ const Post = (() => {
           ao = mix(ao, 1.0, (1.0 - clamp(sc.a, 0.0, 1.0)) * 0.75);
           col *= mix(ao, 1.0, 0.65 * smoothstep(0.08, 0.5, lx)); }
         vec3 wp = ro + rd * tS;
+        #ifdef BL_UNDER
+        { vec3 uw = wp; uw.y = blUnbentY(wp, ro); blIn = max(uUnderAll, blUnder(uw).x); }
+        #endif
         #ifdef BL_SSR
         // open water sits at sea level (the terrain draws it at y = 0): a pixel within ~0.4 m of it, seen from above,
         // reflects what the depth buffer holds along its mirrored ray, broken up by the wind's ripples (Ultra+)
@@ -282,23 +300,29 @@ const Post = (() => {
             col = mix(col, h.rgb * 0.94, clamp(F, 0.0, 0.9) * h.a);
           } }
         #endif
-        if (uSkySunDir.y > 0.02 && uCloudCover > 0.01) {       // moving cloud shadows on the land
+        if (uSkySunDir.y > 0.02 && uCloudCover > 0.01 && blIn < 0.999) {       // moving cloud shadows on the land
           vec3 cp = wp + uSkySunDir * ((uCloudBase + 250.0 - wp.y) / uSkySunDir.y);
-          col *= 1.0 - 0.55 * skyCloudDens(cp.xz) * smoothstep(0.02, 0.2, uSkySunDir.y);
+          col *= 1.0 - 0.55 * skyCloudDens(cp.xz) * smoothstep(0.02, 0.2, uSkySunDir.y) * (1.0 - blIn);
         }
-        vec3 T; vec3 ins = skyAerial(ro.y, rd, tS, T); col = col * T + ins;
+        vec3 T; vec3 ins = skyAerial(ro.y, rd, tS, T);
+        #ifdef BL_UNDER
+        { float hz = 1.0 - exp(-tS * 0.0011);                 // underground: a faint dusty haze lit by the fixtures, not the sky
+          col = mix(col * T + ins, col * (1.0 - hz) + blUTint * (0.012 * hz), blIn); }
+        #else
+        col = col * T + ins;
+        #endif
       }
       // light shafts: in front of a surface, the haze scatters sunlight toward the eye where the way to the sun is open (lit
       // beams between the shadows of trunks, crowns, towers); the sky itself already holds that light, so there only the
       // shadowed part is taken out (dark beams behind a crown against the glare)
-      if (uShaftK > 0.0) {
+      if (uShaftK > 0.0 && blIn < 0.5) {
         float sh = texture2D(tShaft, vUv).r, ph = skyPhaseHG(mu, 0.85);
         if (sky) col = max(col - uSkySunColor * ph * (1.0 - sh) * uShaftK * 0.35, col * 0.55);
         else col += uSkySunColor * ph * sh * (1.0 - exp(-tS * 0.03)) * uShaftK;
       }
       // cumulus deck: three slices through the 1.6-2.3 km layer (domed tops, darker bases, silver lining)
       bool above = ro.y > uCloudBase + 500.0; vec4 cl = vec4(0.0);
-      if (uCloudCover > 0.001) {
+      if (uCloudCover > 0.001 && blIn < 0.5) {
         for (int s = 0; s < 3; s++) {
           float si = above ? float(2 - s) : float(s);
           float H = uCloudBase + si * 330.0; vec2 ch = blLevelHits(ro.y, rd, H);
@@ -316,11 +340,12 @@ const Post = (() => {
       }
       vec2 ft = uFogTexel;
       vec4 fg = texture2D(tFog, vUv) * 0.4 + (texture2D(tFog, vUv + vec2(ft.x, ft.y)) + texture2D(tFog, vUv + vec2(-ft.x, ft.y)) + texture2D(tFog, vUv + vec2(ft.x, -ft.y)) + texture2D(tFog, vUv - ft)) * 0.15;
+      fg = mix(fg, vec4(0.0, 0.0, 0.0, 1.0), blIn);
       if (above) { col = col * fg.a + fg.rgb; col = col * (1.0 - cl.a) + cl.rgb; }
       else {
         col = col * (1.0 - cl.a) + cl.rgb;
         // cirrus veil (only the sky)
-        if (sky && rd.y > -0.05) {
+        if (sky && rd.y > -0.05 && blIn < 0.5) {
           vec2 cih = blLevelHits(ro.y, rd, 9000.0); float tci = ro.y < 9000.0 ? cih.y : cih.x;
           if (tci > 0.0 && tci < 8e5) { vec3 cp = ro + rd * tci; float ci = skyCirrus(cp.xz) * smoothstep(-0.02, 0.1, rd.y) * (1.0 - smoothstep(2.5e5, 6e5, tci));
             vec3 cc = uSkySunColor * (0.16 + 0.8 * skyPhaseHG(mu, 0.6)) + uSkyAmbient * 0.8 + uSkyGlow * uSkyNight; col = mix(col, cc, ci * 0.55); }
@@ -462,7 +487,8 @@ const Post = (() => {
       }
       // 2b. light shafts (half res), when the sun is up and on or near the screen
       let shaftK = 0;
-      if (Q.shafts && debug.shafts && Env.sunDir.y > -0.02) {
+      const allUnder = under.on && !under.outside; uUnderAll.value = allUnder ? 1 : 0;
+      if (Q.shafts && debug.shafts && Env.sunDir.y > -0.02 && !allUnder) {
         _sv.copy(Env.sunDir).transformDirection(camera.matrixWorldInverse);
         if (_sv.z < -0.05) {
           const ux = (_sv.x / -_sv.z) / cam.uTanHalf.value.x * 0.5 + 0.5, uy = (_sv.y / -_sv.z) / cam.uTanHalf.value.y * 0.5 + 0.5;
@@ -474,7 +500,7 @@ const Post = (() => {
       }
       compMat.uniforms.tShaft.value = rtShaft.texture; compMat.uniforms.uShaftK.value = shaftK > 1e-4 ? shaftK : 0; stats.shaftK = +shaftK.toFixed(4);
       // 3. marine layer raymarch (half res)
-      fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; pass(fogMat, rtFog);
+      fogMat.uniforms.tDepth.value = depth; fogMat.uniforms.uSteps.value = debug.fog ? Q.fogSteps : 0; if (!allUnder) pass(fogMat, rtFog);
       // 4. composite -> HDR
       compMat.uniforms.tScene.value = rtScene.texture; compMat.uniforms.tDepth.value = depth; compMat.uniforms.tAO.value = rtAO[0].texture;
       compMat.uniforms.tFog.value = rtFog.texture; compMat.uniforms.uUseAO.value = useAO ? 1 : 0; compMat.uniforms.uShowAO.value = debug.showAO ? 1 : 0;
@@ -487,7 +513,7 @@ const Post = (() => {
       const ai = frame & 1, au = adaptMat.uniforms;
       au.tCur.value = rtLum.texture; au.tPrev.value = rtAE[1 - ai].texture; au.uOn.value = debug.ae ? 1 : 0;
       au.uK.value = aeSnap ? 1 : 1 - Math.exp(-Math.max(0, Math.min(dt || 0, 0.5)) / 0.9); aeSnap = false;
-      au.uKey.value = debug.aeKey || AE_KEY; au.uMaxB.value = U.lerp(2.1, 1.3, night);
+      au.uKey.value = debug.aeKey || AE_KEY; au.uMaxB.value = U.lerp(U.lerp(2.1, 1.3, night), under.maxBoost, under.on ? under.depth : 0);
       pass(adaptMat, rtAE[ai]); const tAE = rtAE[ai].texture;
       // 6. bloom
       brightMat.uniforms.tSrc.value = rtHDR.texture; brightMat.uniforms.tAE.value = tAE; brightMat.uniforms.uExposure.value = exposure; brightMat.uniforms.uTexel.value.set(1 / W, 1 / H);
@@ -532,7 +558,7 @@ const Post = (() => {
   }
   setQuality('high');
   return {
-    render, setQuality, stats, debug, profile, aeRead, rebuild() { W = H = 0; },
+    render, setQuality, stats, debug, profile, aeRead, rebuild() { W = H = 0; }, under,
     get quality() { return quality; },
     get enabled() { return enabled && !failed; }, set enabled(v) { enabled = !!v; if (!enabled) R.info.autoReset = true; },
     get targets() { return { rtScene, rtHDR, rtFog, rtAO }; },
