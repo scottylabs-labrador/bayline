@@ -20,6 +20,7 @@ const MetroStations = (() => {
   const PLAT_H = 0.991, EDGE = 1.676;
   const BUILD_R = 1500, DROP_R = 2100, NEAR_R = 320, FAR_R = 9000;
   const stats = { built: 0, building: 0, jobsMs: 0, lastBuildMs: 0, tris: 0, calls: 0 };
+  const debug = { showAll: false }; const qa = { hidden: [] };
 
   // ------------------------------------------------------------------------------------------------ network access
   // everything goes through MetroNet (data workstream, 21_metronet.js); frames are reduced to the plan view here
@@ -138,7 +139,7 @@ const MetroStations = (() => {
     st.state = 'building'; stats.building++;
     const t0 = performance.now();
     jobs.push({ name: st.id, gen: StationTypes.build(st, ctx()), done: (res) => { st.state = 'built'; stats.building--; stats.built++; stats.lastBuildMs = performance.now() - t0; attach(st, res); },
-      fail: () => { st.state = 'failed'; stats.building--; } });
+      fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } });
   }
   function attach(st, res) {
     st.root = res.root; st.res = res; group.add(res.root);
@@ -243,6 +244,45 @@ const MetroStations = (() => {
   }
   function setBoard(id, key, rows) { const st = byId[id]; if (!st) return; if (typeof MetroSigns !== 'undefined') MetroSigns.setBoard(st, String(key), rows); }
 
-  return { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, get enabled() { return enabled; }, get ready() { return ready; },
-    makePlan, spineAt, trackV, net: N, PLAT_H, EDGE, jobs };
+  // ------------------------------------------------------------------------------------------------ QA camera
+  // MetroStations.shot(id, { u, v, h, yaw, pitch, fov }): capture-mode camera at station coordinates (u along the
+  // platforms from their middle, v to the right, h above the platform top; yaw 0 looks along +u, + turns right),
+  // waits for the station to build and the exposure to settle. Resolves with { state, tris, calls }.
+  async function shot(id, o = {}) {
+    const B = window.__bayline, st = byId[id]; if (!B || !st) return { error: 'no station ' + id };
+    if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return { error: 'no plan' };
+    const S = spineAt(pl, o.u || 0, {}); const yT = (pl.plats[0] ? pl.plats[0].yRail : pl.yRail) + PLAT_H;
+    const px = S.x + S.rx * (o.v || 0), pz = S.z + S.rz * (o.v || 0), py = o.y !== undefined ? o.y : yT + (o.h ?? 1.65);
+    // cutaway: a clipping plane removes everything above y = o.cut (terrain, buildings, roofs) so a station can be seen whole
+    // cutaway: a clipping plane removes everything above y = yT + o.cut, and (solo) every other object in the scene is
+    // hidden, so a whole station can be looked at from outside. Each call resets what the previous one changed.
+    for (const c of qa.hidden) c.visible = true; qa.hidden.length = 0;
+    Env.renderer.clippingPlanes = o.cut !== undefined ? [new THREE.Plane(new THREE.Vector3(0, -1, 0), yT + o.cut)] : [];
+    debug.showAll = !!(o.solo || o.cut !== undefined);
+    const keep = (c) => c === group || c.isLight || c === Env.camera || c === Env.sky || (c.isObject3D && c.type === 'Object3D' && c.children.length === 0);
+    B.capture.before = (o.solo || o.cut !== undefined) ? () => { for (const c of Env.scene.children) if (!keep(c) && c.visible) { c.visible = false; qa.hidden.push(c); } } : null;
+    if (B.Post && B.Post.debug) B.Post.debug.shafts = !(st.type === 'subway' && (o.h ?? 1.65) < 30 && o.y === undefined);
+    const yaw = Math.atan2(S.tz, S.tx) + (o.yaw || 0), pitch = o.pitch || 0;
+    const tx = px + Math.cos(yaw) * Math.cos(pitch) * 10, tz = pz + Math.sin(yaw) * Math.cos(pitch) * 10, ty = py + Math.sin(pitch) * 10;
+    const cam = Env.camera; if (o.fov) { cam.fov = o.fov; cam.updateProjectionMatrix(); }
+    document.body.classList.add('photo');
+    B.capture.on = true; B.capture.cam = (t, c) => { c.position.set(px, py, pz); c.up.set(0, 1, 0); c.lookAt(tx, ty, tz); if (o.fov) { c.fov = o.fov; c.updateProjectionMatrix(); } c.near = 0.05; c.updateProjectionMatrix(); };
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    for (let i = 0; i < 900 && st.state !== 'built' && st.state !== 'failed' && st.state !== 'nodata'; i++) { B.stepFrame(1); await sleep(20); }
+    if (st.state !== 'built') return { state: st.state, error: st.error || null };
+    for (let i = 0; i < (o.settle || 70); i++) { B.stepFrame(1); await sleep(25); }
+    let tris = 0; if (st.root) st.root.traverse(m => { if (m.isMesh && m.geometry.index) tris += m.geometry.index.count / 3 * (m.geometry.instanceCount || 1); });
+    return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null };
+  }
+
+  const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, get enabled() { return enabled; }, get ready() { return ready; },
+    makePlan, spineAt, trackV, net: N, PLAT_H, EDGE, jobs, shot, debug };
+  // hooks: ride along with the Peninsula stations' init/update (no edits to the shared main loop; inert without #metro=1)
+  if (enabled && typeof Stations !== 'undefined') {
+    const si = Stations.init, su = Stations.update;
+    Stations.init = function (...a) { const r = si.apply(this, a); try { api.init(); } catch (e) { console.error('metrostations init', e); } return r; };
+    Stations.update = function (dt, cp, tr) { su.call(this, dt, cp, tr); try { api.update(dt, cp); } catch (e) { if (!api._err) console.error('metrostations', e); api._err = (api._err || 0) + 1; } };
+  }
+  if (typeof window !== 'undefined') Object.assign(window.__baylineMods = window.__baylineMods || {}, { MetroStations: api });
+  return api;
 })();

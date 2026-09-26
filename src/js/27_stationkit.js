@@ -48,6 +48,9 @@ const StationKit = (() => {
     MOSAIC: 22,    // small glass mosaic, w: tessera size m
     GRATING: 23,   // steel grating / drain
     BALLAST: 24,
+    HERRING: 25,   // herringbone brick; w: brick width m
+    MARBLE: 26,    // veined marble slabs; w: slab size m
+    BUBBLE: 27,    // domed hexagon tiles; w: tile size m
   };
 
   // ------------------------------------------------------------------------------------------------ geometry buffer
@@ -263,10 +266,12 @@ const StationKit = (() => {
         float s = abs(w); vec2 sz = w < 0.0 ? vec2(s, s * 0.5) : vec2(s);
         vec2 qq = q; if (w < 0.0) qq.x += step(1.0, mod(floor(q.y / sz.y), 2.0)) * sz.x * 0.5;
         vec3 g = skGrid(qq, sz); float gw = 0.0022;
-        float grout = 1.0 - smoothstep(gw, gw + fw * 1.2, g.x);
-        float v = skH(g.yz); col *= 0.94 + 0.1 * v; col *= 1.0 - 0.05 * skN(q * 0.7);
-        col = mix(col, vec3(0.42, 0.41, 0.39), grout * (1.0 - smoothstep(0.004, 0.02, fw)) * 0.85);
-        gRough = mix(0.14 + 0.08 * v, 0.85, grout); gBump = -grout * 0.0015 + 0.0004 * skN(q * 30.0);
+        // grout filtered by pixel footprint: a sharp line up close, its average darkening once it is thinner than a pixel
+        float aa = clamp(gw * 2.0 / fw, 0.0, 1.0);
+        float grout = mix(gw * 2.0 * (1.0 / sz.x + 1.0 / sz.y), 1.0 - smoothstep(gw, gw + fw * 1.2, g.x), aa);
+        float v = skH(g.yz) * aa + 0.5 * (1.0 - aa); col *= 0.94 + 0.1 * v; col *= 1.0 - 0.05 * skN(q * 0.7);
+        col = mix(col, vec3(0.42, 0.41, 0.39), grout * 0.85);
+        gRough = mix(0.16 + 0.08 * v, 0.85, grout); gBump = (-grout * 0.0015 + 0.0004 * skN(q * 30.0)) * aa;
         return col;
       }
       if (k < 2.5) {                                        // terrazzo: chips at two scales, brass divider strips every w m
@@ -276,7 +281,7 @@ const StationKit = (() => {
         col = mix(col, chip * (0.8 + 0.2 * c2), step(0.72, c1) * 0.55 * near + step(0.8, c1) * 0.2 * (1.0 - near));
         col *= 0.93 + 0.1 * skN(q * 0.9);
         if (w > 0.0) { vec3 g = skGrid(q, vec2(w)); float strip = 1.0 - smoothstep(0.003, 0.003 + fw, g.x); col = mix(col, vec3(0.55, 0.43, 0.22), strip * 0.8); gMetal = strip; }
-        gRough = 0.2 + 0.12 * skN(q * 3.0); return col;
+        gRough = 0.34 + 0.14 * skN(q * 3.0) + 0.1 * skN(q * 0.4); return col;
       }
       if (k < 3.5) {                                        // concrete: pores, trowel mottle, joints every w m
         float n = skF(q * 1.3); col *= 0.86 + 0.2 * n; col *= 1.0 - 0.08 * step(0.93, skH(floor(q * 60.0)));
@@ -358,6 +363,32 @@ const StationKit = (() => {
       if (k < 24.5) {                                       // ballast / trackbed gravel
         float s = skH(floor(q * 30.0)); col *= 0.6 + 0.6 * s; gBump = (s - 0.5) * 0.01; gRough = 0.95; return col;
       }
+      if (k < 25.5) {                                       // herringbone brick: 45-degree courses in alternating zigzag columns
+        float bw = w > 0.0 ? w : 0.1, cs = bw * 2.828427; float c = floor(q.x / cs); float lx = q.x - c * cs;
+        float dir = mod(c, 2.0) < 1.0 ? 1.0 : -1.0; float t = (q.y + dir * lx) / (bw * 1.414214);
+        float course = floor(t); float ft = fract(t); float end = fract((lx / cs + course * 0.5));
+        float jd = min(min(ft, 1.0 - ft) * bw * 1.414214 * 0.7071, min(lx, cs - lx));
+        jd = min(jd, min(end, 1.0 - end) * cs * 0.9);
+        float aa = clamp(0.004 / fw, 0.0, 1.0);
+        float joint = mix(0.12, 1.0 - smoothstep(0.003, 0.003 + fw, jd), aa);
+        float v = skH(vec2(c, course)); col *= 0.82 + 0.3 * v; col = mix(col, vec3(0.28, 0.25, 0.23), joint * 0.8);
+        gBump = -joint * 0.002 * aa; gRough = mix(0.22 + 0.1 * v, 0.9, joint); return col;
+      }
+      if (k < 26.5) {                                       // veined marble in large slabs
+        float s = w > 0.0 ? w : 0.9; vec3 g = skGrid(q, vec2(s)); float j = 1.0 - smoothstep(0.0015, 0.0015 + fw, g.x);
+        vec2 r = q + g.yz * 3.7; float n = skF(r * 0.9) * 2.0 + skF(r * 3.1) * 0.6;
+        float vein = 1.0 - smoothstep(0.0, 0.06, abs(sin((r.x * 0.9 + r.y * 0.45 + n * 2.2) * 2.4)));
+        float vein2 = 1.0 - smoothstep(0.0, 0.03, abs(sin((r.x * 0.35 - r.y * 1.1 + n * 3.0) * 5.0)));
+        col *= 0.96 + 0.06 * skN(q * 2.0); col = mix(col, col * vec3(0.55, 0.56, 0.58), clamp(vein * 0.55 + vein2 * 0.25, 0.0, 1.0));
+        col *= 1.0 - 0.25 * j; gRough = mix(0.12, 0.6, j) + 0.05 * vein; gBump = -j * 0.001; return col;
+      }
+      if (k < 27.5) {                                       // domed hexagon "bubble" tiles
+        float s = w > 0.0 ? w : 0.15; vec2 p = q / s; vec2 rr = vec2(1.0, 1.7320508); vec2 h = rr * 0.5;
+        vec2 a = mod(p, rr) - h, b = mod(p - h, rr) - h; vec2 gv = dot(a, a) < dot(b, b) ? a : b;
+        float d = length(gv); float dome = sqrt(max(0.0, 1.0 - (d / 0.47) * (d / 0.47)));
+        float aa = clamp(0.01 / fw, 0.0, 1.0); float edge = 1.0 - smoothstep(0.42, 0.5, d);
+        col *= mix(0.9, 0.78 + 0.26 * dome, aa); gBump = dome * s * 0.12 * aa; gRough = mix(0.5, 0.12 + 0.1 * (1.0 - edge), aa); return col;
+      }
       return col;
     }
   `;
@@ -401,7 +432,7 @@ const StationKit = (() => {
         PhysicalMaterial m2 = material; float al0 = material.roughness * material.roughness;
         float al1 = clamp(al0 + rad / (2.0 * ld), 0.0, 1.0); m2.roughness = sqrt(al1);
         float norm = al0 / max(al1, 1e-4);
-        reflectedLight.directSpecular += col * (3.1416 / max(ld, 0.25)) * NoL * norm * win * dirk * BRDF_GGX(L, V, N, m2);
+        reflectedLight.directSpecular += col * (2.2 / max(ld, 0.35)) * NoL * norm * win * dirk * BRDF_GGX(L, V, N, m2);
       }
     }
   `;

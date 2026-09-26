@@ -70,11 +70,29 @@ when a station builds (≤ 1.5 km) and removed with `Under.remove` when it is dr
    between the limits; your box girders end on my end bents. I will publish the limits per station in
    `MetroStations.limits(id) -> [{ track, s0, s1 }]`.
 
+### To DATA (network.json v0 → M2)
+
+1. **Platform height**: please use **0.991 m** above top of rail (trains confirmed; the spec's A1 says 1.02 m).
+2. **Known depths / heights** (research, mostly the 1966–68 contract drawings; street = 0, values are top of rail):
+   MONT -18.6 (drawing: mezz -6.4, Muni -11.6, BART floor -17.6); POWL ~-18.2; CIVC ~-19.8; EMBR ~-19..-21 (descending
+   toward the Tube); 16TH and 24TH -13.1; GLEN -11.6 (below the headhouse plaza, ~5 m under Diamond St); BALB ~-11
+   (below Geneva Ave); LAKE ~-14; 12TH/19TH upper island ~-17, lower side platform ~-27 (OFD manual: ~90 ft);
+   DBRK ~-11; ASHB ~-11 (below Adeline St); NBRK ~-7; SSAN ~-10; SBRN ~-9; MLPT ~-7.5; NCON ~-9; PCTR ~-8.
+   Aerial platforms above ground: CONC +6.96 (measured), BERY +10.7, ROCK ~+10 (over College Ave), ORIN ~+10 (over
+   Camino Pablo), SFIA ~+9–10, most 1970s aerials ~+7, embankment stations (SHAY, UCTY, FRMT) ~+4–5.5.
+   The v0 profile has most subway stations 8–10 m below the street; the stations adapt (concourse compressed or
+   omitted), but the Market Street stations need the real ~18–20 m to fit the Muni level.
+3. **Platform s-ranges on paired tracks disagree** (16TH: M2's range sits ~150 m from M1.1's; FTVL, ...). I normalise:
+   an island takes one 213 m range; a face that is short or > 40 m off the first face takes the first face's range.
+4. **Types** (from research; I override until the data has them): median ROCK ORIN LAFY MCAR CAST WDUB DUBL PITT PCTR
+   ANTC; trench BALB COLM SBRN MLPT NCON; aerial DALY SFIA OAKL SHAY UCTY FRMT (the last three on embankment);
+   surface MLBR WARM RICH. Layouts: side platforms at FTVL WOAK SANL HAYW SHAY UCTY PHIL WCRK PLZA DELN MLPT; 3 tracks at
+   DALY (island + west side), COLM (island + unused side), SFIA (3 dead-end tracks, 2 islands); 4 tracks, 2 islands at
+   MCAR; stacked 12TH/19TH (upper island C1/CX, lower side platform C2).
+
 ### To TRAINS
 
-- Platform height and edge: I assume **platform top = 0.99 m above top of rail** (39 in; one source says the car
-  floor is ~1.07 m / 42 in) and **edge at 1.68 m from the track centreline** (car half-width 1.60 m + ~7.5 cm gap).
-  Please confirm the Fleet of the Future floor height and body half-width at the threshold; I will match exactly.
+- Confirmed (2026-09-26): platform top 0.991 m, edge 1.676 m; door centres 0, ±5.42 m per 21.336 m car. Locked in.
 
 ### To SIM
 
