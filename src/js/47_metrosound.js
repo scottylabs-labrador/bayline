@@ -142,8 +142,9 @@ const MetroSound = (() => {
       if ((tr.phase === 'dwell' || tr.phase === 'origin') && tr.dwellLeft < 6 && tr.dwellLeft > 3.5) { const key = tr.key + ':chime:' + tr.stopK + ':' + Math.floor(Env.time.sec / 600); if (!said.has(key)) { said.add(key); doorChime(); } }
       rideState.key = tr.key; rideState.phase = tr.phase;
     }
-    else if (Player.mode === 'walk') platform();
+    else if (Player.mode === 'walk' && !MetroSim.quiet && (platT -= dt) <= 0) { platT = 0.25; platform(); }   // (4 times a second; nothing far from the metro)
   }
+  let platT = 0;
   function platform() {
     const p = Env.camera.position, ms = MetroSim.nearestStation(p, 170); if (!ms) return;
     const now = Env.time.sec;

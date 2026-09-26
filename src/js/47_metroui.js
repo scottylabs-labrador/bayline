@@ -92,7 +92,7 @@ const MetroUI = (() => {
   #title .mfront .pick .hint{color:var(--ink-faint);font-size:12.5px}
   #hmetro{display:inline-flex;align-items:center;gap:7px} #hmetro .ico{display:block}
   #hmetro.on{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.32)}
-  @media (max-width:760px){#title p.lede .full{display:none} #title p.lede .short{display:inline} #title .mfront .t small{white-space:normal} #title .mfront .top{flex-wrap:wrap} #title .mfront .acts{width:100%;justify-content:stretch} #title .mfront .acts .btn{flex:1 1 auto} #msys .wrap{grid-template-columns:1fr} #msys .side{height:auto;max-height:30vh} #msys canvas{height:52vh} #mride,#mdmi{width:auto;right:12px;left:12px;bottom:112px} #mstrip{display:none}}`;
+  @media (max-width:760px){#title p.lede .full{display:none} #title p.lede .short{display:inline} #title .mfront .t small{white-space:normal} #title .mfront .t small .lv{display:none} #title .mfront .top{flex-wrap:wrap} #title .mfront .acts{width:100%;justify-content:stretch} #title .mfront .acts .btn{flex:1 1 auto} #msys .wrap{grid-template-columns:1fr} #msys .side{height:auto;max-height:30vh} #msys canvas{height:52vh} #mride,#mdmi{width:auto;right:12px;left:12px;bottom:112px} #mstrip{display:none}}`;
   function build() {
     if (built || !on()) return; built = true;
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -166,7 +166,7 @@ const MetroUI = (() => {
   function titleCard() {
     const modes = document.querySelector('#title .modes'); if (!modes || fr) return;
     const d = document.createElement('div'); d.className = 'mfront'; d.dataset.metroUi = '';
-    d.innerHTML = `<div class="top">${bars()}<div class="t"><b>Bayline Metro</b><small>50 stations · 5 lines + airport connector · live</small></div>
+    d.innerHTML = `<div class="top">${bars()}<div class="t"><b>Bayline Metro</b><small>50 stations · 5 lines + airport connector<span class="lv"> · live</span></small></div>
       <div class="acts"><button class="btn go" data-mf="ride" title="Start on a platform of any station as the next train pulls in">Ride</button><button class="btn" data-mf="drive" title="Drive a metro train under automatic train control">Drive</button><button class="btn" data-mf="map" title="Every train running now">System map</button></div></div>
       <div class="pick" hidden><div class="row"><input autocomplete="off" spellcheck="false"><button class="chip" data-mf="back">Back</button></div><div class="opts"></div><div class="hint"></div></div>`;
     modes.after(d);
@@ -659,7 +659,7 @@ const MetroUI = (() => {
   let drivebarMetro = false;
   function update(dt) {
     if (!on()) return; build();
-    if (el.hbtn) el.hbtn.classList.toggle('on', !!(el.sys && !el.sys.hidden));
+    const mapOn = !!(el.sys && !el.sys.hidden); if (el.hbtn && el.hbtn._on !== mapOn) { el.hbtn._on = mapOn; el.hbtn.classList.toggle('on', mapOn); }
     if (el.sys && !el.sys.hidden) { const c = el.msysc, r = c.getBoundingClientRect(); if (c.width !== Math.round(r.width * devicePixelRatio)) { c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio; } draw(); }
     slow -= dt; if (slow > 0) return; slow = 0.2;
     if (!ready()) { el.ride.hidden = el.dmi.hidden = el.strip.hidden = true; return; }
