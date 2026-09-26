@@ -6,7 +6,24 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Started 2026-09-26 00:30.** Phase A (tooling + bake) in progress.
+**Started 2026-09-26 00:30.** Stage 1 bake in progress (every BART corridor + the strip's L2-L5 roots).
+
+| step (stage 1, `BAYLINE_STAGE=bart1`) | state |
+|---|---|
+| coverage: +992 L6, +1749 L7, +3003 L8 (502 / 811 / 1334 of them in the north strip), L2-L5 over the strip | done 00:42 |
+| OSM extract v3 (bbox to lat 38.095) for masks / trees | done 00:46 |
+| heights, imagery (NAIP, add-only) | done 01:18 (10 L6 tiles on the strip's top row retried 01:26, ok) |
+| masks, trees (t), index | running |
+| GPU: L9 (3594 new tiles in 453 L7 parents), then new L8 -> 1024 px | running (sr_tiles from 01:18) |
+| lidar h9: 3DEP fetch 3002 L8 tiles | fetched 01:24; bake waits for towns b2 |
+| towns b2: OSM extract (Caltrain + BART 3 km, strip) | running |
+| materials, t2 | after towns / masks |
+| stage 2: strip L6 + L7 complete (removes the Globe everywhere in the strip) | after stage 1 |
+
+Runtime (branch `bart-world`): north-strip support in Terrain / Globe / WorldTiles / Towns (b2) / Flora / UI map / flight
+solids, committed; with the data not yet published everything renders exactly as before (checked: Marin from 2.5 km
+is pixel-identical to the baseline). Towns knows the East Bay regions 6-9 (house styles, palettes, roof tiles, lawns),
+used only by b2 tiles.
 
 ## The big finding: the world ends at lat 37.8429
 
@@ -56,11 +73,25 @@ drawing in the strip wherever Towns has no tile), `66_ui.js` (map rows), `16_air
 
 ## Budget (<= ~18 GB raw + published)
 
-(measured sizes will be filled in as the bake runs)
+Measured 01:27 (stage 1 partial): raw +3.2 GB (NAIP cache 2.7 -> 4.8 GB, lidar 0.83 -> 1.5 GB, terrarium +0.23 GB,
+OSM extract v3 0.16 GB); published +0.65 GB in 9.6k files (512 px L8 before the GPU pass). Estimate at the end of stage
+1: ~2.2 GB published + ~3.5 GB raw; stage 2 adds ~0.45 GB published + ~2.3 GB raw. Total ~8.5 GB.
 
 ## Publish list
 
-(filled in when the bake completes; index files last)
+(exact list with sizes when stage 1 completes; index files last.) Safety for old clients (the page in production
+before the Bayline Metro code ships):
+
+| what | harmless to old clients? |
+|---|---|
+| new tiles in the square (`tiles/{img,h,m,t}/L/x_y` with y >= 0, `h9`, `mat`, `t2` tiles) and the square entries they add to `tiles/index.json` `levels`, `h9/index.json` `l8`, `mat` / `t2` `tiles` | yes: exactly how the SF and Oakland AOIs were added; old clients just get more detail along the BART corridors (Fremont, Hayward, Dublin, Colma ...) |
+| strip tiles (negative rows: `x_-N`) | yes: old clients never request them |
+| `north` / `l8n` keys in the indexes | yes: old clients never read them (checked: their tile-key collisions land out of range) |
+| `tiles/b2/**` | yes: old clients never read b2 |
+| **L8 imagery: publish only after the GPU pass** (`sr_l8.py` upgrades new L8 tiles from 512 to 1024 px in place, locally) | publishing a 512 px L8 file and then the 1024 px one would change a published file; wait for the "SR done" milestone |
+
+Order: tile files first, then `tiles/h9/index.json`, `tiles/mat/index.json`, `tiles/t2/index.json`, `tiles/b2/index.json`,
+and `tiles/index.json` last.
 
 ## Requests / notes for other workstreams
 
