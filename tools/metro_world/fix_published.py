@@ -21,7 +21,9 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, 'tools')); sys.path.insert(0, HERE)
+os.environ['BAYLINE_FILL'] = 'old'                             # (published tiles were baked with the old no-data fill)
 from tools.tiles import common as C, imagery as I, fetch   # noqa: E402
+I.FILL_LOCAL = False
 import importlib.util   # noqa: E402
 _spec = importlib.util.spec_from_file_location('sr', os.path.join(ROOT, 'tools', 'sr_tiles.py')); SR = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(SR)
 

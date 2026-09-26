@@ -22,6 +22,10 @@ JPEG_Q = 87
 BAL = dict(black=(58.0, 68.0, 74.0), white=(226.0, 224.0, 230.0), gain=(1.035, 1.0, 0.925),
            gamma=1.04, contrast=0.12, sat=1.14, lift=0.012)
 WATER_RAW = np.array([96.0, 110.0, 112.0], np.float32)    # typical NAIP Bay water, raw DN
+# Bayline Metro bakes: the no-data fill is the median NAIP water along the no-data edges of the new tiles (San Pablo and
+# Suisun Bays, measured: 132 144 147): uniform open water that matches the photographed shallows (the older fill was
+# ~1 stop darker and showed as flat dark rectangles from the air). Tiles baked before keep WATER_RAW.
+WATER_BAY = np.array([130.0, 143.0, 146.0], np.float32)
 
 
 def balance(rgb):
@@ -63,16 +67,63 @@ def nodata_mask(rgb_u8):
     return m.astype(bool)
 
 
-def fill_nodata(rgb, nd):
-    """rgb float raw DN; nd bool. Constant water colour, feathered into valid pixels over ~12 px."""
+FILL_LOCAL = True        # (Bayline Metro bakes: the local water colour; tiles baked before used WATER_RAW everywhere)
+
+
+def _ring_colour(rgb, nd):
+    """median raw colour of the valid water along the no-data edge, or None"""
+    k = max(5, int(round(rgb.shape[0] / 26))) | 1
+    ring = cv2.dilate(nd.astype(np.uint8), np.ones((k, k), np.uint8)).astype(bool) & ~nd
+    if ring.sum() <= 400:
+        return None
+    v = rgb[ring]; lum = v.mean(1)
+    v = v[(lum < np.percentile(lum, 70)) & (lum > 25)]            # (water, not a bright beach, glint or the black edge)
+    return np.median(v, axis=0).astype(np.float32) if len(v) > 200 else None
+
+
+def _neighbour_water(L, tx, ty, px):
+    """for a tile with no data at all: the ring colour of the nearest neighbours (same level and size, from the fetch
+    cache only, no downloads) that border the open water, or None"""
+    import os
+    from .common import RAW
+    cols = []
+    for R in (0, 1, 2, 3):
+        for dy in range(-R, R + 1):
+            for dx in range(-R, R + 1):
+                if max(abs(dx), abs(dy)) != R:
+                    continue
+                w, s_, e, n = bbox_ll(L, tx + dx, ty + dy)
+                key = f'{w:.7f}_{s_:.7f}_{e:.7f}_{n:.7f}_{px}_rgb'
+                p = os.path.join(RAW, 'naip_aar0', 'rgb', str(px), key.replace('-', 'm') + '.jpg')
+                if not os.path.exists(p):
+                    continue
+                im = Image.open(p); im.draft('RGB', (px // 4, px // 4))
+                a = np.asarray(im.convert('RGB')).astype(np.float32)
+                nd = nodata_mask(a.astype(np.uint8))
+                if nd.any() and not nd.all():
+                    c = _ring_colour(a, nd)
+                    if c is not None:
+                        cols.append(c)
+        if len(cols) >= 3 or (cols and R >= 2):          # (the same neighbourhood for adjacent tiles: matching fills)
+            return np.median(np.stack(cols), axis=0).astype(np.float32)
+    return np.median(np.stack(cols), axis=0).astype(np.float32) if cols else None
+
+
+def fill_nodata(rgb, nd, ref=None):
+    """rgb float raw DN; nd bool. NAIP has no data over open water: filled with the colour of the real water around
+    it (the median of the valid pixels in a ring along the no-data edge, which is open water), so a bay's fill matches
+    its photographed water instead of standing out as a flat rectangle; WATER_RAW where there is no ring. Feathered
+    into the valid pixels over ~12 px."""
     if not nd.any():
         return rgb
     out = rgb.copy()
-    out[nd] = WATER_RAW
+    if ref is None:
+        ref = WATER_RAW
+    out[nd] = ref
     # feather: blend valid pixels near the no-data edge toward the water colour a little (hides JPEG fringes)
     dist = cv2.distanceTransform((~nd).astype(np.uint8), cv2.DIST_L2, 3)
     f = np.clip(1.0 - dist / 12.0, 0.0, 1.0)[..., None] * (~nd)[..., None]
-    out = out * (1 - f * 0.6) + WATER_RAW * (f * 0.6)
+    out = out * (1 - f * 0.6) + ref * (f * 0.6)
     return out
 
 
@@ -92,7 +143,7 @@ def load_hires(L, tx, ty):
     if rgb.shape[0] != px:
         rgb = cv2.resize(rgb, (px, px), interpolation=cv2.INTER_AREA)
     nd = nodata_mask(rgb.astype(np.uint8))
-    rgb = fill_nodata(rgb, nd)
+    rgb = fill_nodata(rgb, nd, WATER_BAY if FILL_LOCAL else None)
     full = balance(rgb)
     nir_px = 1024 if L == 7 else 512
     nir = _dec_gray(fetch.naip(bb, nir_px, 'nir'))

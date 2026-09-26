@@ -27,14 +27,21 @@ const MetroGround = (() => {
   const stats = { segments: 0, platforms: 0, tiles: 0, ms: 0, dropped: 0 };
   const ABOVE = new Uint8Array(16); for (const k of [0, 1, 2, 3, 4, 5]) ABOVE[k] = 1;
   const fr = {};
+  // tunnel mouths (where a track goes between underground (portal, cut-and-cover, bored, tube) and the open air):
+  // nothing may stand in front of one (INFRA: West Oakland, the Berkeley Hills east portal)
+  const MOUTH_R = 30, CUT_R = 8, mouths = [];
+  function nearMouth(x, z) { for (let i = 0; i < mouths.length; i += 2) { const dx = mouths[i] - x, dz = mouths[i + 1] - z; if (dx * dx + dz * dz < MOUTH_R * MOUTH_R) return true; } return false; }
   function dropBuilding(b, x, z) {
     let drop = false;
     if (b.kind === 6 && MetroNet.stationsNear(x, z, 160).length) drop = true;
+    else if (nearMouth(x, z)) drop = true;
     else {
       const n = MetroNet.nearest(x, z, 22);
       // anything centred within 7 m of an above-ground track; canopies / sheds / roofs (5) and station buildings (6)
       // within 22 m (the guideway and stations draw their own); parking structures (7) only when in the way (7 m)
-      if (n) { MetroNet.frame(n.track, n.s, fr); drop = !!ABOVE[fr.struct] && (n.dist < 7 || b.kind === 5 || b.kind === 6); }
+      if (n) { MetroNet.frame(n.track, n.s, fr);
+        drop = (fr.struct === 4 || fr.struct === 6) ? n.dist < CUT_R                       // open cuts and portals: 8 m
+          : !!ABOVE[fr.struct] && (n.dist < 7 || b.kind === 5 || b.kind === 6); }
     }
     if (drop) stats.dropped++;
     return drop;
@@ -53,6 +60,9 @@ const MetroGround = (() => {
     nS++;
   }
   function build() {
+    const UG = (c) => c >= 6 && c <= 9;
+    for (const t of MetroNet.tracks) for (let i = 1; i < t.n; i++) if (UG(t.ST[i]) !== UG(t.ST[i - 1])) { const k = UG(t.ST[i]) ? i - 1 : i; mouths.push(t.X[k], t.Z[k]); }
+    stats.mouths = mouths.length / 2;
     for (const t of MetroNet.tracks) {
       const X = t.X, Y = t.Y, Z = t.Z, ST = t.ST;
       for (let i = 0; i + 1 < t.n; i++) {
@@ -170,6 +180,7 @@ const MetroGround = (() => {
     }
     for (const t of MetroNet.tracks) for (let i = 0; i < t.n; i += 4) if (ABOVE[t.ST[i]]) mark(t.X[i] - 22, t.Z[i] - 22, t.X[i] + 22, t.Z[i] + 22);
     for (const st of MetroNet.stations || []) mark(st.x - 160, st.z - 160, st.x + 160, st.z + 160);
+    for (let i = 0; i < mouths.length; i += 2) mark(mouths[i] - MOUTH_R, mouths[i + 1] - MOUTH_R, mouths[i] + MOUTH_R, mouths[i + 1] + MOUTH_R);
     return [...keys].map(k => { const [tx, tz] = k.split(',').map(Number); return [X0 + tx * T7, Z0 + tz * T7, X0 + (tx + 1) * T7, Z0 + (tz + 1) * T7]; });
   }
   // trees in the way of a BART structure above ground (the new tree tiles keep 6.5 m + half a crown clear at bake time;

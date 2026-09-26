@@ -98,7 +98,7 @@ def raw2048(tx, ty, allow_fetch):
     if rgb.shape[0] != 2048:
         rgb = cv2.resize(rgb, (2048, 2048), interpolation=cv2.INTER_AREA)
     nd = IM.nodata_mask(rgb.astype(np.uint8))
-    rgb = IM.fill_nodata(rgb, nd)
+    rgb = IM.fill_nodata(rgb, nd, IM.WATER_BAY if (IM.FILL_LOCAL and os.environ.get('BAYLINE_FILL') != 'old') else None)   # (as imagery.load_hires)
     return IM.balance(rgb)
 
 
