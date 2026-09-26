@@ -795,9 +795,11 @@ const MetroTrack = (() => {
     for (const j of jobs) j.d = j.ch.d + (j.ch.layer === 'detail' ? 0 : j.ch.layer === 'far' ? 500 + j.ch.d * 0.3 : 0);
     const T3 = performance.now();
     // dispose what fell out of each ring (with some hysteresis)
+    // (at most 3 chunks a frame: disposing geometry and unregistering cells is not free)
+    let nDisp = 0;
     for (const layer of ['detail', 'body', 'far']) {
       const lim = LAYERS[layer].R * LAYERS[layer].keep, near = nearSets[layer];
-      for (const ch of [...built[layer]]) { const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
+      for (const ch of built[layer]) { if (nDisp >= 3) break; const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; nDisp++; } }
     }
     const T4 = performance.now();
     runJobs();
