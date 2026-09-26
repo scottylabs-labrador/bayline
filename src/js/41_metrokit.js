@@ -158,8 +158,11 @@ const MetroKit = (() => {
   // ------------------------------------------------------------------------------------------ shared uniforms
   // Per-car uniforms live in small objects shared by that car's materials (S): lamp levels, night, age/grime, flags.
   // Per-consist textures (sign canvas, screens canvas) are uniforms too (T).
+  // world-wide state shared by every MetroKit material: wetness (0 dry .. 1 soaked; follows the rain, see setWet)
+  const MKG = { mkWet: { value: 0 }, mkTimeG: U.uTime || { value: 0 } };
   function carUniforms() {
     return {
+      mkWet: MKG.mkWet, mkTimeG: MKG.mkTimeG, mkSpd: { value: 0 },   // (mkSpd: the car's speed along its design +X)
       mkLv: { value: new Float32Array(NLV) },             // light group levels (index = G.*)
       mkNight: { value: 0 },
       mkAge: { value: 0.3 },                               // 0 new .. 1 old and grimy
@@ -194,7 +197,7 @@ const MetroKit = (() => {
       mkAz = normalize(normalMatrix * (mkM * vec3(0.0, 0.0, 1.0))); }`;
   const MK_FRAG_HEAD = `
     uniform sampler2D mkPalA, mkPalB, mkPalC, mkPalD;
-    uniform float mkLv[16]; uniform float mkNight, mkAge, mkSeed, mkBar, mkHalfW, mkFloorY, mkCeilY;
+    uniform float mkLv[16]; uniform float mkNight, mkAge, mkSeed, mkBar, mkHalfW, mkFloorY, mkCeilY, mkWet, mkTimeG, mkSpd;
     uniform vec4 mkIndoor, mkLamp;
     uniform sampler2D mkSign, mkLcd, mkAtlas; uniform vec2 mkSignRes; uniform float mkNum[6];
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
@@ -410,6 +413,16 @@ const MetroKit = (() => {
         vec3 dirt = mix(vec3(0.20, 0.18, 0.16), vec3(0.25, 0.16, 0.10), smoothstep(1.0, 0.3, y));
         col = mix(col, dirt * (0.55 + 0.9 * dot(col, vec3(0.333))), mkGrime);
         mkRough += mkGrime * 0.35; mkMetal -= mkGrime * 0.5; mkCC *= 1.0 - mkGrime * 0.8; mkAniso *= 1.0 - mkGrime;
+      }
+      // ---------------- rain: a water film (glossy, a clear coat of its own) pooling on up-facing surfaces, trickles
+      // running down the sides (swept back along the car at speed), porous parts darken
+      if (mkWet > 0.002 && mkInside < 0.5) {
+        float up = smoothstep(0.3, 0.9, mkN.y), run = clamp(abs(mkSpd) / 15.0, 0.0, 1.0);
+        float tr = mkV(vec2((p.x + sign(mkSpd) * run * p.y * 2.5) * 9.0 + p.z * 3.0, p.y * 0.9 + mkTimeG * (0.2 + 0.8 * run)));
+        float film = mkWet * clamp(0.4 + 0.6 * max(up, 0.6 * smoothstep(0.6, 0.9, tr)), 0.0, 1.0);
+        mkRough = mix(mkRough, max(0.035, mkRough * 0.25), film); mkAniso *= 1.0 - film * 0.7;
+        mkCC = max(mkCC, film * 0.85); mkCCR = mix(mkCCR, 0.025, film);
+        col *= 1.0 - 0.18 * film * (1.0 - mkMetal) * (1.0 - smoothstep(0.6, 0.9, dot(col, vec3(0.333))));
       }
       // ---------------- bump from the pattern's height field (object space -> view space)
       if (mkPat > 0.5 && mkPat != 18.0 && mkPat != 19.0 && mkPat != 20.0 && mkPat != 30.0 && fw < 0.03) {
@@ -692,7 +705,7 @@ const MetroKit = (() => {
   // reflections at full strength).
   const GLASS_TINT = new THREE.Color(0.42, 0.47, 0.46);          // per pane (grey-green tinted glazing)
   const GLASS_FRAG_HEAD = `
-    uniform vec3 mkCamO, mkTint; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY, mkLoad; uniform float mkLv[16];
+    uniform vec3 mkCamO, mkTint; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY, mkLoad, mkWet, mkTimeG, mkSpd; uniform float mkLv[16];
     uniform vec4 mkIndoor, mkLamp, mkCab, mkCabI, mkRail, mkDoorWin, mkBand, mkEnds, mkCnt;
     uniform vec4 mkRows[40]; uniform float mkRowN, mkImDet;
     uniform vec4 mkSec[8]; uniform vec4 mkWin[16]; uniform vec4 mkDoor[4]; uniform vec4 mkPole[16]; uniform vec4 mkStand[8]; uniform vec4 mkPan[12];
@@ -722,6 +735,34 @@ const MetroKit = (() => {
     }
     float gH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     vec3 mkToView(vec3 d) { return mkAx * d.x + mkAy * d.y + mkAz * d.z; }
+    // raindrops on the glass (q: metres in the pane, x along the car or across the front, y up): beads that creep down
+    // when the train stands and stream back along the car at speed (stretched, moving); returns the bead's surface
+    // slope in the pane (xy) and its coverage (z), faded out where a bead would be smaller than a pixel
+    vec3 mkDrop;
+    // one layer of beads on a grid of cells cs (in flow space f); density: the share of cells with a bead
+    vec3 mkBeads(vec2 f, vec2 cs, float density, float seed, vec2 flow) {
+      vec2 id = floor(f / cs), fr = fract(f / cs) - 0.5;
+      float h = gH(id + seed), h2 = gH(id.yx * 1.7 + seed * 0.37);
+      if (h > density) return vec3(0.0);
+      vec2 d = fr - (vec2(h2, gH(id * 1.3 + seed + 5.0)) - 0.5) * 0.4;
+      float r = 0.1 + 0.26 * h2 * h2, l = length(d);
+      if (l > r) return vec3(0.0);
+      vec2 sl = d / r; sl = flow * sl.x - vec2(-flow.y, flow.x) * sl.y;     // back to pane axes
+      return vec3(sl * (0.55 + 0.25 * h2), 1.0);
+    }
+    vec3 mkDrops(vec2 q, float v, float front) {
+      if (mkWet < 0.01) return vec3(0.0);
+      float run = front > 0.5 ? 0.0 : clamp(abs(v) / 12.0, 0.0, 1.0);
+      vec2 flow = normalize(vec2(-sign(v) * run * 3.0, -1.0 + 0.7 * run));
+      vec2 f = vec2(dot(q, flow), dot(q, vec2(-flow.y, flow.x)));
+      vec2 cs = vec2(0.02 + 0.05 * run, 0.014);
+      float px = length(fwidth(q)) / cs.y, vis = 1.0 - smoothstep(0.25, 0.8, px);
+      if (vis <= 0.0) return vec3(0.0, 0.0, mkWet * 0.4);
+      // fine beads (most of them creep slowly), a sparser layer of big drops that slide faster
+      vec3 b = mkBeads(f + vec2(mkTimeG * (0.004 + 0.9 * run * run), 0.0), cs, mkWet * 0.42, 17.0, flow);
+      if (b.z < 0.5) b = mkBeads(f + vec2(mkTimeG * (0.03 + 1.2 * run * run), 0.31), cs * 2.6, mkWet * 0.3, 41.0, flow);
+      return vec3(b.xy * vis, b.z * vis + mkWet * 0.25 * (1.0 - vis));
+    }
     float mkRB(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
     // the cabin's two LED line lights + multi-bounce fill (mkIntLight of the palette material)
     float mkIL(vec3 p, vec3 n) {
@@ -969,6 +1010,14 @@ const MetroKit = (() => {
         .replace('#include <skinning_vertex>', MK_VERT_BODY + '\n#include <skinning_vertex>');
       // the impression is evaluated after the lights (it uses the scene's light uniforms and the Under daylight hook)
       sh.fragmentShader = sh.fragmentShader.replace('#include <clipping_planes_pars_fragment>', '#include <clipping_planes_pars_fragment>' + GLASS_FRAG_HEAD)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+          {
+            // raindrops: each bead tilts the pane's normal (its reflection) and bends the view through it
+            float front = step(0.5, abs(mkN.x));
+            mkDrop = mkDrops(front > 0.5 ? vec2(mkP.z, mkP.y) : vec2(mkP.x, mkP.y), mkSpd, front);
+            vec3 T = front > 0.5 ? mkAz : mkAx;
+            normal = normalize(normal + (T * mkDrop.x + mkAy * mkDrop.y) * 0.7);
+          }`)
         .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
           {
             mkDayK = 1.0; mkDayA = vec3(0.0); mkLitK = mkLv[1];
@@ -977,14 +1026,17 @@ const MetroKit = (() => {
             #endif
             vec3 rd = normalize(mkP - mkCamO);
             vec4 sg = mkSigns(mkP, rd);
+            { float front = step(0.5, abs(mkN.x)); vec3 Tc = front > 0.5 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+              rd = normalize(rd - (Tc * mkDrop.x + vec3(0.0, mkDrop.y, 0.0)) * 0.16); }
             vec3 inside = sg.a > 0.5 ? sg.rgb * 0.75 : mkInterior(mkP + rd * 0.03, rd) * mkTint;
+            inside *= 1.0 - 0.25 * mkDrop.z;                                  // (water on the pane scatters a little)
             // the near pane's Fresnel: at grazing angles the reflection wins
             float cosT = abs(dot(normalize(vNormal), normalize(vViewPosition)));
             float F = 0.04 + 0.96 * pow(1.0 - cosT, 5.0);
             totalEmissiveRadiance += inside * (1.0 - F) * mkIntOn;
           }`);
     };
-    m.customProgramCacheKey = () => 'mk-glass-2';
+    m.customProgramCacheKey = () => 'mk-glass-3';
     return m;
   }
   // clear glass (interior built): dst x tint + the glass's own reflections at full strength (not scaled by an opacity)
@@ -1396,11 +1448,13 @@ const MetroKit = (() => {
       }
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
+      MKG.mkWet.value = wetNow();
       if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
         if (moved) { c.doorPos[0] = c.flip ? T[1] : T[0]; c.doorPos[1] = c.flip ? T[0] : T[1]; c.dirty = true; }
         if (spin !== 0) { c.wheelAng = (c.wheelAng + (c.flip ? -spin : spin)) % TAU; c.dirty = true; }
         if (dt > 0) c._sway(dt, this.speed, this._aL, this.odo, this.sway);
+        c.S.mkSpd.value = c.flip ? -this.speed : this.speed;
         if (c.dirty && c.lod === 0) c._pose();
       }
     }
@@ -1512,11 +1566,20 @@ const MetroKit = (() => {
     const ym = U.wrapAngle(Math.atan2(-_JM.tz, _JM.tx) - yawBody); car.yaw[1] = car.flip ? ym : ym; car.bogOff[1][0] = jm[0] - A.mid; car.bogOff[1][1] = jm[1];
     car.dirty = true;
   }
+  // wetness: an explicit value (setWet, previews), else infra's rain-driven wetness (MetroTrack.uWet: wets in ~40 s of
+  // rain, dries in ~15 min), else dry
+  let wetOverride = -1;
+  function wetNow() {
+    if (wetOverride >= 0) return wetOverride;
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.uWet) return MetroTrack.uWet.value || 0;
+    return 0;
+  }
+  function setWet(w) { wetOverride = w === null || w === undefined || w < 0 ? -1 : clamp(+w, 0, 1); MKG.mkWet.value = wetNow(); }
   function createConsist(kind, opts) { return new Consist(kind, opts); }
   K.builders = builders; K.SIGN = SIGN; K.getDesign = getDesign; K.glassMaterial = glassMaterial; K.LINE_COLORS = LINE_COLORS; K.ledText = ledText;
   K.FONT = FONT; K.Consist = Consist; K.Car = Car;
 
   const createFarBatch = (scene, o) => K.createFarBatch(scene, o);
-  return { _k: K, setQuality, createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
+  return { _k: K, setQuality, setWet, createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroKit = MetroKit;
