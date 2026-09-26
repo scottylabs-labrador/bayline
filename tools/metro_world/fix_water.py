@@ -284,7 +284,15 @@ def main():
     if not test:
         json.dump({'what': 'imagery tiles of the north strip (and 1.6 km of the old square south of its edge) with their bay water '
                            're-toned to one smooth field (fix_water.py)', 'staged_root': 'data/raw/tiles/fix_water', 'files': man},
-                  open(os.path.join(STAGE, 'manifest.json'), 'w'), indent=1)
+                  open(os.path.join(STAGE, f'manifest_L{lv[0]}-{lv[1]}.json'), 'w'), indent=1)
+        # the set's manifest: every level range made so far
+        allm = []
+        for f in sorted(os.listdir(STAGE)):
+            if f.startswith('manifest_L') and f.endswith('.json'):
+                allm += json.load(open(os.path.join(STAGE, f)))['files']
+        json.dump({'what': 'imagery tiles of the north strip (and 1.6 km of the old square south of its edge) with their bay water '
+                           're-toned to one smooth field, plus the Richardson Bay masks (fix_water.py)', 'staged_root': 'data/raw/tiles/fix_water',
+                   'files': sorted(allm, key=lambda m: m['path'])}, open(os.path.join(STAGE, 'manifest.json'), 'w'), indent=1)
     print(f'{len(man)} of {n_seen} tiles re-toned -> {out_root}', flush=True)
 
 
