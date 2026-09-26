@@ -58,6 +58,7 @@ const MetroTrack = (() => {
     fence: P(0x8b9094, 0.45, 0.6, 7), bearing: P(0x202020, 0.8, 0, 9), steel: P(0x4a4d50, 0.55, 0.55, 0),
     steelRing: P(0x55595c, 0.62, 0.55, 11), exitSign: P(0x2fb35a, 0.4, 0, 5), blueLamp: P(0x3a6cff, 0.3, 0, 5),
     doorYellow: P(0xe0b21e, 0.5, 0.2, 0), jacket: P(0x9a9d9e, 0.5, 0.55, 7), blueSign: P(0x1f4f8f, 0.4, 0.1, 0),
+    frog: P(0x6a5a50, 0.62, 0.6, 2), steelGreen: P(0x3b4a3e, 0.55, 0.35, 0), tie: P(0xa29e95, 0.9, 0, 1),
   };
 
   // ---------------------------------------------------------------- geometry builder
@@ -467,7 +468,11 @@ const MetroTrack = (() => {
   }
   // the nearest parallel track within 22 m (e.g. the other bore of a twin-bore tunnel): its lateral (+ right), or 0
   function nbrAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.nbrL.length - 1); return R.nbrL[b]; }
-  function pairAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1); const p = R.pairT[b]; return p < 0 ? null : { R2: TRACKS[p], s2: R.pairS[b], lat: R.pairL[b], dy: R.pairDy[b], primary: !!R.primary[b] }; }
+  function pairAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1); const p = R.pairT[b]; return p < 0 ? null : { R2: TRACKS[p], s2: R.pairS[b], lat: pairLatAt(R, s, p), dy: R.pairDy[b], primary: !!R.primary[b] }; }
+  // the partner's lateral at s, interpolated between the 10 m bins (cm-accurate on smooth curves)
+  function pairLatAt(R, s, p) { const f = U.clamp(s / BIN, 0, R.pairT.length - 1.001), i = Math.floor(f), a = f - i;
+    const l0 = R.pairT[i] === p ? R.pairL[i] : null, l1 = R.pairT[i + 1] === p ? R.pairL[i + 1] : null;
+    return l0 !== null && l1 !== null ? l0 + (l1 - l0) * a : l0 !== null ? l0 : l1 !== null ? l1 : R.pairL[Math.round(f)]; }
   // station ranges on a track (STATIONS builds the box / deck / trackway there; I build rails and third rail through)
   // (MetroStations.limits when STATIONS provides it; else the platform ranges, normalised like STATIONS does: v0 puts the
   // two faces of an island up to ~200 m apart, so every track of a station takes the first platform's range, projected)
