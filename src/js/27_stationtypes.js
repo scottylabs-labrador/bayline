@@ -1089,7 +1089,53 @@ const StationTypes = (() => {
         return side < 0 ? [[v - 0.4, yTB, null, mBar], [v - 0.3, yTB + 1.07, null, mBar], [v + 0.3, yTB + 1.07, null, mBar], [v + 0.4, yTB]].reverse().map((p, k, R) => [p[0], p[1], null, R[k + 1] ? mBar : undefined])
           : [[v - 0.4, yTB, null, mBar], [v - 0.3, yTB + 1.07, null, mBar], [v + 0.3, yTB + 1.07, null, mBar], [v + 0.4, yTB]]; });
     }
-    for (const p of plats) yield* canopy(T, p);
+    // (a platform mostly under a trench's cover gets the covered hall instead of a canopy: its columns rise to the
+    // soffit, with the station's post style, into branching struts, and the soffit carries skylight drums)
+    for (const p of plats) { const cov = T.trench ? coveredShare(T, p) : 0; if (cov > 0.7) yield* coveredHall(T, p); else yield* canopy(T, p); }
+    yield;
+  }
+  function coveredShare(T, p) { let n = 0, c = 0; for (let u = p.u0; u <= p.u1; u += 4) { n++; if (T.trench.lids.some(L => L.kind !== 'bridge' && u >= L.u0 && u <= L.u1)) c++; } return n ? c / n : 0; }
+  function* coveredHall(T, p) {
+    const { zones, M, L2 } = T, z = zones[0], g = z.m.sk, tr = T.trench;
+    const C = T.H.canopy || {}, PS = C.posts || { shape: 'round', col: 0xb9b4a9, size: 0.6, spacing: 12, where: 'back' };
+    const lidAt = (u) => tr.lids.find(L => L.kind !== 'bridge' && u >= L.u0 && u <= L.u1);
+    const back = (u) => p.sideV > 0 ? p.eR(u) : p.eL(u), island = p.kind === 'island';
+    const colV = (u) => island ? (p.eL(u) + p.eR(u)) / 2 : back(u) - (p.sideV > 0 ? 1 : -1) * Math.max(0.9, PS.size);
+    // (the cover's soffit, as trenchBuild draws it)
+    const soff = (u) => Math.max(T.yRail + 4.9, Math.max(Terrain.hBase(...T.WUV(u, tr.vl(u) - 3)), Terrain.hBase(...T.WUV(u, tr.vr(u) + 3))) - 0.08 - 1.2);
+    const spacing = Math.max(8, PS.spacing || 10), mStrut = M([0xcfcac0, K.CONCRETE, 0.2], { sky: 0.3 });
+    for (let u = p.u0 + spacing / 2; u < p.u1 - 2; u += spacing) {
+      if (!lidAt(u) || inGroups(p, u, 1.0)) continue;
+      const v = colV(u), yS = soff(u), H = yS - p.y, hC = Math.max(2.4, H - 1.3);
+      T.place(g, u, v, p.y); g.mat(PS.col || 0xb9b4a9, PS.kind ?? K.CONCRETE, 0.12);
+      if (PS.shape === 'round') g.cyl(0, 0, 0, PS.size / 2, PS.size / 2, hC, 18, false); else g.cbox(0, 0, 0, PS.size, hC, PS.size);
+      g.pop();
+      // branching struts: arms from the column head to the soffit, along the platform and across it (not into the wall)
+      const [x0, z0] = L2(u, v);
+      for (const [du, dv] of [[2.2, 0], [-2.2, 0], [0, 1.6], [0, -1.6]]) {
+        if (!island && dv * p.sideV > 0) continue;
+        const [x1, z1] = L2(u + du, v + dv); const a = [x0, p.y + hC - 0.1, z0], b = [x1, yS - 0.05, z1];
+        const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz) || 1;
+        const ux = dx / L, uy = dy / L, uz = dz / L; let px = -uz, pz = ux; const pl = Math.hypot(px, pz) || 1; px /= pl; pz /= pl; const py = 0;
+        const qx = uy * pz - uz * py, qy = uz * px - ux * pz, qz = ux * py - uy * px, r = 0.14;
+        const corner = (P, s1, s2) => [P[0] + (px * s1 + qx * s2) * r, P[1] + (py * s1 + qy * s2) * r, P[2] + (pz * s1 + qz * s2) * r];
+        g.set(mStrut); const sq = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+        for (let k = 0; k < 4; k++) { const [s1, s2] = sq[k], [t1, t2] = sq[(k + 1) % 4];
+          g.quad(corner(a, s1, s2), corner(b, s1, s2), corner(b, t1, t2), corner(a, t1, t2), [0, 0, 1, 0, 1, 1, 0, 1]); }
+      }
+    }
+    // skylight drums: glowing discs in the soffit over the platform's middle, in a ring of concrete
+    z.m.glow.mat(lin(0xeef3f5).map(c => c * 1.4));
+    for (let u = p.u0 + spacing; u < p.u1 - spacing / 2; u += spacing * 2) {
+      if (!lidAt(u)) continue;
+      const v = (p.eL(u) + p.eR(u)) / 2, [x, zz] = L2(u, v), y = soff(u) - 0.03;
+      z.m.glow.push().at(x, y, zz, 0); z.m.glow.cyl(0, -0.02, 0, 1.6, 1.6, 0.02, 28, true); z.m.glow.pop();
+      g.mat(0x8d8880, K.CONCRETE, 0.1); g.push().at(x, y - 0.35, zz, 0); g.cyl(0, 0, 0, 1.75, 1.75, 0.35, 28, false); g.pop();
+      yield;
+    }
+    // the platform's light line under the soffit, along its middle
+    const um = (p.u0 + p.u1) / 2, f0 = T.frameAt(p.u0 + 4), f1 = T.frameAt(p.u1 - 4), vm = (p.eL(um) + p.eR(um)) / 2, ys = soff(um) - 0.2;
+    z.lights.add({ a: [f0.x - f0.tz * vm, ys, f0.z + f0.tx * vm], b: [f1.x - f1.tz * vm, ys, f1.z + f1.tx * vm], color: T.S.light.map(c => c * 0.9), range: 12, radius: 0.1, dir: [0, -1, 0], focus: 1 });
     yield;
   }
 
