@@ -17,7 +17,8 @@ const UI = (() => {
       ['Driving: W / S', 'Power / brake notches (W also closes the doors)'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Q', 'Reverser (when stopped)'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot'],
       ['Flying: ↑ ↓ ← →', 'Pitch (↓ = nose up) and roll'], ['W / S', 'Throttle (Shift: faster; past 100 % = afterburner)'], ['A / D', 'Rudder · nose-wheel steering'], ['F / R', 'Flaps extend / retract'], ['G', 'Landing gear'], ['Space · B', 'Wheel brakes · parking brake'], ['T', 'Thrust reverse (on the ground)'], ['Z', 'Speed brakes'],
       ['Y · U', 'Autopilot · autothrottle'], ['I', 'Approach: capture the runway ahead and autoland'], ['[ ] , . ; \'', 'Heading · altitude · speed targets'], ['C · 1-5 · Tab', 'Cameras: cockpit, chase, orbit, tower, flyby'], ['X', 'Handling: assisted · fly-by-wire · direct'], ['Home / End', 'Trim (direct handling)'], ['M', 'World map: click an airport to fly there direct, a live aircraft to join it'], ['N / Shift+N', 'Sim rate ×1-×16 (cruise, autopilot on)'], ['L (flying)', 'Copy a link that puts a friend in your aircraft, right here'], ['Helicopter: W / S', 'Climb / descend (released: hold the height); let go of the stick and it holds its speed, hovers when slow'], ['Esc', 'Flight menu']];
-    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) K.splice(15, 0, ['N', 'Bayline Metro system map'], ['Metro driving: W', 'ATO start / power · S brake (switches to manual) · A ATO on/off · O doors · Q change ends']);
+    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) K.splice(15, 0, ['N', 'Bayline Metro system map: click a station to go there'], ['B at a metro station', 'Metro arrivals: click a train to ride it, Shift+click to drive'],
+      ['Metro driving: W', 'ATO start / power · S brake (switches to manual) · A ATO on/off · O doors · Q change ends']);
     el.keys.innerHTML = K.map(([k, v]) => `<div><span>${v}</span><kbd>${k}</kbd></div>`).join('');
     initMap();
     // touch joystick: drives the same WASD keys the keyboard does (walk, fly, onboard)
@@ -37,7 +38,16 @@ const UI = (() => {
       const up = () => { if (b.dataset.hold) { Player.keys.delete(k); b.classList.remove('on'); } };
       b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up);
     });
+    // touch screens have no E or B key: the prompt is the button (tap to board, step off, change lines, see departures)
+    if (el.touch) { el.prompt.style.pointerEvents = 'auto'; el.prompt.style.cursor = 'pointer';
+      el.prompt.addEventListener('click', () => { if (Player.interact()) return; if (/<kbd>B<\/kbd>/.test(el.prompt._t || '')) window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', key: 'b', bubbles: true })); }); }
     el.strip.addEventListener('click', (e) => { const r = el.stripc.getBoundingClientRect(); const y = (e.clientY - r.top) / r.height; const s = U.clamp((y - 0.03) / 0.94, 0, 1) * Track.length; const st = Track.stationNear(s, 3000); if (st) openBoard(st.idx); });
+  }
+  // the same prompt worded for a touch screen: the E action if there is one ('Tap to board: ...'), else the B board
+  function touchPrompt(h) {
+    const e = h.indexOf('<kbd>E</kbd>');
+    if (e >= 0) { let rest = h.slice(e + 12).trim(); if (!/^to /.test(rest)) rest = 'to ' + rest; return 'Tap ' + rest; }
+    return h.replace(/Press <kbd>B<\/kbd> /, 'Tap ');
   }
   const extra = [];                       // overlays other modules add (Bayline Metro's system map and boards)
   function addOverlay(o) { if (o && !extra.includes(o)) extra.push(o); }
@@ -278,7 +288,7 @@ const UI = (() => {
       }
     }
     // prompt
-    const pr = Player.prompt; if (pr !== el.prompt._t) { el.prompt._t = pr; el.prompt.innerHTML = pr; el.prompt.hidden = !pr; }
+    const pr = Player.prompt; if (pr !== el.prompt._t) { el.prompt._t = pr; el.prompt.innerHTML = el.touch ? touchPrompt(pr) : pr; el.prompt.hidden = !pr; }
     el.crosshair.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly') || (typeof Flight !== 'undefined' && Flight.active);
     if (el.touch) el.joy.hidden = !(Player.mode === 'walk' || Player.mode === 'onboard' || Player.mode === 'fly') || anyOpen() || (typeof Flight !== 'undefined' && Flight.active);
     if (!el.mapov.hidden) drawMap();

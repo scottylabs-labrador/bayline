@@ -263,5 +263,7 @@ const MetroPlay = (() => {
   if (typeof Metro !== 'undefined') Metro.onTeardown(rescue);
 
   const api = { floorAt, blocked, platformSpot, teleport, spawnFromStations, tunnelCam, trackside, endOfLine, walkPrompt, walkAction, toPeninsula, toMetro, nearPeninsulaXfer, netState, update, XFER };
-  return typeof Metro !== 'undefined' ? Metro.guardAll(api, 'the metro player') : api;
+  if (typeof Metro !== 'undefined') Metro.guardAll(api, 'the metro player');
+  if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroPlay = api;   // (debug handle)
+  return api;
 })();

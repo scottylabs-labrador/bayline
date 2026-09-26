@@ -618,7 +618,11 @@ const MetroSim = (() => {
     let nNear = 0, fN = 0, lN = 0, dN = 0;
     if (kitFar) kitFar.begin();
     const fp = far.instanceMatrix.array, lp = lights.geometry.attributes.position.array, lc = lights.geometry.attributes.color.array, dp = dots.geometry.attributes.position.array, dc = dots.geometry.attributes.color.array;
-    const camUnder = !!(typeof Under !== 'undefined' && Under.state && Under.state.cell) || (typeof Terrain !== 'undefined' && camPos.y < Terrain.h(camPos.x, camPos.z) - 3);
+    const gH = typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0;
+    const camUnder = !!(typeof Under !== 'undefined' && Under.state && Under.state.cell) || camPos.y < gH - 3;
+    // far trains are drawn only where they could cover a pixel or two: ~4.5 km from the ground, out to 30 km from the air
+    // (a Peninsula view with no metro nearby draws nothing of it); the map dots from the air are separate
+    const farDist = U.clamp(4500 + Math.max(0, camPos.y - gH) * 9, 4500, 30000);
     let nHidden = 0;
     for (const tr of running) {
       // out of sight costs nothing: a train entirely under the street seen from above ground, or a surface train far
@@ -630,7 +634,7 @@ const MetroSim = (() => {
       const near = own || (nNear < maxNear && tr.dist < 1500);
       const e = near ? acquire(tr.kind, tr.key, tr.cars) : null; tr.entry = e;
       if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead); setupConsist(tr, e, dt, night); }
-      else if (tr.dist < 60000) {
+      else if (tr.dist < farDist) {
         // far: one instance per car, posed at its centre along the path (cars beyond 12 km are merged in pairs)
         const P = PERF[tr.kind];
         if (kitFar && !kitBad.has(tr.kind) && farKit(tr, P, night)) { /* drawn by MetroKit */ } else {
@@ -658,11 +662,11 @@ const MetroSim = (() => {
       if (dN < DMAX) { dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; _c.set(tr.remote ? (tr.remote.color || '#ffffff') : lineColor(tr.line)); dc[dN * 3] = _c.r; dc[dN * 3 + 1] = _c.g; dc[dN * 3 + 2] = _c.b; dN++; }
     }
     for (const e of pool) if (!e.busy && e.shown !== 0) { for (const car of e.consist.cars) car.group.visible = false; e.shown = 0; }
-    far.count = fN; far.instanceMatrix.needsUpdate = true; if (far.instanceColor) far.instanceColor.needsUpdate = true;
+    far.count = fN; far.visible = fN > 0; far.instanceMatrix.needsUpdate = true; if (far.instanceColor) far.instanceColor.needsUpdate = true;
     if (kitFar) kitFar.end(night, Env.renderer && Env.renderer.getDrawingBufferSize ? Env.renderer.getDrawingBufferSize(_res) : undefined);   // (lamp billboards keep a minimum pixel size)
-    lights.geometry.setDrawRange(0, lN); lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
+    lights.geometry.setDrawRange(0, lN); lights.visible = lN > 0; lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
     dots.geometry.setDrawRange(0, dN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
-    const alt = camPos.y - (typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0); dots.visible = alt > 350; dots.material.opacity = U.smooth(350, 1200, alt);
+    const alt = camPos.y - (typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0); dots.visible = alt > 350 && dN > 0; dots.material.opacity = U.smooth(350, 1200, alt);
     stats.running = running.length; stats.consists = nNear; stats.far = fN; stats.runs = runCache.size; stats.hidden = nHidden;
     stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05;
   }
