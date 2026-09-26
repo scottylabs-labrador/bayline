@@ -65,6 +65,29 @@ const MetroSigns = (() => {
     else if (kind === 'train') { c.beginPath(); c.roundRect(-s * 0.36, -s * 0.46, s * 0.72, s * 0.78, s * 0.14); c.stroke(); c.fillRect(-s * 0.26, -s * 0.32, s * 0.52, s * 0.22); c.beginPath(); c.arc(-s * 0.18, s * 0.14, s * 0.06, 0, 7); c.arc(s * 0.18, s * 0.14, s * 0.06, 0, 7); c.fill(); c.beginPath(); c.moveTo(-s * 0.3, s * 0.46); c.lineTo(-s * 0.18, s * 0.32); c.moveTo(s * 0.3, s * 0.46); c.lineTo(s * 0.18, s * 0.32); c.stroke(); }
     c.restore();
   }
+  // text in at most two lines of maxW (greedy by words), shrinking from size until it fits; leaves c.font set
+  function wrap2(c, text, maxW, size, minSize) {
+    const words = String(text).split(/\s+/);
+    for (let s = size; s >= minSize; s -= 2) { c.font = `600 ${s}px ${FONTB}`; const out = ['']; let ok = true;
+      for (const wd of words) { const tr = out[out.length - 1] ? out[out.length - 1] + ' ' + wd : wd; if (c.measureText(tr).width <= maxW) out[out.length - 1] = tr; else if (out.length < 2 && c.measureText(wd).width <= maxW) out.push(wd); else { ok = false; break; } }
+      if (ok) return out; }
+    c.font = `600 ${minSize}px ${FONTB}`; return [String(text)];
+  }
+  // transfer pictograms (white): metro, rail, lightrail, cablecar, ferry, air
+  function xpict(c, x, y, s, kind) {
+    c.save(); c.translate(x, y); c.strokeStyle = WHITE; c.fillStyle = WHITE; c.lineWidth = s * 0.08; c.lineCap = 'round'; c.lineJoin = 'round';
+    if (kind === 'ferry') { c.beginPath(); c.moveTo(-s * 0.48, s * 0.05); c.lineTo(s * 0.48, s * 0.05); c.lineTo(s * 0.34, s * 0.28); c.lineTo(-s * 0.36, s * 0.28); c.closePath(); c.fill();
+      c.fillRect(-s * 0.2, -s * 0.2, s * 0.36, s * 0.22); c.fillRect(-s * 0.04, -s * 0.36, s * 0.08, s * 0.16);
+      c.beginPath(); for (let i = 0; i < 4; i++) { c.moveTo(-s * 0.48 + i * s * 0.26, s * 0.42); c.quadraticCurveTo(-s * 0.35 + i * s * 0.26, s * 0.34, -s * 0.22 + i * s * 0.26, s * 0.42); } c.stroke(); }
+    else if (kind === 'air') { c.beginPath(); c.moveTo(0, -s * 0.48); c.lineTo(s * 0.06, -s * 0.1); c.lineTo(s * 0.46, s * 0.1); c.lineTo(s * 0.46, s * 0.2); c.lineTo(s * 0.06, s * 0.1); c.lineTo(s * 0.05, s * 0.32); c.lineTo(s * 0.16, s * 0.44);
+      c.lineTo(-s * 0.16, s * 0.44); c.lineTo(-s * 0.05, s * 0.32); c.lineTo(-s * 0.06, s * 0.1); c.lineTo(-s * 0.46, s * 0.2); c.lineTo(-s * 0.46, s * 0.1); c.lineTo(-s * 0.06, -s * 0.1); c.closePath(); c.fill(); }
+    else if (kind === 'lightrail' || kind === 'cablecar') { c.beginPath(); c.roundRect(-s * 0.4, -s * 0.22, s * 0.8, s * 0.5, s * 0.1); c.stroke(); c.fillRect(-s * 0.3, -s * 0.12, s * 0.6, s * 0.16);
+      if (kind === 'lightrail') { c.beginPath(); c.moveTo(-s * 0.16, -s * 0.22); c.lineTo(0, -s * 0.42); c.lineTo(s * 0.16, -s * 0.22); c.moveTo(-s * 0.3, -s * 0.46); c.lineTo(s * 0.3, -s * 0.46); c.stroke(); }
+      else { c.beginPath(); c.moveTo(0, -s * 0.22); c.lineTo(0, -s * 0.36); c.moveTo(-s * 0.48, -s * 0.36); c.lineTo(s * 0.48, -s * 0.36); c.stroke(); }
+      c.beginPath(); c.arc(-s * 0.2, s * 0.36, s * 0.06, 0, 7); c.arc(s * 0.2, s * 0.36, s * 0.06, 0, 7); c.fill(); }
+    else pict(c, 0, 0, s, 'train');
+    c.restore();
+  }
   function panel(c, x, y, w, h) { c.fillStyle = NAVY; c.fillRect(x, y, w, h); c.fillStyle = TEAL; c.fillRect(x, y + h - Math.max(3, h * 0.045), w, Math.max(3, h * 0.045)); }
 
   // ------------------------------------------------------------------------------------------------ station atlas
@@ -88,9 +111,19 @@ const MetroSigns = (() => {
     info: [0, 832, 1024, 192],          // info panel (station name + lines + "Trains every few minutes")
   };
   const atlasCache = new Map();
-  function stationAtlas(st) {
+  // (idle warm-up: every weight of both faces rasterised once, and the system map's base drawn, so the first station's
+  // signs and boards are not where the fonts load)
+  function warm() { try { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d');
+    for (const f of [FONT, FONTB]) for (const w of [500, 600, 700]) { c.font = `${w} 24px ${f}`; c.fillText('Bayline Metro 0123 ·', 0, 30); } } catch (e) {} }
+  let SCALE = 1;                     // quality: Low draws the atlas at half size (the regions and UVs stay in AW x AH units)
+  const setScale = (s) => { SCALE = s > 0 ? Math.min(1, s) : 1; };
+  // (the atlas is drawn a few panels per step, so a station build never stalls a frame on it: stationAtlasGen; the
+  // synchronous stationAtlas runs the same steps at once)
+  function stationAtlas(st) { const g = stationAtlasGen(st); let r = g.next(); while (!r.done) r = g.next(); return r.value; }
+  function* stationAtlasGen(st) {
     if (atlasCache.has(st.id)) return atlasCache.get(st.id);
-    const cv = document.createElement('canvas'); cv.width = AW; cv.height = AH; const c = cv.getContext('2d');
+    const cv = document.createElement('canvas'); cv.width = Math.round(AW * SCALE); cv.height = Math.round(AH * SCALE); const c = cv.getContext('2d');
+    if (SCALE !== 1) c.scale(SCALE, SCALE);
     c.fillStyle = NAVY2; c.fillRect(0, 0, AW, AH);
     const name = st.name, lines = linesAt(st.id);
     // big name panel
@@ -99,10 +132,12 @@ const MetroSigns = (() => {
       lines.forEach((l, i) => bullet(c, x + w - 44 - (lines.length - 1 - i) * 66, y + h * 0.5, 26, l)); void sz; }
     // hanging name sign
     { const [x, y, w, h] = R.nameS; panel(c, x, y, w, h); mark(c, x + 18, y + 18, 88); fit(c, name, `600 #px ${FONT}`, w - 150, 84, 30); c.fillStyle = WHITE; c.textBaseline = 'middle'; c.fillText(name, x + 124, y + h * 0.5 + 3); }
+    yield;
     // frieze: name, mark, name ... (tiles horizontally)
     { const [x, y, w, h] = R.frieze; c.fillStyle = NAVY; c.fillRect(x, y, w, h); c.fillStyle = TEAL; c.fillRect(x, y + h - 6, w, 6);
       const fs = fit(c, name.toUpperCase(), `600 #px ${FONT}`, w * 0.36, 86, 30); void fs;
       for (const cx of [w * 0.25, w * 0.75]) { mark(c, x + cx - c.measureText(name.toUpperCase()).width / 2 - 104, y + 24, 76); c.fillStyle = WHITE; c.textBaseline = 'middle'; c.textAlign = 'left'; c.fillText(name.toUpperCase(), x + cx - c.measureText(name.toUpperCase()).width / 2, y + h / 2 + 2); } }
+    yield;
     // platform direction panels
     const plats = (st.data && st.data.platforms) || [];
     ['p1', 'p2', 'p3', 'p4'].forEach((k, i) => {
@@ -114,6 +149,7 @@ const MetroSigns = (() => {
       fit(c, txt, `600 #px ${FONT}`, w - 150 - uniq.length * 40, 56, 24); c.fillStyle = WHITE; c.fillText(txt, x + 136, y + 88);
       const ls = [...new Set(ds.map(d => d.line))]; ls.forEach((l, j) => bullet(c, x + w - 32 - j * 44, y + 64, 17, l));
     });
+    yield;
     // wayfinding
     const way = (k, text, pic, dir) => { const [x, y, w, h] = R[k]; panel(c, x, y, w, h); pict(c, x + 64, y + 60, 84, pic); c.fillStyle = WHITE; c.textBaseline = 'middle'; fit(c, text, `600 #px ${FONT}`, w - 210, 58, 22); c.fillText(text, x + 122, y + 62); if (dir !== undefined) arrow(c, x + w - 58, y + 62, 72, dir); };
     way('exit', 'Street · Exit', 'exit', 1); way('gates', 'Fare gates', 'gates', 0); way('esc', 'Trains', 'esc', 3); way('elev', 'Elevator', 'elev', 0);
@@ -123,10 +159,21 @@ const MetroSigns = (() => {
     { const [x, y, w, h] = R.totem; c.fillStyle = NAVY; c.fillRect(x, y, w, h); mark(c, x + 48, y + 26, 160); c.fillStyle = WHITE; c.textAlign = 'center'; c.textBaseline = 'middle';
       const words = name.split(/\s+/); let yy = y + 226; const sz = fit(c, words.reduce((a, b) => a.length > b.length ? a : b, ''), `600 #px ${FONT}`, w - 24, 48, 20);
       c.font = `600 ${sz}px ${FONT}`; for (const wd of words.slice(0, 3)) { c.fillText(wd, x + w / 2, yy); yy += sz * 0.95; } c.textAlign = 'left'; }
+    yield;
     // system map
     drawMap(c, R.map, st.id);
-    // info panel
-    { const [x, y, w, h] = R.info; panel(c, x, y, w, h); mark(c, x + 24, y + 24, 72); c.fillStyle = WHITE; c.textBaseline = 'middle'; fit(c, name, `600 #px ${FONT}`, w - 150, 70, 26); c.fillText(name, x + 116, y + 60);
+    yield;
+    // info panel: the station's transfers when it has any (the data's rider-facing, brand-neutral text: never the
+    // operator's name), else the station's name and lines
+    const xf = ((st.data && st.data.transfers) || []).filter(t => t && t.text);
+    if (xf.length) { const [x, y, w, h] = R.info; panel(c, x, y, w, h);
+      c.fillStyle = DIM; c.font = `600 24px ${FONTB}`; c.textBaseline = 'middle'; c.fillText('Transfers', x + 20, y + 20);
+      const rows = xf.slice(0, 2), rh = (h - 38) / rows.length;
+      rows.forEach((t, i) => { const cy = y + 38 + rh * (i + 0.5);
+        xpict(c, x + 52, cy, Math.min(58, rh * 0.78), t.kind);
+        const ls = wrap2(c, t.text, w - 120, rows.length > 1 ? 30 : 38, 18); c.fillStyle = WHITE; c.textBaseline = 'middle';
+        const lh = (+(/(\d+)px/.exec(c.font) || [0, 24])[1]) * 1.12; ls.forEach((ln, k) => c.fillText(ln, x + 104, cy + (k - (ls.length - 1) / 2) * lh, w - 116)); }); }
+    else { const [x, y, w, h] = R.info; panel(c, x, y, w, h); mark(c, x + 24, y + 24, 72); c.fillStyle = WHITE; c.textBaseline = 'middle'; fit(c, name, `600 #px ${FONT}`, w - 150, 70, 26); c.fillText(name, x + 116, y + 60);
       c.fillStyle = DIM; c.font = `500 30px ${FONTB}`; c.fillText('Bayline Metro · unofficial', x + 116, y + 118);
       lines.forEach((l, i) => { bullet(c, x + 40 + i * 58, y + 160, 18, l); }); }
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.generateMipmaps = true;
@@ -137,8 +184,19 @@ const MetroSigns = (() => {
   function releaseAtlas(st) { const a = atlasCache.get(st.id); if (a) { a.tex.dispose(); atlasCache.delete(st.id); } }
 
   // system map: stations at their real positions, lines drawn along pattern stop sequences, this station ringed
-  let mapGeo = null;
-  function drawMap(c, [x, y, w, h], hereId) {
+  let mapGeo = null, mapBase = null;
+  function drawMap(c, R0, hereId) {
+    const [x, y, w, h] = R0;
+    if (!mapBase && typeof MetroNet !== 'undefined' && MetroNet.stations && MetroNet.stations.length) {
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h; drawMap0(cv.getContext('2d'), [0, 0, w, h], null); mapBase = cv; }
+    if (!mapBase) { drawMap0(c, R0, hereId); return; }
+    c.drawImage(mapBase, x, y);
+    const S = MetroNet.stationById[hereId] || (hereId && MetroNet.stationById[String(hereId).split('~')[0]]); if (!S || !mapGeo) return;
+    const G = mapGeo, pad = 22, iw = w - pad * 2, ih = h - 44 - pad * 2; const k = Math.min(iw / (G.x1 - G.x0), ih / (G.z1 - G.z0));
+    const X = x + pad + (S.x - G.x0) * k + (iw - (G.x1 - G.x0) * k) / 2, Y = y + 44 + pad + (S.z - G.z0) * k + (ih - (G.z1 - G.z0) * k) / 2;
+    c.strokeStyle = '#d7263d'; c.lineWidth = 3; c.beginPath(); c.arc(X, Y, 9, 0, 7); c.stroke(); c.fillStyle = '#d7263d'; c.font = `700 18px ${FONTB}`; c.textBaseline = 'middle'; c.fillText('You are here', X + 12, Y - 10);
+  }
+  function drawMap0(c, [x, y, w, h], hereId) {
     c.fillStyle = '#f2f0ea'; c.fillRect(x, y, w, h); c.fillStyle = NAVY; c.fillRect(x, y, w, 44); wordmark(c, x + 12, y + 6, 32, WHITE);
     c.fillStyle = WHITE; c.font = `500 22px ${FONTB}`; c.textAlign = 'right'; c.textBaseline = 'middle'; c.fillText('System map', x + w - 14, y + 22); c.textAlign = 'left';
     if (typeof MetroNet === 'undefined' || !MetroNet.stations || !MetroNet.stations.length) return;
@@ -241,5 +299,5 @@ const MetroSigns = (() => {
     let n = 0; for (let k = 0; k < boards.length && n < 2; k++) { const b = boards[(redrawI + k) % boards.length]; if (b.dirty) { drawBoard(b); n++; } } redrawI = (redrawI + 1) % Math.max(1, boards.length);
   }
 
-  return { NAVY, TEAL, WHITE, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, scheduledRows, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
+  return { stationAtlasGen, setScale, warm, NAVY, TEAL, WHITE, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, scheduledRows, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
 })();

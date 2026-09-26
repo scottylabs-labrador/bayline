@@ -37,6 +37,10 @@ async (B, a) => {
   // buildings
   let bDrop = 0;
   for (const b of blds) { const drop = M.dropBuilding({ pts: b.pts }, b.x, b.z); if (drop) bDrop++; poly(b.pts, drop ? 'rgba(255,0,0,0.25)' : null, drop ? '#ff4040' : '#c9c2b0', drop ? 2 : 1); }
+  // buildings the footprints dropped (Towns.addDrop): red crosses with their kind and height
+  for (const d of M.droppedBuildings || []) { if (Math.abs(d[0] - cx) > R || Math.abs(d[1] - cz) > R) continue; const x = X(d[0]), y = Y(d[1]);
+    g.strokeStyle = '#ff3030'; g.lineWidth = 3; g.beginPath(); g.moveTo(x - 8, y - 8); g.lineTo(x + 8, y + 8); g.moveTo(x + 8, y - 8); g.lineTo(x - 8, y + 8); g.stroke();
+    g.fillStyle = '#ff8080'; g.font = '12px sans-serif'; g.fillText(`k${d[2]} ${d[3]}m`, x + 10, y - 6); }
   // trees
   let tIn = 0;
   for (const t of trees) { const bad = M.keepOut(t.x, t.z, 'tree'); if (bad) tIn++; g.fillStyle = bad ? '#ff3030' : 'rgba(80,190,90,0.8)'; g.beginPath(); g.arc(X(t.x), Y(t.z), Math.max(1.5, Math.min(6, t.r * s * 0.5)), 0, 6.283); g.fill(); }

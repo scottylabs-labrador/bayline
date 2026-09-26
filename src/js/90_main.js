@@ -4,7 +4,11 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   const $ = (id) => document.getElementById(id);
   const loadbar = $('loadbar'), loadmsg = $('loadmsg');
   const hash = new URLSearchParams(location.hash.slice(1));
-  const METRO = typeof MetroSim !== 'undefined' && MetroSim.enabled;         // Bayline Metro (#metro=1)
+  // Bayline Metro (18_metro.js): Metro.on is the switch (it goes off for good if any metro part fails); the gate holds
+  // every metro load until the first frame is on screen
+  const METRO_ = typeof Metro !== 'undefined' && typeof MetroSim !== 'undefined';
+  const metroOn = () => METRO_ && Metro.on;
+  if (METRO_) Metro.arm();
   let prog = 0; const step = (p, msg) => { prog = p; loadbar.style.width = (p * 100).toFixed(0) + '%'; if (msg) loadmsg.textContent = msg; return new Promise(r => setTimeout(r, 0)); };
   const safe = (name, f) => { try { return f(); } catch (e) { console.error(name, e); return null; } };
   const safeA = async (name, f) => { try { return await f(); } catch (e) { console.error(name, e); return null; } };
@@ -18,13 +22,13 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Stations.init();
     TrackGeo.init();
     // Bayline Metro guideway, tunnels and the underground engine (infra; #metro=1 only)
-    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled) safe('metrotrack', () => MetroTrack.init());
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled && metroOn()) safe('metrotrack', () => MetroTrack.init());
     await step(0.58, 'Reading the timetable…');
     await Sim.init();
-    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) MetroSim.init();   // Bayline Metro (#metro=1): loads in the background, never blocks boot
+    if (metroOn()) MetroSim.init();   // Bayline Metro: loads after the first frame (Metro's gate), never blocks boot
     // Bayline Metro (#metro=1): nothing is placed in a station's ground-level footprint (what: 'house' by default, or
     // 'lamp' / 'tree' / ...: MetroStations.keepOut); the landmarks keep out houses only
-    const metroKO = typeof MetroStations !== 'undefined' && MetroStations.enabled ? MetroStations.keepOut : null;
+    const metroKO = typeof MetroStations !== 'undefined' && MetroStations.enabled && metroOn() ? (...a) => metroOn() && MetroStations.keepOut(...a) : null;
     const keepOut = (x, z, what) => { if (metroKO && metroKO(x, z, what || 'house')) return true; if (what && what !== 'house') return false;
       const L = World.landmarks; if (!L) return false; for (const l of L.list) { const r = l.radius || 0; if (r > 0 && Math.abs(x - l.x) < r && Math.abs(z - l.z) < r && Math.hypot(x - l.x, z - l.z) < r) return true; } return false; };
     // groundY = the base surface (L7): streets, buildings, landmarks and road traffic are built on it, and the lidar
@@ -45,7 +49,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     safe('globe', () => { if (typeof Globe !== 'undefined') Globe.init(); });
     safe('airports', () => { if (typeof Airports !== 'undefined') { Airports.init(); Airports.load().then(() => Globe.invalidate()).catch(e => console.warn('airports', e)); } });
     UI.init(); Player.init();
-    if (METRO) safe('metro-ui', () => { MetroUI.build(); MetroSound.init(); });
+    if (metroOn()) safe('metro-ui', () => { MetroUI.build(); MetroSound.init(); });
     safe('flight', () => { if (typeof Flight !== 'undefined') { FHud.init(); Flight.init(); } });
     await step(0.96, 'Warming up…');
   } catch (e) { console.error(e); loadmsg.textContent = 'Something went wrong: ' + e.message; return; }
@@ -87,14 +91,14 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   mpchip.addEventListener('click', () => { wantNet = !wantNet; if (typeof Net !== 'undefined') { if (wantNet) Net.connect(); else Net.disconnect(); } setMpText(); });
   if (typeof Net !== 'undefined' && wantNet) { safe('net', () => { Net.onStatus(() => setMpText()); Net.connect(); }); }
   setMpText();
-  function start(mode) {
+  function start(mode, opts) {
     if (started) return; started = true; World.started = true;
     safe('sound', () => { if (typeof Sound !== 'undefined') Sound.init(); });
     title.style.opacity = 0; setTimeout(() => { title.hidden = true; }, 500); hud.hidden = false;
     if (mode === 'fly') { if (typeof Flight !== 'undefined' && !Flight.active && !Flight.loading) FHud.setup(true); }
     else if (mode === 'ride') { const near = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; UI.openBoard(near.idx); UI.toast('Pick a departure to ride. The whole line runs live.', 5); }
     else if (mode === 'drive') { UI.openMissions('drive'); }
-    else if (mode === 'metro' && METRO) { MetroUI.openMap(); UI.toast('Bayline Metro: click a station to see its trains, a train to follow it. N reopens this map.', 7); }
+    else if (mode === 'metro' && metroOn()) MetroUI.front(opts || { action: 'map' });   // (the title card's metro section: ride, drive, map)
     else { if (Player.mode === 'heli') Player.setMode('chase'); UI.toast('Explore: 1–8 change the view · M map · B departures · J missions · H help', 7); }
   }
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => start(b.dataset.go)));
@@ -123,7 +127,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   }
   if (hash.get('drive')) { const p = Sim.planById(hash.get('drive')); if (p) Game.startDrive(p, { auto: hash.has('autopilot') }); }
   // Bayline Metro links (once the network has loaded): #mst=EMBR[&mplat=M16-1] a platform, #mdrive=<trip>[&mfrom=STN], #mmap=1|geo|graph
-  if (METRO) MetroSim.init().then(ok => { if (!ok) return;
+  if (metroOn()) MetroSim.init().then(ok => { if (!ok || !metroOn()) return;
     if (hash.get('mst')) MetroPlay.teleport(hash.get('mst'), hash.get('mplat') || undefined);
     if (hash.get('mdrive')) { const p = MetroSim.planFor(hash.get('mdrive')); if (p) MetroATC.start(p, { station: hash.get('mfrom') || undefined, manual: hash.has('manual') }); }
     if (hash.get('mmap')) MetroUI.openMap({ view: ({ geo: 'geo', graph: 'graph' })[hash.get('mmap')] || 'schematic' });
@@ -143,11 +147,11 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (c === 'KeyM') { if (typeof FMap !== 'undefined' && ((typeof Flight !== 'undefined' && Flight.active) || (typeof Globe !== 'undefined' && !Globe.frame.bay))) { UI.closeAll(); FMap.toggle(); return; }
       const was = $('mapov').hidden; UI.closeAll(); if (was) UI.openMap(); return; }
     if (c === 'KeyJ') { const was = $('missions').hidden; UI.closeAll(); if (was) UI.openMissions('all'); return; }
-    const mDrive = METRO && !!MetroSim.drive;
-    if (c === 'KeyN' && METRO && !(typeof Flight !== 'undefined' && Flight.active)) { const was = MetroUI.mapOpen; UI.closeAll(); if (!was) MetroUI.openMap(); return; }
+    const mDrive = metroOn() && !!MetroSim.drive;
+    if (c === 'KeyN' && metroOn() && !(typeof Flight !== 'undefined' && Flight.active)) { const was = MetroUI.mapOpen; UI.closeAll(); if (!was) MetroUI.openMap(); return; }
     if (c === 'KeyB' && !Sim.drive && !mDrive) {
-      const wasOpen = !$('board').hidden || (METRO && MetroUI.boardOpen); UI.closeAll(); if (wasOpen) return;
-      const cp = Env.camera.position, st = Stations.nearest(cp, 1e9), ms = METRO && MetroSim.ready ? MetroSim.nearestStation(cp, 3000) : null;
+      const wasOpen = !$('board').hidden || (metroOn() && MetroUI.boardOpen); UI.closeAll(); if (wasOpen) return;
+      const cp = Env.camera.position, st = Stations.nearest(cp, 1e9), ms = metroOn() && MetroSim.ready ? MetroSim.nearestStation(cp, 3000) : null;
       if (ms && (!st || Math.hypot(ms.x - cp.x, ms.z - cp.z) < Math.hypot(st.x - cp.x, st.z - cp.z))) MetroUI.openBoard(ms.id); else if (st) UI.openBoard(st.idx);
       return; }
     if (UI.anyOpen()) return;
@@ -158,7 +162,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (views[c]) { if ((Sim.drive || mDrive) && (c === 'Digit6' || c === 'Digit7')) { UI.toast('You are driving: stay with your train'); return; } if (Game.mission && Game.mission.kind === 'tour' && c === 'Digit7') { UI.toast('No flying on the tour'); return; }
       if (c === 'Digit8') { const p = Env.camera.position; Player.setMode('orbit', { target: { x: p.x, y: Terrain.h(p.x, p.z), z: p.z }, dist: 600 }); } else Player.setMode(views[c]); return; }
     if (c === 'KeyE') { if (Player.interact()) return; }
-    if (c === 'Tab') { e.preventDefault(); if (Sim.drive || mDrive) return; const L = (METRO && MetroSim.ready ? Sim.running.concat(MetroSim.running) : Sim.running.slice()).sort((a, b) => a.dist - b.dist); if (!L.length) return; const i = L.findIndex(t => t.key === Player.focus); const nx = L[(i + 1) % L.length]; Player.setFocus(nx.key); if (!['chase', 'heli', 'trackside', 'cab'].includes(Player.mode)) Player.setMode('chase'); UI.toast('Following ' + (nx.metro ? 'the ' + MetroSim.lineName(nx.line) + ' to ' + MetroSim.termName(nx) : Sim.destText(nx).replace(/\s+/g, ' ') + ' (' + nx.trip.id + ')')); return; }
+    if (c === 'Tab') { e.preventDefault(); if (Sim.drive || mDrive) return; const L = (metroOn() && MetroSim.ready ? Sim.running.concat(MetroSim.running) : Sim.running.slice()).sort((a, b) => a.dist - b.dist); if (!L.length) return; const i = L.findIndex(t => t.key === Player.focus); const nx = L[(i + 1) % L.length]; Player.setFocus(nx.key); if (!['chase', 'heli', 'trackside', 'cab'].includes(Player.mode)) Player.setMode('chase'); UI.toast('Following ' + (nx.metro ? 'the ' + MetroSim.lineName(nx.line) + ' to ' + MetroSim.termName(nx) : Sim.destText(nx).replace(/\s+/g, ' ') + ' (' + nx.trip.id + ')')); return; }
     if (c === 'KeyF' && !Sim.drive && !mDrive) { const tr = Player.nearestAnyTrain(Env.camera.position, 1e9); if (tr) { Player.setFocus(tr.key); Player.setMode('chase'); } return; }
     if ((c === 'Minus' || c === 'Equal' || c === 'Digit0') && !Sim.drive && !mDrive) {
       if (c === 'Digit0') { Env.goLive(); UI.toast('Live time'); return; }
@@ -224,14 +228,14 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     // pass-by: nearest other train outside
     let pb = null, pd = 700;
     for (const t2 of Sim.running) { if (t2 === tr && aboard) continue; if (t2 === tr) continue; const d = Math.hypot(t2.x - camP.x, t2.z - camP.z); if (d < pd && t2.v > 2) { pd = d; pb = t2; } }
-    if (typeof MetroSim !== 'undefined' && MetroSim.enabled && MetroSim.ready) for (const t2 of MetroSim.running) { if (t2 === tr || t2.buried) continue; const d = Math.hypot(t2.x - camP.x, t2.z - camP.z, (t2.y - camP.y) * 0.8); if (d < pd && t2.v > 2) { pd = d; pb = t2; } }
+    if (metroOn() && MetroSim.ready) for (const t2 of MetroSim.running) { if (t2 === tr || t2.buried) continue; const d = Math.hypot(t2.x - camP.x, t2.z - camP.z, (t2.y - camP.y) * 0.8); if (d < pd && t2.v > 2) { pd = d; pb = t2; } }
     if (pb && pb.metro) Sound.passby({ dist: pd, speed: pb.v, kind: pb.kind === 'dmu' ? 'diesel' : 'emu', horn: false });
     else if (pb) { let horn = false; for (const c of Track.feat.crossings) { const a = (c.s - pb.s) * (pb.dir ? 1 : -1); if (a > 20 && a < 320) { horn = true; break; } } Sound.passby({ dist: pd, speed: pb.v, kind: pb.kind, horn }); } else Sound.passby(null);
     Sound.crossings(TrackGeo.crossingsNear(camP, 700));
     const urb = Terrain.urbanAt(camP.x, camP.z); let bay = 0; for (const [dx, dz] of [[400, 0], [-400, 0], [0, 400], [0, -400], [0, 0]]) if (Terrain.isWater(camP.x + dx, camP.z + dz)) bay += 0.2;
     const alt = camP.y - Terrain.h(camP.x, camP.z);
     Sound.ambience({ city: urb * U.clamp(1 - alt / 400, 0, 1), bay: bay * U.clamp(1 - alt / 800, 0, 1), wind: U.clamp(0.15 + alt / 1500, 0, 1), rain: 0, night: U.uNight.value, crowd: Stations.nearest(camP, 120) ? 0.6 : 0 });
-    const holdHorn = (D || Player.inCab() || (typeof MetroSim !== 'undefined' && MetroSim.enabled && MetroSim.drive)) && Player.down('Space'); Sound.horn(!!holdHorn);
+    const holdHorn = (D || Player.inCab() || (metroOn() && MetroSim.drive)) && Player.down('Space'); Sound.horn(!!holdHorn);
     Sound.bell(!!((D || Player.inCab()) && Player.down('KeyG') && !(focus && focus.metro)));   // (metro trains have no bell)
   }
 
@@ -270,8 +274,10 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof GroundCover !== 'undefined' && GroundCover.setQuality) safe('groundcover', () => GroundCover.setQuality(T.post));
     if (typeof SunShade !== 'undefined') safe('sunshade', () => SunShade.setQuality(T.post));
     if (typeof ACModel !== 'undefined' && ACModel.setQuality) safe('acmodel', () => ACModel.setQuality(T.name));
-    if (typeof MetroKit !== 'undefined' && MetroKit.setQuality) safe('metrokit', () => MetroKit.setQuality(T.name));   // Bayline Metro cars follow the tier too
-    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) MetroSim.setQuality(T.post);
+    if (typeof MetroKit !== 'undefined' && MetroKit.setQuality && metroOn()) Metro.guard('the train models', () => MetroKit.setQuality(T.name));   // Bayline Metro cars follow the tier too
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled && MetroTrack.setQuality && metroOn()) Metro.guard('the guideway', () => MetroTrack.setQuality(T.name));   // (guideway: Low = structures and rails only)
+    if (typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.setQuality && metroOn()) Metro.guard('the stations', () => MetroStations.setQuality(T.name));   // (stations: Low = no escalator steps, near detail within 150 m, a quarter of the crowd, 4 lights)
+    if (metroOn()) MetroSim.setQuality(T.post);
     window.dispatchEvent(new Event('resize'));
     gfxUi();
   }
@@ -325,9 +331,9 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Env.update(dt, camP);
     if (typeof SunShade !== 'undefined') safeFrame('sunshade', () => SunShade.update(dt, camP));
     Sim.update(dt, camP);
-    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) safeFrame('metro', () => MetroSim.update(dt, camP));
+    if (metroOn()) Metro.guard('the metro runtime', () => MetroSim.update(dt, camP));
     Game.update(Env.time.paused ? 0 : dt * Env.time.scale);
-    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) safeFrame('metro-game', () => { MetroATC.update(Env.time.paused ? 0 : dt * Env.time.scale); MetroPlay.update(dt); MetroMissions.update(); });
+    if (metroOn()) Metro.guard('the metro game', () => { MetroATC.update(Env.time.paused ? 0 : dt * Env.time.scale); MetroPlay.update(dt); MetroMissions.update(); });
     if (!(typeof Flight !== 'undefined' && Flight.active && safeFrameR('flight', () => Flight.update(dt)))) Player.update(dt);
     // capture mode: the shot's camera, placed before the world picks its detail (terrain LOD and culling, streaming) for it
     if (capture.on && capture.cam) safeFrame('capture-cam', () => { capture.cam(capture.t, Env.camera, dt); Env.camera.updateMatrixWorld(); });
@@ -346,7 +352,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof WorldTiles !== 'undefined' && World.started) safeFrame('worldtiles', () => WorldTiles.update(Env.camera));
     if (typeof Precip !== 'undefined' && World.started) safeFrame('precip', () => Precip.update(dt));
     if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
-    if (bay && typeof MetroTrack !== 'undefined' && MetroTrack.enabled) safeFrame('metrotrack', () => MetroTrack.update(cp, dt));
+    if (bay && typeof MetroTrack !== 'undefined' && MetroTrack.enabled && metroOn()) Metro.guard('the guideway', () => MetroTrack.update(cp, dt));
     if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
     if (bay && World.air) safeFrame('air', () => World.air.update(dt, envArg));
@@ -363,17 +369,20 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (bay && typeof Boats !== 'undefined') safeFrame('boats', () => Boats.update(dt, envArg));
     Avatars.update();
     if (!started) cinematics(dt);
-    if (World.started) { UI.update(dt); if (typeof MetroSim !== 'undefined' && MetroSim.enabled) safeFrame('metro-ui', () => { MetroUI.update(dt); MetroSound.update(dt); }); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
+    if (World.started) { UI.update(dt); if (metroOn()) Metro.guard('the metro interface', () => { MetroUI.update(dt); MetroSound.update(dt); }); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
     // underground (Bayline Metro): the camera's cell, portal visibility, the under map, interior exposure
-    if (typeof Under !== 'undefined' && Under.enabled) safeFrame('under', () => Under.update(Env.camera));
+    if (typeof Under !== 'undefined' && Under.enabled && metroOn()) Metro.guard('the underground engine', () => Under.update(Env.camera));
     draw(dt);
+    // the first frame is drawn: now the metro may load and build (nothing metro is requested before this point)
+    if (!firstFrameAt) { firstFrameAt = window.__baylineFirstFrameMs = performance.now(); if (METRO_) setTimeout(() => Metro.start(), 0); }
   }
+  let firstFrameAt = 0;
   function draw(dt) {
-    const U2 = typeof Under !== 'undefined' && Under.enabled ? Under : null;   // (cells nobody sees and, deep underground, the outdoors: not drawn)
-    if (U2) safeFrame('under-pre', () => U2.preRender());
+    const U2 = typeof Under !== 'undefined' && Under.enabled && metroOn() ? Under : null;   // (cells nobody sees and, deep underground, the outdoors: not drawn)
+    if (U2) Metro.guard('the underground engine', () => U2.preRender());
     if (typeof Post !== 'undefined' && Post.render && Post.enabled !== false && !postBroken) { try { Post.render(dt); } catch (e) { postBroken = true; console.error('post', e); Env.renderer.setRenderTarget(null); Env.renderer.render(Env.scene, Env.camera); } }
     else Env.renderer.render(Env.scene, Env.camera);
-    if (U2) U2.postRender();
+    if (U2) Metro.guard('the underground engine', () => U2.postRender());
   }
   // capture: let the world catch up with the camera without advancing time (level of detail, tile requests and the
   // incremental builders run; nothing moves), then draw the frame again. Resolves with what was still loading.

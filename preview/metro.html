@@ -21,6 +21,7 @@
 <script src="../src/js/21_metronet.js"></script>
 <script src="../src/js/41_metrokit.js"></script>
 <script src="../src/js/42_metrokit_apm.js"></script>
+<script src="../src/js/42_metrokit_bake.js"></script>
 <script src="../src/js/42_metrokit_disp.js"></script>
 <script src="../src/js/42_metrokit_dmu.js"></script>
 <script src="../src/js/42_metrokit_far.js"></script>
@@ -38,6 +39,7 @@
   const q = hp.get('q'); if (q !== null) MetroKit.setQuality(isNaN(+q) ? q : +q);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+  if (MetroKit.setRenderer) MetroKit.setRenderer(renderer);                   // (baked LODs render their atlases with it)
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = night ? 1.1 : 0.9;
   document.body.appendChild(renderer.domElement);
@@ -95,6 +97,7 @@
   }
 
   // ---------------------------------------------------------------- trains
+  if (hp.get('q')) MetroKit.setQuality(hp.get('q'));                               // low | medium | high | ultra
   const isDmu = view === 'dmu', isApm = view === 'apm';
   const ncars = +(hp.get('cars') || (isDmu ? 1 : isApm ? 3 : (view === 'curve' || view === 'lod') ? 10 : 4));
   const c = MetroKit.createConsist(isDmu ? 'dmu' : isApm ? 'apm' : 'bart', { cars: ncars, seed: +(hp.get('seed') || 3), order: hp.get('order') || undefined });
@@ -104,6 +107,7 @@
   c.setLights({ head: 1, tail: 1, interior: 1, lead: 'front' });
   if (c.setThirdRail) c.setThirdRail(view === 'curve' ? 0 : -1);          // the preview's contact rail is on the -Z side
   if (hp.get('load') && c.setLoad) c.setLoad(+hp.get('load'));
+  if (hp.get('wet') && MetroKit.setWet) MetroKit.setWet(+hp.get('wet'));                // rain: 0..1
   const front = c.length / 2;
   const X = i => front - c.cars[i].offset;
   if (curveView) {
@@ -128,6 +132,7 @@
   if (view === 'doors' || view === 'night-exterior' || hp.get('doors') === '1') { c.setDoors('right', 1); for (let i = 0; i < 60; i++) c.update(0.1); }
   if (inside || view === 'doors' || view === 'night-exterior') c.setInteriorVisible(true);
   if (view === 'lod') c.cars.forEach((car, i) => car.setLOD(i < 3 ? 0 : i < 6 ? 1 : 2));
+  if (hp.get('lod')) c.setLOD(+hp.get('lod'));                                      // force a LOD (A/B the baked LODs)
 
   // walking metadata overlay (#meta=1)
   if (showMeta) for (const car of c.cars) {

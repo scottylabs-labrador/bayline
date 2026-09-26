@@ -5,6 +5,13 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 
 ## Status
 
+- 2026-09-26 (M3 polish round): **baked LODs** for all three vehicles: each design's full-detail exterior and its
+  window impression are rendered once into an atlas and mapped onto new LOD 1 / LOD 2 meshes (~1.1k triangles, one
+  draw per car): on Low (where LOD 1 is drawn at every distance) and for every car beyond 110 m the car now looks like
+  the real one, day and night, with its doors opening; the far batch uses the baked LOD 2. **Per-car LOD** by camera
+  distance (a long train or one seen from the air no longer draws every car at full detail). **Program prewarm**
+  (`MetroKit.precompile`, automatic after boot). **Night windows**: far panes reflect the lit cabin; the people
+  mover's panes are real openings with a white lining inside. Quality changes rebuild live trains (fixes a TypeError).
 - 2026-09-26 (session 1, iteration 3): interior impression v2 in the exterior glass (the lit cabin, passengers by
   load, far windows showing the scene, a D-cab view), matching the real interior when it is built (A/B checked);
   collector shoes on infra's published contact rail, driven per truck from `MetroTrack.thirdRail` (checked in game
@@ -59,7 +66,16 @@ c.setNight(n)                                // 0 day .. 1 night (early-outs whe
 c.setDisplay({ line, color, lineName, destination, nextStop, arriving, doors: 'left'|'right', transfer, stops: [..], index, clock })
 c.setCab({ speedMph, atcCodeMph | codeMph, targetMph, effort | notch, mode: 'ATO'|'MANUAL', doors, nextStop, distFt, clock,
            cars, destination, lineColor | color, alarm | atc: 'ok'|'warn'|'brake'|'penalty', handle })  // ~8 Hz redraw max
-c.setInteriorVisible(bool) / car.setInteriorVisible(bool)   // builds the interior lazily (cached per design)
+c.setInteriorVisible(bool)                   // true: interiors allowed for a focus train (see "M3 gate"); the kit
+                                             // draws them for the car nearest the camera and its neighbours only,
+                                             // automatically within 45 m (c.intAuto = false turns that off)
+car.setInteriorVisible(bool)                 // (direct, per car; builds the interior lazily, cached per design)
+MetroKit.stats()                             // GPU memory estimate and counts (consists, cars, LOD0, interiors, draws,
+                                             // triangles, shadow-caster triangles, MB incl. baked atlases)
+MetroKit.precompile(scene, camera)           // compile every MetroKit program now (runs by itself after boot)
+MetroKit.setRenderer(r)                      // the renderer for the bakes (default Env.renderer; previews pass theirs)
+MetroKit.bakesSettled()                      // promise: every requested atlas is baked (previews, tests)
+MetroKit.setWet(w | null)                    // force wetness 0..1 (null: follow MetroTrack.uWet, the rain)
 c.setLoad(f)                                 // 0 empty .. 1 crush: passengers seen through the windows (default 0.3)
 c.sway = true                                 // body sway on the air springs (default on; false = rigid body): roll
                                              // 0.07 rad per g of unbalanced lateral acceleration (v^2 k + g sin(bank), k
@@ -88,11 +104,80 @@ Per car (as TrainKit): `group` (rotation order YZX), `length`, `width`, `height`
 (eye positions, yaw 0 = +X, + `color`), `doors [{x, side, width 1.36, sillY 0.991}]`, `cabEye` (D: [9.3, 2.26, 0.72]
 unflipped) and `cabYaw`.
 
+## M3 gate (lead's items, 2026-09-26)
+
+1. **Performance.** 10-car train at LOD0 exterior: **20 draw calls** (body + glass per car), 386k triangles; +1
+   draw per car while its doors are open and its interior is not drawn (the doorway impression). Interiors: only the
+   car nearest the camera and its neighbours (at most 3 cars, +2 draws / +33k triangles each), decided by MetroKit every
+   update from the render camera; `setInteriorVisible(true)` from the sim only extends that to a focus train beyond
+   45 m. Far trains: the sim's `createFarBatch` (one instanced draw per car design + one for all lamps). **Low tier:**
+   cars never draw the full exterior (LOD 1, 1.1k triangles per car; the car you ride in keeps its interior).
+   GPU time for the train (preview, 1600x900, render + gl.finish): 3/4 view 0.6 ms, side 0.2 ms, inside 0.7 ms.
+2. **Phones / memory.** Low and Medium: 1024 px decal atlas (5.3 MB instead of 21.3 MB with mips), half-size
+   passenger/cab screens (1.3 MB per consist with an interior instead of 5.3 MB). A quality change rebuilds live
+   consists on the new designs and frees the old buffers, atlas and far-batch meshes (`setQuality`; checked:
+   High 36 MB -> Low 14.8 MB -> High 36 MB on the same consist). `MetroKit.stats()` reports it. Measured with
+   `MetroKit.stats()` in game at EMBR 17:30 (6-car train at the platform, interiors of 3 cars):
+
+   | profile | MetroKit GPU memory | of which geometry / atlas / screens |
+   |---|---|---|
+   | desktop High, on the platform | 36.2 MB | 9.5 / 21.3 / 5.3 |
+   | desktop High, riding (inside car 2) | 36.2 MB | 9.5 / 21.3 / 5.3 |
+   | phone (--mobile, DPR 2) Medium, platform | 19.9 MB (now 15.9: half screens) | 9.2 / 5.3 / 5.3 -> 1.3 |
+   | phone Medium, riding | 19.9 MB (now 15.9) | 9.2 / 5.3 / 5.3 -> 1.3 |
+   | phone Low, platform | 14.8 MB | 8.0 (upper bound: the unused LOD0 buffers are never uploaded) / 5.3 / 1.3 |
+
+3. **Clean console.** No MetroKit messages at EMBR, WOAK (D/E, with LOD0 + interiors forced), ANTC (GTW DMU) and
+   OAKL (Cable Liner) with `#q=high`, nor in the preview's 20 views. (The only warning seen: Under's "camera is
+   underground ... no cell claims it" at EMBR, infra's.)
+4. **See-through open doors** (lead's RICH 17:40 check): fixed. At RICH the car nearest the player draws its
+   interior (blue seats, far windows showing the outdoors), the cars further along with open doors draw the doorway
+   impression; the player beside car 4 of 6 gets cars 3-5's interiors and doorway impressions on 1-2 and 6.
+
+## M3 polish round (lead's items, 2026-09-26)
+
+1. **Low / LOD 1 look.** A per-design atlas baked from the full model (`42_metrokit_bake.js`): five orthographic views
+   (sides, roof, ends at 1.6x), 4x MSAA, mipmapped sRGB, alpha = material code (paint, metal, a window onto the lit
+   cabin, a far pane). The LOD meshes (`builders[kind].lodBaked`): a coarse section shell with the door portals open
+   behind skinned leaves, the noses as fillet rings and faces, skirt cards (trucks and equipment as the side views
+   saw them); per car on top: numbers and door lamps copied from the full model, lamp discs, the LED signs (the
+   consist's destination). The GTW's three bodies stay on their bones (the LOD articulates). The windows show the
+   cabin as a rider on the platform sees it, lit by its own light (plus a daylight term by day); on Low the doorway
+   impression fills open doors. A/B at 10 / 40 / 150 m, day and night: `shots/trains/m3_lod_ab_day.jpg`,
+   `m3_lod_ab_night.jpg` (top LOD 0, bottom baked LOD 1); 12TH on Low before / after: `m3_low_12th_before_after.jpg`;
+   GTW and Cable Liner: `m3_gtw_apm_lod.jpg`. Costs: D 1136 / E 1056 triangles at LOD 1, one draw; atlas 1030 x ~800
+   (36 texels/m on Medium+, where LOD 1 starts at 110 m; 48 on Low): 2.5-4 MB per design; a bake ~10 ms after the
+   first (programs compiled with a target bound and kept alive). Low's LOD material is satin (no anisotropic spread
+   there), so bodies read silver in tunnels too.
+2. **Far trains from the air** (`m3_aerial.jpg`, Concord at 300 / 1000 m, day and night): silver trains with the blue
+   ends and dark gaps between cars, lit windows and lamp glows at night; never boxes. The far batch draws the baked
+   LOD 2 per design; `far.addCar(kind, type, pose, flip, color)` takes an optional line colour and makes the cab car's
+   front sign glow in it (request to SIM below). Open: at ~1 km at night the window strips are sub-pixel (only the
+   lamps show).
+3. **People mover at night** (`m3_apm_night.jpg`): its panes were drawn over an opaque black band, so with the cabin
+   built the clear glass showed black; the panes are openings now, with a white lining inside (sill, head strip,
+   pillars) as in the photos, and the impression has per-pane windows. Every design's far panes now reflect the lit
+   cabin (~14 %, a second bounce through the shell), which is what lights them at night.
+4. **Budgets.** Per-car LOD: MacArthur from 110 m up, a 5-car train at 128-176 m went from 10 draws + 5 shadow draws /
+   405k triangles to 5 + 5 / 11k (lead's probe: 1 call / 186k per car before, 3 calls / 11k after). No per-frame
+   allocations added (the bake is one-time; LOD and interior policies reuse vectors).
+5. **Prewarm** (lead's hitch item). `MetroKit.precompile(scene, camera)` compiles every MetroKit program (body,
+   glazing, clear glass, doorway, interior, Low LOD, far batch, lamps, bake) on a hidden D-E-D prototype with
+   `compileAsync` against the game's scene and a bound render target (the post pipeline draws into one, so the
+   programs match), sliced over a few frames, and keeps the materials referenced so the programs stay compiled; it
+   starts itself once the game has drawn ~60 frames and the metro is on. MetroKit's programs: 8 (+ the clear glass
+   and lamp shaders, which aren't MetroKit-keyed); designs share them. Cold EMBR arrival (`#auto&metro=1&t=17:31&mst=EMBR`,
+   q=high): before, MetroKit compiled when the first train came near (frames of 1408 ms and 670 ms: lod x2, ext + int);
+   after, all 8 compile at boot in one 76 ms frame, none at the arrival (total programs after 75 s: 85 before, 92 after,
+   the difference being the bake and doorway programs compiled up front).
+
 ## Costs (measured in preview/metro.html#view=exterior&cars=10&measure=1, consist only, no shadows)
 
 | | draw calls | triangles |
 |---|---|---|
-| 10-car train, LOD0 exterior | 20 (body + glass per car) | 384k (D 41.5k, E 36.3k per car at quality 2; the trucks are 6.4k of it) |
+| 10-car train, LOD0 exterior | 20 (body + glass per car) | 386k (D 42.1k, E 36.3k per car at quality 2; the trucks are 6.4k of it) |
+| + doorway impression (doors open, interior not drawn) | +1 per car | +12 per car |
+| car beyond 110 m or on Low: baked LOD 1 | 1 per car | D 1.1k, E 1.1k, GTW unit ~1k, Cable Liner car ~0.3k |
 | + interior of one car | +2 | +33k |
 | 10-car train, LOD1 | 10 | 10.9k |
 | 10-car train, LOD2 | 10 | 1.0k |
@@ -185,6 +270,12 @@ Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 m
 
 ## Known issues / open problems
 
+- From ~1 km at night the far trains' window strips are sub-pixel; only the lamp glows show. A per-car window glow in
+  the far batch (and a per-consist one for pool cars at LOD 2) would carry them; not done yet.
+- The people mover seen close with its cabin built is darker than its impression at night (the clear glass doesn't
+  model the far panes' reflection); the switch happens at 45 m.
+- The first bake still costs ~120 ms (the driver's first draw with the new programs), once per session.
+
 - The glass ray-cast costs ~0.3 ms more for a close 10-car 3/4 view (fragment-bound; rows are culled by the ray's x
   span). If it shows in profiles: skip passengers beyond ~80 m or drop to the old flat impression at LOD0 > 100 m.
 - The Cable Liner's big panes show the dark outside through the far glass at night (physically right, but the real
@@ -196,6 +287,11 @@ Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 m
 - Headlight pods are ovals rather than the real teardrops; the corner pillars lack their recessed panels.
 
 ## Requests for other workstreams
+
+- SIM (small, optional): pass the line colour to the far batch, `kitFar.addCar(kind, type, FK, flip, lineColor(tr.line))`
+  in `farKit`, so the lead cab car's front sign glows in it on distant trains (the line-colour hint the lead asked for
+  from the air). Nothing else changes: `setLOD` / `setInteriorVisible` keep their meaning (MetroKit refines both per
+  car by camera distance), and `MetroKit.precompile` runs by itself.
 
 - DATA: the Antioch vehicles are Stadler **GTW 2/6** (BARTCHIVES, Wikipedia "eBART"), not FLIRTs; please fix the
   wording in timetable `consist` / bart-data.md. I read `cars` for eBART as the number of GTW units (each ~40.9 m).

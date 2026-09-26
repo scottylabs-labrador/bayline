@@ -68,6 +68,50 @@ def ensure_dir(p):
     os.makedirs(os.path.dirname(p), exist_ok=True)
 
 
+def jpeg_block_err(a, b, G=16):
+    """(max over GxG pixel blocks of the per-channel mean |a - b|, the number of blocks that decode pure green (green
+    >= 80 above red and blue on >= 90 % of the pixels) where the source has < 50 % such pixels: how a missing MCU decodes)"""
+    h, w = (a.shape[0] // G) * G, (a.shape[1] // G) * G
+    a, b = a[:h, :w], b[:h, :w]
+    d = np.abs(a.astype(np.int16) - b.astype(np.int16)).reshape(h // G, G, w // G, G, 3).mean((1, 3))
+    def green(x):
+        x = x.astype(np.int16)
+        return ((x[..., 1] - np.maximum(x[..., 0], x[..., 2])) >= 80).reshape(h // G, G, w // G, G).mean((1, 3))
+    ga, gb = green(a), green(b)
+    return float(d.max()), int(((ga >= 0.9) & (gb < 0.5)).sum())
+
+
+def jpeg_truncated(a, G=16):
+    """does a decoded JPEG (HxWx3 uint8) show the signature of a truncated scan: its last MCU (bottom-right G x G block,
+    the last one in scan order, always among the missing ones) decoded pure green (green >= 80 above red and blue)"""
+    b = a[-G:, -G:].astype(np.int16)
+    return bool(((b[..., 1] - np.maximum(b[..., 0], b[..., 2])) >= 80).mean() >= 0.9)
+
+
+def jpeg_bytes(u8, q, subsampling=2, tries=3):
+    """JPEG bytes of an HxWx3 (RGB) uint8 array: quality q, optimized Huffman tables, 4:2:0 (subsampling=2) or 4:4:4 (0).
+    Encoded with OpenCV's libjpeg-turbo, not Pillow: Pillow 10.1 here writes a wrong scan tail for most images, at random
+    (the same input encodes right the next time): 'extraneous bytes before EOI' (harmless) or 'premature end of data
+    segment', where libjpeg-turbo decoders (Chrome) draw the last 16 px MCU wrong, up to a pure-green square. OpenCV's
+    output is deterministic and byte-identical to Pillow's good encodes. Decoded and compared blockwise as a check."""
+    import io
+    import cv2
+    from PIL import Image
+    params = [cv2.IMWRITE_JPEG_QUALITY, int(q), cv2.IMWRITE_JPEG_OPTIMIZE, 1,
+              cv2.IMWRITE_JPEG_SAMPLING_FACTOR, cv2.IMWRITE_JPEG_SAMPLING_FACTOR_420 if subsampling == 2 else cv2.IMWRITE_JPEG_SAMPLING_FACTOR_444]
+    for k in range(tries):
+        ok, enc = cv2.imencode('.jpg', np.ascontiguousarray(u8[..., ::-1]), params)
+        if not ok:
+            continue
+        b = enc.tobytes()
+        dec = np.asarray(Image.open(io.BytesIO(b)).convert('RGB'))
+        if dec.shape == u8.shape:
+            err, green = jpeg_block_err(dec, u8)
+            if err < 50 and not green:
+                return b
+    raise RuntimeError(f'JPEG encode check failed {u8.shape} q={q}')
+
+
 def write_atomic(p, data):
     ensure_dir(p)
     tmp = p + '.tmp'

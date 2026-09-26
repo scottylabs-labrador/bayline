@@ -115,12 +115,19 @@ const MetroSound = (() => {
   const XFER_TEXT = { MLBR: 'Transfer here for the Peninsula line.', MCAR: 'Transfer here between Richmond, Antioch and San Francisco trains.', '12TH': 'Transfer here between Richmond and San Francisco trains.',
     '19TH': 'Transfer here between Richmond and San Francisco trains.', BAYF: 'Transfer here for Dublin, Pleasanton and Berryessa trains.', COLS: 'Transfer here for the Oakland Airport.',
     PITT: 'Transfer here for Antioch.', BALB: 'Transfer here for the city light rail.', EMBR: 'Transfer here for the ferries and the city light rail.', SFIA: 'This station serves the airport.', WOAK: 'Transfer here for Oakland and East Bay trains.' };
-  const lineWord = (tr) => MetroSim.lineName(tr.line).replace(' Line', '');
-  function departure(tr, k) { if (!tr) return; const S = tr.leg.stops, ns = S[k]; if (!ns) return;
-    say(tr.key + ':dep:' + k, `This is a ${lineWord(tr)} Line train to ${MetroSim.termName(tr)}. The next station is ${MetroSim.stName(ns.st)}.`, true); }
+  // "a Yellow Line train to SFO Airport", "an Antioch Shuttle train to Pittsburg / Bay Point", "the Airport Connector to ..."
+  function trainWords(tr) {
+    const dest = MetroSim.termName(tr);
+    if (tr.kind === 'apm') return `the ${MetroSim.lineName(tr.line)} to ${dest}`;
+    const name = tr.kind === 'dmu' ? MetroSim.lineName(tr.line) : MetroSim.lineName(tr.line).replace(/ Line$/, '') + ' Line';
+    return `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name} train to ${dest}`;
+  }
+  function departure(tr, k) { if (!tr) return; const S = tr.leg.stops, ns = S[k]; if (!ns) return; const ch = MetroSim.changeFor(tr);
+    say(tr.key + ':dep:' + k, `This is ${trainWords(tr)}.${ch ? ` Change there for ${ch} trains.` : ''} The next station is ${MetroSim.stName(ns.st)}.`, true); }
   function approaching(tr, k) { if (!tr) return; const S = tr.leg.stops, s = S[k]; if (!s) return; const last = k === S.length - 1 && !tr.leg.next;
     const side = MetroSim.stopSide(tr.leg, k) > 0 ? 'right' : 'left';                 // (as the passengers face)
-    say(tr.key + ':app:' + k, last ? `Now arriving at ${MetroSim.stName(s.st)}. This is the last stop. Please take all your belongings.`
+    const ch = last ? MetroSim.changeFor(tr) : '';
+    say(tr.key + ':app:' + k, last ? `Now arriving at ${MetroSim.stName(s.st)}. This is the last stop.${ch ? ` Change here for ${ch} trains.` : ' Please take all your belongings.'}`
       : `Now arriving at ${MetroSim.stName(s.st)}.${side ? ' Doors will open on the ' + side + '.' : ''} ${XFER_TEXT[s.st] || ''}`.trim(), true); }
   function arrival(tr, k) { /* (the approach announcement covers it) */ }
   const NUM = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];

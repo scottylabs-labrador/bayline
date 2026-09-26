@@ -150,19 +150,14 @@ def load_track():
     Z = np.frombuffer(b, '<f4', n, p)
     return np.stack([X, Z], 1).astype(np.float64)
 TRACK = load_track()
-if METRO:      # + the BART tracks where they are above ground (buildings stand over the subways and tunnels)
-    _bp = []
-    for _t in MET.network_tracks():
-        _m = ~np.isin(_t['struct'], list(MET.UNDER))
-        if _m.any(): _bp.append(_t['P'][_m][:, [0, 2]])
-    TRACK = np.concatenate([TRACK] + _bp, 0)
-    log('track points (Caltrain + BART above ground)', len(TRACK))
+# (Bayline Metro: b2 applies only the Caltrain-era drops. BART's (station buildings, canopies, what stands in a
+# structure's way) are applied at runtime by MetroGround while the metro is on, so with it off every building is there.)
 track_tree = cKDTree(TRACK)
 def track_dist(pts):
     d, _ = track_tree.query(np.asarray(pts, np.float64).reshape(-1, 2), k=1)
     return d
 stations_w = [W(s['lat'], s['lon']) for s in corr['stations']]
-if METRO: stations_w += [(x, z) for (_i, _n, x, z) in MET.stations()]
+urban_st = stations_w + ([(x, z) for (_i, _n, x, z) in MET.stations()] if METRO else [])   # (urban density near stations)
 
 def landmarks():
     src = open(os.path.join(ROOT, 'src/js/50_landmarks.js'), encoding='utf-8').read()
@@ -248,7 +243,7 @@ for r in roads.values():
         if r['cls'] >= 10: dens[(int(a[0] // 250), int(a[1] // 250))] += L
 rs_pts = np.array(rs_pts, np.float64) if rs_pts else np.zeros((1, 2)); rs_cls = np.array(rs_cls or [99], np.int16); rs_hw = np.array(rs_hw or [0], np.float32)
 road_tree = cKDTree(rs_pts)
-st_arr = np.array(stations_w)
+st_arr = np.array(urban_st)
 def urban_at(x, z):
     k = (int(x // 250), int(z // 250)); s = 0.0
     for dx in (-1, 0, 1):

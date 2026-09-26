@@ -15,11 +15,11 @@
 //      on MetroNet; everything else is one instanced batch (one draw call for the whole system), light points
 //      for night views and map dots for aerial ones.
 // The player can take over any trip and drive it (MetroSim.drive; ATC, scoring and guidance: 47_metroatc.js).
-// Everything here is dormant unless Bayline Metro is enabled (#metro=1, see ENABLED below).
+// Everything here is dormant unless Bayline Metro is on (Metro.on, 18_metro.js: the switch, the boot gate and failure
+// isolation; an exception here or in MetroKit turns the whole metro off, see Metro.fail).
 const MetroSim = (() => {
   const HASH = new URLSearchParams(location.hash.slice(1));
-  const DEFAULT_ON = false;                                   // the lead flips this when Bayline Metro ships by default
-  const enabled = HASH.has('metro') ? HASH.get('metro') !== '0' : DEFAULT_ON;
+  const isOn = () => typeof Metro !== 'undefined' ? Metro.on : HASH.get('metro') === '1';
   const MPH = 0.44704, TAU = Math.PI * 2;
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
@@ -50,7 +50,7 @@ const MetroSim = (() => {
   async function loadData() {
     if (typeof MetroNet === 'undefined' || !MetroNet.load) throw new Error('MetroNet is not in this build');
     MN = MetroNet; await MN.load(); TT = await MN.loadTimetable();
-    for (const s of MN.stations) { const o = { id: s.id, name: s.name, short: NAMES_SHORT[s.id] || s.name, x: s.x, z: s.z, y: s.levels ? s.levels.platform : 0, type: s.type, layout: s.layout, src: s, lines: new Set(), idx: stations.length }; stations.push(o); stById.set(o.id, o); }
+    for (const s of MN.stations) { const o = { id: s.id, name: s.name, short: s.short || NAMES_SHORT[s.id] || s.name, x: s.x, z: s.z, y: s.levels ? s.levels.platform : 0, type: s.type, layout: s.layout, src: s, lines: new Set(), idx: stations.length }; stations.push(o); stById.set(o.id, o); }
     for (const l of MN.lines) { const o = { id: l.id, name: l.name || l.id, short: LINE_SHORT[l.id] || l.name || l.id, color: l.colour || l.color || '#cccccc', text: l.text || '#000000', terminals: l.terminals || [], src: l }; lines.push(o); lineById.set(o.id, o); }
     trips = TT.trips.filter(t => t.legs && t.legs.length && MN.patterns[t.pat]);
     busTrips = TT.busBridge || [];
@@ -488,7 +488,10 @@ const MetroSim = (() => {
   const pool = []; const POOLMAX = { bart: 9, dmu: 2, apm: 4 };
   function makeConsist(kind, cars, seed) {
     let c = null;
-    if (typeof MetroKit !== 'undefined' && MetroKit.createConsist && !kitNo.has(kind)) { try { c = MetroKit.createConsist(kind, { cars, seed, name: 'metro' }); } catch (e) { kitNo.add(kind); console.warn('MetroKit: no ' + kind + ' consists yet, placeholders for that kind (' + (e.message || e) + ')'); c = null; } }
+    if (typeof MetroKit !== 'undefined' && MetroKit.createConsist && !kitNo.has(kind)) {
+      if (MetroKit._k && MetroKit._k.builders && !MetroKit._k.builders[kind]) kitNo.add(kind);               // (a kind this MetroKit doesn't build: ours)
+      else c = MetroKit.createConsist(kind, { cars, seed, name: 'metro' });                                  // (a throw turns the metro off: Metro.guard)
+    }
     if (!c) c = Placeholder.create(kind, { cars });
     for (const car of c.cars) { car.group.rotation.order = 'YZX'; car.group.visible = false; Env.scene.add(car.group); if (typeof Under !== 'undefined' && Under.keep) Under.keep(car.group); }
     return { consist: c, kind, cars: c.cars.length, busy: false, key: '', dest: '', lod: -1, iv: null, shown: 0 };
@@ -548,7 +551,7 @@ const MetroSim = (() => {
   const _res = new THREE.Vector2();
   function initFar() {
     const mkFar = typeof MetroKit === 'undefined' ? null : MetroKit.createFarBatch ? MetroKit.createFarBatch : MetroKit._k && MetroKit._k.createFarBatch ? MetroKit._k.createFarBatch : null;
-    if (mkFar) { try { kitFar = mkFar(Env.scene, { maxCars: FARMAX, maxLamps: LMAX }); } catch (e) { console.warn('MetroKit far batch', e); kitFar = null; } }
+    if (mkFar) kitFar = mkFar(Env.scene, { maxCars: FARMAX, maxLamps: LMAX });          // (a throw turns the metro off: init's catch)
     const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0);
     const m = new THREE.MeshStandardMaterial({ color: 0xdadfe3, metalness: 0.5, roughness: 0.4 });
     m.onBeforeCompile = (sh) => {
@@ -589,7 +592,8 @@ const MetroSim = (() => {
   function lineColor(id) { const l = lineById.get(id); return l ? l.color : '#cccccc'; }
   function isUnder(st) { return st === 'bored' || st === 'cutcover' || st === 'tube' || st === 'subway' || st === 'tunnel' || st === 'underground'; }
   function update(dt, camPos) {
-    if (!enabled || !ready) return;
+    if (!isOn() || !ready) return;
+    if (typeof Metro !== 'undefined' && Metro.fault('sim') && ++faultN > 120) throw Metro.injected('sim');
     const T0 = performance.now(); frameNo++; stats.frame = frameNo;
     replan();
     const t = Env.time.sec; running.length = 0;
@@ -614,7 +618,11 @@ const MetroSim = (() => {
     let nNear = 0, fN = 0, lN = 0, dN = 0;
     if (kitFar) kitFar.begin();
     const fp = far.instanceMatrix.array, lp = lights.geometry.attributes.position.array, lc = lights.geometry.attributes.color.array, dp = dots.geometry.attributes.position.array, dc = dots.geometry.attributes.color.array;
-    const camUnder = !!(typeof Under !== 'undefined' && Under.state && Under.state.cell) || (typeof Terrain !== 'undefined' && camPos.y < Terrain.h(camPos.x, camPos.z) - 3);
+    const gH = typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0;
+    const camUnder = !!(typeof Under !== 'undefined' && Under.state && Under.state.cell) || camPos.y < gH - 3;
+    // far trains are drawn only where they could cover a pixel or two: ~4.5 km from the ground, out to 30 km from the air
+    // (a Peninsula view with no metro nearby draws nothing of it); the map dots from the air are separate
+    const farDist = U.clamp(4500 + Math.max(0, camPos.y - gH) * 9, 4500, 30000);
     let nHidden = 0;
     for (const tr of running) {
       // out of sight costs nothing: a train entirely under the street seen from above ground, or a surface train far
@@ -626,7 +634,7 @@ const MetroSim = (() => {
       const near = own || (nNear < maxNear && tr.dist < 1500);
       const e = near ? acquire(tr.kind, tr.key, tr.cars) : null; tr.entry = e;
       if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead); setupConsist(tr, e, dt, night); }
-      else if (tr.dist < 60000) {
+      else if (tr.dist < farDist) {
         // far: one instance per car, posed at its centre along the path (cars beyond 12 km are merged in pairs)
         const P = PERF[tr.kind];
         if (kitFar && !kitBad.has(tr.kind) && farKit(tr, P, night)) { /* drawn by MetroKit */ } else {
@@ -654,26 +662,37 @@ const MetroSim = (() => {
       if (dN < DMAX) { dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; _c.set(tr.remote ? (tr.remote.color || '#ffffff') : lineColor(tr.line)); dc[dN * 3] = _c.r; dc[dN * 3 + 1] = _c.g; dc[dN * 3 + 2] = _c.b; dN++; }
     }
     for (const e of pool) if (!e.busy && e.shown !== 0) { for (const car of e.consist.cars) car.group.visible = false; e.shown = 0; }
-    far.count = fN; far.instanceMatrix.needsUpdate = true; if (far.instanceColor) far.instanceColor.needsUpdate = true;
+    far.count = fN; far.visible = fN > 0; far.instanceMatrix.needsUpdate = true; if (far.instanceColor) far.instanceColor.needsUpdate = true;
     if (kitFar) kitFar.end(night, Env.renderer && Env.renderer.getDrawingBufferSize ? Env.renderer.getDrawingBufferSize(_res) : undefined);   // (lamp billboards keep a minimum pixel size)
-    lights.geometry.setDrawRange(0, lN); lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
+    lights.geometry.setDrawRange(0, lN); lights.visible = lN > 0; lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
     dots.geometry.setDrawRange(0, dN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
-    const alt = camPos.y - (typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0); dots.visible = alt > 350; dots.material.opacity = U.smooth(350, 1200, alt);
+    const alt = camPos.y - (typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0); dots.visible = alt > 350 && dN > 0; dots.material.opacity = U.smooth(350, 1200, alt);
     stats.running = running.length; stats.consists = nNear; stats.far = fN; stats.runs = runCache.size; stats.hidden = nHidden;
     stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05;
   }
   let quality = 'high';
   // one far train through MetroKit's batch: D cars at the ends (the last one turned round), E cars between; lamps
   const FK = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 }, kitBad = new Set();
+  // car designs of a consist in physical order (car 0 at the consist's +X end): MetroKit's builder when it has a
+  // consist() (the GTW units, the Cable Liner end/mid cars), else BART's D ... E ... D with the last D turned round
+  const farSpec = new Map();
+  function farTypes(kind, n) {
+    const key = kind + '|' + n; let sp = farSpec.get(key); if (sp) return sp;
+    const K = typeof MetroKit !== 'undefined' && MetroKit._k, b = K && K.builders && K.builders[kind];
+    if (kind !== 'bart' && b && b.consist) { try { sp = b.consist(n).map(c => ({ type: c.type, flip: !!c.flip })); } catch (e) { sp = null; } }
+    if (!sp || sp.length !== n) { sp = []; for (let i = 0; i < n; i++) sp.push({ type: i === 0 || i === n - 1 ? 'D' : 'E', flip: i === n - 1 && n > 1 }); }
+    farSpec.set(key, sp); return sp;
+  }
   function farKit(tr, P, night) {
-    const n = tr.cars, path = tr.leg.path, kind = tr.kind === 'apm' ? 'apm' : tr.kind;
+    const n = tr.cars, path = tr.leg.path, kind = tr.kind, spec = farTypes(kind, n);
     for (let i = 0; i < n; i++) {
       const c = tr.s - (i + 0.5) * P.carLen; path.at(c, F1); const h = Math.hypot(F1.tx, F1.tz) || 1;
       // car i counted from the head; physical car index from car 0 depends on which end leads
-      const pi = tr.lead === 0 ? i : n - 1 - i, type = kind === 'bart' ? (pi === 0 || pi === n - 1 ? 'D' : 'E') : (pi === 0 || pi === n - 1 ? 'D' : 'E');
-      const flip = (pi === n - 1 && n > 1) !== (tr.lead !== 0);
+      const pi = tr.lead === 0 ? i : n - 1 - i, type = spec[pi].type;
+      const flip = spec[pi].flip !== (tr.lead !== 0);
       FK.x = F1.x; FK.y = F1.y; FK.z = F1.z; FK.yaw = Math.atan2(-F1.tz, F1.tx); FK.pitch = Math.atan2(F1.ty, h);
-      try { kitFar.addCar(kind, type, FK, flip); } catch (e) { kitBad.add(tr.kind); return false; }   // (a kind MetroKit doesn't build yet: ours)
+      if (MetroKit._k && MetroKit._k.builders && !MetroKit._k.builders[kind]) { kitBad.add(tr.kind); return false; }   // (a kind MetroKit doesn't build: ours)
+      kitFar.addCar(kind, type, FK, flip, lineColor(tr.line === 'ebart' ? 'yellow' : tr.line));   // (the cab car's front sign glows in the line colour)
     }
     if (night > 0.05 && !tr.underground) { kitFar.addLamp(tr.x, tr.y + 1.4, tr.z, 'head'); path.at(tr.s - n * P.carLen, F1); kitFar.addLamp(F1.x, F1.y + 1.4, F1.z, 'tail'); }
     return true;
@@ -794,7 +813,23 @@ const MetroSim = (() => {
   // names
   function lineName(id) { const l = lineById.get(id); return l ? l.name : id; }
   function stName(id) { const s = stById.get(id); return s ? s.short : (NAMES_SHORT[id] || id); }
-  function termName(tr) { let x = tr.leg; while (x.next) x = x.next; if (x.turn && x.sameTurn && !tr.driven && tr.phase === 'terminal') x = x.turn; const L = x.plan.legs, last = L[L.length - 1], S = last.stops; return stName(S[S.length - 1].st); }
+  // where a train is going: the trip's destination (its GTFS headsign: a Yellow Line train from SFO says Antioch, as the
+  // real ones do, though you change to the shuttle at Pittsburg / Bay Point); the Antioch shuttle says where IT goes
+  // (Pittsburg / Bay Point) and "change for" the trip's destination. { dest, change } per leg.
+  function legDest(l) {
+    // DATA's headsigns when the network has them (M2b: per pattern and per pattern leg; the shuttle's own leg says
+    // Pittsburg / Bay Point), else from the stops
+    const pat = MN.patterns[l.plan.trip.pat], PL = pat && pat.legs && pat.legs[l.stops[0].k];
+    if (PL && PL.headsign) { const whole = pat.headsign || PL.headsign; return { dest: PL.headsign, change: l.kind === 'dmu' && whole !== PL.headsign ? whole : '' }; }
+    let x = l; while (x.next) x = x.next;
+    const L = l.plan.legs, fin = L[L.length - 1], finSt = fin.stops[fin.stops.length - 1].st, endSt = x.stops[x.stops.length - 1].st;
+    if (l.kind === 'dmu' && endSt !== finSt) return { dest: stName(endSt), change: stName(finSt) };
+    return { dest: stName(finSt), change: '' };
+  }
+  // (a train standing at its terminal that goes back out on the same platform shows its next trip)
+  function trainLeg(tr) { let x = tr.leg; while (x.next) x = x.next; return x.turn && x.sameTurn && !tr.driven && tr.phase === 'terminal' ? x.turn : tr.leg; }
+  function termName(tr) { return legDest(trainLeg(tr)).dest; }
+  function changeFor(tr) { return legDest(trainLeg(tr)).change; }
   function destText(tr) { return termName(tr).toUpperCase(); }
   function nextStopName(tr) { const S = tr.leg.stops; const k = tr.phase === 'terminal' ? -1 : tr.nextK; return k >= 0 && S[k] ? stName(S[k].st) : ''; }
 
@@ -877,9 +912,8 @@ const MetroSim = (() => {
     return out;
   }
   function eventInfo(ev) {
-    const l = ev.leg; let x = l; while (x.next) x = x.next;
-    const LL = ev.plan.legs, lastLeg = LL[LL.length - 1];
-    return { line: l.line, color: lineColor(l.line), lineName: lineName(l.line), dest: stName(lastLeg.stops[lastLeg.stops.length - 1].st), cars: l.cars, kind: l.kind, sid: ev.sid, platform: (ev.sid || '').split('-')[1] || '' };
+    const l = ev.leg, D = legDest(l);
+    return { line: l.line, color: lineColor(l.line), lineName: lineName(l.line), dest: D.dest, change: D.change, cars: l.cars, kind: l.kind, sid: ev.sid, platform: (ev.sid || '').split('-')[1] || '' };
   }
   function trainByKey(key) { return running.find(r => r.key === key) || running.find(r => r.plan && r.plan.key === key) || null; }
   function nearestTrain(pos, maxD = 1e9, filter) { let best = null, bd = maxD; for (const tr of running) { if (filter && !filter(tr)) continue; const d = Math.hypot(tr.x - pos.x, tr.z - pos.z); if (d < bd) { bd = d; best = tr; } } return best; }
@@ -907,22 +941,32 @@ const MetroSim = (() => {
   function refreshEvents() { if (liveDirty) { liveDirty = false; buildEvents(); } }
 
   async function init() {
-    if (!enabled) return false;
+    if (!isOn() || (typeof Metro !== 'undefined' && Metro.skip('sim'))) return false;
     if (loading) return loading;
     loading = (async () => {
       try {
-        await loadData(); initFar(); replan(true); ready = true;
+        await loadData(); if (!isOn()) return false; initFar(); replan(true); ready = true;
         console.log(`MetroSim: ${stations.length} stations, ${lines.length} lines, ${trips.length} trips, ${plans.length} planned today (${stats.replanMs.toFixed(0)} ms)`);
-      } catch (e) { loadError = e; console.error('MetroSim init', e); }
-      return ready;
+      } catch (e) { loadError = e; if (typeof Metro !== 'undefined') Metro.fail('the metro timetable runtime', e); else console.error('MetroSim init', e); }
+      return ready && isOn();
     })();
     return loading;
   }
+  // the metro failed somewhere (Metro.fail): every train out of the scene, nothing left running
+  let faultN = 0;
+  function shutdown() {
+    ready = false; drive = null;
+    for (const e of pool.slice()) { try { dropConsist(e); } catch (err) { /* keep going */ } }
+    for (const o of [far, lights, dots]) if (o && o.parent) o.parent.remove(o);
+    if (kitFar) { try { kitFar.dispose(); } catch (e) { /* keep going */ } kitFar = null; }
+    running.length = 0;
+  }
+  if (typeof Metro !== 'undefined') Metro.onTeardown(shutdown);
 
-  const api = { enabled, init, update, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
+  const api = { get enabled() { return isOn(); }, init, update, shutdown, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
-    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH, netKey, resolveNet, platformSide, stopSide,
+    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, changeFor, legDest, nextStopName, PERF, MPH, netKey, resolveNet, platformSide, stopSide,
     get plans() { return plans; }, get busTrips() { return busTrips; }, busTodayList: () => busToday, get stats() { return stats; }, get net() { return MN; },
     legState, legAt, getRun, runAt, smoothTimes, envelope, timeOf, MPath, legPath,
     replan: () => replan(true) };

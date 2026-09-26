@@ -8,6 +8,9 @@ aerial views read L8, so this sharpens every roof and street along the corridor.
 1024 px are skipped.
 
     python3 tools/sr_l8.py            # all L8 tiles in tiles/index.json
+    BAYLINE_SR_STAGE=data/raw/tiles/sr_l8_stage python3 tools/sr_l8.py
+                                      # published 512 px tiles stay as they are; the 1024 px versions go to
+                                      # <stage>/tiles/img/8/x_y.jpg (a replacement set for the lead; nothing in data/pub changes)
 """
 import io, json, os, sys, time
 import numpy as np
@@ -22,6 +25,13 @@ spec = importlib.util.spec_from_file_location('sr', os.path.join(HERE, 'sr_tiles
 import torch                                  # noqa: E402
 
 
+STAGE = os.environ.get('BAYLINE_SR_STAGE')
+
+
+def outp(tx, ty):
+    return os.path.join(STAGE, 'tiles', 'img', '8', f'{tx}_{ty}.jpg') if STAGE else C.path('img', 8, tx, ty, 'jpg')
+
+
 def is1024(p):
     try:
         with Image.open(p) as im:
@@ -31,9 +41,7 @@ def is1024(p):
 
 
 def save(p, x01, q):
-    im = Image.fromarray(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8))
-    buf = io.BytesIO(); im.save(buf, 'JPEG', quality=q, optimize=True, subsampling=2)
-    C.write_atomic(p, buf.getvalue())
+    C.write_atomic(p, C.jpeg_bytes(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8), q))      # (checked encode)
 
 
 def main():
@@ -43,7 +51,7 @@ def main():
     l8 = [tuple(t) for t in C.coverage()[8] if os.path.exists(C.path('img', 8, t[0], t[1], 'jpg'))]
     l9 = {(x, y) for L9d in [os.path.join(C.PUB, 'img', '9')] if os.path.isdir(L9d)
           for (x, y) in (map(int, f[:-4].split('_')) for f in os.listdir(L9d) if f.endswith('.jpg') and '_test' not in f)}
-    todo = [t for t in l8 if not is1024(C.path('img', 8, t[0], t[1], 'jpg'))]
+    todo = [t for t in l8 if not is1024(C.path('img', 8, t[0], t[1], 'jpg')) and not (STAGE and is1024(outp(*t)))]
     todo.sort(key=lambda t: (-int(t[1] < 0), t[1], t[0]))                   # the north strip first
     print(f'{len(l8)} L8 tiles, {len(todo)} to upgrade', flush=True)
     # 1) mosaic from L9 children where all four exist (no GPU needed)
@@ -57,7 +65,7 @@ def main():
                 im = np.asarray(Image.open(C.path('img', 9, kx, ky, 'jpg')).convert('RGB')).astype(np.float32) / 255.0
                 oy, ox = (ky - ty * 2) * 1024, (kx - tx * 2) * 1024
                 can[oy:oy + 1024, ox:ox + 1024] = im
-            save(C.path('img', 8, tx, ty, 'jpg'), cv2.resize(can, (1024, 1024), interpolation=cv2.INTER_AREA), q); mos += 1
+            save(outp(tx, ty), cv2.resize(can, (1024, 1024), interpolation=cv2.INTER_AREA), q); mos += 1
         else:
             rest.append((tx, ty))
     print(f'{mos} L8 tiles mosaicked from L9; {len(rest)} need GPU super-resolution', flush=True)
@@ -79,7 +87,7 @@ def main():
                 for dx in (0, 1):
                     k = (px * 2 + dx, py * 2 + dy)
                     if k in want:
-                        save(C.path('img', 8, k[0], k[1], 'jpg'), full[dy * 1024:(dy + 1) * 1024, dx * 1024:(dx + 1) * 1024], q); made += 1
+                        save(outp(k[0], k[1]), full[dy * 1024:(dy + 1) * 1024, dx * 1024:(dx + 1) * 1024], q); made += 1
         except Exception as e:
             print(f'L7 {px}_{py} failed: {e}', flush=True)
         if len(cache) > 40:
@@ -87,6 +95,8 @@ def main():
                 del cache[k]
         if n % 20 == 0 or n == len(parents) - 1:
             el = time.time() - t0; print(f'{n + 1}/{len(parents)} L7 parents, {made} L8 written, {el:.0f}s, ~{el / (n + 1) * (len(parents) - n - 1):.0f}s left', flush=True)
+    if STAGE:
+        print('done (staged in', STAGE, ')', flush=True); return
     idx = json.load(open(os.path.join(C.PUB, 'index.json')))          # (re-read: other steps may have rewritten it meanwhile)
     idx['products']['img']['size8'] = 1024
     tmp = os.path.join(C.PUB, 'index.json.tmp'); json.dump(idx, open(tmp, 'w'), separators=(',', ':')); os.replace(tmp, os.path.join(C.PUB, 'index.json'))

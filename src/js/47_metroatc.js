@@ -274,8 +274,14 @@ const MetroATC = (() => {
       if (D.v < 0.1 && inf.togo < -3) return `Overran by ${ft(-inf.togo)} · Q to reverse`;
       if (inf.togo < 900 && D.v > 0.5) { const need = D.v * D.v / (2 * Math.max(1, inf.togo)); return need > 0.95 ? `BRAKE NOW · berth in ${ft(inf.togo)}` : need > 0.7 ? `Start braking · berth in ${ft(inf.togo)}` : `Approaching ${inf.name} · berth in ${ft(inf.togo)}`; }
     }
+    // the next lower code ahead (a civil restriction, or a step of the ladder behind a train), with a clear cue once the
+    // service brake is needed now (about 0.8 m/s² to be under it where it starts)
+    const civ = targetsAhead(D, 1500)[0], occ = occTargets(C, OT).find(t => t.v < C.code - 1 && t.dist > 0);
+    const T = civ && civ.v < C.code - 1 && (!occ || civ.dist <= occ.dist) ? civ : occ;
+    if (T) { const mph = Math.round(T.v / MPH), need = (D.v * D.v - T.v * T.v) / (2 * Math.max(1, T.dist)), who = T.why === 'train ahead' ? 'Train ahead: ' : '';
+      if (need > 0.8) return `BRAKE for the ${mph} mph code · ${ft(T.dist)}`;
+      if (D.v > T.v + 0.5) return `${who ? who + 'code' : 'Code'} drops to ${mph} mph in ${ft(T.dist)}`; }
     if (C.ob && C.clear < 4) return `Train ahead: code ${Math.round(C.code / MPH)} mph (${C.clear} clear circuit${C.clear === 1 ? '' : 's'})`;
-    const T = targetsAhead(D, 1500)[0]; if (T && T.v < C.code - 1) return `Code drops to ${Math.round(T.v / MPH)} mph in ${ft(T.dist)}`;
     return inf ? `Next ${inf.name} · ${ft(Math.max(0, inf.togo))} · code ${Math.round(C.code / MPH)} mph` : '';
   }
   function notchText(l) { const n = Math.round(l * 8); return n > 0 ? 'P' + n : n < 0 ? 'B' + (-n) : 'N'; }
@@ -314,6 +320,7 @@ const MetroATC = (() => {
     let lo = 0, hi = run.T; for (let it = 0; it < 28; it++) { const m = (lo + hi) / 2; MetroSim.runAt(run.R, m, RB); if (RB.ps < D.s) lo = m; else hi = m; }
     return now - (run.t0 + (lo + hi) / 2);
   }
+  if (typeof Metro !== 'undefined') Metro.onTeardown(() => { run = null; });        // (the metro failed: no drive run left)
   const api = { start, end, update, supervise, driveKeys, dmi, guide, stopInfo, cabDisplay, codeFor, behind, get run() { return run; }, best, LADDER, BLOCK };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroATC = api;
   return api;
