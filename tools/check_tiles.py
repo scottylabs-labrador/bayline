@@ -2,6 +2,7 @@
 """Validate Bayline v2 tiles against SPEC_v2 and render contact sheets for review.
 
   python3 tools/check_tiles.py validate            # every file: size, decode, value ranges; summary per product/level
+  BAYLINE_CHECK_SINCE=<epoch> python3 tools/check_tiles.py validate    # only the files written since (a publish set)
   python3 tools/check_tiles.py sheet L tx0 ty0 [w h] [--out file.png]   # mosaic of img/masks/hillshade/trees for a block
   python3 tools/check_tiles.py seams L tx ty       # 2x2 around a corner at L (and L+1) to eyeball tile seams
 """
@@ -19,6 +20,8 @@ OUTDIR = os.path.join(C.WORK, 'sheets')
 
 def validate(a):
     issues = []
+    _ix = json.load(open(os.path.join(C.PUB, 'index.json')))
+    l9 = {tuple(t) for t in _ix['levels'].get('9', [])} | {tuple(t) for t in (_ix.get('north') or {}).get('levels', {}).get('9', [])}
     summary = {}
     for prod, ext in (('img', 'jpg'), ('h', 'bin'), ('m', 'bin'), ('t', 'bin')):
         for L in range(0, 10):
@@ -31,12 +34,15 @@ def validate(a):
             for f in allf:
                 if f not in files:
                     issues.append(f'{prod}/{L}/{f}: not a tile name (ignored; not written by the bake)')
+            since = float(os.environ.get('BAYLINE_CHECK_SINCE', '0') or 0)     # (only files written since: a publish set)
+            if since:
+                files = [f for f in files if os.path.getmtime(os.path.join(d, f)) >= since]
             tot = 0; bad = 0; extra = {}
             for f in files:
                 p = os.path.join(d, f)
                 b = open(p, 'rb').read(); tot += len(b)
                 tx, ty = map(int, f[:-len(ext) - 1].split('_'))
-                if not C.exists(L, tx, ty):
+                if not (C.exists(L, tx, ty) if L < 9 else (tx, ty) in l9):        # (L9 is chosen by tools/sr_tiles.py: the index lists it)
                     issues.append(f'{prod}/{L}/{f}: tile not in coverage')
                 try:
                     if prod == 'img':
