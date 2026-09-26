@@ -132,7 +132,9 @@ Notes:
   on `Y-main.5`), so stations can still model both faces.
 - **(M2b) Platform sides** come from the NEAREST OSM platform feature on either side of the track (the far platform of
   a side-platform pair often has more OSM points: before M2b the side-platform stations FTVL SANL HAYW SHAY UCTY WCRK
-  PHIL WOAK PLZA DELN MLPT had both faces pointing between the tracks; fixed).
+  PHIL WOAK PLZA DELN MLPT had both faces pointing between the tracks; fixed). At two-track stations the curated
+  layout then decides (island: toward the other track; side: away from it) and a curated per-platform side wins
+  over both (Millbrae platform 3 faces west, the island it shares with the Peninsula line).
 - **(M2b) Which track a GTFS platform is on**: where every platform a station's trips use has its GTFS point clearly
   on one track (≤ 3 m from it and ≥ 3 m nearer than any other; 68 platforms at 34 stations), that track is the stop
   target, ahead of the OSM route relations' stop nodes. This moved Daly City's southbound through trains (M90-1) to
@@ -251,6 +253,12 @@ Structure codes: `0 grade, 1 aerial, 2 bridge (short span < 90 m), 3 embankment,
   they keep the open structure; the road is in `crossings` as `over`.
 - **(M2b)** after the solve, open track > 1 m below the lidar ground next to a tunnel or a cutting becomes `trench`
   (portal approaches in a U-section).
+- **(M2b) Retained cuts with lids** (Milpitas, the Berryessa approach, Balboa Park north): a covered block between two
+  open cuts that is < 300 m long with < 9 m of ground over the rail is a lid (a street, rail or concourse deck over the
+  cut): one `cutcover` piece without `portal` ends; openings < 25 m between lids close. Openings where the bare-earth
+  lidar sees the cut floor (≥ 3 m below the covered ground either side) stay open `trench`. So Milpitas is trench with
+  four lids per track (rail spur, Piper Dr, Montague Expwy + the station concourse, Capitol Ave + light rail), each
+  matching a street in `crossings.json`.
 - OSM `bridge` → aerial (bridge if < 90 m), then refined by the lidar: aerial samples whose rail sits within 2.5 m of
   the bare-earth ground are on fill, not a viaduct → `embankment` (OSM often tags a whole station as bridge where only a
   street span is).
@@ -269,13 +277,22 @@ one quadratic program over every 5 m sample of every track (103k unknowns):
   every track of a station level equal along the platform and level from 15 m before to 15 m after it;
 - stiff (soft): grade separations ≥ 5.6 m rail-to-rail where OSM layers say one track crosses over another (Oakland Wye,
   MacArthur flyover, 12th/19th St two levels);
-- anchors: researched station depths/heights (stations_curated.py, with sources), the SF vent structure (tracks at
+- **(M2b) stations**: under a subway station box (platform ±20 m) the cover bound is 5.5 m (rail to street: car 3.3 m +
+  1.2 m clearance/ducts + 1.0 m slab), not 7.5 m; along elevated stations (platform ±60 m) where the bare-earth lidar
+  kept the viaduct deck (centre > 3 m above the ground 16–24 m either side: Concord), the deck is the data target
+  (rail = deck + 0.35 m), the ground under it is taken beside the structure, and the platform is `aerial`;
+- anchors: researched station depths/heights (stations_curated.py, with sources; heights above the ground are measured
+  from the lower of the centreline ground and the ground beside the structure), the SF vent structure (tracks at
   −85 ft), the 1965 Transbay Tube general profile (digitized), the Berkeley Hills Tunnel's as-built grades (1.75 % up
   from the west portal to a summit 1,550 m inside the east portal, −0.3 % after);
 - plan fixes: Transbay Tube track centres 8.03 m (OSM draws 5.07 m); **(M2b)** island platforms where OSM draws the
   two tracks too close for any island (< 8.2 m centres: Ashby 4.6, North Berkeley 6.7, Downtown Berkeley 7.7, Glen Park
-  7.7) are spread to BART's usual 11.1 m along the platform ±20 m with 150 m cosine tapers that stop short of
-  junctions (San Bruno, 5.0 m with pocket-track turnouts at both platform ends, is left as mapped); inside tunnels ≥ 400 m long the OSM
+  7.7, San Bruno 4.9) are spread to BART's usual 11.1 m along the platform ±20 m with 150 m cosine tapers that stop
+  short of junctions. At San Bruno a middle pocket track and two crossovers join the mains at the platform's north end
+  (one switch 21 m inside the platform in OSM): the whole siding complex first slides 31 m along the corridor so every
+  switch is ≥ 10 m past the platform end, then it is spread with the mains (every point keeps its fractional position
+  across the corridor, so the pocket track stays between the mains and all switch points stay on their tracks);
+  inside tunnels ≥ 400 m long the OSM
   centreline is smoothed (Gaussian, σ 40 m; not within 220 m of a platform or 60 m of a junction, blended over 80 m,
   45 m in from the portals), which removes digitising kinks that would otherwise set speed limits (16 tracks, largest
   move 6.1 m).
@@ -372,6 +389,7 @@ python3 tools/metro/promote.py --yes    # metro-next -> the live metro/ (product
 python3 tools/metro/validate.py overlay|profiles       # NAIP overlays / profile plots -> notes/bart/shots/data/
 python3 tools/metro/whatmoved.py [new_dir] [old_dir]   # station level / structure changes between two bakes
 python3 tools/metro/debugprof.py TRACK s0 s1 [step]    # inspect the last solve (bounds, targets, separations)
+python3 tools/metro/trackprof.py TRACK s0 s1 [step] [dir]   # a staged/published track's rail vs the lidar ground
 ```
 
 Extra Python packages (installed into `data/raw/metro/pylib`, which the tools add to `sys.path`):

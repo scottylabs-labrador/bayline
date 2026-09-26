@@ -12,16 +12,19 @@ Loader: `src/js/21_metronet.js` (`MetroNet`). Preview: `preview/metronet.html`.
 tracks.6f6a7a6c04.bin = tracks.bin 6f6a7a6c). **Review M2b with `#metrodir=metro-next/`.** Bakes now write to
 metro-next by default and `promote.py` needs `--yes` (only when the lead asks).
 
-For the gated deploy, `python3 tools/metro/promote.py --yes` writes into data/pub/v2/metro (publish in this order):
+For the gated deploy, `python3 tools/metro/promote.py --yes` writes into data/pub/v2/metro (publish in this order;
+M2b bake of 08:06, supersedes the 05:35 list):
 
 | file | change | bytes | sha256 |
 |---|---|---|---|
-| `tracks.5bf8256c17.bin` | new (M2b binary, content-addressed) | 1,122,175 | 5bf8256c17295ac3… |
-| `crossings.json` | new (on demand, new MetroNet only) | 236,801 | d6843a3aae094da8… |
-| `network.json` | overwritten (M2: 423,035 B); `tracksBin.path` = `metro/tracks.5bf8256c17.bin` | 440,302 | 6aa8c8f72fa8ed2c… |
-| `validation.json` | overwritten (not read by the game) | 6,408 | 174f13fc29f579c1… |
-| `timetable.json` | identical to M2 except the `generated` stamp: no need to publish | 1,345,334 | 98dda8fa… |
+| `tracks.d6a6bd5b6e.bin` | new (M2b binary, content-addressed) | 1,122,077 | d6a6bd5b6eaea104… |
+| `crossings.json` | new (on demand, new MetroNet only) | 236,746 | 8b1e246520b49c4b… |
+| `network.json` | overwritten (M2: 423,035 B); `tracksBin.path` = `metro/tracks.d6a6bd5b6e.bin` | 451,525 | 8d5098e1eb216dea… |
+| `validation.json` | overwritten (not read by the game) | 6,409 | d5913560183cf92e… |
+| `timetable.json` | identical to M2 except the `generated` stamp: no need to publish | 1,345,334 | 8bdab817… |
 | `tracks.bin`, `tracks.6f6a7a6c04.bin` | untouched (M2 bytes), keep both | 1,125,601 | 6f6a7a6c04e44e7d… |
+
+Gzipped: network.json 102 kB (M2 95 kB), crossings.json 47 kB, timetable 163 kB.
 
 Old network.json readers: a cached M2 network.json keeps reading `tracks.6f6a7a6c04.bin` (kept) and an unchanged
 timetable; production code (2d1d290) reading the M2b network.json fetches `tracks.5bf8256c17.bin` (publish it
@@ -29,6 +32,56 @@ first); new fields are additive (`aliases`, `yards`, `constants`, platform `heig
 stale pre-2d1d290 (M1) page with `#metro=1` reading the M2b network.json (it reads `metro/tracks.bin`, M2 bytes).
 Tested in Node: the production loader and the new loader give identical frames, paths and platforms on M2b.
 `21_metronet.js` on `bart-data` adds `loadCrossings()` / `crossings()` / `constants` / `yards`: please merge it.
+
+### M2b second round (06:00-08:10, lead + STATIONS + INFRA + SIM requests)
+
+- **Front door for SIM** (spec: "Front door"): `lines[].short` / `lines[].dirs` (toward + destination stations per
+  direction, weekday-weighted), `patterns[].headsign` / `dest` / `to` / `via` / `gtfsHeadsign` / `tripsWeekday`,
+  per vehicle leg `legs[].headsign` / `to` / `change` (the Antioch DMU leg signs **"Pittsburg / Bay Point"** with
+  "Change at Pittsburg / Bay Point for SFO Airport"; the EMU leg to the transfer platform signs "Antioch" with "Change at
+  Pittsburg / Bay Point for Pittsburg Center and Antioch"), `stations[].short` (= SIM's NAMES_SHORT) and
+  `stations[].transfers` [{kind, text, to?, dir?, system?}] with rider-facing, brand-neutral text: Millbrae (Peninsula
+  line across the platform northbound), Coliseum (Airport Connector; intercity trains), Pittsburg/Bay Point, the transfer
+  platform, Pittsburg Center/Antioch, MacArthur, 19th St, 12th St, Bay Fair, West Oakland, Embarcadero, Montgomery,
+  Powell, Civic Center, Glen Park, Balboa Park, Richmond, Milpitas, SFO, Oakland Airport. `system` = the real operator,
+  never render it. Plus `stations[].aliases` for the search.
+- **Millbrae W40-3 faces west** (`side: left`; W3 runs north-west there): the island shared with the Peninsula line's
+  platform 4, the real cross-platform transfer (STATIONS). Extent and berths unchanged; SIM's door side follows.
+- **San Bruno spread** to 11.1 m like ASHB/DBRK/NBRK/GLEN. The middle pocket track and its two crossovers joined the
+  mains at the north platform end, one switch 21 m inside the platform: the whole siding complex slid 31 m along the
+  corridor (switches now ≥ 10 m past the platform end: M2 2378→2409, W1 6479→6448, far ends 3099→3130 / 5759→5728)
+  and was spread with the mains (the pocket track stays between them; every junction still coincides, max deviation
+  < 0.3 m). Both faces left (toward each other), 213 m.
+- **Two-track stations**: sides now follow the curated layout (island: toward the other track; side platforms: away);
+  a curated per-platform side wins. STATIONS' check (every face against every track incl. yards, < 6 m on the platform
+  side, same level): **0**.
+- **Milpitas and similar retained cuts (INFRA)**: a covered block between two open cuts, < 300 m and < 9 m deep, is a lid:
+  one `cutcover` piece without `portal` ends; openings < 25 m between lids close. The lidar confirms the cut is open
+  between the lids (it sees the floor 5-6 m down) and covered at them, and each lid is a street in `crossings.json`:
+  S1 3235-3945 is now trench + 4 lids (rail spur 3235-3295, Piper Dr 3340-3395, Montague Expwy + the station concourse
+  3435-3685, Capitol Ave + light rail 3740-3855), 9 pieces instead of 14; S2 alike; the Berryessa approach (S2
+  6870-7115) one 245 m lid instead of 5 pieces. Suggest building those lids as decks over the trench.
+- **Research misses re-checked (lead)**:
+  - **Concord fixed**: the bare-earth lidar kept the station's viaduct deck (31.2 m under the tracks, 25.4 m beside them
+    and in the street), so M2 measured "+6.96 m above the ground" from the deck: rail 35.7, platform 11.3 m above the
+    street. Now the ground under elevated stations is taken beside the structure and the deck is the rail's data
+    target: rail 31.8, platform 7.4 m above the street (research 6.96), platform structure `aerial`.
+  - **North Berkeley** −2.7 m (was −3.2): a station box now needs 5.5 m from rail to street (7.5 m is for running
+    tunnels). What still holds the platform down is the running tunnel just north of the box: the ground keeps falling
+    (29.9 m 47 m past the platform end, 25.6 m 250 m on) and 7.5 m of cover there, reached at 4 % after the ≤ 0.05 g
+    vertical curve out of the level platform, puts the rail at 23.6 m: 7 m below the ground at the platform's north end,
+    10 m below Sacramento St. The real box probably extends further north (or its cover is thinner) than the model's
+    platform ± 20 m.
+  - **19th St lower level +3.1**: not the portal as I wrote before. The lidar sees the real trackbed in the open cut
+    north of the portal descending at exactly 4 % to 5.5 m at 23rd St (s 1884 on K2); 566 m on at BART's 4 % maximum the
+    lower level cannot be below −17 m, i.e. street −24.5 m. The OFD manual's "~90 ft" is approximate (−27 m would need
+    4.5 %).
+- **Buried track re-checked**: 5 spots remain, each < 1.3 m: A1.2/A2.2 under the L-line flyover south of Bay Fair (the
+  5.6 m grade separation pushes the lower tracks 1.2-1.3 m below the lidar trackbed: the real flyover is ~1 m
+  thinner), C1/C2 1-2 samples at the Berkeley Hills east portal and S2 one sample at the Berryessa embankment (both
+  the 125 m robust-ground window reaching the hillside / embankment). Validator: everything else 0.
+- **Tooling**: bakes write `metro-next` by default; `promote.py --yes`; `tools/metro/trackprof.py TRACK s0 s1` prints a
+  staged track against the lidar; `validate.py runtimes` reports the restrictions behind each slow hop.
 
 ### What changed in M2b (who should look)
 
@@ -43,9 +96,8 @@ Tested in Node: the production loader and the new loader give identical frames, 
   (E30-2) use E2, the unused E30-1 face is E1. Track ids around Daly City/Colma were renamed as a result (use
   `pathFor` / `stationById`, never literal ids).
 - **Island stations OSM drew too narrow (STATIONS, INFRA, WORLD).** Ashby 4.6 m, North Berkeley 6.7 m, Downtown
-  Berkeley 7.7 m and Glen Park 7.7 m track centres (islands of 1.4-4.5 m) are spread to BART's usual 11.1 m along
-  the platform (±20 m) with 150 m tapers. San Bruno (5.0 m, pocket-track turnouts at both platform ends) is left as
-  mapped: a known limitation.
+  Berkeley 7.7 m, Glen Park 7.7 m and (second round) San Bruno 4.9 m track centres (islands of 1.4-4.5 m) are spread
+  to BART's usual 11.1 m along the platform (±20 m) with 150 m tapers.
 - **Heights (STATIONS, INFRA).** Milpitas +6.6 m: M2 buried its roofed U-trench (the lidar sees the floor through the
   station's openings at ~9.5 m; research: cut < 30 ft). West Dublin +1.8 m: OSM's 100 m "tunnel" there is a road
   bridge over the median (now open track). Balboa Park +0.7 m. Everything else within 0.4 m of M2.
@@ -88,61 +140,60 @@ scheduled hop over all weekday trips; GTFS times are whole minutes):
 ### Validator (M2b, every bake, `metro/validation.json`)
 
 platform mismatch 0 · grades 0 (4 %, Tube 3 %, airport connector 6.5 %) · vertical curves 0 (≥ 800 m and ≤ 0.05 g)
-· aerial clearance 0 · tunnel cover 0 · junction steps 0 · open track > 1 m below the lidar: **5** (A2.2/A1.2 at the
-Bay Fair L-line flyover 1.2-1.3 m, the grade separation pushes the lower track down; C1/C2 at the Berkeley Hills
-east portal 1.2-1.3 m over 1-2 samples; S2 1.0 m one sample) · researched heights missed: **3** (19th St lower
-+3.1: the portal 460 m north limits the depth at 4 %; North Berkeley −3.2: the 7.5 m cut-and-cover cover where the
-ground drops 3 m along the platform; Concord −1.4 vs the measured +6.96 m platform: the ≤ 0.05 g vertical curves on
-the 70 mph approaches). Remaining soft-constraint conflicts (reported by the solver): Oakland Wye grade separation
-K-main.3/K-main.2 1.05 m short of 5.6 m, 19 cover and 162 clearance samples within 1.3/1.8 m (portal and abutment
-approaches).
+· aerial clearance 0 · tunnel cover 0 (light wells in a lid ignored) · junction steps 0 · open track > 1 m below the
+lidar: **5**, all < 1.3 m (see "Buried track re-checked" above) · researched heights missed: **2** (19th St lower
++3.1, North Berkeley −2.7; both explained above; Concord now met). Remaining soft-constraint conflicts (reported by the
+solver): Oakland Wye grade separation K-main.3/K-main.2 1.05 m short of 5.6 m, 18 cover and 159 clearance samples
+within 1.3/1.8 m (portal and abutment approaches).
 
-### What moved (M2 -> M2b)
+### What moved (production M2 -> staged M2b, 08:06)
 
 | station | type | layout | rail (m) | platform v0 / before / now | moved since before | since v0 |
 |---|---|---|---|---|---|---|
 | MLPT | trench | side | 10.6 | 12.8 / 4.9 / 11.5 | +6.6 | -1.3 |
+| CONC | aerial | island | 31.8 | 28.4 / 36.7 / 32.8 | -3.9 | +4.4 |
 | WDUB | median | island | 107.5 | 106.6 / 106.7 / 108.5 | +1.8 | +1.9 |
+| BERY | aerial | island | 35.0 | 36.6 / 36.9 / 36.0 | -0.8 | -0.6 |
 | BALB | trench | island | 62.3 | 64.8 / 62.6 / 63.3 | +0.7 | -1.5 |
+| NBRK | subway | island | 23.6 | 22.0 / 24.1 / 24.6 | +0.5 | +2.6 |
+| DALY | aerial | split | 91.4 | 89.6 / 92.9 / 92.4 | -0.5 | +2.8 |
 | ANTC | median | side -> **island** | 23.1 | 22.4 / 24.1 / 23.7 | -0.4 | +1.3 |
 | PCTR | median | island | 17.0 | 18.3 / 18.0 / 17.6 | -0.4 | -0.7 |
 | SHAY | aerial | side | 12.5 | 12.2 / 13.2 / 13.5 | +0.3 | +1.3 |
+| GLEN | subway | island | 41.8 | 49.0 / 42.5 / 42.8 | +0.3 | -6.2 |
 | CAST | median | island | 59.2 | 57.6 / 60.0 / 60.2 | +0.2 | +2.6 |
-| GLEN | subway | island | 41.7 | 49.0 / 42.5 / 42.7 | +0.2 | -6.3 |
+| SFIA | aerial | split | 11.2 | 13.3 / 12.4 / 12.2 | -0.2 | -1.1 |
 | PITT-T | surface -> **median** | island | 34.2 | - / 35.2 / 35.0 | -0.2 | - |
 | FRMT | aerial | island | 23.0 | 23.7 / 23.8 / 24.0 | +0.1 | +0.3 |
+| COLS | aerial | island | 14.3 | 15.2 / 15.4 / 15.3 | -0.1 | +0.1 |
 | MCAR | median | island | 34.5 | 34.9 / 35.6 / 35.5 | -0.1 | +0.6 |
 | NCON | trench | island | 30.9 | 38.8 / 32.0 / 31.9 | -0.1 | -6.9 |
 | UCTY | aerial | side | 19.9 | 23.6 / 20.8 / 20.9 | +0.1 | -2.7 |
 | MLBR | surface | side -> **split** | 3.9 | 5.1 / 5.0 / 4.9 | -0.1 | -0.2 |
-| DALY | aerial | split | 91.9 | 89.6 / 92.9 / 92.9 | +0.1 | +3.3 |
-| ASHB | subway | island | 25.9 | 25.9 / 27.0 / 26.9 | -0.1 | +1.1 |
-| CONC | aerial | island | 35.7 | 28.4 / 36.7 / 36.7 | -0.0 | +8.3 |
+| ASHB | subway | island | 26.0 | 25.9 / 27.0 / 26.9 | -0.1 | +1.1 |
 | RICH | surface | island | 16.1 | 14.9 / 17.1 / 17.1 | +0.0 | +2.2 |
+| FTVL | aerial | side | 17.8 | 22.0 / 18.9 / 18.8 | -0.0 | -3.2 |
 | ORIN | median | island | 155.0 | 198.4 / 156.0 / 156.0 | +0.0 | -42.4 |
 | LAFY | median | island | 114.3 | 114.0 / 115.3 / 115.3 | -0.0 | +1.3 |
 | PITT | median | island | 46.1 | 48.2 / 47.1 / 47.1 | +0.0 | -1.1 |
-| PLZA | aerial | side | 22.0 | 26.3 / 23.0 / 23.0 | +0.0 | -3.3 |
-| DELN | aerial | side | 26.6 | 30.8 / 27.6 / 27.6 | +0.0 | -3.2 |
-| HAYW | aerial | side | 36.4 | 40.9 / 37.3 / 37.4 | +0.0 | -3.5 |
+| SBRN | trench | island | 2.6 | 3.0 / 3.6 / 3.6 | -0.0 | +0.6 |
 | 19TH | subway | stacked | -11.7 (upper -9.4, lower -16.4) | -3.0 / -8.4 / -8.4 | +0.0 | -5.4 |
 | 16TH | subway | island | -3.3 | -0.5 / -2.3 / -2.3 | -0.0 | -1.8 |
-| BAYF | aerial | island | 16.8 | 20.8 / 17.8 / 17.8 | -0.0 | -3.0 |
-| NBRK | subway | island | 23.1 | 22.0 / 24.1 / 24.1 | -0.0 | +2.1 |
+| DELN | aerial | side | 26.6 | 30.8 / 27.6 / 27.6 | +0.0 | -3.2 |
+| HAYW | aerial | side | 36.4 | 40.9 / 37.3 / 37.3 | +0.0 | -3.6 |
 | CIVC | subway | island | -4.8 | 4.3 / -3.8 / -3.8 | +0.0 | -8.1 |
 | LAKE | subway | island | -3.9 | -1.1 / -2.9 / -2.9 | -0.0 | -1.8 |
 | MONT | subway | island | -9.0 | -0.9 / -8.0 / -8.0 | +0.0 | -7.1 |
 | 24TH | subway | island | 9.2 | 10.7 / 10.2 / 10.2 | +0.0 | -0.5 |
 | WARM | surface | island | 14.3 | 15.8 / 15.3 / 15.3 | +0.0 | -0.5 |
 | SSAN | subway | island | 14.7 | 13.0 / 15.7 / 15.7 | -0.0 | +2.7 |
+| SANL | aerial | side | 21.7 | 26.5 / 22.7 / 22.7 | -0.0 | -3.8 |
+| BAYF | aerial | island | 16.8 | 20.8 / 17.8 / 17.8 | +0.0 | -3.0 |
+| WCRK | aerial | side | 60.0 | 63.8 / 61.0 / 61.0 | -0.0 | -2.8 |
 | DBRK | subway | island | 46.1 | 45.5 / 47.1 / 47.1 | -0.0 | +1.6 |
-| BERY | aerial | island | 35.9 | 36.6 / 36.9 / 36.9 | -0.0 | +0.2 |
+| PLZA | aerial | side | 22.0 | 26.3 / 23.0 / 23.0 | -0.0 | -3.3 |
 | COLM | trench | split | 47.4 | 49.8 / 48.4 / 48.4 | +0.0 | -1.4 |
-| FTVL | aerial | side | 17.9 | 22.0 / 18.9 / 18.9 | +0.0 | -3.1 |
-| COLS | aerial | island | 14.4 | 15.2 / 15.4 / 15.4 | +0.0 | +0.2 |
-| SANL | aerial | side | 21.7 | 26.5 / 22.7 / 22.7 | +0.0 | -3.8 |
 | ROCK | median | island | 63.7 | 65.8 / 64.7 / 64.7 | +0.0 | -1.1 |
-| WCRK | aerial | side | 60.0 | 63.8 / 61.0 / 61.0 | +0.0 | -2.8 |
 | PHIL | aerial | side | 33.4 | 37.6 / 34.4 / 34.4 | +0.0 | -3.2 |
 | OAKL | aerial | side | 10.4 | 7.9 / 11.4 / 11.4 | +0.0 | +3.5 |
 | 12TH | subway | stacked | -7.1 (upper -3.8, lower -13.7) | 1.2 / -2.8 / -2.8 | +0.0 | -4.0 |
@@ -150,10 +201,8 @@ approaches).
 | WOAK | aerial | side | 11.1 | 15.3 / 12.1 / 12.1 | +0.0 | -3.2 |
 | EMBR | subway | island | -16.5 | -8.1 / -15.5 / -15.5 | +0.0 | -7.4 |
 | POWL | subway | island | -6.7 | 0.1 / -5.7 / -5.7 | +0.0 | -5.8 |
-| SBRN | trench | island | 2.6 | 3.0 / 3.6 / 3.6 | +0.0 | +0.6 |
-| SFIA | aerial | split | 11.4 | 13.3 / 12.4 / 12.4 | +0.0 | -0.9 |
 
-Platform records that changed (track, side, extent or > 0.5 m of rail height; island spreading at ASHB/NBRK/DBRK/GLEN
+Platform records that changed (track, side, extent or > 0.5 m of rail height; island spreading at ASHB/NBRK/DBRK/GLEN/SBRN
 moves each track ~1.7-3.3 m sideways and isn't listed):
 
 | platform | before (track side s0-s1) | now | change |
@@ -170,6 +219,8 @@ moves each track ~1.7-3.3 m sideways and isn't listed):
 | C40-2 (WCRK) | C2 right 20411-20622 | C2 left 20411-20622 | side |
 | C50-1 (PHIL) | C1 left 23189-23401 | C1 right 23189-23401 | side |
 | C50-2 (PHIL) | C2 right 23170-23383 | C2 left 23170-23382 | side |
+| C60-1 (CONC) | C1 left 29743-29953 | C1 left 29743-29953 | rail -3.9 m |
+| C60-2 (CONC) | C2 right 29722-29932 | C2 right 29722-29932 | rail -3.9 m |
 | C80-T (PITT-T) | CT right 55-205 | CT right 21-247 | length 150->226 m |
 | E10-T (PITT-T) | ET left 32-182 | ET left 0-224 | length 150->224 m |
 | E30-1 (ANTC) | - | E1 left 13164-13293 | new (unused) |
@@ -180,29 +231,35 @@ moves each track ~1.7-3.3 m sideways and isn't listed):
 | M10-2 (WOAK) | M2 left 33850-34067 | M2 right 33842-34059 | side |
 | M80-1 (BALB) | M1.1 left 20706-20915 | M1.1 left 20701-20910 | rail +0.7 m |
 | M80-2 (BALB) | M2 left 14546-14755 | M2 left 14544-14753 | rail +0.7 m |
-| M90-1 (DALY) | M1.2 left 238-447 | M1.2 right 2802-3012 | side |
+| M90-1 (DALY) | M1.2 left 238-447 | M1.2 right 2802-3012 | side, rail -0.5 m |
+| M90-2 (DALY) | M2 left 11653-11862 | M2 left 11651-11860 | rail -0.5 m |
+| M90-3 (DALY) | M3 right 2802-3012 | M3 right 239-446 | rail -0.5 m |
+| R30-1 (NBRK) | R1 left 6174-6385 | R1 left 6167-6378 | rail +0.5 m |
+| R30-2 (NBRK) | R2 left 10471-10683 | R2 left 10470-10682 | rail +0.5 m |
 | R40-1 (PLZA) | R1 left 9714-9927 | R1 right 9705-9918 | side |
 | R40-2 (PLZA) | R2 left 6928-7141 | R2 right 6928-7140 | side |
 | R50-1 (DELN) | R1 left 12683-12893 | R1 right 12674-12884 | side |
 | R50-2 (DELN) | R2 left 3962-4171 | R2 right 3961-4171 | side |
 | S40-1 (MLPT) | S1 left 3503-3712 | S1 right 3503-3712 | side, rail +6.6 m |
 | S40-2 (MLPT) | S2 right 3412-3621 | S2 left 3412-3621 | side, rail +6.6 m |
-| S50-2 (BERY) | S1 left 8318-8531 | S2 right 8228-8440 | track, side |
+| S50-1 (BERY) | S1 left 8318-8531 | S1 left 8318-8531 | rail -0.8 m |
+| S50-2 (BERY) | S1 left 8318-8531 | S2 right 8228-8440 | track, side, rail -0.8 m |
 | W10-1 (COLM) | M3 right 236-444 | M1.2 right 236-444 | track |
+| W40-3 (MLBR) | W3 right 380-594 | W3 left 380-594 | side |
 | Y10-2 (SFIA) | Y2 right 339-562 | Y2 left 339-562 | side |
 | Y10-3 (SFIA) | - | Y-main.5 left 1327-1550 | new (unused) |
 
 | structure | km before | km now |
 |---|---|---|
-| aerial | 98.9 | 98.9 |
+| aerial | 98.9 | 100.0 |
 | bored | 11.5 | 11.5 |
-| bridge | 8.9 | 8.9 |
-| cutcover | 70.1 | 69.6 |
-| embankment | 14.1 | 14.1 |
-| grade | 168.6 | 168.4 |
+| bridge | 8.9 | 8.6 |
+| cutcover | 70.1 | 70.0 |
+| embankment | 14.1 | 13.5 |
+| grade | 168.6 | 168.1 |
 | median | 116.8 | 116.9 |
-| portal | 2.8 | 2.6 |
-| trench | 8.0 | 8.7 |
+| portal | 2.8 | 2.3 |
+| trench | 8.0 | 8.6 |
 | tube | 11.7 | 11.7 |
 
 
