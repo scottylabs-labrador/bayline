@@ -2063,13 +2063,16 @@ const StationTypes = (() => {
     const pos = [], nor = [], uv = [], idx = []; let n = 0;
     for (const s of list) {
       const [x, z] = s.T.L2(s.u, s.v); const r = rect[s.region] || rect.nameS;
-      const faces = s.both ? [s.yaw, s.yaw + Math.PI] : [s.yaw];
+      // (a one-sided sign gets a plain navy back: seen from behind it was an invisible plane)
+      const faces = s.both ? [s.yaw, s.yaw + Math.PI] : [s.yaw, s.yaw + Math.PI];
       for (const yaw of faces) {
+        const back = !s.both && yaw !== s.yaw;
         const c = Math.cos(yaw), sn = Math.sin(yaw); const ax = c, az = -sn; const nx = sn, nz = c;
-        const hw = s.w / 2, hh = s.h / 2; const off = s.both ? 0.02 : 0.004;
+        const hw = s.w / 2, hh = s.h / 2; const off = s.both ? 0.02 : back ? -0.002 : 0.004;
         const cx = x + nx * off, cz = z + nz * off;
         const P = [[cx - ax * hw, s.y - hh, cz - az * hw], [cx + ax * hw, s.y - hh, cz + az * hw], [cx + ax * hw, s.y + hh, cz + az * hw], [cx - ax * hw, s.y + hh, cz - az * hw]];
-        const UVs = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+        const q = rect.exit, nv = [q[0] + 0.001, q[3] - 0.004, q[0] + 0.004, q[3] - 0.001];            // (a navy corner of the atlas)
+        const UVs = back ? [[nv[0], nv[1]], [nv[2], nv[1]], [nv[2], nv[3]], [nv[0], nv[3]]] : [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
         for (let k = 0; k < 4; k++) { pos.push(...P[k]); nor.push(nx, 0, nz); uv.push(...UVs[k]); }
         idx.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4;
       }
