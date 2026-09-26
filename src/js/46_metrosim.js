@@ -29,115 +29,88 @@ const MetroSim = (() => {
   // full service 3 mph/s, emergency ~3.6 mph/s (80 -> 0 in 20-25 s). eBART DMU: 75 mph, gentler. Airport cable
   // train: 30 mph, smooth. Resistance: Davis-style per unit mass.
   const PERF = {
-    bart: { vmax: 70 * MPH, a0: 1.34, pw: 14.8, b: 1.12, bFull: 1.34, bEm: 1.62, carLen: 21.34, minCars: 2, maxCars: 10, res: [0.006, 0.00012, 0.000048] },
+    bart: { vmax: 70 * MPH, a0: 1.34, pw: 14.8, b: 1.12, bFull: 1.34, bEm: 1.62, carLen: 21.336, minCars: 2, maxCars: 10, res: [0.006, 0.00012, 0.000048] },
     dmu:  { vmax: 75 * MPH, a0: 0.95, pw: 8.2,  b: 0.95, bFull: 1.1, bEm: 1.35, carLen: 40.9, minCars: 1, maxCars: 2, res: [0.007, 0.00013, 0.00005] },
     oak:  { vmax: 30 * MPH, a0: 0.75, pw: 30,   b: 0.72, bFull: 0.9, bEm: 1.2, carLen: 12.2, minCars: 3, maxCars: 3, res: [0.004, 0.0001, 0.00003] },
   };
   const resist = (P, v) => P.res[0] + P.res[1] * v + P.res[2] * v * v;
   const tractA = (P, v) => Math.min(P.a0, P.pw / Math.max(v, 0.5));
 
-  // ---------------------------------------------------------------- data adapter (MetroNet + timetable)
-  // Everything format-specific lives here, so the runtime below only sees: stations {id, name, x, z}, lines {id,
-  // name, color, text}, trips {id, line, dir, pattern, svc, head, cars, bus, stops: [{sid, st, arr, dep}]} and paths.
+  // ---------------------------------------------------------------- data adapter (MetroNet + timetable, notes/bart-data.md)
+  // Everything format-specific lives here. The runtime below sees stations {id, name, short, x, z}, lines {id, name,
+  // color, text}, trips {id, line, dir, pat, svc, head, cars[], legs[][arr, dep, ...]} and MPath (a pattern leg).
   let MN = null, TT = null, ready = false, loading = null, loadError = null;
-  const stations = [], stById = new Map(), lines = [], lineById = new Map(); let trips = [], services = {};
-  const DEV = { base: HASH.get('metrodata') || null };
-  const NAMES_SHORT = { 'San Francisco International Airport': 'SFO Airport', 'Millbrae (Caltrain Transfer Platform)': 'Millbrae',
-    'Oakland International Airport Station': 'Oakland Airport', 'Pleasant Hill / Contra Costa Centre': 'Pleasant Hill',
-    'Berryessa / North San Jose': 'Berryessa', 'Warm Springs / South Fremont': 'Warm Springs', 'Dublin / Pleasanton': 'Dublin / Pleasanton',
-    'West Dublin / Pleasanton': 'West Dublin', '12th Street / Oakland City Center': '12th St Oakland', '19th Street Oakland': '19th St Oakland',
-    'Civic Center / UN Plaza': 'Civic Center', '16th Street / Mission': '16th St Mission', '24th Street / Mission': '24th St Mission',
-    'North Concord / Martinez': 'North Concord', 'Coliseum - OAC': 'Coliseum' };
-  const LINE_NAMES = { yellow: 'Yellow', orange: 'Orange', green: 'Green', red: 'Red', blue: 'Blue', grey: 'Airport', beige: 'Airport', bus: 'Bus bridge' };
-  const DMU_ST = new Set(['ANTC', 'PCTR']);                    // served by the diesel shuttle (a separate standard-gauge line)
-  const XFER_DMU = 'PITT';                                     // cross-platform transfer DMU <-> BART
+  const stations = [], stById = new Map(), lines = [], lineById = new Map(); let trips = [], busTrips = [];
+  const NAMES_SHORT = { SFIA: 'SFO Airport', MLBR: 'Millbrae', OAKL: 'Oakland Airport', PHIL: 'Pleasant Hill', BERY: 'Berryessa', WARM: 'Warm Springs',
+    WDUB: 'West Dublin', DUBL: 'Dublin / Pleasanton', '12TH': '12th St Oakland', '19TH': '19th St Oakland', CIVC: 'Civic Center', '16TH': '16th St Mission',
+    '24TH': '24th St Mission', NCON: 'North Concord', PITT: 'Pittsburg / Bay Point', PCTR: 'Pittsburg Center', DELN: 'El Cerrito del Norte', PLZA: 'El Cerrito Plaza',
+    DBRK: 'Downtown Berkeley', NBRK: 'North Berkeley', SSAN: 'South San Francisco', MONT: 'Montgomery St', POWL: 'Powell St', MCAR: 'MacArthur', 'PITT-T': 'Pittsburg / Bay Point' };
+  const LINE_SHORT = { yellow: 'Yellow', orange: 'Orange', green: 'Green', red: 'Red', blue: 'Blue', grey: 'Airport', ebart: 'Antioch shuttle' };
+  const KIND = { emu: 'bart', dmu: 'dmu', apm: 'oak' };
   async function loadData() {
-    if (typeof MetroNet !== 'undefined' && MetroNet.load) { MN = MetroNet; await MN.load(DEV.base || undefined); }
-    else throw new Error('MetroNet is not in this build');
-    TT = MN.timetable ? await MN.timetable() : await Stream.json((DEV.base || 'metro/') + 'timetable.json', 2);
-    // stations
-    for (const s of MN.stations) { const o = { id: s.id, name: s.name, short: NAMES_SHORT[s.name] || s.name, x: s.x, z: s.z, y: s.y, src: s, lines: new Set(), idx: stations.length }; stations.push(o); stById.set(o.id, o); }
-    // lines (from the network, else from the trips' colours)
-    for (const l of (MN.lines || [])) { const o = { id: l.id, name: l.name || LINE_NAMES[l.id] || l.id, color: l.color || '#cccccc', text: l.text || '#000000', terminals: l.terminals || [], src: l }; lines.push(o); lineById.set(o.id, o); }
-    services = TT.services || TT.calendar || {};
-    trips = (TT.trips || []).map(normTrip).filter(Boolean);
-    for (const t of trips) { if (!lineById.has(t.line)) { const o = { id: t.line, name: LINE_NAMES[t.line] || t.line, color: t.color || '#cccccc', text: '#000', terminals: [] }; lines.push(o); lineById.set(t.line, o); }
-      if (!t.bus) for (const s of t.stops) { const st = stById.get(s.st); if (st) st.lines.add(t.line); } }
+    if (typeof MetroNet === 'undefined' || !MetroNet.load) throw new Error('MetroNet is not in this build');
+    MN = MetroNet; await MN.load(); TT = await MN.loadTimetable();
+    for (const s of MN.stations) { const o = { id: s.id, name: s.name, short: NAMES_SHORT[s.id] || s.name, x: s.x, z: s.z, y: s.levels ? s.levels.platform : 0, type: s.type, layout: s.layout, src: s, lines: new Set(), idx: stations.length }; stations.push(o); stById.set(o.id, o); }
+    for (const l of MN.lines) { const o = { id: l.id, name: l.name || l.id, short: LINE_SHORT[l.id] || l.name || l.id, color: l.colour || l.color || '#cccccc', text: l.text || '#000000', terminals: l.terminals || [], src: l }; lines.push(o); lineById.set(o.id, o); }
+    trips = TT.trips.filter(t => t.legs && t.legs.length && MN.patterns[t.pat]);
+    busTrips = TT.busBridge || [];
+    for (const t of trips) for (const L of MN.patterns[t.pat].legs) for (const s of L.stops) { const st = stById.get(s.station); if (st) st.lines.add(L.sys === 'ebart' ? 'ebart' : t.line); }
   }
-  function normTrip(t) {
-    const stops = (t.stops || []).map(s => Array.isArray(s) ? { sid: s[0], st: s[1], arr: s[2], dep: s[3] !== undefined ? s[3] : s[2] } : { sid: s.sid || s.stop || s.id, st: s.st || s.station, arr: s.arr, dep: s.dep !== undefined ? s.dep : s.arr });
-    if (stops.length < 2) return null;
-    return { id: String(t.id), route: t.route, line: t.line, color: t.color, dir: t.dir | 0, pattern: t.pattern || t.shape || (t.line + ':' + t.dir), svc: t.svc || t.service,
-      head: t.head || t.headsign || '', cars: t.cars || 0, bus: !!t.bus, stops };
-  }
-  // service days: GTFS calendar + calendar_dates, resolved per date (yyyymmdd, weekday 0 = Sunday)
-  function servicesOn(ymd, wd) {
-    const out = new Set(), di = (wd + 6) % 7;
-    for (const id in services) { const s = services[id]; let on = !!(s.days && s.days[di]) && ymd >= s.start && ymd <= s.end;
-      if (s.remove && s.remove.includes(ymd)) on = false; if (s.add && s.add.includes(ymd)) on = true; if (on) out.add(id); }
-    return out;
-  }
-  // MetroNet frame, normalised: x y z, unit tangent (tx ty tz) toward +s, cant (rad, + = right rail up), lim (m/s), st
-  function netFrame(track, s, out) { MN.frame(track, s, out); if (out.lim === undefined) out.lim = out.limit !== undefined ? out.limit : PERF.bart.vmax; return out; }
 
   // ---------------------------------------------------------------- paths
-  // A path is the ordered list of track pieces a train follows, measured from 0 (its start) to length.
-  const F0 = {}, F1 = {}, F2 = {};
+  // MPath wraps one pattern leg (MetroNet Leg): path distance 0..length along the direction of travel, extrapolated
+  // along the end tangents beyond both ends (cars of a train standing at the first platform reach back past d = 0).
+  const F0 = {}, F1 = {}, F2 = {}, LQ = {};
   class MPath {
-    constructor(pieces, id) {
-      this.id = id; this.pc = []; let L = 0;
-      for (const p of pieces) { const len = Math.abs(p.s1 - p.s0); if (!(len > 1e-3)) continue; this.pc.push({ track: p.track, s0: p.s0, sg: p.s1 >= p.s0 ? 1 : -1, L0: L, len }); L += len; }
-      this.length = L; this.xz = null; this._k = 0;
-    }
-    piece(ps) { const P = this.pc; let k = this._k; if (k >= P.length) k = 0;
-      if (ps >= P[k].L0 && ps <= P[k].L0 + P[k].len) return k;
-      let lo = 0, hi = P.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (P[m].L0 <= ps) lo = m; else hi = m - 1; } this._k = lo; return lo; }
+    constructor(leg, id) { this.leg = leg; this.id = id; this.length = leg.length; this.xz = null; this.stops = leg.stops; }
     at(ps, out) {
-      const p = this.pc[this.piece(ps)], s = p.s0 + p.sg * (clamp(ps, 0, this.length) - p.L0);
-      netFrame(p.track, s, out);
-      if (p.sg < 0) { out.tx = -out.tx; out.ty = -out.ty; out.tz = -out.tz; out.cant = -(out.cant || 0); }
-      out.track = p.track; out.ts = s; out.tsg = p.sg; return out;
+      const L = this.length;
+      if (ps >= 0 && ps <= L) this.leg.frame(ps, out);
+      else { const e = ps < 0 ? 0 : L, over = ps - e; this.leg.frame(e, out);
+        // try the physical track beyond the end first, else a straight extension
+        const q = this.leg.locate(e, LQ), t = q.track, s2 = q.s + q.sign * over;
+        if (s2 >= 0 && s2 <= t.length) { MN.frame(t, s2, out); if (q.sign < 0) { out.tx = -out.tx; out.ty = -out.ty; out.tz = -out.tz; out.rx = -out.rx; out.ry = -out.ry; out.rz = -out.rz; out.cant = -out.cant; out.bank = -out.bank; out.grade = -out.grade; } }
+        else { out.x += out.tx * over; out.y += out.ty * over; out.z += out.tz * over; } }
+      out.lim = out.vlim; out.st = out.structName; return out;
     }
-    limitAt(ps) { if (ps < 0) ps = 0; else if (ps > this.length) ps = this.length; const p = this.pc[this.piece(ps)]; return MN.limitAt ? MN.limitAt(p.track, p.s0 + p.sg * (ps - p.L0)) : netFrame(p.track, p.s0 + p.sg * (ps - p.L0), F2).lim; }
-    // coarse polyline (every 10 m) for projections: stops on the path, the map, nearest-point queries
+    limitAt(ps) { const q = this.leg.locate(ps < 0 ? 0 : ps > this.length ? this.length : ps, LQ), t = q.track; let i = Math.round(q.s / t.step); if (i < 0) i = 0; else if (i >= t.n) i = t.n - 1; return t.VL[i] * MPH; }
     samples() { if (this.xz) return this.xz; const n = Math.max(2, Math.ceil(this.length / 10) + 1), a = new Float32Array(n * 2);
       for (let i = 0; i < n; i++) { this.at(Math.min(this.length, i * 10), F2); a[i * 2] = F2.x; a[i * 2 + 1] = F2.z; } return (this.xz = a); }
     project(x, z, from = 0, to = this.length) {   // path position nearest to (x, z) within [from, to]
       const a = this.samples(), n = a.length / 2; let best = -1, bd = 1e18;
       for (let i = Math.max(0, Math.floor(from / 10)); i < n && i * 10 <= to + 10; i++) { const d = (a[i * 2] - x) ** 2 + (a[i * 2 + 1] - z) ** 2; if (d < bd) { bd = d; best = i; } }
       if (best < 0) return { ps: from, d: 1e9 };
-      let ps = best * 10; for (const h of [5, 2.5, 1.2, 0.6]) { let b2 = ps; for (const c of [ps - h, ps + h]) { if (c < from || c > to) continue; this.at(c, F2); const d = (F2.x - x) ** 2 + (F2.z - z) ** 2; if (d < bd) { bd = d; b2 = c; } } ps = b2; }
+      let ps = Math.min(to, Math.max(from, best * 10)); for (const h of [5, 2.5, 1.2, 0.6, 0.3]) { let b2 = ps; for (const c of [ps - h, ps + h]) { if (c < from || c > to) continue; this.at(c, F2); const d = (F2.x - x) ** 2 + (F2.z - z) ** 2; if (d < bd) { bd = d; b2 = c; } } ps = b2; }
       return { ps, d: Math.sqrt(bd) };
     }
   }
   const pathCache = new Map();
-  function pathFor(trip) {
-    const key = trip.line + '|' + trip.dir + '|' + trip.pattern;
-    if (pathCache.has(key)) return pathCache.get(key);
-    let pieces = null;
-    try { pieces = MN.pathFor(trip.line, trip.dir, trip.pattern, trip); } catch (e) { console.warn('metro pathFor', key, e); }
-    if (pieces && !Array.isArray(pieces)) pieces = pieces.pieces || pieces.segs || pieces.tracks || null;
-    const p = pieces && pieces.length ? new MPath(pieces.map(q => ({ track: q.track !== undefined ? q.track : q.id, s0: q.s0 !== undefined ? q.s0 : q.from, s1: q.s1 !== undefined ? q.s1 : q.to })), key) : null;
-    pathCache.set(key, p); return p;
+  function legPath(patId, k) {
+    const key = patId + '#' + k; let p = pathCache.get(key);
+    if (p === undefined) { const P = MN.pathFor(patId); p = P && P.legs[k] ? new MPath(P.legs[k], key) : null; pathCache.set(key, p); }
+    return p;
   }
-  // where the head of the train stops for each stop of a trip on its path: the far end of the platform (trains pull
-  // up to the front of the platform, whatever their length), from MetroNet's platform data when it has it
-  const stopCache = new Map();
-  function stopMarks(trip, path) {
-    const key = path.id + '|' + trip.stops.map(s => s.sid).join(',');
-    if (stopCache.has(key)) return stopCache.get(key);
-    const out = []; let from = 0;
-    for (let i = 0; i < trip.stops.length; i++) {
-      const s = trip.stops[i], st = stById.get(s.st); let ps = null, side = 0, plen = 213;
-      const pf = MN.platformFor ? MN.platformFor(s.sid, s.st, path, kindOfStop(trip, s)) : null;
-      if (pf && pf.track !== undefined) { for (const p of path.pc) if (p.track === pf.track) { const a = p.L0 + (pf.s0 - p.s0) * p.sg, b = p.L0 + (pf.s1 - p.s0) * p.sg; if (Math.max(a, b) >= from - 5) { ps = Math.max(a, b) - 1.0; plen = Math.abs(b - a); side = pf.side ? (pf.side * p.sg) : 0; break; } } }
-      if (ps === null && st) { const pr = path.project(st.x, st.z, from, Math.min(path.length, from + 60000)); plen = s.st === 'OAKL' || s.st === 'COLS_OAC' ? 46 : 213; ps = Math.min(path.length - 2, pr.ps + plen / 2 - 1.0); if (i === 0) ps = Math.max(ps, Math.min(path.length - 2, plen - 1)); }
-      if (ps === null) ps = from;
-      ps = clamp(ps, i ? from : 0, path.length - 0.5);
-      out.push({ ps, side, plen }); from = ps + 1;   // (a stop listed twice, like a reversal, gets the next position)
-    }
-    stopCache.set(key, out); return out;
+  // where the head of the train stops at each stop of a pattern leg: the leaving end of the platform (trains pull up
+  // to the front of the platform whatever their length), from the station's platform extents; which side the doors
+  // open (travel-relative, +1 right); the reversal point where the path doubles back (SFO)
+  const markCache = new Map();
+  function stopMarks(path, kind) {
+    const key = path.id + '|' + kind; if (markCache.has(key)) return markCache.get(key);
+    const out = path.stops.map((st, i) => {
+      const q = path.leg.locate(st.d, LQ), sign = q.sign, sta = MN.stationById[st.station];
+      const pf = sta && sta.platforms ? (sta.platforms.find(p => p.gtfs === st.gtfs && p.track === st.track) || sta.platforms.find(p => p.gtfs === st.gtfs)) : null;
+      let ahead, plen = 213.4, side = 0;
+      if (pf && pf.track === st.track) { ahead = clamp(((sign > 0 ? pf.s1 : pf.s0) - st.s) * sign, 0, 130); plen = Math.abs(pf.s1 - pf.s0); }
+      else ahead = kind === 'oak' ? 20 : 105.7;
+      if (pf && pf.side) side = (pf.side === 'right' ? 1 : -1) * sign;
+      else side = sta && sta.layout === 'island' ? -1 : 1;
+      let ps = st.d + Math.max(0, ahead - 1.0);
+      if (st.reverse) ps = st.d;                                   // (the path doubles back here: stop at the reversal point)
+      return { ps: clamp(ps, 0, path.length), side, plen, reverse: !!st.reverse, d: st.d };
+    });
+    markCache.set(key, out); return out;
   }
+  function stName0(id) { const s = stById.get(id); return s ? s.short : (NAMES_SHORT[id] || id); }
 
   // ---------------------------------------------------------------- runs: minimum-time profiles, capped to fill a time
   // A run is tabulated at n+1 points ds apart: v[i] (m/s) and t[i] (s since departure). Between points the train
@@ -247,91 +220,82 @@ const MetroSim = (() => {
   // leg  = { kind, path, cars, stops[{i, st, sid, ps, arr, dep, side}], runs[{k, t0, t1, T}], lead (0: car 0 leads),
   //          t0 (appears), t1 (vanishes), prev, next, id }
   let plans = [], dayKey = '', frameNo = 0, planById = new Map();
-  let stopEvents = new Map();          // station id -> sorted [{t (dep or arr), arr, dep, plan, leg, k}] for boards
-  function kindOfStop(trip, s) { if (trip.line === 'grey' || trip.line === 'beige' || s.st === 'OAKL' || s.st === 'COLS_OAC' || /^H\d/.test(s.sid)) return 'oak'; return DMU_ST.has(s.st) ? 'dmu' : 'bart'; }
-  function splitLegs(trip) {
-    // consecutive stops served by the same vehicle. At the DMU transfer (Pittsburg / Bay Point) one leg arrives and the
-    // other departs; a stop listed twice in a row (SFO) is a reversal: the leg ends and the same train starts a new one
-    const S = trip.stops, legs = []; let cur = null;
-    for (let i = 0; i < S.length; i++) {
-      const k = kindOfStop(trip, S[i]), rev = i > 0 && S[i - 1].st === S[i].st;
-      if (!cur) { cur = { kind: k, idx: [i] }; legs.push(cur); continue; }
-      if (rev) { cur = { kind: cur.kind, idx: [i], rev: true }; legs.push(cur); continue; }
-      if (k !== cur.kind) {
-        if (cur.kind === 'dmu' && S[i].st === XFER_DMU) { cur.idx.push(i); cur = { kind: 'bart', idx: [i], xfer: true }; legs.push(cur); continue; }
-        if (k === 'dmu' && S[i - 1].st === XFER_DMU) { cur = { kind: 'dmu', idx: [i - 1, i], xfer: true }; legs.push(cur); continue; }
-        cur = { kind: k, idx: [i] }; legs.push(cur); continue;
-      }
-      cur.idx.push(i);
-    }
-    return legs.filter(l => l.idx.length >= 2);
-  }
+  let stopEvents = new Map();          // station id -> sorted [{t (dep or arr), arr, dep, pub, plan, leg, k, last, sid}] for the boards
+  // a trip's pattern legs (one per vehicle), each split again where the train reverses (SFO): the arriving part ends
+  // at the reversal stop, the same train starts the next part from there with its ends swapped
   function planTrip(trip, dayOff, wd) {
-    if (trip.bus) return null;
-    const path = pathFor(trip); if (!path) return null;
-    const marks = stopMarks(trip, path);
-    const plan = { key: 'M:' + trip.id + (dayOff ? '@y' : ''), trip, dayOff, legs: [], tStart: 0, tEnd: 0, line: trip.line, id: trip.id };
-    for (const pc of splitLegs(trip)) {
-      const kind = pc.kind, idx = pc.idx;
-      const cars = carsFor(trip, kind, trip.stops[idx[0]].dep + dayOff, wd);
-      const stops = idx.map(i => { const s = trip.stops[i]; return { i, st: s.st, sid: s.sid, ps: marks[i].ps, side: marks[i].side, plen: marks[i].plen, arr: s.arr + dayOff, dep: s.dep + dayOff, tArr: 0, tDep: 0 }; });
-      const leg = { kind, path, cars, stops, runs: [], lead: 0, rev: !!pc.rev, xfer: !!pc.xfer, t0: 0, t1: 0, prev: null, next: null, from: null, turn: null, sameTurn: false, plan, idx: plan.legs.length, chainKey: '' };
-      plan.legs.push(leg);
+    const pat = MN.patterns[trip.pat]; if (!pat) return null;
+    const plan = { key: 'M:' + trip.id + (dayOff ? '@y' : ''), trip, dayOff, legs: [], tStart: 0, tEnd: 0, line: trip.line, id: trip.id, head: trip.head };
+    for (let k = 0; k < pat.legs.length; k++) {
+      const PL = pat.legs[k], path = legPath(trip.pat, k), times = trip.legs[k]; if (!path || !times) continue;
+      const kind = KIND[PL.vehicle] || 'bart', cars = clamp((trip.cars && trip.cars[k]) || (kind === 'oak' ? 3 : kind === 'dmu' ? 2 : 8), 1, 10);
+      const marks = stopMarks(path, kind);
+      let cur = [];
+      const flush = (rev) => { if (cur.length >= 2) plan.legs.push(makeLeg(plan, kind, path, cars, cur, rev, PL.sys === 'ebart' ? 'ebart' : trip.line)); };
+      let rev = false;
+      for (let i = 0; i < path.stops.length; i++) {
+        const st = path.stops[i], m = marks[i];
+        const o = { i, k, st: st.station, sid: st.gtfs, ps: m.ps, side: m.side, plen: m.plen, arr: times[2 * i] + dayOff, dep: times[2 * i + 1] + dayOff, tArr: 0, tDep: 0 };
+        if (m.reverse && cur.length) { cur.push({ ...o, dep: o.arr }); flush(rev); rev = true; cur = [{ ...o, arr: o.dep, ps: m.ps, rev: true }]; continue; }
+        cur.push(o);
+      }
+      flush(rev);
     }
     if (!plan.legs.length) return null;
-    // legs of one trip with the same vehicle are one train (a reversal): the new leg starts where the old one's tail is
-    for (let i = 1; i < plan.legs.length; i++) { const a = plan.legs[i - 1], b = plan.legs[i]; if (a.kind === b.kind) { a.next = b; b.prev = a; b.cars = a.cars; alignStart(a, b); } }
+    for (let i = 0; i < plan.legs.length; i++) plan.legs[i].idx = i;
+    for (let i = 1; i < plan.legs.length; i++) { const a = plan.legs[i - 1], b = plan.legs[i]; if (a.kind === b.kind && a.path === b.path) { a.next = b; b.prev = a; b.cars = a.cars; alignStart(a, b); } }
     for (const l of plan.legs) timeLeg(l);
     plan.tStart = Math.min(...plan.legs.map(l => l.t0)); plan.tEnd = Math.max(...plan.legs.map(l => l.t1));
     return plan;
   }
-  // a train that reverses (or turns back on the same platform) keeps standing where it is: its tail becomes its head
+  function makeLeg(plan, kind, path, cars, stops, rev, line) {
+    return { kind, path, cars, stops, runs: [], lead: 0, rev: !!rev, line, t0: 0, t1: 0, prev: null, next: null, from: null, turn: null, sameTurn: false, plan, idx: 0, chainKey: '' };
+  }
+  // a train that reverses (or turns back on the same platform) stays where it is: its tail becomes its head
   function alignStart(a, b) {
-    const sa = a.stops[a.stops.length - 1], P = PERF[a.kind];
-    a.path.at(sa.ps - a.cars * P.carLen, F1);
-    const s0 = b.stops[0], pr = b.path.project(F1.x, F1.z, Math.max(0, s0.ps - 400), Math.min(b.path.length, s0.ps + 400));
+    const sa = a.stops[a.stops.length - 1], L = a.cars * PERF[a.kind].carLen, s0 = b.stops[0];
+    if (a.path === b.path) { s0.ps = Math.min(sa.ps + L, b.stops.length > 1 ? b.stops[1].ps - 5 : sa.ps + L); return; }   // the path doubles back in place
+    a.path.at(sa.ps - L, F1);
+    const pr = b.path.project(F1.x, F1.z, Math.max(-300, s0.ps - 400), Math.min(b.path.length, s0.ps + 400));
     if (pr.d < 25) s0.ps = Math.min(pr.ps, b.stops.length > 1 ? b.stops[1].ps - 5 : pr.ps);
   }
   // the leg's timeline: published targets smoothed against minimum runs and dwells (see smoothTimes)
   function timeLeg(l) {
     const S = l.stops, m = S.length, kind = l.kind, path = l.path;
-    for (let j = 1; j < m; j++) if (S[j].ps < S[j - 1].ps + 1) S[j].ps = Math.min(path.length - 0.5, S[j - 1].ps + 1);
+    for (let j = 1; j < m; j++) if (S[j].ps < S[j - 1].ps + 1) S[j].ps = Math.min(path.length + 50, S[j - 1].ps + 1);
     const y = new Float64Array(m), w = new Float64Array(m), gap = new Float64Array(Math.max(1, m - 1)), dw = new Float64Array(m);
     for (let j = 0; j < m; j++) {
       const s = S[j], nominal = dwellAt(s.st, kind, s.dep);
       dw[j] = j === 0 || j === m - 1 ? 0 : Math.max(nominal, s.dep - s.arr);
       y[j] = j === m - 1 ? s.arr : s.dep; w[j] = j === 0 ? 30 : (s.dep - s.arr > 30 ? 4 : 1);
     }
-    // the cross-platform transfer at Pittsburg / Bay Point: the published time is the BART train's. The DMU pulls in
-    // about 4 minutes before the BART train leaves, and leaves about 3 minutes after the BART train arrives
-    if (kind === 'dmu' && m > 1 && S[m - 1].st === XFER_DMU) { y[m - 1] = S[m - 1].arr - 240; w[m - 1] = 6; }
-    if (kind === 'dmu' && S[0].st === XFER_DMU) y[0] = S[0].dep + 180;
     for (let j = 0; j < m - 1; j++) gap[j] = minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars) + dw[j + 1];
     const e = smoothTimes(y, w, gap);
-    for (let j = 0; j < m; j++) { S[j].tDep = e[j]; S[j].tArr = j === 0 ? e[j] : e[j] - dw[j]; }
+    for (let j = 0; j < m; j++) { S[j].tDep = e[j]; S[j].tArr = j === 0 ? Math.min(e[j], S[j].arr) : e[j] - dw[j]; }
     S[m - 1].tArr = e[m - 1]; S[m - 1].tDep = e[m - 1];
     l.runs = []; for (let j = 0; j < m - 1; j++) l.runs.push({ k: j, t0: S[j].tDep, t1: S[j + 1].tArr, T: S[j + 1].tArr - S[j].tDep, R: null });
-    if (!l.prev) l.t0 = S[0].tDep - 240; else l.t0 = l.prev.stops[l.prev.stops.length - 1].tArr;
-    l.t1 = l.next ? S[m - 1].tArr : S[m - 1].tArr + 150;
-    if (l.prev) { l.t0 = Math.min(l.t0, S[0].tDep); }
+    l.t0 = l.prev ? l.prev.stops[l.prev.stops.length - 1].tArr : S[0].tDep - (kind === 'oak' ? 90 : 240);
+    l.t1 = l.next ? S[m - 1].tArr : S[m - 1].tArr + (kind === 'oak' ? 40 : 150);
   }
   function ymdShift(ymd, days) { const d = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8) + days)); return { ymd: `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`, wd: d.getUTCDay() }; }
   function replan(force) {
     const sd = Env.serviceDay(); if (!force && sd.ymd === dayKey) return; dayKey = sd.ymd;
     const t0 = performance.now();
     const today = ymdShift(sd.ymd, 0), yest = ymdShift(sd.ymd, -1);
-    const svT = servicesOn(today.ymd, today.wd), svY = servicesOn(yest.ymd, yest.wd);
-    plans = []; planById = new Map(); busTrips = []; trainObjs.clear();
+    const svT = new Set(MN.servicesOn(today.ymd)), svY = new Set(MN.servicesOn(yest.ymd));
+    plans = []; planById = new Map(); trainObjs.clear(); busToday = [];
     for (const t of trips) {
-      if (svT.has(t.svc)) { if (t.bus) busTrips.push({ trip: t, dayOff: 0 }); else { const p = planTrip(t, 0, today.wd); if (p) { plans.push(p); planById.set(p.key, p); } } }
-      if (svY.has(t.svc) && t.stops[t.stops.length - 1].arr > 86400 - 600) { if (t.bus) busTrips.push({ trip: t, dayOff: -86400 }); else { const p = planTrip(t, -86400, yest.wd); if (p && p.tEnd > -60) { plans.push(p); planById.set(p.key, p); } } }
+      if (svT.has(t.svc)) { const p = planTrip(t, 0, today.wd); if (p) { plans.push(p); planById.set(p.key, p); } }
+      if (svY.has(t.svc) && lastTime(t) > 86400 - 900) { const p = planTrip(t, -86400, yest.wd); if (p && p.tEnd > -60) { plans.push(p); planById.set(p.key, p); } }
     }
+    for (const b of busTrips) { if (svT.has(b.svc)) busToday.push({ b, dayOff: 0 }); if (svY.has(b.svc) && b.t[b.t.length - 1] > 86400) busToday.push({ b, dayOff: -86400 }); }
     linkTurnbacks(); dispatchPlatforms();
     plans.sort((a, b) => a.tStart - b.tStart);
     buildEvents();
-    stats.plans = plans.length; stats.replanMs = performance.now() - t0;
+    stats.plans = plans.length; stats.replanMs = performance.now() - t0; stats.day = sd.ymd; stats.services = [...svT].join(' ');
   }
-  let busTrips = [];
+  let busToday = [];
+  function lastTime(t) { const L = t.legs[t.legs.length - 1]; return L[L.length - 1]; }
   // turnbacks: a leg that ends at a station and a leg of the same vehicle that starts there soon after, heading the
   // other way, are the same train (terminals, the SFO wye, short turns). Same platform: the train simply waits and
   // changes ends. Different platform: it leaves for the tail track and the other appears from it.
@@ -341,6 +305,7 @@ const MetroSim = (() => {
       if (!l.next) { const s = l.stops[l.stops.length - 1]; const k = s.st + '|' + l.kind; if (!ends.has(k)) ends.set(k, []); ends.get(k).push(l); }
       if (!l.prev) { const s = l.stops[0]; const k = s.st + '|' + l.kind; if (!starts.has(k)) starts.set(k, []); starts.get(k).push(l); }
     }
+    // 1. links: each arrival takes the first unclaimed departure there (same platform preferred), 100 s .. 40 min later
     for (const [k, E] of ends) {
       const S = (starts.get(k) || []).slice().sort((a, b) => a.stops[0].tDep - b.stops[0].tDep); if (!S.length) continue;
       E.sort((a, b) => a.stops[a.stops.length - 1].tArr - b.stops[b.stops.length - 1].tArr);
@@ -352,20 +317,26 @@ const MetroSim = (() => {
           if (!best) best = b; if (b.stops[0].sid === sida) { if (best.stops[0].sid !== sida || tb < best.stops[0].tDep) best = b; break; } }
         if (!best) continue;
         if (best.stops[0].sid !== sida && best.stops[0].tDep > ta + 25 * 60) continue;
-        used.add(best); a.turn = best; best.from = a; best.cars = a.cars;
-        const same = !!sida && best.stops[0].sid === sida;
-        a.sameTurn = best.sameTurn = same;
-        if (same) { alignStart(a, best); timeLeg(best); a.t1 = best.stops[0].tDep; best.t0 = a.t1; }
-        else { a.t1 = Math.min(a.t1, ta + 150); best.t0 = Math.max(best.t0, best.stops[0].tDep - 240); }
+        used.add(best); a.turn = best; best.from = a;
+        a.sameTurn = best.sameTurn = !!sida && best.stops[0].sid === sida;
       }
     }
-    // physical trains: leads and identities along the chains (a reversal or a same-platform turnback swaps the ends)
+    // 2. physical trains, in time order: one length and identity per chain; a reversal or a same-platform turnback swaps
+    //    the ends and starts the next part where the tail stood (then that part's timeline is recomputed)
     const all = []; for (const p of plans) for (const l of p.legs) all.push(l);
     all.sort((a, b) => a.stops[0].tDep - b.stops[0].tDep);
     for (const l of all) {
       const pre = l.prev || (l.sameTurn ? l.from : null);
-      if (pre) { l.lead = 1 - pre.lead; l.chainKey = pre.chainKey; l.cars = pre.cars; }
+      if (pre) { l.lead = 1 - pre.lead; l.chainKey = pre.chainKey; if (l.cars !== pre.cars || l.sameTurn) { l.cars = pre.cars; alignStart(pre, l); timeLeg(l); } }
       else { l.lead = 0; l.chainKey = l.plan.key + (l.idx ? '#' + l.idx : ''); }
+      if (!l.sameTurn && l.from) l.cars = l.cars;          // (a turn via the tail track may change length: the yard adds or cuts cars)
+    }
+    // 3. appearance windows around the turns
+    for (const a of all) {
+      const b = a.turn; if (!b) continue;
+      const ta = a.stops[a.stops.length - 1].tArr, tb = b.stops[0].tDep;
+      if (a.sameTurn) { a.t1 = tb; b.t0 = tb; }            // one train: it waits on the platform and leaves as the next trip
+      else { a.t1 = Math.min(a.t1, ta + 150); b.t0 = Math.min(tb - 45, Math.max(b.t0, a.t1 + 20)); }
     }
   }
   // at most one train per platform at a time: terminal layovers end before the next train arrives there
@@ -394,7 +365,7 @@ const MetroSim = (() => {
     for (const p of plans) for (const l of p.legs) for (let k = 0; k < l.stops.length; k++) {
       const s = l.stops[k]; const last = k === l.stops.length - 1 && !l.next;
       if (!stopEvents.has(s.st)) stopEvents.set(s.st, []);
-      stopEvents.get(s.st).push({ t: last ? s.tArr : s.tDep, arr: s.tArr, dep: s.tDep, pub: (last ? p.trip.stops[s.i].arr : p.trip.stops[s.i].dep) + p.dayOff, plan: p, leg: l, k, last, sid: s.sid });
+      stopEvents.get(s.st).push({ t: last ? s.tArr : s.tDep, arr: s.tArr, dep: s.tDep, pub: last ? s.arr : s.dep, plan: p, leg: l, k, last, sid: s.sid });
     }
     for (const L of stopEvents.values()) L.sort((a, b) => a.t - b.t);
   }
@@ -442,7 +413,7 @@ const MetroSim = (() => {
     }
     function create(kind, opts = {}) {
       const n = kind === 'bart' ? (opts.cars || 10) : kind === 'dmu' ? 2 : 3;
-      const L = kind === 'bart' ? 21.34 : kind === 'dmu' ? 40.9 : 12.2, W = kind === 'oak' ? 2.6 : 3.2, H = kind === 'oak' ? 3.0 : 3.35, FL = kind === 'oak' ? 0.35 : 0.99;
+      const L = kind === 'bart' ? 21.336 : kind === 'dmu' ? 40.9 : 12.2, W = kind === 'oak' ? 2.6 : 3.2, H = kind === 'oak' ? 3.0 : 3.35, FL = kind === 'oak' ? 0.35 : kind === 'dmu' ? 0.76 : 0.991;
       const M = mat(kind), cars = []; let off = 0;
       for (let i = 0; i < n; i++) {
         const cab = i === 0 || i === n - 1, g = new THREE.Group(), inner = new THREE.Group(); g.add(inner); if (i === n - 1 && n > 1) inner.rotation.y = Math.PI;
@@ -453,8 +424,8 @@ const MetroSim = (() => {
         const u = new THREE.Mesh(G.under, M.under); u.position.y = 0.55; inner.add(u);
         if (G.nose) { const nz = new THREE.Mesh(G.nose, M.body); nz.position.set(L / 2 - 0.35, 1.05 + (H - 1.05) * 0.45, 0); nz.scale.set(0.35, 1, 1); inner.add(nz); }
         const flip = i === n - 1 && n > 1 ? -1 : 1;
-        const doorsX = kind === 'bart' ? [-7.0, 0, 7.0] : kind === 'dmu' ? [-12.5, 12.5] : [0];
-        const doors = []; for (const x of doorsX) for (const side of [1, -1]) doors.push({ x: x * flip, side, width: 1.3, sillY: FL });
+        const doorsX = kind === 'bart' ? [-5.33, 0, 5.33] : kind === 'dmu' ? [-12.5, 12.5] : [0];   // (FOTF door centres, trains workstream)
+        const doors = []; for (const x of doorsX) for (const side of [1, -1]) doors.push({ x: x * flip, side, width: 1.372, sillY: FL });
         const seats = []; for (let x = -9.5; x <= 9.5; x += 1.6) { if (doorsX.some(d => Math.abs(d - x) < 1.2)) continue; for (const z of [-1.0, 1.0]) seats.push({ x, y: FL + 1.18, z, yaw: x < 0 ? 0 : Math.PI }); }
         const car = { group: g, index: i, type: cab ? 'D' : 'E', length: L, width: W, height: H, offset: off + L / 2, number: 'BM ' + (1000 + i),
           bogieOffsets: [L / 2 - 3.2, -(L / 2 - 3.2)], floorRegions: [{ name: 'floor', x0: -L / 2 + (cab && flip > 0 ? 0.6 : 0.6), x1: L / 2 - (cab && flip > 0 ? 2.2 : 0.6), z0: -W / 2 + 0.25, z1: W / 2 - 0.25, y: FL }],
@@ -472,7 +443,7 @@ const MetroSim = (() => {
     let c = null;
     if (typeof MetroKit !== 'undefined' && MetroKit.createConsist) { try { c = MetroKit.createConsist(kind, { cars, seed, name: 'metro' }); } catch (e) { console.error('MetroKit', kind, e); c = null; } }
     if (!c) c = Placeholder.create(kind, { cars });
-    for (const car of c.cars) { car.group.rotation.order = 'YZX'; car.group.visible = false; Env.scene.add(car.group); }
+    for (const car of c.cars) { car.group.rotation.order = 'YZX'; car.group.visible = false; Env.scene.add(car.group); if (typeof Under !== 'undefined' && Under.keep) Under.keep(car.group); }
     return { consist: c, kind, cap: c.cars.length, busy: false, key: '', dest: '', lod: -1, iv: null, shown: 0 };
   }
   function acquire(kind, key, cars) {
@@ -608,7 +579,7 @@ const MetroSim = (() => {
   let quality = 'high';
   function nearBudget() { return quality === 'low' ? 4 : quality === 'medium' ? 6 : 8; }
   function fillTrain(tr, p, l, S, t) {
-    tr.plan = p; tr.trip = p.trip; tr.leg = l; tr.kind = l.kind; tr.cars = l.cars; tr.line = p.line;
+    tr.plan = p; tr.trip = p.trip; tr.leg = l; tr.kind = l.kind; tr.cars = l.cars; tr.line = l.line;
     tr.s = S.ps; tr.v = S.v; tr.a = S.a; tr.phase = S.phase; tr.stopK = S.stopK; tr.nextK = S.nextK; tr.dwellLeft = S.dwellLeft;
     tr.lead = l.lead; tr.dir = l.lead === 0 ? 1 : 0; tr.driven = false; tr.remote = null;
     tr.len = l.cars * PERF[l.kind].carLen; tr.doorT = S.doorT;
@@ -658,7 +629,7 @@ const MetroSim = (() => {
   }
   function stopDrive() { drive = null; }
   function fillDriven(tr, D, t) {
-    tr.plan = D.plan; tr.trip = D.trip; tr.leg = D.leg; tr.kind = D.kind; tr.cars = D.cars; tr.line = D.plan.line; tr.s = D.s; tr.v = D.v; tr.a = D.acc;
+    tr.plan = D.plan; tr.trip = D.trip; tr.leg = D.leg; tr.kind = D.kind; tr.cars = D.cars; tr.line = D.leg.line; tr.s = D.s; tr.v = D.v; tr.a = D.acc;
     tr.lead = D.lead; tr.dir = D.lead === 0 ? 1 : 0; tr.driven = true; tr.remote = null; tr.len = D.cars * PERF[D.kind].carLen; tr.doorT = D.doors;
     tr.phase = D.v > 0.05 ? 'run' : 'stopped'; tr.stopK = D.atK !== undefined ? D.atK : -1; tr.nextK = D.nextK !== undefined ? D.nextK : 1; tr.stationId = D.atSt || null;
     tr.doorSide = D.doorSideNow; tr.doorsOpen = D.doors > 0.6;
@@ -707,6 +678,7 @@ const MetroSim = (() => {
   // ---------------------------------------------------------------- queries for the UI, the player and the boards
   // next trains at a station: [{ t, pub, plan, leg, k, line, color, dest, cars, sid, last, min }]
   function arrivals(stId, now, n = 12, opts = {}) {
+    refreshEvents();
     const L = stopEvents.get(stId) || [], out = [];
     for (const ev of L) { if (ev.t < now - (opts.past || 20)) continue; if (ev.last && !opts.withLast) continue; if (opts.filter && !opts.filter(ev)) continue;
       out.push(ev); if (out.length >= n) break; }
@@ -714,7 +686,7 @@ const MetroSim = (() => {
   }
   function eventInfo(ev) {
     const l = ev.leg; let x = l; while (x.next) x = x.next;
-    return { line: ev.plan.line, color: lineColor(ev.plan.line), lineName: lineName(ev.plan.line), dest: stName(x.stops[x.stops.length - 1].st), cars: l.cars, kind: l.kind, sid: ev.sid, platform: (ev.sid || '').split('-')[1] || '' };
+    return { line: l.line, color: lineColor(l.line), lineName: lineName(l.line), dest: stName(x.stops[x.stops.length - 1].st), cars: l.cars, kind: l.kind, sid: ev.sid, platform: (ev.sid || '').split('-')[1] || '' };
   }
   function trainByKey(key) { return running.find(r => r.key === key) || running.find(r => r.plan && r.plan.key === key) || null; }
   function nearestTrain(pos, maxD = 1e9, filter) { let best = null, bd = maxD; for (const tr of running) { if (filter && !filter(tr)) continue; const d = Math.hypot(tr.x - pos.x, tr.z - pos.z); if (d < bd) { bd = d; best = tr; } } return best; }
@@ -722,17 +694,22 @@ const MetroSim = (() => {
   function planFor(tripId) { return planById.get('M:' + tripId) || planById.get('M:' + tripId + '@y') || null; }
   function freeSeat(tr, ci, si) { const car = tr && tr.entry && tr.entry.consist.cars[ci]; if (car && car._pax && car._paxSeat) { const k = car._paxSeat.indexOf(si); if (k >= 0) { car._pax.hide(k); car._paxSeat[k] = -1; } } }
   // live mode (47_metrolive.js): replace a trip's targets with predicted times and replan just that trip
-  function applyLive(tripId, times) {
+  // live mode (47_metrolive.js): replace a trip's times (per pattern leg, [arr, dep, ...] seconds of the service day,
+  // like timetable.json) with predictions and replan just that trip; the physical train keeps its identity
+  function applyLive(tripId, legTimes) {
     const p = planFor(tripId); if (!p) return false;
-    const trip = { ...p.trip, stops: p.trip.stops.map((s, i) => times[i] ? { ...s, arr: times[i].arr - p.dayOff, dep: times[i].dep - p.dayOff } : s) };
-    const sd = Env.serviceDay(); const np = planTrip(trip, p.dayOff, ymdShift(sd.ymd, p.dayOff ? -1 : 0).wd); if (!np) return false;
+    const trip = { ...p.trip, legs: p.trip.legs.map((L, k) => legTimes[k] ? legTimes[k].map((v, i) => v - p.dayOff) : L) };
+    const sd = Env.serviceDay(), np = planTrip(trip, p.dayOff, ymdShift(sd.ymd, p.dayOff ? -1 : 0).wd); if (!np) return false;
     np.live = true; np.trip = p.trip; np.key = p.key;
-    for (let i = 0; i < np.legs.length && i < p.legs.length; i++) { const a = p.legs[i], b = np.legs[i]; b.lead = a.lead; b.cars = a.cars; b.turn = a.turn; b.from = a.from; b.sameTurn = a.sameTurn; b.chainKey = a.chainKey;
-      if (a.from && a.sameTurn) b.t0 = Math.min(b.t0, a.t0); if (a.turn) b.t1 = a.sameTurn ? Math.max(b.t1, a.t1) : b.t1; }
+    for (let i = 0; i < np.legs.length && i < p.legs.length; i++) { const a = p.legs[i], b = np.legs[i];
+      b.lead = a.lead; b.cars = a.cars; b.turn = a.turn; b.from = a.from; b.sameTurn = a.sameTurn; b.chainKey = a.chainKey;
+      if (a.from && a.sameTurn) { b.t0 = a.t0; b.from.turn = b; } if (a.turn && a.sameTurn) { b.t1 = Math.max(b.stops[b.stops.length - 1].tArr, a.turn.stops[0].tDep); a.turn.from = b; } }
     const idx = plans.indexOf(p); if (idx >= 0) plans[idx] = np; planById.set(np.key, np);
     np.tStart = Math.min(...np.legs.map(l => l.t0)); np.tEnd = Math.max(...np.legs.map(l => l.t1));
-    plans.sort((a, b) => a.tStart - b.tStart); return true;
+    plans.sort((a, b) => a.tStart - b.tStart); liveDirty = true; return true;
   }
+  let liveDirty = false;
+  function refreshEvents() { if (liveDirty) { liveDirty = false; buildEvents(); } }
 
   async function init() {
     if (!enabled) return false;
@@ -747,11 +724,13 @@ const MetroSim = (() => {
     return loading;
   }
 
-  return { enabled, init, update, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
+  const api = { enabled, init, update, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
     stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH,
     get plans() { return plans; }, get busTrips() { return busTrips; }, get stats() { return stats; }, get net() { return MN; },
-    legState, legAt, getRun, runAt, smoothTimes, envelope, timeOf, MPath, servicesOn,
+    legState, legAt, getRun, runAt, smoothTimes, envelope, timeOf, MPath, legPath,
     replan: () => replan(true) };
+  if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroSim = api;   // debug handle (window.__bayline.MetroSim)
+  return api;
 })();
