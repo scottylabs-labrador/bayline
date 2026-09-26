@@ -116,12 +116,12 @@ const MetroSim = (() => {
   // A run is tabulated at n+1 points ds apart: v[i] (m/s) and t[i] (s since departure). Between points the train
   // has constant acceleration, so evaluation is exact for the profile. Cached by (path, from, to, vehicle, length, T).
   const runCache = new Map(); let runCacheN = 0;
-  function envelope(path, ps0, ps1, P, trainLen) {
+  function envelope(path, ps0, ps1, P, trainLen, floor = 0) {
     const D = Math.max(0.5, ps1 - ps0), n = clamp(Math.ceil(D / 10), 4, 700), ds = D / n;
     const lim = new Float32Array(n + 1);
     // raw civil limits along the run (plus a train length behind the start, for the tail rule)
     const back = Math.ceil(trainLen / ds), raw = new Float32Array(n + 1 + back);
-    for (let i = 0; i < raw.length; i++) raw[i] = Math.min(P.vmax, path.limitAt(ps0 + (i - back) * ds));
+    for (let i = 0; i < raw.length; i++) raw[i] = Math.min(P.vmax, Math.max(floor, path.limitAt(ps0 + (i - back) * ds)));
     // tail rule: the limit at head position i is the minimum over the train's length behind it (monotone deque)
     const dq = new Int32Array(raw.length); let h = 0, q = 0;
     for (let j = 0; j < raw.length; j++) {
@@ -129,6 +129,9 @@ const MetroSim = (() => {
       while (dq[h] < j - back) h++;
       if (j >= back) lim[j - back] = raw[dq[h]];
     }
+    // a restriction starts one sample early (the profile is linear in v² between samples, so the head never enters a
+    // lower limit above it)
+    for (let i = n; i > 0; i--) if (lim[i - 1] > lim[i]) lim[i - 1] = lim[i];
     const vf = new Float32Array(n + 1); vf[0] = 0;
     for (let i = 0; i < n; i++) { const v = vf[i]; const a = tractA(P, v) - resist(P, v); let v2 = Math.sqrt(v * v + 2 * Math.max(0.05, a) * ds);
       if (v2 > v) { const vm = (v + v2) / 2, am = tractA(P, vm) - resist(P, vm); v2 = Math.sqrt(v * v + 2 * Math.max(0.05, am) * ds); }
@@ -144,16 +147,16 @@ const MetroSim = (() => {
     return t;
   }
   const minRunCache = new Map();
-  function minRun(path, ps0, ps1, kind, cars) {
-    const key = path.id + '|' + ps0.toFixed(1) + '|' + ps1.toFixed(1) + '|' + kind + '|' + cars;
+  function minRun(path, ps0, ps1, kind, cars, floor = 0) {
+    const key = path.id + '|' + ps0.toFixed(1) + '|' + ps1.toFixed(1) + '|' + kind + '|' + cars + '|' + floor.toFixed(1);
     let r = minRunCache.get(key); if (r !== undefined) return r;
-    const P = PERF[kind], E = envelope(path, ps0, ps1, P, cars * P.carLen); r = timeOf(E, 1e9);
+    const P = PERF[kind], E = envelope(path, ps0, ps1, P, cars * P.carLen, floor); r = timeOf(E, 1e9);
     minRunCache.set(key, r); return r;
   }
-  function getRun(path, ps0, ps1, kind, cars, T) {
-    const key = path.id + '|' + ps0.toFixed(1) + '|' + ps1.toFixed(1) + '|' + kind + '|' + cars + '|' + Math.round(T * 4);
+  function getRun(path, ps0, ps1, kind, cars, T, floor = 0) {
+    const key = path.id + '|' + ps0.toFixed(1) + '|' + ps1.toFixed(1) + '|' + kind + '|' + cars + '|' + Math.round(T * 4) + '|' + floor.toFixed(1);
     let R = runCache.get(key); if (R) { R.used = frameNo; return R; }
-    const P = PERF[kind], E = envelope(path, ps0, ps1, P, cars * P.carLen), n = E.n;
+    const P = PERF[kind], E = envelope(path, ps0, ps1, P, cars * P.carLen, floor), n = E.n;
     const tmin = timeOf(E, 1e9); let cap = 1e9, vpk = 0; for (let i = 0; i <= n; i++) vpk = Math.max(vpk, E.v[i]);
     if (T > tmin + 0.05) {
       // a lower performance level: cap the speed so the run takes T (never below half the line speed: a train with
@@ -269,8 +272,20 @@ const MetroSim = (() => {
       dw[j] = j === 0 || j === m - 1 ? 0 : Math.max(nominal, s.dep - s.arr);
       y[j] = j === m - 1 ? s.arr : s.dep; w[j] = j === 0 ? 30 : (s.dep - s.arr > 30 ? 4 : 1);
     }
-    for (let j = 0; j < m - 1; j++) gap[j] = minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars) + dw[j + 1];
+    for (let j = 0; j < m - 1; j++) {
+      // timetable-consistent limits: where the civil limits make a run clearly slower than the published time allows
+      // (rough v0 curvature limits), lift the dips to the lowest floor that fits (the published time + 30 s rounding)
+      let R = minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars), fl = 0;
+      const Tp = (j + 1 === m - 1 ? S[j + 1].arr : S[j + 1].dep - dw[j + 1]) - S[j].dep + 30;
+      if (R > Tp && Tp > 25) {
+        let lo = 0, hi = PERF[kind].vmax;
+        for (let q = 0; q < 12; q++) { const mid = (lo + hi) / 2; if (minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars, mid) > Tp) lo = mid; else hi = mid; }
+        fl = Math.round(hi * 10) / 10; R = minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars, fl); stats.relaxed++;
+      }
+      S[j].floor = fl; gap[j] = R + dw[j + 1];
+    }
     const e = smoothTimes(y, w, gap);
+    if (e[0] < y[0]) { e[0] = y[0]; for (let j = 1; j < m; j++) if (e[j] < e[j - 1] + gap[j - 1]) e[j] = e[j - 1] + gap[j - 1]; }   // never leave early
     for (let j = 0; j < m; j++) { S[j].tDep = e[j]; S[j].tArr = j === 0 ? Math.min(e[j], S[j].arr) : e[j] - dw[j]; }
     S[m - 1].tArr = e[m - 1]; S[m - 1].tDep = e[m - 1];
     l.runs = []; for (let j = 0; j < m - 1; j++) l.runs.push({ k: j, t0: S[j].tDep, t1: S[j + 1].tArr, T: S[j + 1].tArr - S[j].tDep, R: null });
@@ -283,7 +298,7 @@ const MetroSim = (() => {
     const t0 = performance.now();
     const today = ymdShift(sd.ymd, 0), yest = ymdShift(sd.ymd, -1);
     const svT = new Set(MN.servicesOn(today.ymd)), svY = new Set(MN.servicesOn(yest.ymd));
-    plans = []; planById = new Map(); trainObjs.clear(); busToday = [];
+    plans = []; planById = new Map(); trainObjs.clear(); busToday = []; stats.relaxed = 0;
     for (const t of trips) {
       if (svT.has(t.svc)) { const p = planTrip(t, 0, today.wd); if (p) { plans.push(p); planById.set(p.key, p); } }
       if (svY.has(t.svc) && lastTime(t) > 86400 - 900) { const p = planTrip(t, -86400, yest.wd); if (p && p.tEnd > -60) { plans.push(p); planById.set(p.key, p); } }
@@ -388,7 +403,7 @@ const MetroSim = (() => {
       const k = lo + 1, s = S[k]; o.ps = s.ps; o.v = 0; o.stopK = k; o.nextK = k + 1; o.phase = 'dwell';
       o.doorT = Math.min(clamp((t - s.tArr - 2.5) / 2.5, 0, 1), clamp((s.tDep - 3.5 - t) / 2.5, 0, 1)); o.dwellLeft = s.tDep - t; return o;
     }
-    if (!run.R) run.R = getRun(l.path, S[lo].ps, S[lo + 1].ps, l.kind, l.cars, run.T);
+    if (!run.R) run.R = getRun(l.path, S[lo].ps, S[lo + 1].ps, l.kind, l.cars, run.T, S[lo].floor || 0);
     runAt(run.R, t - run.t0, RS); o.ps = RS.ps; o.v = RS.v; o.a = RS.a; o.nextK = lo + 1; o.phase = 'run'; o.runK = lo;
     return o;
   }
@@ -412,7 +427,7 @@ const MetroSim = (() => {
       return (geo[k] = g);
     }
     function create(kind, opts = {}) {
-      const n = kind === 'bart' ? (opts.cars || 10) : kind === 'dmu' ? 2 : 3;
+      const n = Math.max(1, opts.cars || (kind === 'bart' ? 8 : kind === 'dmu' ? 2 : 3));
       const L = kind === 'bart' ? 21.336 : kind === 'dmu' ? 40.9 : 12.2, W = kind === 'oak' ? 2.6 : 3.2, H = kind === 'oak' ? 3.0 : 3.35, FL = kind === 'oak' ? 0.35 : kind === 'dmu' ? 0.76 : 0.991;
       const M = mat(kind), cars = []; let off = 0;
       for (let i = 0; i < n; i++) {
@@ -438,33 +453,39 @@ const MetroSim = (() => {
     }
     return { create };
   })();
-  const pool = []; const POOLMAX = { bart: 8, dmu: 2, oak: 3 };
+  // consists are built with the train's exact length (D cars at both ends); a free consist of another length is
+  // recycled only when the pool is full
+  const pool = []; const POOLMAX = { bart: 9, dmu: 2, oak: 4 };
   function makeConsist(kind, cars, seed) {
     let c = null;
     if (typeof MetroKit !== 'undefined' && MetroKit.createConsist) { try { c = MetroKit.createConsist(kind, { cars, seed, name: 'metro' }); } catch (e) { console.error('MetroKit', kind, e); c = null; } }
     if (!c) c = Placeholder.create(kind, { cars });
     for (const car of c.cars) { car.group.rotation.order = 'YZX'; car.group.visible = false; Env.scene.add(car.group); if (typeof Under !== 'undefined' && Under.keep) Under.keep(car.group); }
-    return { consist: c, kind, cap: c.cars.length, busy: false, key: '', dest: '', lod: -1, iv: null, shown: 0 };
+    return { consist: c, kind, cars: c.cars.length, busy: false, key: '', dest: '', lod: -1, iv: null, shown: 0 };
   }
+  function dropConsist(e) {
+    for (const car of e.consist.cars) { Env.scene.remove(car.group); if (typeof Under !== 'undefined' && Under.unkeep) Under.unkeep(car.group); }
+    if (e.consist.dispose) try { e.consist.dispose(); } catch (err) { /* ignore */ }
+    pool.splice(pool.indexOf(e), 1);
+  }
+  let seedN = 0;
   function acquire(kind, key, cars) {
-    for (const e of pool) if (!e.busy && e.key === key && e.kind === kind && e.cap >= cars) { e.busy = true; return e; }
-    let spare = null; for (const e of pool) if (!e.busy && e.kind === kind && e.cap >= cars && (!spare || e.cap < spare.cap)) spare = e;
-    if (spare) { spare.busy = true; spare.key = key; spare.dest = ''; spare.shown = -1; return spare; }
-    if (pool.filter(e => e.kind === kind).length >= (POOLMAX[kind] || 4)) return null;
-    const e = makeConsist(kind, kind === 'bart' ? 10 : cars, pool.length * 7 + 3); pool.push(e); e.busy = true; e.key = key; return e;
+    for (const e of pool) if (!e.busy && e.key === key && e.kind === kind && e.cars === cars) { e.busy = true; return e; }
+    let spare = null; for (const e of pool) if (!e.busy && e.kind === kind && e.cars === cars) { spare = e; break; }
+    if (!spare) {
+      const same = pool.filter(e => e.kind === kind);
+      if (same.length >= (POOLMAX[kind] || 4)) { const victim = same.find(e => !e.busy); if (!victim) return null; dropConsist(victim); }
+      spare = makeConsist(kind, cars, (seedN++) * 7 + 3); pool.push(spare);
+    }
+    spare.busy = true; spare.key = key; spare.dest = ''; spare.shown = -1; spare.lod = -1; spare.iv = null; return spare;
   }
-  // which cars of a (up to) 10-car consist make an n-car train: both cab cars and the first n-2 middle cars
-  const carSets = new Map();
-  function carSet(cap, n) { const k = cap * 100 + n; if (carSets.has(k)) return carSets.get(k); const a = [];
-    if (n >= cap) for (let i = 0; i < cap; i++) a.push(i); else { a.push(0); for (let i = 1; i <= n - 2; i++) a.push(i); a.push(cap - 1); } carSets.set(k, a); return a; }
 
   // pose a consist: head (front coupler of the leading car) at path position ps, cars trailing back along the path
   const PF = {}, PR = {};
-  function poseConsist(e, path, ps, lead, nCars) {
-    const cs = e.consist.cars, set = carSet(cs.length, nCars), order = set;
-    const n = order.length; let acc = ps;
+  function poseConsist(e, path, ps, lead) {
+    const cs = e.consist.cars, n = cs.length; let acc = ps;
     for (let j = 0; j < n; j++) {
-      const ci = lead === 0 ? order[j] : order[n - 1 - j], car = cs[ci];
+      const car = cs[lead === 0 ? j : n - 1 - j];
       const L = car.length, c = acc - L / 2, sg = lead === 0 ? 1 : -1;     // +X of the car along travel (lead 0) or against it
       const bf = car.bogieOffsets[0], br = car.bogieOffsets[1];
       path.at(c + sg * bf, PF); path.at(c + sg * br, PR);
@@ -475,7 +496,6 @@ const MetroSim = (() => {
       if (car.setBogies) car.setBogies(PF, PR);
       car.group.visible = true; acc -= L;
     }
-    if (set) for (let i = 0; i < cs.length; i++) if (!set.includes(i)) cs[i].group.visible = false;
     return acc;                                               // path position of the tail
   }
 
@@ -516,14 +536,14 @@ const MetroSim = (() => {
   const running = [];                       // train objects this frame (reused per key)
   const trainObjs = new Map();
   let focusKey = null, drive = null;
-  const stats = { plans: 0, running: 0, consists: 0, far: 0, ms: 0, replanMs: 0, runs: 0 };
+  const stats = { plans: 0, running: 0, consists: 0, far: 0, ms: 0, replanMs: 0, runs: 0, relaxed: 0 };
   const LS = {}, HF = {};
   function trainObj(key) { let o = trainObjs.get(key); if (!o) { o = { key, metro: true, v: 0, a: 0, s: 0, dir: 1, x: 0, y: 0, z: 0, hx: 1, hz: 0, dist: 1e9 }; trainObjs.set(key, o); } return o; }
   function lineColor(id) { const l = lineById.get(id); return l ? l.color : '#cccccc'; }
   function isUnder(st) { return st === 'bored' || st === 'cutcover' || st === 'tube' || st === 'subway' || st === 'tunnel' || st === 'underground'; }
   function update(dt, camPos) {
     if (!enabled || !ready) return;
-    const T0 = performance.now(); frameNo++;
+    const T0 = performance.now(); frameNo++; stats.frame = frameNo;
     replan();
     const t = Env.time.sec; running.length = 0;
     for (const p of plans) {
@@ -549,7 +569,7 @@ const MetroSim = (() => {
     for (const tr of running) {
       const near = tr.key === focusKey || tr.driven || (nNear < maxNear && tr.dist < 2600);
       const e = near ? acquire(tr.kind, tr.key, tr.cars) : null; tr.entry = e;
-      if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead, tr.cars); setupConsist(tr, e, dt, night); }
+      if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead); setupConsist(tr, e, dt, night); }
       else if (tr.dist < 60000 && !(camUnder && tr.underground)) {
         // far: one instance per car, posed at its centre along the path (cars beyond 12 km are merged in pairs)
         const P = PERF[tr.kind], pair = tr.dist > 12000 && tr.cars > 3 ? 2 : 1, n = Math.ceil(tr.cars / pair), L = P.carLen * pair;
@@ -609,8 +629,8 @@ const MetroSim = (() => {
   }
   // names
   function lineName(id) { const l = lineById.get(id); return l ? l.name : id; }
-  function stName(id) { const s = stById.get(id); return s ? s.short : id; }
-  function termName(tr) { const l = tr.leg; let x = l; while (x.next) x = x.next; if (x.turn && x.sameTurn && !tr.driven && tr.phase === 'terminal') x = x.turn; const S = x.stops; return stName(S[S.length - 1].st); }
+  function stName(id) { const s = stById.get(id); return s ? s.short : (NAMES_SHORT[id] || id); }
+  function termName(tr) { let x = tr.leg; while (x.next) x = x.next; if (x.turn && x.sameTurn && !tr.driven && tr.phase === 'terminal') x = x.turn; const L = x.plan.legs, last = L[L.length - 1], S = last.stops; return stName(S[S.length - 1].st); }
   function destText(tr) { return termName(tr).toUpperCase(); }
   function nextStopName(tr) { const S = tr.leg.stops; const k = tr.phase === 'terminal' ? -1 : tr.nextK; return k >= 0 && S[k] ? stName(S[k].st) : ''; }
 
@@ -631,7 +651,8 @@ const MetroSim = (() => {
   function fillDriven(tr, D, t) {
     tr.plan = D.plan; tr.trip = D.trip; tr.leg = D.leg; tr.kind = D.kind; tr.cars = D.cars; tr.line = D.leg.line; tr.s = D.s; tr.v = D.v; tr.a = D.acc;
     tr.lead = D.lead; tr.dir = D.lead === 0 ? 1 : 0; tr.driven = true; tr.remote = null; tr.len = D.cars * PERF[D.kind].carLen; tr.doorT = D.doors;
-    tr.phase = D.v > 0.05 ? 'run' : 'stopped'; tr.stopK = D.atK !== undefined ? D.atK : -1; tr.nextK = D.nextK !== undefined ? D.nextK : 1; tr.stationId = D.atSt || null;
+    tr.stopK = D.atK >= 0 ? D.atK : -1; tr.nextK = D.nextK !== undefined ? D.nextK : 1; tr.phase = tr.stopK >= 0 ? 'dwell' : 'run';
+    tr.stationId = tr.stopK >= 0 ? D.leg.stops[tr.stopK].st : null; tr.dwellLeft = tr.stopK >= 0 ? D.leg.stops[tr.stopK].dep - t : 0;
     tr.doorSide = D.doorSideNow; tr.doorsOpen = D.doors > 0.6;
   }
   // physics of the driven train: traction / brake demand from the lever, jerk-limited, grade and resistance, doors
@@ -686,7 +707,8 @@ const MetroSim = (() => {
   }
   function eventInfo(ev) {
     const l = ev.leg; let x = l; while (x.next) x = x.next;
-    return { line: l.line, color: lineColor(l.line), lineName: lineName(l.line), dest: stName(x.stops[x.stops.length - 1].st), cars: l.cars, kind: l.kind, sid: ev.sid, platform: (ev.sid || '').split('-')[1] || '' };
+    const LL = ev.plan.legs, lastLeg = LL[LL.length - 1];
+    return { line: l.line, color: lineColor(l.line), lineName: lineName(l.line), dest: stName(lastLeg.stops[lastLeg.stops.length - 1].st), cars: l.cars, kind: l.kind, sid: ev.sid, platform: (ev.sid || '').split('-')[1] || '' };
   }
   function trainByKey(key) { return running.find(r => r.key === key) || running.find(r => r.plan && r.plan.key === key) || null; }
   function nearestTrain(pos, maxD = 1e9, filter) { let best = null, bd = maxD; for (const tr of running) { if (filter && !filter(tr)) continue; const d = Math.hypot(tr.x - pos.x, tr.z - pos.z); if (d < bd) { bd = d; best = tr; } } return best; }
@@ -728,7 +750,7 @@ const MetroSim = (() => {
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
     stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH,
-    get plans() { return plans; }, get busTrips() { return busTrips; }, get stats() { return stats; }, get net() { return MN; },
+    get plans() { return plans; }, get busTrips() { return busTrips; }, busTodayList: () => busToday, get stats() { return stats; }, get net() { return MN; },
     legState, legAt, getRun, runAt, smoothTimes, envelope, timeOf, MPath, legPath,
     replan: () => replan(true) };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroSim = api;   // debug handle (window.__bayline.MetroSim)

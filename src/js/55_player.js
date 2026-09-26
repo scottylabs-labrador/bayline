@@ -70,13 +70,25 @@ const Player = (() => {
   function releaseLock() { if (pointerLocked) document.exitPointerLock(); }
 
   // ---------- helpers ----------
-  function focusTrain() { return focus ? Sim.trainByKey(focus) : null; }
+  // Bayline Metro trains (#metro=1) share this interface: key 'M:...', entry.consist.cars, dir (1: car 0 leads), v, doors
+  const metroOn = () => typeof MetroSim !== 'undefined' && MetroSim.enabled && MetroSim.ready;
+  const isMetroKey = (k) => typeof MetroSim !== 'undefined' && MetroSim.owns(k);
+  function trainBy(key) { return key && isMetroKey(key) ? (metroOn() ? MetroSim.trainByKey(key) : null) : Sim.trainByKey(key); }
+  function nearestAnyTrain(pos, maxD = 1e9, filter) {
+    const a = Sim.nearestTrain(pos, maxD, filter), b = metroOn() ? MetroSim.nearestTrain(pos, maxD, filter) : null;
+    if (!a || !b) return a || b; return Math.hypot(b.x - pos.x, b.z - pos.z) < Math.hypot(a.x - pos.x, a.z - pos.z) ? b : a;
+  }
+  function drivingKey() { return Sim.drive ? Sim.drive.plan.key : (metroOn() && MetroSim.drive ? MetroSim.drive.key : null); }
+  function travelHeading(tr) { if (tr.metro) return Math.atan2(tr.hx, tr.hz); Track.frame(tr.s, F); return Math.atan2(F.dx, F.dz) + (tr.dir ? 0 : Math.PI); }
+  function focusTrain() { return focus ? trainBy(focus) : null; }
   function cars(tr) { return tr && tr.entry ? tr.entry.consist.cars : null; }
   function leadCar(tr) { const cs = cars(tr); if (!cs) return null; return tr.dir ? cs[0] : cs[cs.length - 1]; }
-  function setFocus(key) { focus = key; Sim.setFocus(key); }
+  function setFocus(key) { focus = key; Sim.setFocus(key); if (typeof MetroSim !== 'undefined' && MetroSim.enabled) MetroSim.setFocus(key); }
   // Bayline Metro (#metro=1 only): station floors are y-aware (stacked levels under the street), see notes/bart/sim.md
-  const metroWalk = () => typeof MetroSim !== 'undefined' && MetroSim.enabled && typeof MetroStations !== 'undefined' && !!MetroStations.floorAt;
-  function metroFloor(x, y, z) { if (y === undefined || !metroWalk()) return null; const f = MetroStations.floorAt(x, y, z); return typeof f === 'number' && isFinite(f) ? f : null; }
+  // (MetroStations provides the floors; until it is in the build, MetroPlay derives simple platform floors from MetroNet)
+  function floorSrc() { if (typeof MetroSim === 'undefined' || !MetroSim.enabled) return null; if (typeof MetroStations !== 'undefined' && MetroStations.floorAt) return MetroStations; return typeof MetroPlay !== 'undefined' && MetroSim.ready ? MetroPlay : null; }
+  const metroWalk = () => !!floorSrc();
+  function metroFloor(x, y, z) { if (y === undefined) return null; const S = floorSrc(); if (!S) return null; const f = S.floorAt(x, y, z); return typeof f === 'number' && isFinite(f) ? f : null; }
   function groundAt(x, z, y) {
     const mf = metroFloor(x, y, z); if (mf !== null) return mf;
     const ap = typeof Airports !== 'undefined' ? Airports.groundAt(x, z) : null;
@@ -113,8 +125,8 @@ const Player = (() => {
     if (['cab', 'onboard', 'chase', 'trackside', 'heli'].includes(m) && typeof Globe !== 'undefined' && !Globe.frame.bay) Globe.setFrame(Geo.LAT0, Geo.LON0);
     const prev = mode;
     if (m === 'cab' || m === 'onboard' || m === 'chase' || m === 'trackside' || m === 'heli') {
-      if (Sim.drive && (!focus || !focusTrain() || !focusTrain().driven)) setFocus(Sim.drive.plan.key);     // driving: the view belongs to your train
-      if (!focusTrain()) { const tr = Sim.nearestTrain(cam().position, 1e9); if (!tr) { emit('toast', 'No trains running right now: try Explore at another time'); return; } setFocus(tr.key); }
+      const dk = drivingKey(); if (dk && (!focus || !focusTrain() || !focusTrain().driven)) setFocus(dk);     // driving: the view belongs to your train
+      if (!focusTrain()) { const tr = nearestAnyTrain(cam().position, 1e9); if (!tr) { emit('toast', 'No trains running right now: try Explore at another time'); return; } setFocus(tr.key); }
     }
     if (prev === 'onboard' && m !== 'onboard') ob.seat = -1;
     mode = m;
@@ -155,7 +167,7 @@ const Player = (() => {
     fovTarget = 70;
   }
   function lowestFloorNear(car, x, z) { let best = null, bd = 1e9; for (const r of car.floorRegions) { const cx = U.clamp(x, r.x0, r.x1), cz = U.clamp(z, r.z0, r.z1); const d = Math.hypot(cx - x, cz - z) + r.y * 0.3; if (d < bd) { bd = d; best = r; } } if (best) { ob.x = U.clamp(x, best.x0 + 0.2, best.x1 - 0.2); ob.z = U.clamp(z, best.z0 + 0.2, best.z1 - 0.2); return best.y; } return 1.2; }
-  function sit(car, i) { const s = car.seats[i]; if (!s) return; ob.seat = i; Sim.freeSeat(focusTrain(), ob.car, i); ob.x = s.x; ob.z = s.z; ob.y = s.y - EYE + 0.35;
+  function sit(car, i) { const s = car.seats[i]; if (!s) return; ob.seat = i; const ft = focusTrain(); (ft && ft.metro ? MetroSim : Sim).freeSeat(ft, ob.car, i); ob.x = s.x; ob.z = s.z; ob.y = s.y - EYE + 0.35;
     // look out of the window, angled a little toward the direction the seat faces
     const sz = Math.sign(s.z) || 1; const fwd = Math.cos(s.yaw) >= 0 ? 1 : -1; look.yaw = sz * Math.PI / 2 - sz * fwd * 0.82; look.pitch = -0.1; }   // window + the seat rows ahead
   function stand(car) { const s = car.seats[ob.seat]; ob.seat = -1; if (!s) return; // step into the aisle
@@ -189,7 +201,7 @@ const Player = (() => {
   }
   function doorNearWorld(pos) {
     let best = null, bd = 6.5;
-    for (const tr of Sim.running) {
+    for (const tr of (metroOn() ? Sim.running.concat(MetroSim.running) : Sim.running)) {
       if (!tr.doorsOpen || !tr.entry || Math.hypot(tr.x - pos.x, tr.z - pos.z) > 400) continue;
       const cs = tr.entry.consist.cars; const side = tr.doorSide === 'right' ? 1 : -1;
       cs.forEach((car, ci) => { for (const d of car.doors) { if (d.side !== side) continue; tmpV.set(d.x, d.sillY || 1, d.side * (car.width / 2 + 0.4)); car.group.localToWorld(tmpV); const dd = Math.hypot(tmpV.x - pos.x, tmpV.z - pos.z); if (dd < bd) { bd = dd; best = { tr, ci, d }; } } });
@@ -200,7 +212,9 @@ const Player = (() => {
     const car = cars(tr)[ob.car]; tmpV.set(d.x, 0, d.side * (car.width / 2 + 1.1)); car.group.localToWorld(tmpV);
     const y = groundAt(tmpV.x, tmpV.z, tmpV.y + 1.0); const hd = Math.atan2(tmpV.x - car.group.position.x, tmpV.z - car.group.position.z);   // (y hint: a metro platform is ~1 m above the rail)
     // face away from the train
-    const n = Track.nearest(tmpV.x, tmpV.z, 50); let face = 0; if (n) { Track.frame(n.s, F); face = Math.atan2(F.rx * Math.sign(n.lat || 1), F.rz * Math.sign(n.lat || 1)); }
+    let face = 0;
+    if (tr.metro) { tmpV2.set(d.x, 0, 0); car.group.localToWorld(tmpV2); face = Math.atan2(tmpV.x - tmpV2.x, tmpV.z - tmpV2.z); }
+    else { const n = Track.nearest(tmpV.x, tmpV.z, 50); if (n) { Track.frame(n.s, F); face = Math.atan2(F.rx * Math.sign(n.lat || 1), F.rz * Math.sign(n.lat || 1)); } }
     ob.key = null; setMode('walk', { pos: { x: tmpV.x, y, z: tmpV.z, yaw: face } });
     emit('alight', { tr });
   }
@@ -244,7 +258,7 @@ const Player = (() => {
   }
   // a walking step with Bayline Metro stations about: station floors and walls first, then the usual street rules
   function okMetroStep(x, z) {
-    if (MetroStations.blocked && MetroStations.blocked(walk.x, walk.z, x, z, walk.y)) return false;
+    const S = floorSrc(); if (S && S.blocked && S.blocked(walk.x, walk.z, x, z, walk.y)) return false;
     const f = metroFloor(x, walk.y, z);
     if (f !== null) return f - walk.y < 0.6;
     if (walk.y < Terrain.h(x, z) - 2) return false;                 // underground, off the station's floors: earth or a tunnel wall
@@ -273,12 +287,16 @@ const Player = (() => {
     frameDt = Math.min(0.1, dt || 0.016);
     const c = cam();
     prompt = ''; promptAction = null;
-    if (Sim.drive && focus !== Sim.drive.plan.key && (mode === 'cab' || mode === 'chase' || mode === 'heli' || mode === 'trackside')) setFocus(Sim.drive.plan.key);   // driving: stay with your train
-    if (focus && !Sim.trainByKey(focus) && !(Sim.drive && focus === Sim.drive.plan.key)) {
+    const dk = drivingKey();
+    if (dk && focus !== dk && (mode === 'cab' || mode === 'chase' || mode === 'heli' || mode === 'trackside')) setFocus(dk);   // driving: stay with your train
+    if (focus && !trainBy(focus) && focus !== dk && !(isMetroKey(focus) && !metroOn())) {
       // focused train ended its run
-      if (mode === 'onboard' || mode === 'cab') { const st = Stations.nearest(c.position, 800); if (st) { const sp = Stations.spawnPoint(st, 0, {}); setMode('walk', { pos: sp }); emit('toast', 'End of the line: everybody off at ' + st.name); } else setMode('fly'); }
+      if (mode === 'onboard' || mode === 'cab') {
+        if (isMetroKey(focus) && typeof MetroPlay !== 'undefined' && MetroPlay.endOfLine(c.position)) {}
+        else { const st = Stations.nearest(c.position, 800); if (st) { const sp = Stations.spawnPoint(st, 0, {}); setMode('walk', { pos: sp }); emit('toast', 'End of the line: everybody off at ' + st.name); } else setMode('fly'); }
+      }
       setFocus(null);
-      if (mode === 'chase' || mode === 'trackside' || mode === 'heli') { const tr = Sim.nearestTrain(c.position, 1e9); if (tr) setFocus(tr.key); else setMode('orbit', {}); }
+      if (mode === 'chase' || mode === 'trackside' || mode === 'heli') { const tr = nearestAnyTrain(c.position, 1e9); if (tr) setFocus(tr.key); else setMode('orbit', {}); }
     }
     const tr = focusTrain();
     switch (mode) {
@@ -311,9 +329,10 @@ const Player = (() => {
       case 'chase': case 'orbit': {
         let tx = orbit.tx, ty = orbit.ty, tz = orbit.tz, base = 0;
         if (mode === 'chase') { const car = leadCar(tr); if (!car) { setMode('orbit'); break; }
+          if (tr.metro && tr.underground && typeof MetroPlay !== 'undefined' && MetroPlay.tunnelCam(tr, c, dt)) break;   // in a tunnel: ride along the bore
           const cs = cars(tr); const mid = cs[Math.min(1, cs.length - 1)] && (tr.dir ? cs[1] : cs[cs.length - 2]) || car; const g = car.group;
           tx = U.lerp(g.position.x, mid.group.position.x, 0.5); ty = g.position.y + 2.5; tz = U.lerp(g.position.z, mid.group.position.z, 0.5);
-          Track.frame(tr.s, F); base = Math.atan2(F.dx, F.dz) + (tr.dir ? 0 : Math.PI); orbit.tx = tx; orbit.ty = ty; orbit.tz = tz; }   // (base: the direction of travel; orbit.yaw pi = right behind)
+          base = travelHeading(tr); orbit.tx = tx; orbit.ty = ty; orbit.tz = tz; }   // (base: the direction of travel; orbit.yaw pi = right behind)
         else if (!orbit.rel) { // free orbit: WASD pans the target
           const sp = orbit.dist * 0.9 * dt; const cy = Math.sin(orbit.yaw), sy = Math.cos(orbit.yaw);
           if (down('KeyW', 'ArrowUp')) { orbit.tx -= cy * sp; orbit.tz -= sy * sp; } if (down('KeyS', 'ArrowDown')) { orbit.tx += cy * sp; orbit.tz += sy * sp; }
@@ -348,12 +367,14 @@ const Player = (() => {
       }
       case 'trackside': {
         if (!tr) { setMode('orbit'); break; }
-        const sgn = tr.dir ? 1 : -1; const passed = (tr.s - ts.s) * sgn;
-        if (ts.s < 0 || passed > 260 || Math.abs(tr.s - ts.s) > 3000) pickTrackside(tr);
+        if (tr.metro) { if (typeof MetroPlay === 'undefined' || !MetroPlay.trackside(tr, ts)) { setMode('chase'); break; } }
+        else { const sgn = tr.dir ? 1 : -1; const passed = (tr.s - ts.s) * sgn;
+          if (ts.s < 0 || passed > 260 || Math.abs(tr.s - ts.s) > 3000) pickTrackside(tr); }
         c.position.set(ts.x, ts.y, ts.z);
         const car = leadCar(tr); const cs = cars(tr);
         if (car) { const aim = cs[Math.floor(cs.length / 2)] || car; const k = U.clamp(1 - Math.abs(tr.s - ts.s) / 500, 0, 1);
           tmpV.copy(car.group.position).lerp(aim.group.position, k * 0.7); tmpV.y += 2.2; c.up.set(0, 1, 0); c.lookAt(tmpV); }
+        else if (tr.metro) c.lookAt(tr.x, tr.y + 2, tr.z);
         else { Track.frame(tr.s, F); c.lookAt(F.x, F.y + 2, F.z); }
         fovTarget = ts.fov;
         break;
@@ -361,19 +382,21 @@ const Player = (() => {
       case 'heli': {
         if (!tr) { setMode('orbit'); break; }
         const car = leadCar(tr); if (!car) break; heli.ang += dt * 0.05;
-        const g = car.group.position; Track.frame(tr.s, F); const hd = Math.atan2(F.dx, F.dz) * 1 + (tr.dir ? 0 : Math.PI);
+        const g = car.group.position, hd = travelHeading(tr), hx = Math.sin(hd), hz = Math.cos(hd);
         const a = hd + 2.2 + Math.sin(heli.ang) * 0.8; const R = 160, H = 70 + Math.sin(heli.ang * 1.3) * 25;
         const tx = g.x + Math.sin(a) * R, tz = g.z + Math.cos(a) * R; const ty = Math.max(g.y + H, groundAt(tx, tz) + 40);
         c.position.lerp(tmpV.set(tx, ty, tz), Math.min(1, dt * 1.2)); if (c.position.distanceTo(tmpV) > 600) c.position.copy(tmpV);
-        tmpV2.set(g.x + F.dx * 30 * (tr.dir ? 1 : -1), g.y + 2, g.z + F.dz * 30 * (tr.dir ? 1 : -1)); c.up.set(0, 1, 0); c.lookAt(tmpV2);
+        tmpV2.set(g.x + hx * 30, g.y + 2, g.z + hz * 30); c.up.set(0, 1, 0); c.lookAt(tmpV2);
         break;
       }
       case 'walk': {
         moveWalk(dt);
         c.position.set(walk.x, walk.y + EYE, walk.z); worldLook(look.yaw, look.pitch);
         const hit = doorNearWorld(walk);
-        if (hit) { prompt = 'Press <kbd>E</kbd> to board: ' + Sim.destText(hit.tr).replace(/\s+/g, ' '); promptAction = () => board(hit); }
-        else { const st = Stations.nearest(walk, 140); if (st) { prompt = 'Press <kbd>B</kbd> for ' + st.name + ' departures'; } }
+        if (hit) { prompt = 'Press <kbd>E</kbd> to board: ' + (hit.tr.metro ? MetroSim.lineName(hit.tr.line) + ' to ' + MetroSim.termName(hit.tr) : Sim.destText(hit.tr).replace(/\s+/g, ' ')); promptAction = () => board(hit); }
+        else { const ms = metroOn() ? MetroSim.nearestStation(walk, 160) : null, st = Stations.nearest(walk, 140);
+          if (ms && (!st || Math.hypot(ms.x - walk.x, ms.z - walk.z) < Math.hypot(st.x - walk.x, st.z - walk.z))) { prompt = typeof MetroPlay !== 'undefined' && MetroPlay.walkPrompt ? MetroPlay.walkPrompt(ms, walk) : 'Press <kbd>B</kbd> for ' + ms.short + ' trains'; if (typeof MetroPlay !== 'undefined' && MetroPlay.walkAction) promptAction = MetroPlay.walkAction(ms, walk); }
+          else if (st) { prompt = 'Press <kbd>B</kbd> for ' + st.name + ' departures'; } }
         break;
       }
       case 'fly': {
@@ -434,13 +457,15 @@ const Player = (() => {
       return { mode: 'air', trip: Flight.type.id, s: (ll.lat + 90) * 1000, car: -1, x: ll.lon * 1000, y: U.clamp(a.pos.y / 2, -500, 10000), z: pz, yaw: E.hdg, speed: U.clamp(a.out.gs, 0, 200) };
     }
     const tr = focusTrain(); const c = cam();
+    if (tr && tr.metro && (mode === 'onboard' || mode === 'cab') && typeof MetroPlay !== 'undefined') return MetroPlay.netState(tr, mode, ob, look, c);
+    if (!Sim.drive && metroOn() && MetroSim.drive && typeof MetroPlay !== 'undefined') return MetroPlay.netState(MetroSim.trainByKey(MetroSim.drive.key), 'drive', ob, look, c);
     if (mode === 'onboard' && tr) return { mode: 'ride', trip: tr.trip.id, s: tr.s, car: ob.car, x: ob.x, y: ob.y, z: ob.z, yaw: look.yaw, speed: tr.dir ? tr.v : -tr.v };
     if (mode === 'cab' && tr) return { mode: tr.driven ? 'drive' : 'cab', trip: tr.trip.id, s: tr.s, car: tr.dir ? 0 : 99, x: 0, y: 0, z: 0, yaw: 0, speed: tr.dir ? tr.v : -tr.v };
     if (Sim.drive) { const D = Sim.drive; return { mode: 'drive', trip: D.trip.id, s: D.s, car: -1, x: c.position.x, y: c.position.y, z: c.position.z, yaw: 0, speed: D.dir ? D.v : -D.v }; }
     if (typeof Globe !== 'undefined' && !Globe.frame.bay) return { mode: 'map', trip: '', s: 0, car: -1, x: 0, y: 0, z: 0, yaw: 0, speed: 0 };   // away from the Bay
     return { mode: mode === 'walk' ? 'walk' : 'fly', trip: '', s: 0, car: -1, x: c.position.x, y: c.position.y, z: c.position.z, yaw: look.yaw, speed: 0 };
   }
-  return { init, update, setMode, setFocus, interact, teleportToStation, focusTrain, state, on, releaseLock,
+  return { init, update, setMode, setFocus, interact, teleportToStation, focusTrain, state, on, releaseLock, trainBy, nearestAnyTrain, drivingKey, travelHeading, board, enterTrain,
     get mode() { return mode; }, get focus() { return focus; }, get prompt() { return prompt; }, keys, down, orbit, look, walk, ob, fly,
     onboard: () => mode === 'onboard', inCab: () => mode === 'cab', leadCar, cars, groundAt };
 })();
