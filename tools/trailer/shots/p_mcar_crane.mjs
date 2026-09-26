@@ -1,8 +1,8 @@
 // P06, late morning at MacArthur, the station in the freeway median: the camera starts at eye level on the west island
 // platform, looking north along it, eases to the platform's end and cranes up to 60 m past the canopy, revealing the
 // freeway lanes on both sides, trains both ways in the median and the Berkeley/Oakland hills beyond. The title BAYLINE sits over the
-// first half (calm centre: the platform's vanishing point and the hills). Trains: two passing each other at the
-// station (__m.crossings), about halfway up the crane.
+// first half (calm centre: the platform's vanishing point and the hills). Trains: two passing each other in the median
+// 300-750 m ahead (__m.crossings on the Concord pair) when the crane is near the top, 9 s in.
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
 export default {
@@ -14,8 +14,8 @@ export default {
     const P = (d, h, lat = 0) => ({ x: A.x + nx * d + F.rx * lat, y: yP + h, z: A.z + nz * d + F.rz * lat });
     window.__P = { P }; __cine.put(P(52, 1.7), P(300, 2.2));
     // trains both ways: two trains passing each other within 150 m of the platform's middle, about halfway up the crane
-    const X = M.crossings('K1', 20, 320, 11 * 3600, 11.75 * 3600, { step: 50, gap: 8 })[0]; if (!X) return 'no crossing';
-    window.__dep = { t: X.t - 6.8, a: X.a, b: X.b, gap: X.gap, s: X.s };
+    const X = M.crossings('K3.2', 1000, 1480, 11 * 3600, 11.9 * 3600, { step: 40, gap: 6 })[0]; if (!X) return 'no crossing';
+    window.__dep = { t: X.t - 9.2, a: X.a, b: X.b, gap: X.gap, s: X.s };
     return window.__dep; }`,
   prime: `() => { const P = window.__P.P; __cine.put(P(52, 1.7), P(300, 2.2)); window.__bayline.Env.setClock(window.__dep.t); return window.__dep.a.line + ' / ' + window.__dep.b.line + ' gap ' + window.__dep.gap; }`,
   before: `(t) => { window.__bayline.Env.camera.fov = 37; }`,
