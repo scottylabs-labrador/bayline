@@ -211,7 +211,15 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 - QA camera from the console: `__bayline.MetroStations.shot('MONT', { u: -30, v: 0, h: 1.65, yaw: 0.2, fov: 70 })`
   (u along the platforms from their middle, v to the right, h above the platform top; `cut: 6` = cutaway above that
   height with everything else hidden; `perf: true` = GPU cost and draw calls with/without the stations).
-- Many views in one page load: `python3 tools/wd.py 590 node tools/metro_shots.mjs --views views.json --out DIR`.
+- Many views in one page load: `python3 tools/wd.py 590 node tools/metro_shots.mjs --views views.json --out DIR`
+  (`--hash "metrodir=metro-next/"` for staged data, `--mobile` phone profile, `--allconsole` every console line,
+  `--rawhash "..."` + `--ready world` for metro-off comparisons, `--gc` exact heap after `gc()`).
+- QA tools (each an `evalFile` for metro_shots): `metro_station_audit.js` (levels vs ground/street, flags),
+  `metro_plat_check.js` (every platform body against every track, yards included), `metro_station_tour.js` (build,
+  hitch counters, console, memory), `metro_calls.js` (draw calls/triangles the whole metro adds to a view),
+  `metro_flyin.js` (cold approach: programs, frame times, the reveal frame), `metro_backfaces.js` (surfaces seen from
+  behind inside stations), `metro_intrusion.js` (OSM buildings / Peninsula objects on platforms),
+  `metro_keepout_map.js`, `metro_joint_map.js` (Millbrae).
 
 ## APIs (M1, stable)
 
