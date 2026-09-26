@@ -19,6 +19,8 @@ from metro import osmgraph as OG
 from metro import elev
 from metro import profile as PR
 from metro import profile2 as PR2
+from metro import platforms as PL
+from metro import stations_curated as SC
 from metro import stations_meta as SM
 
 STEP = 5.0                 # max sample spacing of the published polylines (m)
@@ -112,6 +114,12 @@ def project_track(tr, x, z, s_hint=None, win=400.0):
     return a * st + s_at, d
 
 
+def xz_at(tr, s):
+    p = tr['pub']
+    f = min(max(s / p['step'], 0), len(p['x']) - 1.000001); i = int(f); a = f - i
+    return float(p['x'][i] * (1 - a) + p['x'][i + 1] * a), float(p['z'][i] * (1 - a) + p['z'][i + 1] * a)
+
+
 def platform_groups(tracks, plat_pos, plats, raw_to_s):
     """Per station and level: the tracks sharing a platform level, as matched s-ranges. Level = OSM layer of the track
     at the platform (12th St / 19th St have two). Returns (groups, anchors)."""
@@ -152,6 +160,80 @@ def platform_groups(tracks, plat_pos, plats, raw_to_s):
             groups.append(dict(station=st, level=lv, members=members))
     anchors = {'points': []}
     return groups, anchors
+
+
+
+def berth_leg(path, stops, platforms):
+    """Stops at berths: the FRONT of the train stops at the platform end in the direction of travel (2 m short).
+    The leg path starts at the rear end of its first platform (so the whole train stands on the path at d = 0 ...
+    its first stop's d) and ends at the last berth. Reversal stops (SFO) turn at the berth. Returns (path, stops)
+    with stops [{station, gtfs, track, s, d, reverse?, platform}]."""
+    from metro.platforms import berth
+    path = [list(p) for p in path]
+    sign = lambda seg: 1 if seg[2] >= seg[1] else -1
+    # first platform: extend back to its rear end
+    pl = platforms.get(stops[0]['gtfs'])
+    if pl and path and path[0][0] == pl['track']:
+        sg = sign(path[0])
+        rear = pl['s0'] if sg > 0 else pl['s1']
+        if (path[0][2] - rear) * sg > 0:
+            path[0][1] = rear
+    # last platform: end at its berth
+    pl = platforms.get(stops[-1]['gtfs'])
+    if pl and path and path[-1][0] == pl['track']:
+        sg = sign(path[-1])
+        b = berth(pl, sg)
+        if (b - path[-1][1]) * sg > 0:
+            path[-1][2] = b
+    # reversal stops: turn at the berth (arrival segment end == departure segment start)
+    for i in range(len(path) - 1):
+        a, c = path[i], path[i + 1]
+        if a[0] == c[0] and sign(a) != sign(c):
+            for stp in stops:
+                pl = platforms.get(stp['gtfs'])
+                if stp.get('reverse') and pl and pl['track'] == a[0]:
+                    b = berth(pl, sign(a))
+                    if (b - a[1]) * sign(a) > 0 and (c[2] - b) * sign(c) > 0:
+                        a[2] = b; c[1] = b
+    # stop positions along the path, in order
+    cum = [0.0]
+    for (_, a0, b0) in path:
+        cum.append(cum[-1] + abs(b0 - a0))
+    out = []
+    k0 = 0
+    for j, stp in enumerate(stops):
+        pl = platforms.get(stp['gtfs'])
+        tid = pl['track'] if pl else stp['track']
+        best = None
+        for k in range(k0, len(path)):
+            t2, a0, b0 = path[k]
+            if t2 != tid:
+                continue
+            sg = 1 if b0 >= a0 else -1
+            target = berth(pl, sg) if pl else stp['s']
+            lo_, hi_ = min(a0, b0), max(a0, b0)
+            if lo_ - 0.6 <= target <= hi_ + 0.6:
+                target = min(max(target, lo_), hi_)
+                best = (k, target, cum[k] + abs(target - a0))
+                break
+            if j == 0 and k == 0:          # (first stop: the leg starts on its platform)
+                best = (0, a0, 0.0)
+                break
+        if best is None:                    # fall back to the path-search position
+            for k in range(k0, len(path)):
+                t2, a0, b0 = path[k]
+                if t2 == stp['track'] and min(a0, b0) - 0.6 <= stp['s'] <= max(a0, b0) + 0.6:
+                    best = (k, stp['s'], cum[k] + abs(stp['s'] - a0)); break
+        if best is None:
+            best = (k0, stp['s'], -1.0)
+        k, sv, d = best
+        k0 = k
+        o = dict(station=stp['station'], gtfs=stp['gtfs'], track=tid, s=round(float(sv), 2), d=round(float(d), 2))
+        if stp.get('reverse'):
+            o['reverse'] = True
+            k0 = k + 1
+        out.append(o)
+    return path, out
 
 
 # ====================================================================== naming
@@ -414,13 +496,13 @@ def main():
             st = plats[pid]['parent_station']
             if cur is None or cur['sys'] != sy:
                 if cur is not None and cur['sys'] == 'ebart' and sy == 'bart':
-                    cur['stops'].append(('PITT-T', 'C80-T'))          # DMU ends at the transfer platform
+                    cur['stops'].append(('PITT-T', 'E10-T'))          # DMU ends at the transfer platform (eBART face)
                     out.append(cur)
-                    cur = dict(sys='bart', stops=[('PITT-T', 'C80-T')])
+                    cur = dict(sys='bart', stops=[('PITT-T', 'C80-T')])   # EMU starts there (BART face)
                 elif cur is not None and cur['sys'] == 'bart' and sy == 'ebart':
                     cur['stops'].append(('PITT-T', 'C80-T'))
                     out.append(cur)
-                    cur = dict(sys='ebart', stops=[('PITT-T', 'C80-T')])
+                    cur = dict(sys='ebart', stops=[('PITT-T', 'E10-T')])
                 elif cur is not None:
                     out.append(cur)
                     cur = dict(sys=sy, stops=[])
@@ -603,14 +685,41 @@ def main():
     log(f'junctions: {len(junctions)}', collections.Counter(j['kind'] for j in junctions))
 
 
-    # ---------------- platform groups (tracks sharing a station level), then the joint profile solve
-    groups, anchors = platform_groups(tracks, plat_pos, plats, raw_to_s)
+    # ---------------- platforms (OSM extents), level groups, researched anchors, then the joint profile solve
+    platforms = PL.build(tracks, parents, plats, plat_pos, raw_to_s, E, SC.C)
+    by_tid = {t['id']: t for t in tracks}
+    groups = []
+    for g in PL.level_groups(platforms, SC.C):
+        ref = g['platforms'][0]
+        tr0 = by_tid[ref['track']]
+        members = [(ref['track'], ref['s0'], ref['s1'])]
+        for pl in g['platforms'][1:]:
+            tr = by_tid[pl['track']]
+            hint = 0.5 * (pl['s0'] + pl['s1'])
+            a_, _ = project_track(tr, *xz_at(tr0, ref['s0']), s_hint=hint)
+            b_, _ = project_track(tr, *xz_at(tr0, ref['s1']), s_hint=hint)
+            members.append((pl['track'], a_, b_))
+        groups.append(dict(station=g['station'], level=g['level'], sys=g['sys'], members=members))
+    main_sys = {'PCTR': 'ebart', 'ANTC': 'ebart', 'OAKL': 'oac'}
+    anchors = {'points': [], 'rel': []}
+    for g in groups:
+        if g['sys'] != main_sys.get(g['station'], 'bart'):
+            continue
+        for (lv, rel, w) in SC.anchors_for(g['station']):
+            if lv is not None and lv != g['level']:
+                continue
+            t, s0, s1 = g['members'][0]
+            anchors['rel'].append(dict(track=t, s0=min(s0, s1), s1=max(s0, s1), rel=rel, w=w, station=g['station'], level=g['level']))
+    log(f'platform level groups: {len(groups)}, height anchors: {len(anchors["rel"])}')
     roads = PR2.Roads()
     PR2.solve(out_tracks, junctions, groups, anchors, roads)
     PR2.finish(out_tracks)
 
     # ---------------- stations
-    stations = SM.build(parents, plats, ents, tracks, plat_pos, st_tracks, E, raw_to_s, code_of)
+    tn = byid.get(('node', 5319797505))
+    extra = [('PITT-T', 'Pittsburg / Bay Point (eBART transfer platform)', tn['lat'], tn['lon'], '')] if tn else []
+    code_of['PITT-T'] = 'C80T'
+    stations = SM.build2(parents, plats, ents, tracks, platforms, E, code_of, SC.C, extra)
     vlines, vrep = PR2.validate(out_tracks, stations, junctions, groups)
     for ln in vlines:
         log(ln)
@@ -624,26 +733,14 @@ def main():
         pat = patterns[key]
         lo = []
         for leg in legs:
-            path = [[tracks[ti]['id'], round(raw_to_s(tracks[ti], a0), 2), round(raw_to_s(tracks[ti], b0), 2)] for ti, a0, b0 in leg['segs']]
-            # distance along the leg path of each stop
+            path = [[tracks[ti]['id'], raw_to_s(tracks[ti], a0), raw_to_s(tracks[ti], b0)] for ti, a0, b0 in leg['segs']]
+            stops = [dict(station=sid, gtfs=pid, track=tracks[ti]['id'], s=raw_to_s(tracks[ti], sr), reverse=rv) for (sid, pid, ti, sr, rv) in leg['stops']]
+            path, st = berth_leg(path, stops, platforms)
             cum = [0.0]
             for (_, a0, b0) in path:
                 cum.append(cum[-1] + abs(b0 - a0))
-            st = []
-            for (sid, pid, ti, sr, rv) in leg['stops']:
-                tid = tracks[ti]['id']
-                sv = raw_to_s(tracks[ti], sr)
-                dpos = None
-                for k, (t2, a0, b0) in enumerate(path):
-                    if t2 == tid and min(a0, b0) - 0.6 <= sv <= max(a0, b0) + 0.6:
-                        cand = cum[k] + abs(sv - a0)
-                        if dpos is None or (st and cand >= st[-1]['d'] - 0.5 and (dpos < st[-1]['d'] - 0.5)):
-                            dpos = cand
-                        if st and cand >= st[-1]['d'] - 0.5:
-                            dpos = cand
-                            break
-                st.append(dict(station=sid, gtfs=pid, track=tid, s=round(sv, 2), d=round(dpos if dpos is not None else -1, 2), **({'reverse': True} if rv else {})))
-            lo.append(dict(sys=leg['sys'], vehicle=VEH[leg['sys']], osmRelation=leg['rel'], length=round(cum[-1], 2), path=path, stops=st))
+            lo.append(dict(sys=leg['sys'], vehicle=VEH[leg['sys']], osmRelation=leg['rel'], length=round(cum[-1], 2),
+                           path=[[t, round(a0, 2), round(b0, 2)] for t, a0, b0 in path], stops=st))
         pats_out.append(dict(id=None, route=pat['route'], line=pat['line'], dir=pat['dir'], gtfs=pat['stops'], trips=pat['trips'], legs=lo))
     # pattern ids: <line>-<N|S>-<k> by trip count
     by_ld = collections.defaultdict(list)

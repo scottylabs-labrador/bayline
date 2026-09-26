@@ -1,0 +1,926 @@
+[
+ {
+  "id": "MCAR",
+  "name": "MacArthur",
+  "coords": [
+   37.8291,
+   -122.2671
+  ],
+  "structure": "median",
+  "structure_notes": "In the median of SR-24 (Grove-Shafter Freeway) immediately north of the SR-24/I-580/I-980 interchange (I-980 becomes SR-24 at I-580), between W MacArthur Blvd (south end) and 40th St (north end of the platforms). The freeway and the station are ELEVATED relative to the surrounding streets: W MacArthur Blvd and 40th St pass underneath and the platforms are one level above street; BART's access study calls it 'an elevated station ... in the Highway 24 freeway median'. Only BART station with four platform tracks.",
+  "tracks": 4,
+  "platforms": {
+   "count": 2,
+   "type": "island",
+   "arrangement": "West to east: track 2 (outer; southbound Orange+Red from Richmond toward Berryessa and SF/Millbrae) | WEST ISLAND | track 4 (inner; southbound Yellow toward SF/SFO/Millbrae) - track 3 (inner; northbound Yellow to Antioch) | EAST ISLAND | track 1 (outer; northbound Orange+Red to Richmond). Platform numbers = track numbers. Each island is directional: the west island is southbound-only (cross-platform transfer Richmond-line <-> Antioch-line trains heading into Oakland/SF; BART times the southbound connections), the east island is northbound-only (Richmond-bound <-> Antioch-bound; 19th St Oakland is BART's designated northbound transfer point but cross-platform transfers here are often possible). Last Orange and Yellow trains of the night hold for a 'grand meet'. South of the station the two southbound tracks merge into one and three tracks (C1 northbound Orange/Red, CX northbound Yellow, C2 southbound all lines) continue into the Broadway subway toward the Oakland Wye."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": 8,
+   "concourse": "Fare lobby at street level underneath the platforms/northbound freeway lanes on the east side, just south of 40th St (BART diagram: 'CONCOURSE / STREET'); separate elevators from the paid area to each island (platforms 1/3 and 2/4).",
+   "levels_top_to_bottom": [
+    "two island platforms (on freeway structure)",
+    "concourse = street level"
+   ],
+   "notes": "No published height found. USGS 3DEP 1 m DEM: trackbed on the median fill just north of 40th St ~31.5-32 m vs ~24 m on 40th St beneath -> rails ~7.5-8 m above street (platform floor slightly higher)."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Maher & Martens",
+  "era": "Original 1972 BART (opening segment MacArthur-Fremont); concrete aerial of the Brutalist era; plaza rebuilt 2018-19; transit village 2013-2021",
+  "recognisable": "Four tracks and two long island platforms squeezed into the middle of the elevated SR-24 freeway, with the tall flyover ramps of the SR-24/I-580/I-980 interchange looming just to the south. The street-level fare lobby under the freeway has Mark Adams murals and tile mosaics by Adams and Alfonso Pardinas; on the east plaza stands Harold Paris's 'Post and Lintel' (bronze sculptures on a concrete gateway). The MacArthur Transit Village rises alongside, including a 24-storey residential tower and a 450-space BART garage (2014).",
+  "entrances": "One fare lobby on the east side at street level under the freeway near 40th St, opening onto the east plaza/Walter Miles Way (transit village, shuttle stops, 200-space bike station, parking garage to the south); 40th St passes under SR-24 right at the north end (AC Transit stops under the overpass just north of the fare gates). Within 1/4 mile, pedestrians can cross under SR-24 only at 42nd St, 40th St and W MacArthur Blvd. Separate elevators to each island inside the paid area.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/MacArthur_station_(BART)",
+   "https://en.wikipedia.org/wiki/Template:MacArthur_station_(BART)",
+   "https://www.bart.gov/stations/mcar",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Macarthur.jpg?itok=DwFZViJe",
+   "https://www.bart.gov/sites/default/files/documents/station/MacArthur.pdf",
+   "https://web.archive.org/web/20101120121431/http://bart.gov/docs/planning/MacArthur_BART_Access_Feasibility_Study.pdf",
+   "https://www.bart.gov/sites/default/files/docs/inventory%20for%20posting.pdf",
+   "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap track/structure data)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "ASHB",
+  "name": "Ashby",
+  "coords": [
+   37.853068,
+   -122.269957
+  ],
+  "structure": "subway",
+  "structure_notes": "Underground station beneath Adeline Street just south of Ashby Ave, but only partly buried: the west side of the fare mezzanine opens at grade onto a sunken west parking lot (about 4 m below Adeline St by USGS DEM) while Adeline St passes overhead. The Berkeley subway starts ~0.5 km south of the station, where the Richmond line descends from its aerial above Martin Luther King Jr. Way through an embankment/open cut to a portal at ~37.8484,-122.2713 (OSM). The three Berkeley stations were built underground because the City of Berkeley paid extra tax.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single island: platform 1 northbound to Richmond, platform 2 southbound to SF/Millbrae/SFO and Berryessa."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": null,
+   "concourse_vs_street_m": -4,
+   "concourse": "Mezzanine (fare gates, agent booth) one level below Adeline St, level with the sunken west parking lot; island platform one level below the mezzanine. BART diagram shows three levels (street / concourse / platform) and two separate elevators (Adeline St -> concourse, concourse -> platform).",
+   "levels_top_to_bottom": [
+    "Adeline St (street)",
+    "concourse/mezzanine = sunken west lot level",
+    "island platform"
+   ],
+   "notes": "Platform depth not published. DEM transect: west lot ~32.3 m vs Adeline St ~36.5 m."
+  },
+  "opened": 1973,
+  "opened_date": "1973-01-29",
+  "architect": "Maher & Martens",
+  "era": "Original 1973 BART (MacArthur-Richmond extension)",
+  "recognisable": "A half-sunken station: you walk in at ground level from a depressed parking lot (home of the weekend Berkeley Flea Market) that sits below Adeline Street, then ride escalators down to a single island platform. The east side is fronted by the Ed Roberts Campus (2010), a disability-services building that came with a new east station entrance. Surface parking lots lie on both sides of Adeline St.",
+  "entrances": "Main entrance from the sunken west parking lot at mezzanine level; east entrance at the Ed Roberts Campus (opened Nov 2010); stairs and an elevator down from Adeline Street overhead.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "levels.concourse_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Ashby_station_(BART)",
+   "https://www.bart.gov/stations/ashb",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Ashby.jpg?itok=UzxAS5fk",
+   "https://www.bart.gov/sites/default/files/documents/station/Ashby.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "DBRK",
+  "name": "Downtown Berkeley",
+  "coords": [
+   37.869799,
+   -122.268197
+  ],
+  "structure": "subway",
+  "structure_notes": "Underground station beneath Shattuck Avenue between Allston Way and Addison St (Center St at mid-length), in the Berkeley subway (south portal ~37.8484,-122.2713, north portal ~37.879,-122.289 per OSM).",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Island between the two tracks; platform 2 (southbound) on the west side, platform 1 (northbound to Richmond) on the east side (OSM platform refs)."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": null,
+   "concourse": "Mezzanine with faregates and several agent booths one level below Shattuck Ave; island platform one level below the mezzanine (two levels below street). Two separate elevators: street -> mezzanine -> platform.",
+   "levels_top_to_bottom": [
+    "Shattuck Ave (street)",
+    "mezzanine/concourse",
+    "island platform"
+   ],
+   "notes": "Depth not found in sources."
+  },
+  "opened": 1973,
+  "opened_date": "1973-01-29",
+  "architect": "Maher & Martens with Parsons Brinckerhoff-Tudor-Bechtel",
+  "era": "Original 1973 BART (opened as 'Berkeley', renamed 1996); street headhouse rebuilt 2016-2018",
+  "recognisable": "A classic 1973 BART subway box beneath the middle of Shattuck Avenue in downtown Berkeley, a few blocks from the UC campus. At street level the main entrance is a glass canopy structure (2018, like those in downtown Oakland) in a rebuilt plaza with bus shelters at Shattuck and Center St; it replaced the original 24-sided rotunda decorated with UC Botanical Garden artwork. Below, a long mezzanine with several agent booths sits over a single island platform.",
+  "entrances": "Five street entrances along Shattuck Ave: two at Addison St, two at Allston Way, and the main glass-canopy entrance at the southwest corner of Shattuck Ave and Center St.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Downtown_Berkeley_station",
+   "https://www.bart.gov/stations/dbrk",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Downtown_Berkeley.jpg?itok=5xjwsQ2E",
+   "https://en.wikipedia.org/wiki/Ashby_station_(BART)",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)"
+  ]
+ },
+ {
+  "id": "NBRK",
+  "name": "North Berkeley",
+  "coords": [
+   37.873915,
+   -122.282552
+  ],
+  "structure": "subway",
+  "structure_notes": "Shallow underground station whose box runs diagonally beneath a surface parking lot bounded by Sacramento, Delaware, Acton and Virginia Streets (on the alignment of the former Key System 'G' Westbrae line). About 0.8 km northwest the double-track subway reaches its north portal (~37.879,-122.289, under the Ohlone Greenway) and the line continues on embankment and then the Albany/El Cerrito aerial.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single island: platform 1 northbound to Richmond, platform 2 southbound to SF/Millbrae/SFO and Berryessa."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": null,
+   "concourse": "Fare gates at street level inside the circular headhouse (BART diagram: 'CONCOURSE / STREET'); island platform one level below. A separate elevator at the Sacramento St edge of the lot runs directly street <-> platform (elevator faregate on the platform since Oct 2022).",
+   "levels_top_to_bottom": [
+    "concourse = street (round headhouse)",
+    "island platform"
+   ],
+   "notes": "Depth not found in sources; only one level below street."
+  },
+  "opened": 1973,
+  "opened_date": "1973-01-29",
+  "architect": "Kitchen & Hunt",
+  "era": "Original 1973 BART",
+  "recognisable": "Instantly identified by its round, circular entrance building standing alone in the middle of a big surface parking lot in a quiet residential neighbourhood. The Ohlone Greenway path runs from here northwest along the BART line. (The lots are entitled for ~740 homes of transit-oriented development.)",
+  "entrances": "Main entrance through the circular headhouse in the centre of the parking lot; separate street-to-platform elevator at the lot's Sacramento St edge.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/North_Berkeley_station",
+   "https://www.bart.gov/stations/nbrk",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/North_Berkeley.jpg?itok=X5BW4LUB",
+   "https://www.bart.gov/about/business/tod/north-berkeley",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)"
+  ]
+ },
+ {
+  "id": "PLZA",
+  "name": "El Cerrito Plaza",
+  "coords": [
+   37.902694,
+   -122.298968
+  ],
+  "structure": "aerial",
+  "structure_notes": "Concrete aerial station on the continuous Albany-El Cerrito viaduct over the former Santa Fe right-of-way, next to the El Cerrito Plaza shopping centre near Fairmount Ave; the Ohlone Greenway runs along the east edge of the station. Ground-level fare lobby under the tracks. Nearly identical in form to El Cerrito del Norte.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "arrangement": "Two side platforms outside the two tracks: platform 1 northbound to Richmond, platform 2 southbound to SF/Millbrae/SFO/Berryessa; separate stair, escalator and elevator for each platform."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": null,
+   "concourse": "Ground-level lobby/concourse beneath the tracks (BART diagram: 'CONCOURSE / STREET'), paid area entered from north and south; side platforms one level above.",
+   "levels_top_to_bottom": [
+    "side platforms",
+    "concourse = street"
+   ],
+   "notes": "Platform height not published (comparable BART aerial stations: Walnut Creek 26 ft rise, Pleasant Hill 27.5 ft, Concord 22 ft 10 in)."
+  },
+  "opened": 1973,
+  "opened_date": "1973-01-29",
+  "architect": "DeMars & Wells (Vernon DeMars; designed 1969)",
+  "era": "Original 1973 BART, Brutalist",
+  "recognisable": "A DeMars & Wells Brutalist concrete aerial station: board-formed concrete, rhythmic vertical fins on the facades, pairs of larger fins framing picture windows at the platform waiting areas, and a metal roof with glazing over only the central part of each side platform. Platforms look west to Mount Tamalpais, the Golden Gate Bridge and Albany Hill. Alfonso Pardinas's flowing multicoloured glass mosaics line the stair/escalator walls.",
+  "entrances": "Ground-level paid area entered from the north and south; separate elevators to each side platform located outside the paid area (elevator faregates added on the platforms May 2022); busways on both sides; Ohlone Greenway along the east edge.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/El_Cerrito_Plaza_station",
+   "https://www.bart.gov/stations/plza",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/El_Cerrito_Plaza.jpg?itok=fYR1mvH5",
+   "https://www.bart.gov/sites/default/files/docs/El%20Cerrito%20BART%20Stations%20Modernization%20Study%20-%20FINAL.pdf",
+   "https://www.bart.gov/sites/default/files/docs/inventory%20for%20posting.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)"
+  ]
+ },
+ {
+  "id": "DELN",
+  "name": "El Cerrito del Norte",
+  "coords": [
+   37.925183,
+   -122.316939
+  ],
+  "structure": "aerial",
+  "structure_notes": "Concrete aerial station (twin of El Cerrito Plaza) near San Pablo Ave, Cutting Blvd and I-80; the aerial crosses Cutting Blvd and Hill St at the station, with a ground-level lobby beneath. Crossovers on the aerial just south of the station (~37.923-37.924) allow turnbacks.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "arrangement": "Two side platforms: platform 1 northbound to Richmond, platform 2 southbound; each has its own stairs, escalator and (since the 2017-2021 expansion) elevators inside the paid area."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": null,
+   "concourse": "Ground-level concourse under the tracks (BART diagram: 'CONCOURSE / STREET'); paid area expanded 2017-2021; side platforms one level above.",
+   "levels_top_to_bottom": [
+    "side platforms",
+    "concourse = street"
+   ],
+   "notes": "Platform height not published."
+  },
+  "opened": 1973,
+  "opened_date": "1973-01-29",
+  "architect": "DeMars & Wells",
+  "era": "Original 1973 BART, Brutalist; expanded/renovated 2017-March 2021 ($33.9M)",
+  "recognisable": "Same fin-walled Brutalist concrete aerial design as El Cerrito Plaza, now with added glass stair/elevator towers from the 2017-2021 expansion and Kyungmi Shin's porcelain-tile murals 'El Cerrito Homes'. It is a big regional bus hub (busway on the west side, express buses from Solano, Napa and Marin) beside San Pablo Ave and I-80, with a four-storey parking garage. Platforms frame the Berkeley Hills to the east and Mount Tamalpais to the west.",
+  "entrances": "Entries to the ground-level paid area from north and south; new elevators and stairs inside the paid area; two-lane busway on the west side plus stops on San Pablo Ave and the east side; kiss-and-ride/taxi on the east side; Ohlone Greenway along the east edge.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/El_Cerrito_del_Norte_station",
+   "https://en.wikipedia.org/wiki/Template:El_Cerrito_del_Norte_station",
+   "https://www.bart.gov/stations/deln",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/El_Cerrito_Del_Norte.jpg?itok=vozio6-X",
+   "https://www.bart.gov/sites/default/files/docs/El%20Cerrito%20BART%20Stations%20Modernization%20Study%20-%20FINAL.pdf",
+   "https://web.archive.org/web/20080917160057/http://www.bart.gov/docs/planning/ElCerritoDelNorteCSP.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)"
+  ]
+ },
+ {
+  "id": "RICH",
+  "name": "Richmond",
+  "coords": [
+   37.9368,
+   -122.3531
+  ],
+  "structure": "surface",
+  "structure_notes": "Northern terminus. The tracks run NW-SE through a downtown superblock at about street grade on a slightly raised right-of-way, bridging over lowered sections of Macdonald Ave (south end) and Barrett Ave (north end); the island platform is reached from a pedestrian concourse in an underpass beneath the tracks. (BART's 2004 station plan nevertheless classifies it as an 'aerial center platform station'.) The Amtrak island platform on the Union Pacific Martinez Subdivision (3 tracks) is immediately west. BART tracks continue north past the station into Richmond Yard.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Terminal island between the two BART tracks (platforms 1 and 2); departures toward SF/Millbrae/SFO/Berryessa. Amtrak's separate island platform lies to the west (no cross-platform transfer)."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": 1,
+   "concourse": "Concourse in an east-west pedestrian underpass (Nevin Ave alignment) one level below the platform, with street entrances at both ends; stairs flanked by escalators plus an elevator up to the BART island; separate stairs/elevator up to the Amtrak platform.",
+   "levels_top_to_bottom": [
+    "BART island platform (~street grade)",
+    "concourse underpass"
+   ],
+   "notes": "DEM: rails ~12.8-13.6 m vs surrounding streets ~11-13 m, i.e. roughly at grade; value is approximate."
+  },
+  "opened": 1973,
+  "opened_date": "1973-01-29",
+  "architect": "Maher & Martens",
+  "era": "Original 1973 BART terminus; renovated as Richmond Transit Center 2007; 750-space garage 2013",
+  "recognisable": "A two-track terminal island platform running alongside the Union Pacific main line and Amtrak's platform in downtown Richmond. The west entrance plaza is marked by a semicircular 'industrial post-modern' metal canopy (2007) with Jos Sances/Daniel Galvez tile murals; inside the BART paid area hangs William Mitchell's odd marine-life relief of seashells and fiberglass. Mildred Howard's corten-steel 'Moving Richmond' panels decorate the parking garage.",
+  "entrances": "Concourse along the Nevin Ave alignment passes under all tracks with street entrances at both ends (west: canopy plaza/Metro Walk/busway/garage; east side); fully accessible with elevators to both platforms and at both entrances.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Richmond_station_(California)",
+   "https://en.wikipedia.org/wiki/Template:Richmond_station_(California)",
+   "https://www.bart.gov/stations/rich",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Richmond.jpg?itok=1hLYmrZi",
+   "https://www.bart.gov/sites/default/files/docs/RichmondCSP.pdf",
+   "https://www.bart.gov/sites/default/files/docs/inventory%20for%20posting.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "ROCK",
+  "name": "Rockridge",
+  "coords": [
+   37.844452,
+   -122.252083
+  ],
+  "structure": "median",
+  "structure_notes": "Platform in the centre median of the ELEVATED SR-24 (Grove-Shafter Freeway) west of the Caldecott Tunnel. The station sits on a ~420 m aerial structure (OSM) spanning College Ave and Forest St in the Rockridge shopping district; College Ave passes directly beneath, with Keith Ave and Miles Ave alongside and parking lots under/beside the freeway. Crossovers lie ~0.3-0.5 km east of the station.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single island: platform 1 eastbound to Antioch, platform 2 westbound to SF/Daly City/Millbrae/SFO."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": null,
+   "concourse": "Three levels (BART diagram): street (College Ave/Keith Ave/Miles Ave, parking) -> intermediate concourse with fare gates and agent booth -> island platform on top; one elevator serves all three levels.",
+   "levels_top_to_bottom": [
+    "island platform (freeway median level)",
+    "concourse",
+    "street (College Ave)"
+   ],
+   "notes": "No published height. DEM: trackbed at the ends of the station viaduct ~59 m (west) and ~64 m (east) vs College Ave ~54.5 m, so the platform is very roughly 5-10 m above College Ave; verify with lidar."
+  },
+  "opened": 1973,
+  "opened_date": "1973-05-21",
+  "architect": "Maher & Martens",
+  "era": "Original 1973 BART (Concord line); seismic retrofit 2008-2009",
+  "recognisable": "The platform is perched in the middle of the elevated freeway above College Avenue, with traffic streaming past on both sides and wide views across Oakland and the hills (BART calls it one of the best views in the system). Below, the College Ave shopping street (Rockridge Market Hall just down the block) runs under the viaduct. In the plaza is the Firestorm Community Mural of 2,000+ hand-painted tiles by survivors of the 1991 Oakland Hills fire; a space mural covers the far wall of the east lot.",
+  "entrances": "Street entrance on College Ave beneath the freeway viaduct (between Keith Ave and Miles Ave) with escalators/stairs and an elevator up to the concourse and on to the platform; parking lots under/beside SR-24 on both sides of College Ave (west lot toward Forest St/Shafter Ave, east lot on Keith Ave), pick-up/drop-off on the Keith Ave side.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Rockridge_station",
+   "https://www.bart.gov/stations/rock",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Rockridge.jpg?itok=qDvzBb_8",
+   "https://www.bart.gov/sites/default/files/documents/station/Rockridge.pdf",
+   "https://web.archive.org/web/2012/http://www.bart.gov/docs/eqs/Rockridge%20Station%20Notification.pdf",
+   "https://www.bart.gov/sites/default/files/docs/inventory%20for%20posting.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "ORIN",
+  "name": "Orinda",
+  "coords": [
+   37.878427,
+   -122.18374
+  ],
+  "structure": "median",
+  "structure_notes": "Island platform in the SR-24 median about 0.5-0.6 km east of the Berkeley Hills Tunnel east portal. The station straddles Camino Pablo on a short aerial structure (OSM: tracks and platform tagged bridge; both freeway carriageways also bridge Camino Pablo), so the platform is ABOVE the street while the fare lobby is at street level underneath. Elsewhere the tracks run on the freeway median grade.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single island: platform 1 eastbound to Antioch, platform 2 westbound to SF/Daly City/Millbrae/SFO."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": 8.5,
+   "concourse": "Fare lobby at street (Camino Pablo) level beneath the platform and freeway (BART diagram: 'CONCOURSE / STREET'); single elevator up to the platform (elevator faregate in the lobby since July 2023).",
+   "levels_top_to_bottom": [
+    "island platform",
+    "concourse = street (Camino Pablo)"
+   ],
+   "notes": "DEM: median trackbed ~151-154 m either side of the station vs Camino Pablo ~143.5 m beneath -> ~8-10 m."
+  },
+  "opened": 1973,
+  "opened_date": "1973-05-21",
+  "architect": "Gwathmey, Sellier & Crosby with Joseph Esherick & Associates",
+  "era": "Original 1973 BART (Concord line)",
+  "recognisable": "A long canopied island platform between the lanes of SR-24 in a wooded valley just east of the Caldecott/BART tunnel portals, with oak-covered hills all round. The fare lobby holds Win Ng's abstract mural of grey, orange and black bands, and a painted mural of Orinda history stands in the plaza outside. Solar panels (2008) shade the parking lots.",
+  "entrances": "Street-level lobby at Camino Pablo beneath the freeway (address 11 Camino Pablo), reached from the adjoining BART surface lots (1,406 spaces) via the Bart Way access road and from Orinda village on foot along Camino Pablo.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Orinda_station",
+   "https://www.bart.gov/stations/orin",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Orinda.jpg?itok=3nF3JKTQ",
+   "https://www.bart.gov/sites/default/files/docs/inventory%20for%20posting.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "LAFY",
+  "name": "Lafayette",
+  "coords": [
+   37.893186,
+   -122.124614
+  ],
+  "structure": "median",
+  "structure_notes": "Island platform in the centre median of SR-24 just south of the Lafayette Hillside Memorial. Here the freeway is on fill, so the platform is at freeway grade but raised above the neighbouring ground; the fare lobby sits below the tracks in a pedestrian underpass (~75 m long per OSM) that passes under both carriageways to entrances on the north and south sides. OSM also maps a ~300 m siding east of the station (not verified).",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single island: platform 1 eastbound to Antioch, platform 2 westbound to SF/Daly City/Millbrae/SFO."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": 6,
+   "concourse": "Below the platform at local street level, inside the under-freeway passage (BART diagram: 'CONCOURSE / STREET' between Happy Valley Rd and Oak Hill Rd); one elevator inside the paid area to the platform.",
+   "levels_top_to_bottom": [
+    "island platform (freeway level)",
+    "concourse = street level, under the freeway"
+   ],
+   "notes": "DEM: median at the platform ~112.5 m vs ~106.6-107.0 m at the north and south entrances -> ~5.5-6 m."
+  },
+  "opened": 1973,
+  "opened_date": "1973-05-21",
+  "architect": "Gwathmey, Sellier & Crosby with Joseph Esherick & Associates",
+  "era": "Original 1973 BART (Concord line)",
+  "recognisable": "An island platform between the freeway lanes, overlooked by the hillside of crosses of the Lafayette Hillside Memorial. In the fare lobby stand three columns clad in multicoloured glass-tile mosaics on a blue ground designed by Helen Webber and built by Alfonso Pardinas (one carries a Walt Whitman poem). The south entrance has a large accessibility ramp structure (2011) toward downtown Lafayette.",
+  "entrances": "Two entrances on opposite sides of SR-24 joined by the under-freeway concourse: north side (Deer Hill Rd parking lots) and south side (ramp/path toward downtown Lafayette; bike station and path connection under construction from Feb 2026).",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Lafayette_station_(BART)",
+   "https://www.bart.gov/stations/lafy",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Lafayette.jpg?itok=zzOAOodM",
+   "https://www.bart.gov/sites/default/files/docs/inventory%20for%20posting.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "WCRK",
+  "name": "Walnut Creek",
+  "coords": [
+   37.905724,
+   -122.067332
+  ],
+  "structure": "aerial",
+  "structure_notes": "Elevated concrete station on the Concord line's aerial structure, tracks running roughly NE-SW, near I-680, Ygnacio Valley Rd and N. California Blvd; ground-level lobby beneath the centre of the platforms. BART's 2004 plan: 'an aerial side platform station'.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "arrangement": "Two side platforms: platform 1 eastbound to Antioch, platform 2 westbound to SF/Daly City/Millbrae/SFO; one stair and one escalator from the paid lobby to each platform; separate elevators."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": 7.9,
+   "concourse": "Ground level: unpaid lobby under the centre of the platforms, paid lobby to the north with escalators/stairs to the platforms, elevators and bike storage to the south.",
+   "levels_top_to_bottom": [
+    "side platforms",
+    "concourse = ground"
+   ],
+   "notes": "From BART's 2004 plan cost estimate: new escalators/emergency stairs from concourse to platform with a '26 ft rise' (7.9 m)."
+  },
+  "opened": 1973,
+  "opened_date": "1973-05-21",
+  "architect": "Gwathmey, Sellier & Crosby with Joseph Esherick & Associates",
+  "era": "Original 1973 BART (Concord line)",
+  "recognisable": "A 1973 concrete aerial side-platform station whose canopies and windscreens cover only the central section of the platforms, now wrapped by the Walnut Creek Transit Village. The 900-space south garage (2019) contains a three-lane bus plaza where all buses stop, and a 358-unit apartment block (2023) stands on the former north lot; the mid-rise 'Golden Triangle' office buildings cluster nearby.",
+  "entrances": "Ground-level lobby beneath the tracks (paid area north, elevators south), approached from the west side garages/bus plaza and transit village (vehicle/pedestrian entrance from N. California Blvd, relocated Nov 2022) and from Ygnacio Valley Rd.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Walnut_Creek_station",
+   "https://www.bart.gov/stations/wcrk",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Walnut_Creek.jpg?itok=VbX8vwCf",
+   "https://web.archive.org/web/20101120120202/http://www.bart.gov/docs/planning/WalnutCreekCSP.pdf",
+   "https://www.bart.gov/sites/default/files/docs/2019-05-01%20Walnut%20Creek%20Modernization%20Plan.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)"
+  ]
+ },
+ {
+  "id": "PHIL",
+  "name": "Pleasant Hill/Contra Costa Centre",
+  "coords": [
+   37.928399,
+   -122.055992
+  ],
+  "structure": "aerial",
+  "structure_notes": "Elevated Concord-line aerial with two side platforms, running NE-SW just east of I-680 in the unincorporated Contra Costa Centre transit village; ground-level concourse underneath.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "arrangement": "Two side platforms: platform 1 eastbound to Antioch, platform 2 westbound to SF/Daly City/Millbrae/SFO; separate elevators to each."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": 8.4,
+   "concourse": "Ground-level concourse/fare lobby beneath the platforms (BART diagram: 'CONCOURSE / STREET', Coggins Dr).",
+   "levels_top_to_bottom": [
+    "side platforms",
+    "concourse = ground"
+   ],
+   "notes": "BART 2002 station plan cost estimate: new emergency stair enclosures with a 27 ft 6 in rise (8.4 m)."
+  },
+  "opened": 1973,
+  "opened_date": "1973-05-21",
+  "architect": "Gwathmey, Sellier & Crosby with Joseph Esherick & Associates",
+  "era": "Original 1973 BART (opened as 'Pleasant Hill', renamed 2010)",
+  "recognisable": "A 1970s concrete aerial station surrounded by the mid-rise offices, apartments and big parking garages of Contra Costa Centre (once BART's largest park-and-ride). Nearby, the Robert I. Schroder Overcrossing (2010, Arup) carries the Iron Horse Trail over Treat Blvd on a slender 600 ft deck hung from two outward-leaning silver arches 42 ft high spanning 240 ft.",
+  "entrances": "Ground-level concourse under the tracks; two-way busway on the southeast side; parking garages (second garage 2008) and transit-village blocks around the station; Iron Horse Trail access.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Pleasant_Hill/Contra_Costa_Centre_station",
+   "https://www.bart.gov/stations/phil",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Pleasant_Hill.jpg?itok=-OAWnbJs",
+   "https://www.bart.gov/sites/default/files/docs/PleasantHillBARTCSP.pdf",
+   "https://www.sfgate.com/bayarea/place/article/Footbridge-an-elegant-new-icon-in-East-Bay-3171157.php",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)"
+  ]
+ },
+ {
+  "id": "CONC",
+  "name": "Concord",
+  "coords": [
+   37.973745,
+   -122.029127
+  ],
+  "structure": "aerial",
+  "structure_notes": "Elevated single island platform between downtown Concord (west) and residential neighbourhoods (east); ground-level concourse facing Oakland Ave. Crossovers lie just south of the station (OSM); Concord was the line's terminus 1973-1995.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single (narrow) island: platform 1 eastbound to Antioch, platform 2 westbound to SF/Daly City/Millbrae/SFO."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": 7.0,
+   "concourse": "Ground-level concourse (BART diagram: 'CONCOURSE / STREET', Oakland Ave); central stair and escalators plus one elevator up to the island.",
+   "levels_top_to_bottom": [
+    "island platform",
+    "concourse = street"
+   ],
+   "notes": "BART Concord Modernization report: existing stair 'total rise is 22 feet 10 inches' (6.96 m)."
+  },
+  "opened": 1973,
+  "opened_date": "1973-05-21",
+  "architect": "Gwathmey, Sellier & Crosby with Joseph Esherick & Associates",
+  "era": "Original 1973 BART; eastern terminus until Dec 1995",
+  "recognisable": "Massive unpainted board-formed concrete with an unfinished wood soffit over the concourse and a floor banded in exposed aggregate and broom finish. Up top, a painted-steel canopy covers only the middle third of the narrow island platform around the concrete elevator shaft and escalators. A large bus terminal sits on the west side (a Stephen De Staebler water feature once stood here, removed in the 1990s).",
+  "entrances": "Ground-level concourse on the west side facing Oakland Ave; buses use a two-lane busway north of the entrance (entering from Mount Diablo St at the south end, exiting to Park St at the north end) with more stops to the south; parking garage and lots (2,367 spaces).",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Concord_station_(BART)",
+   "https://www.bart.gov/stations/conc",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Concord.jpg?itok=iCsewzot",
+   "https://www.bart.gov/sites/default/files/docs/Final%20BART%20Concord%20Mod%20Plan_Report-web.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)"
+  ]
+ },
+ {
+  "id": "NCON",
+  "name": "North Concord/Martinez",
+  "coords": [
+   38.003273,
+   -122.024599
+  ],
+  "structure": "trench",
+  "structure_notes": "The line climbs NNE toward Willow Pass here. The two tracks and island platform lie in a shallow open cut: USGS 3DEP 1 m DEM cross-sections put the trackbed ~6 m below the ground on both sides at mid-platform (about 4-9 m along the platform, deepening northward). A fare concourse spans above the tracks at ground level, with a pedestrian bridge to the parking lot; Port Chicago Hwy runs alongside. BART's elevator diagram nonetheless labels the platform level 'PLATFORM / STREET', and Wikipedia gives no structure type, so treat 'trench' as medium-low confidence. OSM shows BART yard tracks beginning just north of the station.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single island: platform 1 eastbound (Antioch/Pittsburg-Bay Point), platform 2 westbound to SF/Daly City/Millbrae/SFO."
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": -6,
+   "concourse": "Overhead concourse above the tracks with an elevator down to the island platform and a 'bridge to parking lot' (BART diagram); the diagram draws the agent booth at platform level.",
+   "levels_top_to_bottom": [
+    "concourse/footbridge (ground level of surroundings)",
+    "island platform in cut"
+   ],
+   "notes": "DEM: trackbed ~29.5 m vs ~35.7-36.9 m either side at mid-platform."
+  },
+  "opened": 1995,
+  "opened_date": "1995-12-16",
+  "architect": "IDG Architects",
+  "era": "1990s extension (terminus Dec 1995-Dec 1996)",
+  "recognisable": "A 1990s suburban station whose long canopied island platform sits low in a cutting, crossed overhead by the concourse and a pedestrian bridge to a big surface lot (1,977 spaces). It sits between low-density housing and the open land of the former Concord Naval Weapons Station, and is among BART's least-used stations.",
+  "entrances": "Via the overhead concourse and pedestrian bridge from the parking lot/Port Chicago Hwy side (address 3700 Port Chicago Hwy); a footbridge over the tracks south of the station for the neighbourhood was recommended in 2018.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/North_Concord/Martinez_station",
+   "https://www.bart.gov/stations/ncon",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/North_Concord_Martinez.jpg?itok=_A4rlF9v",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "PITT",
+  "name": "Pittsburg/Bay Point",
+  "coords": [
+   38.018869,
+   -121.944208
+  ],
+  "structure": "median",
+  "structure_notes": "Island platform AT GRADE in the SR-4 median (BART trains approach at grade from both directions), just west of the Bailey Road undercrossing; reached by an elevated pedestrian concourse spanning the eastbound SR-4 lanes from the south parking lot (W. Leland Rd). Crossovers lie just east of Bailey Rd. A second, separate island (the eBART transfer platform) is ~0.6 mi further east in the same median.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "island",
+   "arrangement": "Two sequential islands. Main platform: platform 1 eastbound (to the transfer platform/'Antioch'), platform 2 westbound to SF/Millbrae/SFO. Second island = eBART transfer platform (see ebart_transfer_platform)."
+  },
+  "ebart_transfer_platform": {
+   "location": "SR-4 median east of Bailey Road, ~0.6 mi (0.97 km) east of the Pittsburg/Bay Point platform (2008 EIR: ~2,750 ft east); centre ~38.0189,-121.9327 (OSM)",
+   "platform": "Single at-grade concrete island, 700 ft (213 m) long (EIR), canopy over the middle; no street access, no faregates or barriers; emergency egress only at the west end",
+   "sides": "BART (broad gauge) track on the NORTH face; eBART (standard-gauge DMU) track on the SOUTH face - cross-platform transfer",
+   "bart_tracks": "The two BART mainline tracks from Pittsburg/Bay Point merge into a single track along the platform's north face; beyond the east end it splits into two dead-end tail tracks (~330 m and ~530 m past the platform in OSM) storing up to three 10-car trains (EIR design)",
+   "ebart_tracks": "Single stub track with a buffer stop at the platform's west end (the only single-track section of eBART); becomes double track ~0.5 km east of the platform, after the BART tail tracks end. DMU trackbed raised ~1-1.5 ft to align DMU doors with the platform.",
+   "operation": "Yellow Line trains carrying Antioch passengers continue past Pittsburg/Bay Point to the transfer platform, stop on the north face, run into a tail track, and stop again westbound; eBART trains terminate on the south face; timed ~3-minute cross-platform transfers. eBART riders ending at Pittsburg/Bay Point ride a BART train between the two platforms.",
+   "opened": "2018-05-26",
+   "conf": {
+    "distance": "high",
+    "length_m": "high",
+    "sides": "high",
+    "tail_track_lengths": "medium"
+   }
+  },
+  "platform_length_m": 213,
+  "levels": {
+   "platform_vs_street_m": -4,
+   "concourse": "Elevated concourse (agent booth) above the median/platform, linked by a pedestrian overpass across the eastbound SR-4 lanes to the street/parking side; two elevators needed (street -> concourse -> platform).",
+   "levels_top_to_bottom": [
+    "concourse + pedestrian overpass",
+    "island platform at freeway grade"
+   ],
+   "notes": "Platform is at freeway grade; DEM puts the south parking lot ~4 m higher than the platform (~50 m vs ~46 m)."
+  },
+  "opened": 1996,
+  "opened_date": "1996-12-07",
+  "architect": "Gannett Fleming with Finger and Moy Architects",
+  "era": "1990s extension over Willow Pass; eBART transfer platform added 2018",
+  "recognisable": "A 1990s island platform at grade in the wide median of SR-4, with freeway traffic on both sides, an overhead concourse and a footbridge to the huge south-side lot (1,992 spaces) with its long covered walkway. Looking east, the tracks continue to the eBART transfer platform where the Stadler diesel trains meet BART.",
+  "entrances": "Single public entrance: pedestrian overpass/concourse from the south parking lot on W. Leland Rd over the eastbound lanes; no north-side access (a 2018 study recommended one). The transfer platform has no entrance.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "high",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Pittsburg/Bay_Point_station",
+   "https://en.wikipedia.org/wiki/Template:Pittsburg/Bay_Point_station",
+   "https://www.bart.gov/stations/pitt",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Pittsburg_Bay_Point.jpg?itok=tQFj-WM9",
+   "https://web.archive.org/web/2012/http://www.bart.gov/docs/ecc/2.0_Project_Description.pdf",
+   "https://www.bart.gov/about/projects/ecc/faq",
+   "https://en.wikipedia.org/wiki/EBART",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "PCTR",
+  "name": "Pittsburg Center",
+  "coords": [
+   38.018227,
+   -121.890178
+  ],
+  "structure": "median",
+  "structure_notes": "eBART station in the SR-4 median beneath the Railroad Avenue overcrossing. SR-4 here runs in a shallow depression (median ~3-5 m below the adjacent ground per USGS DEM; Wikipedia infobox: 'trench cut'). Tracks at grade in the median; the island platform extends east from under the overpass. (Wikipedia's coordinates are ~110 m north of the tracks; the entrance on the overpass is ~38.0169,-121.8893 per OSM.)",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single island: platform 1 eastbound to Antioch, platform 2 westbound to the transfer platform (connections to SF/Millbrae/SFO). EIR design: cast-in-place concrete island 410 ft x 25 ft, ~2 ft high."
+  },
+  "platform_length_m": 125,
+  "levels": {
+   "platform_vs_street_m": -4,
+   "concourse": "No concourse or agent booth: stairs and an elevator descend from the Railroad Ave overpass sidewalk directly to the platform (EIR design: one stair and one elevator on each side of the overpass; BART's diagram shows one elevator).",
+   "levels_top_to_bottom": [
+    "Railroad Ave overpass (street)",
+    "SR-4 lanes / island platform at freeway grade"
+   ],
+   "notes": "Value is platform relative to surrounding ground (DEM); depth below the overpass deck not published."
+  },
+  "opened": 2018,
+  "opened_date": "2018-05-26",
+  "architect": "Not identified (2008 EIR concept drawings credited to PGH Wong)",
+  "era": "2018 eBART (BART to Antioch)",
+  "recognisable": "A bare modern island platform with light canopies in the middle of the SR-4 freeway, in the shadow of the Railroad Avenue overpass and served only by boxy Stadler GTW diesel trains. There is no station building - just stair and elevator towers down from the overpass - and no parking beside it (the 240-262 space lot is on Bliss Ave, about 1/4 mile away).",
+  "entrances": "From the Railroad Avenue overpass sidewalks (stairs + elevator down to the median platform); parking in the Bliss Ave lot south of SR-4; City of Pittsburg multimodal facility just north.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Pittsburg_Center_station",
+   "https://www.bart.gov/stations/pctr",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Pittsburg_Center.jpg?itok=2eXC7hhh",
+   "https://www.bart.gov/sites/default/files/documents/station/PittsburgCenter.pdf",
+   "https://web.archive.org/web/2012/http://www.bart.gov/docs/ecc/2.0_Project_Description.pdf",
+   "https://www.bart.gov/about/projects/ecc",
+   "https://www.bart.gov/about/projects/ecc/faq",
+   "https://www.bart.gov/sites/default/files/docs/NConcord_Antioch_Access_Report_02072018.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "ANTC",
+  "name": "Antioch",
+  "coords": [
+   37.996281,
+   -121.783404
+  ],
+  "structure": "median",
+  "structure_notes": "eBART terminus at grade in the SR-4 median just east of Hillcrest Avenue. A pedestrian bridge (escalator and elevator at each end) crosses the northern carriageway to the headhouse and parking along Slatten Ranch Road. Per the EIR design, tail tracks, train storage and maintenance (Antioch Maintenance Yard) lie east of the platform in the median and on a site north of SR-4.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "arrangement": "Single terminal island: platform 1 arrivals ('Antioch last stop'), platform 2 departures to the transfer platform (connections to SF/Millbrae/SFO). EIR design: concrete island 410 ft x 27 ft, ~2 ft high, sized for a 3-car (3-unit) train."
+  },
+  "platform_length_m": 125,
+  "levels": {
+   "platform_vs_street_m": 0,
+   "concourse": "No concourse at the platform; the paid area and agent booth are on the north side at the end of the pedestrian bridge (BART diagram), reached by escalator/elevator from the platform.",
+   "levels_top_to_bottom": [
+    "pedestrian bridge / north-side headhouse",
+    "island platform at freeway grade"
+   ],
+   "notes": "DEM: platform ~18.0 m vs ~16.9 m at the north-side entrance, i.e. essentially at grade."
+  },
+  "opened": 2018,
+  "opened_date": "2018-05-26",
+  "architect": "Not identified in sources",
+  "era": "2018 eBART (BART to Antioch)",
+  "recognisable": "A terminus platform in the middle of SR-4 with a pedestrian bridge striding over the freeway to a north-side headhouse and vast surface lots on Slatten Ranch Rd (about 1,000 spaces at opening plus an 850-space lot added in 2021). Roughly 370 stalls are shaded by solar canopies forming a ~1 MW photovoltaic array. Trains are the Stadler GTW diesel multiple units of the BART to Antioch service.",
+  "entrances": "Single entrance on the north side (1600 Slatten Ranch Rd): headhouse and pedestrian bridge over SR-4 to the platform; Tri Delta Transit bus stops in front; a south-side footbridge was recommended in 2018.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platform_length_m": "medium",
+   "levels.platform_vs_street_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Antioch_station_(BART)",
+   "https://www.bart.gov/stations/antc",
+   "https://www.bart.gov/sites/default/files/styles/max_width/public/2025-06/Antioch.jpg?itok=m1xPAsJ_",
+   "https://www.bart.gov/sites/default/files/documents/station/Antioch.pdf",
+   "https://web.archive.org/web/2012/http://www.bart.gov/docs/ecc/2.0_Project_Description.pdf",
+   "https://www.bart.gov/about/projects/ecc/faq",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ },
+ {
+  "id": "_notes",
+  "macarthur_junction": {
+   "summary": "The Concord (C, Yellow) and Richmond (R, Orange/Red) lines separate just north of MacArthur between ~42nd St and ~47th St, all within/above the SR-24 freeway corridor.",
+   "flying_junction": "Near 45th St (~37.8333,-122.2662; ~0.45 km north of the platforms) the northbound Richmond track (outer east platform track 1) crosses from the east side to the west side BENEATH the two Concord-line tracks, which - with two connecting tracks and the SR-24 carriageways - are on a higher structure (OSM layer 2 vs layer 1 for the Richmond track). The Richmond tracks run in short under-structure sections either side (OSM tunnel ~37.8326-37.8331 and ~37.8336-37.8346), pass beneath the southbound freeway lanes and rise onto the aerial viaduct along Martin Luther King Jr. Way from ~47th St (~37.8348).",
+   "connections": "Between 40th and 43rd St, crossovers let northbound Yellow trains on track 3 reach the Richmond line and southbound Richmond trains reach track 4; connecting tracks let track 1 feed the Concord line and southbound Concord trains reach track 2 - so each platform track can serve either branch.",
+   "south_of_station": "Four tracks reduce to three south of the station (C1 northbound Orange/Red, CX northbound Yellow, C2 southbound all lines) toward the Broadway subway and Oakland Wye; southbound trains share one track (SF-bound depart first).",
+   "confidence": "medium - derived from OpenStreetMap geometry/layer tags and Wikipedia's track diagram, not BART engineering drawings"
+  },
+  "macarthur_to_rockridge": {
+   "structure": "The C-line runs ~2.5 km in the SR-24 median from MacArthur to Rockridge, above the street grid: on freeway fill between cross streets and on short bridges over 52nd St, Shattuck Ave, 55th St, 56th St/Telegraph Ave and Claremont Ave/Hudson St, then the ~420 m Rockridge station viaduct over College Ave and Forest St. East of Rockridge: bridges over Presley Way and Patton St, crossovers ~0.3-0.5 km east of the station, a ~190 m covered/underpass section (OSM tunnel ~37.8491-37.8501), bridges over Golden Gate Ave and Chabot Rd, then the Berkeley Hills Tunnel west portal.",
+   "bart_designation": "BART's Earthquake Safety Program (Feb 2009) calls these the 'North Oakland aerial structures', from Sycamore St to the Berkeley Hills Tunnel, with work at 29th, 30th, MacArthur Blvd, 40th, 42nd, 45th, MLK Jr Way ramp, 52nd, Shattuck, 55th, Telegraph, Claremont, Forest, Presley, Patton, Golden Gate and Chabot.",
+   "elevations_dem": "USGS 3DEP trackbed on fill: ~31.5 m just north of MacArthur, ~59-64 m at the ends of the Rockridge viaduct, ~85-90 m just outside the tunnel west portal (a climb of roughly 1.3-2%). Low confidence.",
+   "line_names": "K-Line = Oakland Wye-Rockridge (Broadway subway, SR-24 median); C-Line = Rockridge-Pittsburg/Bay Point; R-Line = MacArthur-Richmond (internal BART segment letters)."
+  },
+  "r_line_north_of_macarthur": {
+   "structure": "Aerial above Martin Luther King Jr. Way from ~47th St to ~37.8472; embankment and open cut to the Berkeley subway south portal (~37.8484,-122.2713, ~0.5 km south of Ashby); double-track subway under Adeline St and Shattuck Ave through Ashby, Downtown Berkeley and North Berkeley to the north portal (~37.8790,-122.2890, ~0.8 km NW of North Berkeley under the Ohlone Greenway); embankment, then a continuous aerial (~37.881-37.931) over the former Santa Fe right-of-way through Albany and El Cerrito (El Cerrito Plaza, El Cerrito del Norte); then mostly at-grade/short bridges into Richmond (bridge over Macdonald Ave) with Richmond Yard beyond Barrett Ave.",
+   "confidence": "medium (OSM bridge/tunnel/cutting tags; Wikipedia BART line table: 'Elevated above Martin Luther King Jr. Way, tunnel under Adeline St and Shattuck Ave, former Santa Fe right-of-way')"
+  },
+  "berkeley_hills_tunnel": {
+   "length": "3.1 mi (~5.0 km) per Rogers & Peck and Wikipedia; OSM tunnel ways portal-to-portal ~5.13 km",
+   "length_m": 5000,
+   "bores": "Twin parallel single-track bores (not a double-track tube): excavated as ~19 ft (5.8 m) horseshoe sections on steel sets, finished as circular reinforced-concrete-lined tubes of 17.5 ft (5.33 m) inside diameter (lining at least 1.75 ft); ~100 ft (30 m) of rock between bores narrowing to 55 ft (16.8 m) at the portals (Wikipedia says 50 ft); pedestrian cross-passages every 1,000 ft (305 m); clearance height 16.8 ft (5.1 m); ventilation structure with roll-down doors at the east portal.",
+   "alignment": "Trends N61E, north of and roughly parallel to the Caldecott road tunnels; SR-24 median on both sides.",
+   "west_portal": {
+    "lat": 37.8514,
+    "lon": -122.2381,
+    "desc": "Oakland/Rockridge side, in the SR-24 median just east of the Chabot Rd bridge, ~1.4 km ENE of Rockridge station",
+    "ground_elev_m_dem": 88
+   },
+   "east_portal": {
+    "lat": 37.8747,
+    "lon": -122.1878,
+    "desc": "Orinda side, ~0.5-0.6 km WSW of Orinda station, north of the Caldecott Tunnel east portal",
+    "ground_elev_m_dem": 165
+   },
+   "grade": "Original design: 1.2% overall rising to the NE (2% to the mid-point, then +0.3%). As built, for gravity drainage: 1.75% rising from the west portal to a summit 5,100 ft (1.55 km) inside the east portal, then 0.3% falling to the east portal. Wikipedia infobox: '1.2% (2% max)'.",
+   "portal_elevation_caveat": "USGS 3DEP 1 m DEM near the OSM portal points gives ~85-90 m (west) and ~165 m (east); that ~75 m rise is larger than the ~55-60 m implied by the published grade profile, so treat both elevations as approximate (low confidence) and check against lidar.",
+   "hayward_fault": "Crosses the tunnel ~900 ft (274 m) inside the west portal; fault creep has distorted the tunnel, and BART planned a ~$60M repair with track realignment (2018).",
+   "construction": "$31M contract (J.F. Shea / Kaiser / Macco joint venture, fall 1964); work began Feb 1965, bores holed through Mar 1967, completed Jul 1968; full-face drill-and-blast with 4 ft rounds from four headings; opened with the Concord line on 1973-05-21.",
+   "conf": {
+    "length_m": "high",
+    "bore_diameter": "high",
+    "portal_coords": "high",
+    "portal_elevations": "low",
+    "grade": "medium"
+   }
+  },
+  "ebart_track": {
+   "alignment": "Standard-gauge (1,435 mm), unelectrified, double-track line in the SR-4 median from the Pittsburg/Bay Point transfer platform to Antioch (east of Hillcrest Ave), except a short single-track section into the transfer platform. Tracks are at grade in the median (ballasted, with sub-ballast and underdrains in the EIR typical section), with short aerial structures where SR-4 bridges over local roads (e.g. a 117 ft single span at Cavallo Rd and an 80 ft double-span structure at another road) and passing beneath the Railroad Ave, Harbor St, Loveridge Rd, G St and Hillcrest Ave crossings. All crossings are grade-separated.",
+   "length": "10 mi per BART; EIR: 9.1 mi from Pittsburg/Bay Point to the Antioch platform plus ~0.9 mi for storage and maintenance",
+   "max_speed": "75 mph (120 km/h) maximum, ~60 mph average (BART FAQ; Stadler datasheet max 120 km/h); Automatic Train Protection enforces limits",
+   "run_times": "Antioch -> Pittsburg Center ~7 min; Pittsburg Center -> transfer platform ~3 min",
+   "opened": "2018-05-26 (cost $525M)",
+   "conf": {
+    "max_speed": "high",
+    "length": "high"
+   }
+  },
+  "ebart_rolling_stock": {
+   "correction": "eBART does NOT use Stadler FLIRTs. It uses 8 Stadler GTW 2/6 articulated diesel-electric multiple units (BART fleet 101-108, built in Bussnang, first delivered June 2016).",
+   "unit": "Each unit: two low-floor aluminium end cars plus a short steel central power module holding the engines (3 carbodies, 2 articulations; wheel arrangement 2'Bo2'); 40.89 m (134 ft 2 in) over couplers; 2.95 m (9 ft 8 in) wide; floor 620 mm low-floor (>75%) / 1,020 mm high-floor; 104 seats (16 tip-up) + 104 standees (Stadler) or 96 (BART); 600 kW at wheel; 71.9 t; Tier 4 final; max 120 km/h (75 mph); automatic couplers; up to 3 units in multiple.",
+   "consists": "Trains run as 1-3 coupled units (BART calls each GTW a 'car': 'maximum of 3 cars coupled together'). The 2008 EIR planned two-unit trains in the peak (~81.8 m) and single units off-peak; Pittsburg Center and Antioch platforms (410 ft / 125 m) are sized for three units (~122.7 m).",
+   "conf": {
+    "unit_length_m": "high",
+    "fleet": "high",
+    "typical_consist": "medium"
+   }
+  },
+  "general": "BART platforms are 700 ft (213 m) long (10-car trains are 710 ft); BART uses 1,676 mm broad gauge, 1,000 V DC third rail, max gradient 4%. Heights/depths flagged low confidence were derived from the USGS 3DEP 1 m bare-earth DEM (trackbed on fill vs. adjacent streets) and should be checked against project lidar.",
+  "caveats": [
+   "The session's WebSearch budget ran out, so research used direct fetches of Wikipedia wikitext, bart.gov pages/diagrams/PDFs, archived BART planning and EIR documents, OpenStreetMap (Overpass API) and USGS EPQS elevations.",
+   "Platform-side assignments for island platforms come from BART's elevator/booth diagrams; east/west sides come from OSM and are given only where clear.",
+   "No authoritative depths were found for the Berkeley subway stations (Ashby, Downtown Berkeley, North Berkeley)."
+  ],
+  "sources": [
+   "https://en.wikipedia.org/wiki/Berkeley_Hills_Tunnel",
+   "http://sonic.net/~mly/www.geolith.com/bart/",
+   "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit",
+   "https://en.wikipedia.org/wiki/Template:MacArthur_station_(BART)",
+   "https://web.archive.org/web/2012/http://www.bart.gov/docs/eqs/North%20Oakland%20Aerials%20Notification%202%2009.pdf",
+   "https://en.wikipedia.org/wiki/EBART",
+   "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit_rolling_stock",
+   "https://www.bart.gov/about/projects/ecc",
+   "https://www.bart.gov/about/projects/ecc/faq",
+   "https://web.archive.org/web/2012/http://www.bart.gov/docs/ecc/2.0_Project_Description.pdf",
+   "https://web.archive.org/web/2020/https://www.stadlerrail.com/media/pdf/gebart0615e_us.pdf",
+   "https://overpass-api.de/api/interpreter (OpenStreetMap)",
+   "https://epqs.nationalmap.gov/v1/json (USGS 3DEP elevations)"
+  ]
+ }
+]
