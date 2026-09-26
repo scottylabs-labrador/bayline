@@ -32,7 +32,7 @@ const MetroUI = (() => {
   #msys .res{position:absolute;left:12px;top:12px;width:240px;max-height:40vh;overflow:auto;z-index:2}
   #msys .res button{display:block;width:100%;text-align:left;border:none;background:rgba(16,19,24,.92);padding:8px 12px;border-bottom:1px solid var(--line);font-size:14px}
   #msys .res button:hover{background:rgba(60,70,84,.95)}
-  #msys .foot{display:flex;justify-content:space-between;color:var(--ink-faint);font-size:12.5px;margin-top:8px}
+  #msys .foot{display:flex;flex-wrap:wrap;justify-content:space-between;column-gap:16px;row-gap:3px;color:var(--ink-faint);font-size:12.5px;margin-top:8px} #msys .foot .legal{flex-basis:100%}
   .mrow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);cursor:pointer}
   .mrow:hover{background:rgba(255,255,255,.06)}
   .mrow .t{font-family:var(--mono);font-size:13px;color:var(--ink-dim);text-align:right;white-space:nowrap} .mrow .t b{color:var(--ink);font-size:16px}
@@ -92,7 +92,7 @@ const MetroUI = (() => {
   #title .mfront .pick .hint{color:var(--ink-faint);font-size:12.5px}
   #hmetro{display:inline-flex;align-items:center;gap:7px} #hmetro .ico{display:block}
   #hmetro.on{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.32)}
-  @media (max-width:760px){#title p.lede .full{display:none} #title p.lede .short{display:inline} #title .mfront .top{flex-wrap:wrap} #title .mfront .acts{width:100%;justify-content:stretch} #title .mfront .acts .btn{flex:1 1 auto} #msys .wrap{grid-template-columns:1fr} #msys .side{height:auto;max-height:30vh} #msys canvas{height:52vh} #mride,#mdmi{width:auto;right:12px;left:12px;bottom:112px} #mstrip{display:none}}`;
+  @media (max-width:760px){#title p.lede .full{display:none} #title p.lede .short{display:inline} #title .mfront .t small{white-space:normal} #title .mfront .t small .lv{display:none} #title .mfront .top{flex-wrap:wrap} #title .mfront .acts{width:100%;justify-content:stretch} #title .mfront .acts .btn{flex:1 1 auto} #msys .wrap{grid-template-columns:1fr} #msys .side{height:auto;max-height:30vh} #msys canvas{height:52vh} #mride,#mdmi{width:auto;right:12px;left:12px;bottom:112px} #mstrip{display:none}}`;
   function build() {
     if (built || !on()) return; built = true;
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -105,7 +105,7 @@ const MetroUI = (() => {
         <button class="chip" id="mlive" title="Place every train from the operator's real-time predictions"><span class="dot" id="mlivedot"></span><span id="mlivet">Live positions</span></button>
         <span id="mlines" style="display:flex;gap:6px;flex-wrap:wrap"></span></div>
       <div class="wrap"><div style="position:relative"><canvas id="msysc"></canvas><div class="res panel" id="mres" hidden></div></div><div class="side" id="mside"></div></div>
-      <div class="foot"><span id="mfoot"></span><span>Click a station to see its trains, a train to follow it. Scroll to zoom, drag to pan. <kbd>N</kbd> opens this map.</span></div></div></div>`);
+      <div class="foot"><span id="mfoot"></span><span>Click a station to see its trains, a train to follow it. Scroll to zoom, drag to pan. <kbd>N</kbd> opens this map.</span><span class="legal">Unofficial. Not affiliated with the San Francisco Bay Area Rapid Transit District. Timetable: public GTFS feed; live positions: GTFS-Realtime.</span></div></div></div>`);
     el.board = add(`<div class="overlay" id="mboard" hidden><div class="card panel"><button class="close" data-mclose>×</button>
       <div class="kicker" id="mbk">Arrivals</div><h2 id="mbt">Station</h2><div id="mbsub" style="color:var(--ink-dim);margin:-6px 0 8px;font-size:14px"></div>
       <div class="plats" id="mbp"></div><div class="conn" id="mbc"></div><div class="acts" id="mba"></div>
@@ -166,7 +166,7 @@ const MetroUI = (() => {
   function titleCard() {
     const modes = document.querySelector('#title .modes'); if (!modes || fr) return;
     const d = document.createElement('div'); d.className = 'mfront'; d.dataset.metroUi = '';
-    d.innerHTML = `<div class="top">${bars()}<div class="t"><b>Bayline Metro</b><small>50 stations · 5 lines · live</small></div>
+    d.innerHTML = `<div class="top">${bars()}<div class="t"><b>Bayline Metro</b><small>50 stations · 5 lines + airport connector<span class="lv"> · live</span></small></div>
       <div class="acts"><button class="btn go" data-mf="ride" title="Start on a platform of any station as the next train pulls in">Ride</button><button class="btn" data-mf="drive" title="Drive a metro train under automatic train control">Drive</button><button class="btn" data-mf="map" title="Every train running now">System map</button></div></div>
       <div class="pick" hidden><div class="row"><input autocomplete="off" spellcheck="false"><button class="chip" data-mf="back">Back</button></div><div class="opts"></div><div class="hint"></div></div>`;
     modes.after(d);
@@ -549,11 +549,19 @@ const MetroUI = (() => {
     return rows.map((ev, i) => { const inf = MetroSim.eventInfo(ev), m = Math.round((ev.t - now) / 60);
       return `<div class="mrow ${cls}" data-ev="${i}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}${inf.change ? ' · change for ' + esc(inf.change) : ''}${inf.platform ? ' · platform ' + esc(inf.platform) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('');
   }
+  // the network in one phrase, the same on the title strip and the map: the five lines, plus the airport connector
+  // (the Antioch shuttle is part of the Yellow Line's service, not a line of its own)
+  function linesText() {
+    const L = typeof MetroSim !== 'undefined' && MetroSim.lines && MetroSim.lines.length ? MetroSim.lines : null;
+    if (!L) return '5 lines + airport connector';
+    const n = L.filter(l => l.id !== 'ebart' && l.id !== 'grey').length;
+    return `${n} lines${L.some(l => l.id === 'grey') ? ' + airport connector' : ''}`;
+  }
   function renderSide() {
     const S = el.mside, h = map.sel;
-    if (!h) { S.innerHTML = `<h3>Bayline Metro</h3><div class="sub">${MetroSim.lines.filter(l => l.id !== 'ebart').length} lines · ${MetroSim.stations.filter(x => x.id !== 'PITT-T').length} stations · ${Math.round(131.4)} route miles</div>
+    if (!h) { S.innerHTML = `<h3>Bayline Metro</h3><div class="sub">${linesText()} · ${MetroSim.stations.filter(x => x.id !== 'PITT-T').length} stations · ${Math.round(131.4)} route miles</div>
       ${MetroSim.lines.filter(l => !['ebart'].includes(l.id)).map(l => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><i style="width:8px;height:22px;border-radius:3px;background:${l.color}"></i><span><b>${esc(l.name)}</b><br><small style="color:var(--ink-dim)">${esc(l.terminals.join(' – '))}</small></span></div>`).join('')}
-      <p style="color:var(--ink-faint);font-size:12.5px;margin-top:10px">Unofficial. Not affiliated with the San Francisco Bay Area Rapid Transit District. Timetable: public GTFS feed; live positions: GTFS-Realtime.</p>`; return; }
+`; return; }
     if (h.st) {
       const s = h.st; S.innerHTML = `<div class="kicker">${esc(stationType(s))}</div><h3>${esc(s.name)}</h3><div class="sub">${[...s.lines].filter(l => l !== 'ebart').map(l => `<span class="mchip"><i style="background:${MetroSim.lineColor(l)}"></i>${esc(MetroSim.lineById.get(l) ? MetroSim.lineById.get(l).short : l)}</span>`).join(' ')}</div>
         <div style="display:flex;gap:8px;margin:6px 0 10px"><button class="btn primary" id="mgo">Go to the platform</button><button class="btn" id="mbd">Arrivals</button></div>${nextTrainsHtml(s.id, 9)}`;
@@ -651,7 +659,7 @@ const MetroUI = (() => {
   let drivebarMetro = false;
   function update(dt) {
     if (!on()) return; build();
-    if (el.hbtn) el.hbtn.classList.toggle('on', !!(el.sys && !el.sys.hidden));
+    const mapOn = !!(el.sys && !el.sys.hidden); if (el.hbtn && el.hbtn._on !== mapOn) { el.hbtn._on = mapOn; el.hbtn.classList.toggle('on', mapOn); }
     if (el.sys && !el.sys.hidden) { const c = el.msysc, r = c.getBoundingClientRect(); if (c.width !== Math.round(r.width * devicePixelRatio)) { c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio; } draw(); }
     slow -= dt; if (slow > 0) return; slow = 0.2;
     if (!ready()) { el.ride.hidden = el.dmi.hidden = el.strip.hidden = true; return; }

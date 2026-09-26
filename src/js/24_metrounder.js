@@ -41,8 +41,9 @@ const Under = (() => {
   const CG2 = 2048, coarse = new Map();
   function coarseAdd(bb, k) { for (let i = Math.floor(bb[0] / CG2); i <= Math.floor(bb[2] / CG2); i++) for (let j = Math.floor(bb[1] / CG2); j <= Math.floor(bb[3] / CG2); j++) { const key = gk(i, j), v = (coarse.get(key) || 0) + k; if (v > 0) coarse.set(key, v); else coarse.delete(key); } }
   function anyNear(x, z) { const ci = Math.floor(x / CG2), cj = Math.floor(z / CG2); for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) if (coarse.has(gk(ci + a, cj + b))) return true; return false; }
-  function gridAdd(c) { coarseAdd(c.bb, 1); for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const k = gk(i, j); let s = grid.get(k); if (!s) grid.set(k, s = new Set()); s.add(c.id); } }
-  function gridDel(c) { coarseAdd(c.bb, -1); for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const s = grid.get(gk(i, j)); if (s) { s.delete(c.id); if (!s.size) grid.delete(gk(i, j)); } } }
+  let gen = 0;                                             // (bumped on every add / remove: caches below)
+  function gridAdd(c) { gen++; coarseAdd(c.bb, 1); for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const k = gk(i, j); let s = grid.get(k); if (!s) grid.set(k, s = new Set()); s.add(c.id); } }
+  function gridDel(c) { gen++; coarseAdd(c.bb, -1); for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const s = grid.get(gk(i, j)); if (s) { s.delete(c.id); if (!s.size) grid.delete(gk(i, j)); } } }
   let dirty = true;
 
   function bboxOf(pts2) { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const p of pts2) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; const z = p.length === 3 ? p[2] : p[1]; if (z < z0) z0 = z; if (z > z1) z1 = z; } return [x0, z0, x1, z1]; }
@@ -227,6 +228,13 @@ const Under = (() => {
     g.setAttribute('aE', new THREE.Float32BufferAttribute(E, 2)); g.setIndex(idx);
     const m = new THREE.Mesh(g, fpMat); m.frustumCulled = false; m.matrixAutoUpdate = false; m.userData.bb = c.bb; return m;
   }
+  function buildOcc() {
+    const q = LV[1], x0 = q.cx - q.half, z0 = q.cz - q.half, sz = 2 * q.half / OCC; occData.fill(debug.mode === 'old' ? 255 : 0);
+    const mark = (bb) => { const i0 = Math.max(0, Math.floor((bb[0] - x0) / sz)), i1 = Math.min(OCC - 1, Math.floor((bb[2] - x0) / sz)), j0 = Math.max(0, Math.floor((bb[1] - z0) / sz)), j1 = Math.min(OCC - 1, Math.floor((bb[3] - z0) / sz));
+      for (let jj = j0; jj <= j1; jj++) for (let ii = i0; ii <= i1; ii++) occData[jj * OCC + ii] = 255; };
+    for (const c of cells.values()) mark(c.bb); for (const c of cuts.values()) mark(c.bb);
+    occTex.needsUpdate = true;
+  }
   function drawMaps(cam) {
     const t0 = performance.now(), ac = R.autoClear, prevRT = R.getRenderTarget(); R.autoClear = false;
     for (let L = 0; L < 2; L++) {
@@ -249,6 +257,7 @@ const Under = (() => {
       rtF.scissorTest = false; rtF.viewport.set(0, 0, 2 * NF, NF); rtF.scissor.set(0, 0, 2 * NF, NF); }
     R.setRenderTarget(prevRT); R.autoClear = ac;
     stats.mapMs = +(performance.now() - t0).toFixed(2);
+    buildOcc();
   }
 
   // ------------------------------------------------------------------ shared uniforms + the lighting patch
@@ -269,16 +278,24 @@ const Under = (() => {
   let aliasedF = false;
   const uFine = { value: fineTex }, uXfF = { value: new THREE.Vector4(0, 0, 1 / 64, 0) };
   const uMap = { value: mapTex }, uXf0 = { value: new THREE.Vector4(0, 0, 1 / 512, 0) }, uXf1 = { value: new THREE.Vector4(0, 0, 1 / 2048, 0) };
+  // blUMK: x the map is valid near the camera (cuts, the post's gating), y the fail-safe, z the lighting reads are on
+  // (every lit material: only near the volumes, see update), w unused
   const uK = { value: new THREE.Vector4(0, 0, 0, 0) }, uTint = { value: new THREE.Vector3(1.0, 0.95, 0.87) };
-  for (const o of [mapTex, uXf0.value, uXf1.value, uK.value, uTint.value, fineTex, uXfF.value]) o.clone = function () { return this; };
-  const UNI = { blUM: uMap, blUMXf0: uXf0, blUMXf1: uXf1, blUMK: uK, blUTint: uTint };
+  // coarse occupancy of level 1 (64 x 64 over its 4 km, 64 m texels): 1 where any cell's or cut's footprint lies. Every
+  // read checks it first (one fetch from a 4 KB texture that stays in cache), so fragments away from the volumes never
+  // touch the big map (M3.1: the reads cost ~18 % of the frame at an SF orbit before this)
+  const OCC = 64, occData = new Uint8Array(OCC * OCC), occTex = new THREE.DataTexture(occData, OCC, OCC, THREE.RedFormat, THREE.UnsignedByteType);
+  occTex.magFilter = occTex.minFilter = THREE.NearestFilter; occTex.generateMipmaps = false; occTex.needsUpdate = true; occTex.name = 'under-occ';
+  const uOcc = { value: occTex };
+  for (const o of [mapTex, uXf0.value, uXf1.value, uK.value, uTint.value, fineTex, uXfF.value, occTex]) o.clone = function () { return this; };
+  const UNI = { blUM: uMap, blUMXf0: uXf0, blUMXf1: uXf1, blUMK: uK, blUTint: uTint, blUOcc: uOcc };
   const UNI_FINE = { blUMF: uFine, blUMXfF: uXfF };        // (the terrain's cut variant only: Terrain.cutUniforms)
   for (const id of ['standard', 'physical', 'lambert', 'phong', 'toon']) if (THREE.ShaderLib[id]) Object.assign(THREE.ShaderLib[id].uniforms, UNI);
   // GLSL shared by the lit materials, the terrain cut test and the post composite (uXf: (cx, cz, 1/(2 half) , refY))
   const GLSL = /* glsl */`
 #ifndef BL_UNDER_DEF
 #define BL_UNDER_DEF
-uniform sampler2D blUM; uniform vec4 blUMXf0; uniform vec4 blUMXf1; uniform vec4 blUMK; uniform vec3 blUTint;
+uniform sampler2D blUM; uniform vec4 blUMXf0; uniform vec4 blUMXf1; uniform vec4 blUMK; uniform vec3 blUTint; uniform sampler2D blUOcc;
 // view -> world, undoing the earth-curve bend of 00_util.js (it lowers view positions by K d² along world up)
 vec3 blUnderWorld( vec3 vp ) {
   vec3 w = transpose( mat3( viewMatrix ) ) * ( vp - viewMatrix[ 3 ].xyz );
@@ -286,8 +303,15 @@ vec3 blUnderWorld( vec3 vp ) {
   w.y += 7.848061e-8 * max( dot( vp, vp ) - bv * bv, 0.0 );
   return w;
 }
-// the two samples (map A, map B) of the finest level covering w.xz; false outside both levels
+// is anything registered near w.xz (the coarse occupancy of level 1)? false outside level 1
+bool blUnderOcc( vec3 w ) {
+  vec2 uv = ( w.xz - blUMXf1.xy ) * blUMXf1.z * 0.5 + 0.5;
+  if ( any( lessThan( uv, vec2( 0.003 ) ) ) || any( greaterThan( uv, vec2( 0.997 ) ) ) ) return false;
+  return texture2D( blUOcc, uv ).r > 0.5;
+}
+// the two samples (map A, map B) of the finest level covering w.xz; false outside both levels or where nothing is
 bool blUnderFetch( vec3 w, out vec4 a, out vec4 b, out float refY ) {
+  if ( ! blUnderOcc( w ) ) return false;
   vec2 uv = ( w.xz - blUMXf0.xy ) * blUMXf0.z * 0.5 + 0.5;
   if ( all( greaterThan( uv, vec2( 0.003 ) ) ) && all( lessThan( uv, vec2( 0.997 ) ) ) ) {
     a = texture2D( blUM, vec2( uv.x * 0.5, uv.y * 0.5 ) ); b = texture2D( blUM, vec2( 0.5 + uv.x * 0.5, uv.y * 0.5 ) ); refY = blUMXf0.w; return true; }
@@ -311,10 +335,17 @@ vec4 blUnder( vec3 w ) {
   float day = clamp( max( a.b, dv ), 0.0, 1.0 );
   return vec4( ins, mix( 1.0, day, ins ), a.a * ins, max( cut, ins ) );
 }
+// the lighting's read (every lit material, the post composite): only while the camera is near the volumes (blUMK.z);
+// from further or higher up nothing is read at all
+vec4 blUnderL( vec3 w ) {
+  if ( blUMK.z < 0.5 ) return vec4( 0.0, 1.0, 0.0, 0.0 );
+  return blUnder( w );
+}
 #ifdef BL_CUT
 uniform sampler2D blUMF; uniform vec4 blUMXfF;
 // the terrain's cut test: the fine level (0.25 m) near the camera, the under map beyond
 bool blUnderCut( vec3 w ) {
+  if ( blUMK.x < 0.5 || ! blUnderOcc( w ) ) return false;
   vec2 uv = ( w.xz - blUMXfF.xy ) * blUMXfF.z * 0.5 + 0.5;
   if ( blUMK.x > 0.5 && all( greaterThan( uv, vec2( 0.004 ) ) ) && all( lessThan( uv, vec2( 0.996 ) ) ) ) {
     vec4 a = texture2D( blUMF, vec2( uv.x * 0.5, uv.y ) ), b = texture2D( blUMF, vec2( 0.5 + uv.x * 0.5, uv.y ) );
@@ -333,7 +364,7 @@ bool blUnderCut( vec3 w ) {
     const DIR = '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )', RECT = '#if ( NUM_RECT_AREA_LIGHTS > 0 ) && defined( RE_Direct_RectArea )';
     if (LB.includes(DIR) && LB.includes(RECT)) {
       THREE.ShaderChunk.lights_fragment_begin = `vec3 blUW = blUnderWorld( - vViewPosition );
-vec4 blU = blUnder( blUW );
+vec4 blU = blUnderL( blUW );
 ` + LB.replace(DIR, `#if defined( RE_Direct )
 vec3 blDD0 = reflectedLight.directDiffuse, blDS0 = reflectedLight.directSpecular;
 #endif
@@ -497,7 +528,22 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   }
 
   // ------------------------------------------------------------------ per frame
-  let lastCam = new THREE.Vector3(1e9, 0, 0), wasNear = false, mapWait = 0, recentred = false;
+  let lastCam = new THREE.Vector3(1e9, 0, 0), wasNear = false, mapWait = 0, recentred = false, lastMode;
+  // the lighting reads (blUMK.z) near the volumes only: the camera within 600 m of a cell's footprint and less than 150 m
+  // above the ground (cached while the camera moves less than 20 m and nothing is registered or removed)
+  const LIT_R = 600, LIT_ALT = 150; let litAt = null, litVal = false, litGen = -1;
+  function litNear(cp) {
+    if (litAt && litGen === gen && Math.abs(litAt[0] - cp.x) + Math.abs(litAt[2] - cp.z) < 20 && Math.abs(litAt[1] - cp.y) < 10) return litVal;
+    let alt = 0; try { const g = Terrain.h(cp.x, cp.z); if (isFinite(g)) alt = cp.y - g; } catch (e) {}
+    let v = false;
+    if (alt < LIT_ALT) {
+      const i0 = Math.floor((cp.x - LIT_R) / GRID), i1 = Math.floor((cp.x + LIT_R) / GRID), j0 = Math.floor((cp.z - LIT_R) / GRID), j1 = Math.floor((cp.z + LIT_R) / GRID);
+      scan: for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const set = grid.get(gk(i, j)); if (!set) continue;
+        for (const id of set) { const c = cells.get(id); if (!c) continue; const dx = Math.max(c.bb[0] - cp.x, 0, cp.x - c.bb[2]), dz = Math.max(c.bb[1] - cp.z, 0, cp.z - c.bb[3]);
+          if (dx * dx + dz * dz < LIT_R * LIT_R) { v = true; break scan; } } }
+    }
+    litAt = [cp.x, cp.y, cp.z]; litVal = v; litGen = gen; return v;
+  }
   // (failure isolation: an exception anywhere in Under first resets it to "outdoors, nothing hidden, no map"; then the
   // metro switch (18_metro.js) is told, which turns the whole metro off for the session with its one warning; without
   // the switch Under just stays off)
@@ -540,6 +586,11 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     state.daylight = c ? dayAt(c, cp.x, cp.y, cp.z) : state.failsafe ? 0 : 1;
     const target = c || state.failsafe ? 1 - state.daylight : 0;
     state.depth = target;                                  // (the daylight ramps are already smooth along the cell)
+    uK.value.z = aliased && (state.cell || state.failsafe || (any && litNear(cp))) ? 1 : 0;
+    // QA A/B (Under.debug.mode): 'off' no reads at all, 'old' the reads before M3.1 (everywhere within ~4 km)
+    if (debug.mode !== lastMode) { lastMode = debug.mode; buildOcc(); }
+    if (debug.mode === 'off') { uK.value.x = 0; uK.value.z = 0; } else if (debug.mode === 'old') uK.value.z = any && aliased ? 1 : 0;
+    stats.lit = uK.value.z;
     const T2 = performance.now();
     visibility(cam);
     const T3 = performance.now(); const tu = stats.tu || (stats.tu = [0, 0, 0]); tu[0] = T1 - T0; tu[1] = T2 - T1; tu[2] = T3 - T2;   // (QA: map / cell / visibility ms)
@@ -553,7 +604,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
       Env.state.under = state.depth;
       if (state.depth > 0) { Env.state.exposure = U.lerp(Env.state.exposure, INTERIOR_EXPOSURE, state.depth); R.toneMappingExposure = Env.state.exposure * 0.93; }
     }
-    if (typeof Post !== 'undefined' && Post.under) { Post.under.depth = state.depth; Post.under.outside = state.outsideVisible || !(state.cell || state.failsafe); Post.under.maxBoost = MAX_BOOST; Post.under.on = any; }
+    if (typeof Post !== 'undefined' && Post.under) { Post.under.depth = state.depth; Post.under.outside = state.outsideVisible || !(state.cell || state.failsafe); Post.under.maxBoost = MAX_BOOST; Post.under.on = any && debug.mode !== 'off'; }
     lastCam.copy(cp);
   }
   // around the draw: hide cells nobody can see and, while no opening to the outdoors is in view, the outdoor world

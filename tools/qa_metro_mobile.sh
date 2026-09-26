@@ -1,6 +1,6 @@
 #!/bin/sh
 # Bayline Metro on a phone (M3 gate item 5): tools/shot.mjs --mobile (DPR 2, touch) at 390 x 844 on Low and Medium with
-# the metro on: frame rate, memory, and the metro by touch (map, platform, board by tapping the prompt, ride panel,
+# the metro on: frame rate, memory, and the metro by touch (map, platform, arrivals board, board a train by tapping the prompt, ride panel,
 # the on-screen drive buttons): tools/qa_metro_mobile.js. Fails on a failed step, a page/console error or a metro failure.
 # Usage: [PORT=8136] sh tools/qa_metro_mobile.sh [page] [outdir]     one headless Chrome at a time
 set -u

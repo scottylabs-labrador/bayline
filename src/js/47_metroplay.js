@@ -61,7 +61,7 @@ const MetroPlay = (() => {
   // floors exist (an aerial platform never drops you to the street), and the camera modes follow that train.
   function teleport(st, gtfs) {
     const id = st.id || st, MN = MetroSim.net, S = MN.stationById[id]; if (!S || !S.platforms || !S.platforms.length) return false;
-    const now = Env.time.sec, next = nextAt(id, gtfs, now);
+    const now = Env.time.sec, next = nextAt(id, gtfs, now); pending = null;          // (a new spawn replaces one still settling)
     const p = (gtfs && S.platforms.find(q => q.gtfs === gtfs)) || (next && S.platforms.find(q => q.gtfs === next.sid)) || S.platforms[0];
     const t = MN.byId[p.track]; if (!t) return false;
     // the next train's direction along this track (+1: toward +s); it enters at the other end
@@ -88,6 +88,7 @@ const MetroPlay = (() => {
       pending = { t, s: sQ, s0, s1, dirS, side, y: yPlat, yKnown: yKnown !== null, sp: spS, until: performance.now() + 15000 }; }
     MN.frame(t, sQ, F);
     let x = F.x + F.rx * lat, z = F.z + F.rz * lat;
+    if (pending) { pending.x0 = x; pending.z0 = z; }                // (where the walker starts: settling stops if they go elsewhere)
     // (a spot the floors don't confirm: the stations' own spawn point on that platform, which is on its floor)
     if (ok && spS && MetroStations.floorAt(x, yPlat + 0.3, z) === null && MetroStations.floorAt(spS.x, yPlat + 0.3, spS.z) !== null) { x = spS.x; z = spS.z; }
     // heading: up the platform toward where the train comes from, 12 degrees toward its track
@@ -150,6 +151,8 @@ const MetroPlay = (() => {
   function settleSpawn() {
     const P = pending; if (!P || Player.mode !== 'walk') { pending = null; return; }
     if (performance.now() > P.until) { pending = null; return; }
+    // the player has gone somewhere else meanwhile (another station, the Peninsula): leave them there
+    if (P.x0 !== undefined && Math.hypot(Player.walk.x - P.x0, Player.walk.z - P.z0) > 150) { pending = null; return; }
     // the floors are there once a probe across the platform finds them (on the expected side, or the other one: the
     // data's side can disagree with what was built), or the stations' spawn point stands on one
     let side = P.side; const spOk = !!(P.sp && MetroStations.floorAt(P.sp.x, P.y + 0.3, P.sp.z) !== null);

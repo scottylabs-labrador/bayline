@@ -289,7 +289,10 @@ const MetroGround = (() => {
   let rects = null;
   const api = { install, carveAt, carvePoint, onCutGround, cutNear, roadKeepOut, stats, get installed() { return installed; }, get rects() { return rects; },
     // (QA handles: the modules this one works with, for headless checks)
-    _dbg: { flora: () => (typeof Flora !== 'undefined' ? Flora : null), terrain: () => Terrain, world: () => (typeof World !== 'undefined' ? World : null), ground: () => (typeof GroundCover !== 'undefined' ? GroundCover : null) } };
+    _dbg: { flora: () => (typeof Flora !== 'undefined' ? Flora : null), terrain: () => Terrain, world: () => (typeof World !== 'undefined' ? World : null), ground: () => (typeof GroundCover !== 'undefined' ? GroundCover : null), metronet: () => MetroNet,
+      segsNear(x, z, r) { const out = []; for (let k = 0; k < nS; k++) { const o = k * SEG, ax = S[o], az = S[o + 1], bx = S[o + 2], bz = S[o + 3];
+        const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz; let u = L2 > 1e-9 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u;
+        const d = Math.hypot(x - ax - dx * u, z - az - dz * u); if (d < r) out.push({ kind: S[o + 6], d: +d.toFixed(2), ta: +S[o + 4].toFixed(2), tb: +S[o + 5].toFixed(2), side: S[o + 7] }); } return out; } } };
   if (typeof window !== 'undefined') (window.__baylineMods ||= {}).MetroGround = api;
   return api;
 })();
