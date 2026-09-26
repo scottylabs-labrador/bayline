@@ -6,10 +6,10 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd); cd "$ROOT"
 PAGE=${1:-sim.html}; OUT=${2:-/tmp/bayline-metro-mobile}; mkdir -p "$OUT"
-BASE="http://localhost:${PORT:-8136}/$PAGE"
+BASE="http://localhost:${PORT:-8136}/$PAGE"; X=${XH:+&$XH}   # XH=metrodir=metro-next/ adds to every URL
 fails=0
 for q in low medium; do
-  python3 tools/wd.py 600 node tools/shot.mjs "$BASE#auto&metro=1&q=$q&t=08:03" "$OUT/phone_$q.png" --gpu --mobile --w 390 --h 844 --wait 300 --eval "$(cat tools/qa_metro_mobile.js)" > "$OUT/phone_$q.log" 2>&1
+  python3 tools/wd.py 600 node tools/shot.mjs "$BASE#auto&metro=1&q=$q&t=08:03$X" "$OUT/phone_$q.png" --gpu --mobile --w 390 --h 844 --wait 300 --eval "$(cat tools/qa_metro_mobile.js)" > "$OUT/phone_$q.log" 2>&1
   grep '^\[eval\]' "$OUT/phone_$q.log" | tail -1 | cut -c8- | python3 -c "
 import sys, json
 j = json.loads(sys.stdin.read() or '{}')

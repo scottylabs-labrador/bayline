@@ -85,9 +85,11 @@ const MetroPlay = (() => {
     // the station hasn't streamed in yet (its floors appear within ~1.5 km of the camera): an estimate now, the platform's
     // centreline as soon as its floors exist (MetroPlay.update)
     if (!ok) { MN.frame(t, sQ0, F); sQ = sQ0; lat = side * (EDGE + ((S.layout === 'island' || S.layout === 'split') ? 2.1 : 1.8)); if (yKnown === null) yPlat = F.y + FLOOR;
-      pending = { t, s: sQ, s0, s1, dirS, side, y: yPlat, yKnown: yKnown !== null, until: performance.now() + 15000 }; }
+      pending = { t, s: sQ, s0, s1, dirS, side, y: yPlat, yKnown: yKnown !== null, sp: spS, until: performance.now() + 15000 }; }
     MN.frame(t, sQ, F);
-    const x = F.x + F.rx * lat, z = F.z + F.rz * lat;
+    let x = F.x + F.rx * lat, z = F.z + F.rz * lat;
+    // (a spot the floors don't confirm: the stations' own spawn point on that platform, which is on its floor)
+    if (ok && spS && MetroStations.floorAt(x, yPlat + 0.3, z) === null && MetroStations.floorAt(spS.x, yPlat + 0.3, spS.z) !== null) { x = spS.x; z = spS.z; }
     // heading: up the platform toward where the train comes from, 12 degrees toward its track
     const ax = -dirS * F.tx, az = -dirS * F.tz, tx = -side * F.rx, tz = -side * F.rz, k = Math.tan(12 * Math.PI / 180);
     const yaw = Math.atan2(ax + tx * k, az + tz * k);
@@ -148,10 +150,15 @@ const MetroPlay = (() => {
   function settleSpawn() {
     const P = pending; if (!P || Player.mode !== 'walk') { pending = null; return; }
     if (performance.now() > P.until) { pending = null; return; }
-    if (!probeAcross(P.t, P.s, P.side, P.y)) return;                 // (not streamed in yet)
-    const k = pickSpot(P.t, P.s, P.s0, P.s1, P.side, P.dirS, P.yKnown ? P.y : null); if (!k) return;
-    MetroSim.net.frame(P.t, k.s, F2);
-    Player.walk.x = F2.x + F2.rx * k.lat; Player.walk.z = F2.z + F2.rz * k.lat; Player.walk.y = k.y; pending = null;
+    // the floors are there once a probe across the platform finds them (on the expected side, or the other one: the
+    // data's side can disagree with what was built), or the stations' spawn point stands on one
+    let side = P.side; const spOk = !!(P.sp && MetroStations.floorAt(P.sp.x, P.y + 0.3, P.sp.z) !== null);
+    if (!probeAcross(P.t, P.s, side, P.y)) { if (probeAcross(P.t, P.s, -side, P.y)) side = -side; else if (!spOk) return; }
+    const k = pickSpot(P.t, P.s, P.s0, P.s1, side, P.dirS, P.yKnown ? P.y : null);
+    let x = null, z = null, y = P.y;
+    if (k) { MetroSim.net.frame(P.t, k.s, F2); x = F2.x + F2.rx * k.lat; z = F2.z + F2.rz * k.lat; y = k.y; }
+    if (x === null || MetroStations.floorAt(x, y + 0.3, z) === null) { if (!spOk) return; x = P.sp.x; z = P.sp.z; y = P.y; }
+    Player.walk.x = x; Player.walk.z = z; Player.walk.y = y; pending = null;
   }
   // (the older helper: where the stations workstream would put you; kept for tools)
   function spawnFromStations(id, gtfs) {

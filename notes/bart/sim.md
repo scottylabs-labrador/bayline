@@ -312,6 +312,31 @@ The data is © BART under its developer license (free, as-is; no BART marks in t
   connector's COLS/OAKL platforms + the shuttle's PITT-T faces + ANTC), then 10 minutes of `#auto` with the metro on
   following trains through the camera views; fails on any page error, console error or metro failure.
 
+### M3 gate commands (SIM's items; the dev server on PORT; `XH=metrodir=metro-next/` until DATA's M2b is promoted)
+
+```sh
+PORT=8136 METRO=1 XH=metrodir=metro-next/ sh tools/qa_metro_peninsula.sh sim.html /tmp/g2      # item 2 (and METRO=0 to compare)
+PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_isolation.sh sim.html /tmp/g4              # item 4 (11 cases)
+PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_mobile.sh sim.html /tmp/g5                 # item 5 (Low + Medium)
+XH=metrodir=metro-next/ python3 tools/wd.py 400 node tools/qa_metro_mp.mjs http://127.0.0.1:8136/sim.html /tmp/g7   # item 7
+PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_tour.sh sim.html /tmp/g8                   # item 8 (tour + 10 min #auto)
+python3 tools/wd.py 900 node tools/qa_metro_heap.mjs http://127.0.0.1:8136/sim.html "at=palo_alto&t=08:03&q=low" --mobile   # heap per module
+```
+
+### M3 results (2026-09-26, bart-sim 128b10a on metro-next = M2b round 2)
+
+- Item 2: 0 failed with METRO=1 and with METRO=0 (M2 data, a1cc675+; the Caltrain spots unchanged since).
+- Item 4: 11/11 (WORLD's in-place terrain APIs: `reloadHeights` / `Towns.refresh` / `Flora.reloadIn`); the ground,
+  buildings and trees come back natural, no black tiles (`notes/bart/shots/sim/isolation_faults.jpg`).
+- Item 5: phone Low and Medium 7/7 each (map, station, platform, tap to board, ride panel, ATO drive bar).
+- Item 7: 12/12 at Millbrae (mride seen and drawn in the other client's car, walk seen, mdrive followed).
+- Metro-next: ride (Balboa Park → Daly City, doors left), manual drive (Embarcadero 0.74 m, Montgomery 0.79, Powell
+  0.76, Civic Center 0.71, all on time, 0 ATC brakes), reckless ATC (22 warn, 21 brake, 0 penalty, codes 70/50/36),
+  front-door search with M2b aliases (SFO, Civic Center/UN Plaza, North San Jose, OAK, Temescal, Uptown, 12th St,
+  Dublin), shuttle headsigns from DATA ("Pittsburg / Bay Point (change for SFO Airport)").
+- Heap (phone Low, Palo Alto, forced GC): metro off 51.4 MB, on 64.7 MB (+13.3): MetroSim 5.5, stations 2.7,
+  guideway 1.9, MetroGround 1.0, the rest 2.2. (The earlier +75 MB was garbage not yet collected.)
+
 ## Metro switch and failure isolation (M3 gate item 4, `src/js/18_metro.js`)
 
 - **The switch**: `Metro.on`. Every metro module reads it instead of the URL (one-line edits in `19_metroground.js`,
