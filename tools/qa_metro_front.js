@@ -13,14 +13,17 @@ new Promise(r => { const f = () => window.__bayline && document.querySelector('#
   const metro = !!(B.Metro && B.Metro.on), checks = {}, ok = (k, v, info) => { checks[k] = v ? true : (info === undefined ? false : String(info).slice(0, 160)); };
   const NOT_AFFIL = /(Not affiliated with|not affiliated with)[^.]*\./g;              // (the district's name is allowed only in these lines)
   const marks = (s) => { const t = s.replace(NOT_AFFIL, ''); return (t.match(/\bBART\b|Bay Area Rapid Transit/g) || []).length; };
-  const card = $('#title .card'), kicker = text($('#title .krow .kicker')), foot = text($('#title .foot > span'));
+  const raw = (e) => (e ? e.textContent : '').replace(/\s+/g, ' ').trim();          // (the DOM text: the kicker is upper-cased by CSS)
+  const card = $('#title .card'), kicker = raw($('#title .krow .kicker')), foot = text($('#title .foot > span'));
   const cr = card.getBoundingClientRect();
   if (metro) {
     const mf = $('#title .mfront');
     ok('strip', mf && mf.querySelector('[data-mf="ride"]') && mf.querySelector('[data-mf="drive"]') && mf.querySelector('[data-mf="map"]') && /Bayline Metro/.test(text(mf)), mf ? text(mf) : 'no strip');
     ok('eyebrow', kicker === 'An unofficial Bay Area rail & flight simulator', kicker);
     ok('credits', /not affiliated with Caltrain or the Peninsula Corridor Joint Powers Board, or with the San Francisco Bay Area Rapid Transit District/i.test(foot) && /Data & credits/.test(text($('#title .foot details summary'))), foot);
-    ok('fits', cr.top >= 0 && cr.bottom <= innerHeight + 1, `card ${Math.round(cr.top)}..${Math.round(cr.bottom)} in ${innerHeight}`);
+    if (innerWidth > 760) ok('fits', cr.top >= 0 && cr.bottom <= innerHeight + 1, `card ${Math.round(cr.top)}..${Math.round(cr.bottom)} in ${innerHeight}`);   // (a phone scrolls the card)
+    const sm = mf && mf.querySelector('.t small');                                 // (one count everywhere, never cut off)
+    ok('stripText', sm && raw(sm) === '50 stations · 5 lines + airport connector · live' && sm.scrollWidth <= sm.clientWidth + 1, sm ? `${raw(sm)} (${sm.scrollWidth} in ${sm.clientWidth})` : 'none');
     ok('noMarksTitle', marks(text(card)) === 0, text(card));
     // Ride: the station picker, then the search
     mf.querySelector('[data-mf="ride"]').click();
@@ -48,7 +51,7 @@ new Promise(r => { const f = () => window.__bayline && document.querySelector('#
     const pill = $('#hmetro'); ok('hudPill', !!pill && pill.getClientRects().length > 0, pill ? 'hidden' : 'none');
     if (pill) { pill.click(); await sleep(600); }
     ok('map', !!(B.MetroUI && B.MetroUI.mapOpen), 'map not open');
-    ok('mapLine', /Unofficial\. Not affiliated with the San Francisco Bay Area Rapid Transit District\./.test(document.body.innerText), 'no line');
+    ok('mapLine', /Unofficial\. Not affiliated with the San Francisco Bay Area Rapid Transit District\./.test(text($('#msys .foot'))), 'no line in the map footer');
     ok('noMarksMap', marks(document.body.innerText) === 0, (document.body.innerText.replace(NOT_AFFIL, '').match(/.{0,40}(\bBART\b|Bay Area Rapid Transit).{0,40}/) || [''])[0]);
     B.UI.closeAll(); if (B.MetroUI.closeAll) B.MetroUI.closeAll(); await sleep(200);
     B.MetroUI.openBoard('EMBR'); await sleep(700);
