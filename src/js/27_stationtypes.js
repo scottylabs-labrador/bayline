@@ -196,13 +196,57 @@ const StationTypes = (() => {
       allT, under, C, street, groundC, groundSide, esc: [], cells: [], portals: [], cuts: [], occupied: [], ceilY: yT + (S.ceilH || 4.6) };
     // streets under the station (the build hands them over from Towns): lobbies and bents keep clear of them
     T.roads = st.roads ? roadsUV(T, st.roads) : [];
+    T.bridgeRoads = st.roads ? roadsUV(T, st.roads, true) : [];            // (Towns draws these on their own decks)
     T.areas = (st.areas || []).map(a => { const P = a.pts; let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
       for (let i = 0; i < P.length; i += 2) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); z0 = Math.min(z0, P[i + 1]); z1 = Math.max(z1, P[i + 1]); }
       return { P, x0, z0, x1, z1, lift: 0.11 + 0.07 * (1 - Math.min(1, Math.max(x1 - x0, z1 - z0) / 400)) + (a.kind === 3 || a.kind === 4 ? 0.02 : 0) }; });
     // ---------------------------------------------------------------- circulation plan (before any slab is built)
     planCirculation(T);
     groundPlan(T);
+    if (T.effType === 'trench') trenchPlan(T);
     return T;
+  }
+  // ------------------------------------------------------------------------------------------------ trench stations
+  // A trench station stands in its own cut between retaining walls, over a ballast floor. Its open stretches are Under
+  // cuts (the ground and Towns' ground above the floor go; the base the towns stand on keeps its streets). Covered
+  // stretches are Under cells under a soffit at street level (the ground over them stays: streets, the headhouse's
+  // plaza), with portals to the daylight at both ends: where the data's structure is cut-and-cover inside an otherwise
+  // open station (Balboa Park under Geneva Ave and the headhouse, Milpitas under its building), the middle half of a
+  // station that is covered all along (San Bruno: "roof cut away toward the platform ends"), and every street crossing
+  // (a Towns bridge brings its own deck and stays uncut). Where the track runs on covered beyond the station, a
+  // headwall closes the cut above the tunnel mouth. With cells the station is no longer an outdoor object: it stays
+  // drawn under its covers. (M2: San Bruno and Milpitas rendered black: the ground over their "cutcover" track was never
+  // opened, so Under's fail-safe took the platform for a buried tunnel and culled the station with the outdoors.)
+  const COVERED = { cutcover: 1, bored: 1, tube: 1 };
+  function trenchPlan(T) {
+    const { edgeV, boxU0, boxU1, plan, C } = T;
+    const vl = (u) => edgeV(u, -1) - 0.5, vr = (u) => edgeV(u, 1) + 0.5;            // the walls' inner faces
+    const U0 = plan.spine[0].u, n = plan.spine.length;
+    const structAt = (u) => plan.spine[Math.max(0, Math.min(n - 1, Math.round((u - U0) / C.DU)))].structure;
+    const lids = [];
+    // covered stretches (runs of cut-and-cover inside the box), or the middle half of an all-covered station
+    let anyOpen = false, cur = null; const runs = [];
+    for (let u = boxU0; u <= boxU1 + 1e-6; u += 3) { const c = !!COVERED[structAt(u)]; if (!c) anyOpen = true;
+      if (c) { if (!cur) runs.push(cur = [u, u]); else cur[1] = u; } else cur = null; }
+    if (!anyOpen) { runs.length = 0; runs.push([T.uc - T.Lp / 4, T.uc + T.Lp / 4]); }
+    for (const r of runs) if (r[1] - r[0] >= 12) lids.push({ u0: r[0], u1: r[1], kind: 'cover' });
+    // street crossings: a deck under each street (Towns' bridges are decks already: no lid, no cut)
+    const cross = (roads, kind) => { for (const r of roads) { const L = Math.hypot(r.u1 - r.u0, r.v1 - r.v0), m = Math.max(1, Math.ceil(L)); let a = 1e9, b = -1e9;
+      for (let k = 0; k <= m; k++) { const t = k / m, u = r.u0 + (r.u1 - r.u0) * t, v = r.v0 + (r.v1 - r.v0) * t;
+        if (u < boxU0 - r.hw || u > boxU1 + r.hw) continue; if (v > vl(u) - r.hw && v < vr(u) + r.hw) { a = Math.min(a, u); b = Math.max(b, u); } }
+      if (b >= a) { const e = r.hw / Math.max(0.3, Math.abs(r.v1 - r.v0) / (L || 1)) + 1.5; lids.push({ u0: a - e, u1: b + e, kind }); } } };
+    cross(T.roads || [], 'street'); cross(T.bridgeRoads || [], 'bridge');
+    // a footbridge at street level is the lid over its own stretch
+    if (T.mode === 'bridge' && T.ub0 !== undefined && Math.abs(T.yCF - T.street) < 1) for (const L of lids) if (L.kind === 'cover') {
+      if (T.ub0 <= L.u0 && T.ub1 >= L.u1) L.u1 = L.u0; else if (T.ub0 > L.u0 && T.ub1 < L.u1) lids.push({ u0: T.ub1, u1: L.u1, kind: 'cover' }), L.u1 = T.ub0;
+      else if (T.ub0 <= L.u0) L.u0 = Math.max(L.u0, T.ub1); else L.u1 = Math.min(L.u1, T.ub0); }
+    const keep = lids.map(L => ({ ...L, u0: Math.max(boxU0, L.u0), u1: Math.min(boxU1, L.u1) })).filter(L => L.u1 - L.u0 > 2).sort((a, b) => a.u0 - b.u0);
+    // merged stretches the cut leaves alone (lids and Towns bridges)
+    const closed = []; for (const L of keep) { const c = closed[closed.length - 1]; if (c && L.u0 <= c[1] + 0.5) c[1] = Math.max(c[1], L.u1); else closed.push([L.u0, L.u1]); }
+    const open = []; let u = boxU0; for (const [a, b] of closed) { if (a - u > 1) open.push([u, a]); u = Math.max(u, b); } if (boxU1 - u > 1) open.push([u, boxU1]);
+    const yTB = T.yRail - 0.6;
+    T.trench = { vl, vr, yTB, lids: keep, open, below: yTB - 0.15,
+      heads: { lo: !!COVERED[structAt(boxU0 - 6)], hi: !!COVERED[structAt(boxU1 + 6)] } };
   }
   // the nearest other track centre on side sv of platform p's track over its length (same level: rail within 3 m)
   function nbrDist(plan, p, sv, tv, C) {
@@ -226,10 +270,10 @@ const StationTypes = (() => {
   }
   // world roads ({ pts: [x, y, z, ...], width, lanes, bridge }) -> segments in station coordinates near the spine,
   // { u0, v0, u1, v1, hw } (hw: half the carriageway)
-  function roadsUV(T, roads) {
+  function roadsUV(T, roads, bridges = false) {
     const out = [];
     for (const rd of roads) {
-      if (rd.bridge) continue;
+      if (!!rd.bridge !== bridges) continue;
       const P = rd.pts, n = P.length / 3; const hw = (rd.width || Math.max(1, rd.lanes || 2) * 3.4) / 2, c = rd.cls ?? 8;
       // (Towns' urban streets carry curbs and sidewalks: `walk` m wide, 0.15 over a carriageway lifted `lift` over the ground)
       const walk = rd.urban && c >= 4 && c <= 12 && c !== 5 && c !== 7 && c !== 9 ? (c <= 8 ? 3.8 : 3.4) : 0, lift = TOWNS_LIFT[Math.min(c, 14)];
@@ -1022,7 +1066,8 @@ const StationTypes = (() => {
     const mBal = M([0x8a847a, K.BALLAST, 0], { sky: 1 });
     g.sweep(fr, (i, f) => { const vl = edgeV(f.u, -1); return [[vl - 1.5, yTB - 0.7, null, mBal], [vl, yTB, null, mBal], [vl + 0.3, yTB]]; });
     g.sweep(fr, (i, f) => { const vr = edgeV(f.u, 1); return [[vr - 0.3, yTB, null, mBal], [vr, yTB, null, mBal], [vr + 1.5, yTB - 0.7]]; });
-    if (type === 'trench') {
+    if (type === 'trench' && T.trench) yield* trenchBuild(T, fr, mBal);
+    else if (type === 'trench') {
       const mRW = M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 });
       for (const side of [-1, 1]) g.sweep(fr, (i, f) => { const v = edgeV(f.u, side) + side * 0.5; const top = U.clamp(Terrain.h(f.x - f.tz * v + T.OX, f.z + f.tx * v + T.OZ) + 1.1, yTB + 2, Math.max(yTB + 2.5, T.street + 1.2));
         return side < 0 ? [[v, top, top, mRW], [v, yTB, yTB]] : [[v, yTB, yTB, mRW], [v, top, top]]; });
@@ -1037,6 +1082,73 @@ const StationTypes = (() => {
     yield;
   }
 
+  function* trenchBuild(T, fr, mBal) {
+    const { zones, M, frames, WUV, L2 } = T, tr = T.trench, z = zones[0], g = z.m.sk, { vl, vr, yTB } = tr;
+    const mRW = M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 }), mLid = M([0x9c978e, K.CONCRETE, 0.1], { sky: 1 }), mSoff = M([0x8f8a82, K.BOARDFORM, 0.1], { sky: 0.4 });
+    const lidAt = (u) => tr.lids.find(L => L.kind !== 'bridge' && u >= L.u0 - 1e-3 && u <= L.u1 + 1e-3);
+    const base = (u, v) => { const [x, zz] = WUV(u, v); return Terrain.hBase(x, zz); };
+    // the ground over a cover (outside the walls: MetroGround may have carved the middle), its soffit >= 4.9 m over the
+    // rails (a train and its clearance) and <= 1.2 m under the ground
+    const lidTop = (u) => Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08;
+    const soffit = (u) => Math.max(T.yRail + 4.9, lidTop(u) - 1.2);
+    // the floor, wall to wall, under the trackbeds and platforms
+    g.sweep(fr, (i, f) => [[vl(f.u), yTB - 0.03, null, mBal], [vr(f.u), yTB - 0.03]]);
+    // retaining walls 0.5 m thick with a coping 1.1 m over the ground outside (under a lid: up to its soffit)
+    const cuts = []; for (const L of tr.lids) if (L.kind !== 'bridge') cuts.push(L.u0 - 0.03, L.u0, L.u1, L.u1 + 0.03);
+    const frw = frames(T.boxU0, T.boxU1, cuts);
+    // (the coping line: the ground 0.8 m outside, its highest within 6 m either way, so the top runs level-ish)
+    const gOutAt = (u, side) => { const v = (side < 0 ? vl(u) - 0.5 : vr(u) + 0.5) + side * 0.8; let m = -1e9; for (let d = -6; d <= 6; d += 3) { const [x, zz] = WUV(u + d, v); m = Math.max(m, Terrain.h(x, zz)); } return m; };
+    for (const side of [-1, 1]) g.sweep(frw, (i, f) => {
+      const vIn = side < 0 ? vl(f.u) : vr(f.u), vOut = vIn + side * 0.5; const gOut = gOutAt(f.u, side);
+      const L = lidAt(f.u); const top = L ? soffit(f.u) : U.clamp(gOut + 1.1, yTB + 2, Math.max(yTB + 2.5, T.street + 1.2)), vC = vOut + side * 1.0;
+      // (the coping overhangs the ground by 1 m: the cut's raster edge may open a slot beside the wall)
+      return side < 0 ? [[vOut, yTB, null, mRW], [vOut, top - 0.25, null, mRW], [vC, top - 0.25, null, mRW], [vC, top, null, mRW], [vIn, top, null, mRW], [vIn, yTB]]
+        : [[vIn, yTB, null, mRW], [vIn, top, null, mRW], [vC, top, null, mRW], [vC, top - 0.25, null, mRW], [vOut, top - 0.25, null, mRW], [vOut, yTB]];
+    });
+    yield;
+    // covers: the soffit over the walls and the fascias at both ends (the ground over them is the terrain and Towns'
+    // streets), an Under cell under each (portals to the daylight at its ends), a light line along its middle
+    const P = (u, v, y) => { const [x, zz] = L2(u, v); return [x, y, zz]; };
+    let nC = 0;
+    for (const L of tr.lids) { if (L.kind === 'bridge') continue;
+      const fl = frames(L.u0, L.u1), a = (u) => vl(u) - 0.5, b = (u) => vr(u) + 0.5;
+      g.sweep(fl, (i, f) => [[b(f.u), soffit(f.u), null, mSoff], [a(f.u), soffit(f.u)]]);                       // soffit (down)
+      g.sweep(fl, (i, f) => [[a(f.u), lidTop(f.u), null, mLid], [b(f.u), lidTop(f.u)]]);                         // top (up; under the ground when that is there)
+      for (const [u, dir] of [[L.u0, -1], [L.u1, 1]]) { const yt = lidTop(u) + 0.06, yb = soffit(u); g.set(mSoff); // fascias, outward
+        if (dir < 0) g.quad(P(u, b(u), yb), P(u, b(u), yt), P(u, a(u), yt), P(u, a(u), yb), [0, yb, 0, yt, 1, yt, 1, yb]);
+        else g.quad(P(u, a(u), yb), P(u, a(u), yt), P(u, b(u), yt), P(u, b(u), yb), [0, yb, 0, yt, 1, yt, 1, yb]); }
+      const [ax, az] = L2(L.u0 + 1, (vl(L.u0) + vr(L.u0)) / 2), [bx, bz] = L2(L.u1 - 1, (vl(L.u1) + vr(L.u1)) / 2);
+      if (L.u1 - L.u0 > 6) z.lights.add({ a: [ax, soffit(L.u0) - 0.1, az], b: [bx, soffit(L.u1) - 0.1, bz], color: T.S.light.map(c => c * 0.8), range: 16, radius: 0.1, dir: [0, -1, 0], focus: 1 });
+      // the Under cell under it, and its two openings
+      const id = `st:${T.st.id}:cov${nC++}`, us = []; for (let u = L.u0; u < L.u1; u += 8) us.push(u); us.push(L.u1);
+      const poly = [...us.map(u => WUV(u, vl(u) - 0.25)), ...us.slice().reverse().map(u => WUV(u, vr(u) + 0.25))];
+      const ceil = Math.min(...us.map(soffit)) - 0.05;
+      T.cells.push({ under: { id, kind: 'station', poly, floor: yTB - 0.5, ceil, ambient: ambOf(T.S) } });
+      for (const u of [L.u0, L.u1]) T.portals.push({ id: `${id}:${u === L.u0 ? 'a' : 'b'}`, a: id, b: null,
+        quad: [[vl(u) - 0.25, yTB - 0.5], [vr(u) + 0.25, yTB - 0.5], [vr(u) + 0.25, ceil], [vl(u) - 0.25, ceil]].map(([v, y]) => P(u, v, y)).map(([x, y, zz]) => [x + T.OX, y, zz + T.OZ]) });
+      yield;
+    }
+    // headwalls where the track runs on covered beyond the box: a frame round the tunnel mouth up to the coping
+    const vT = (u, side) => side < 0 ? Math.min(...T.allT.map(t => T.tv(t, u))) : Math.max(...T.allT.map(t => T.tv(t, u)));
+    for (const [u, dir, on] of [[T.boxU0, 1, tr.heads.lo], [T.boxU1, -1, tr.heads.hi]]) { if (!on) continue;
+      const [x, zz] = WUV(u, (vl(u) + vr(u)) / 2), top = Math.max(Terrain.h(x, zz), T.street) + 1.1, yM = T.yRail + 4.75, m0 = vT(u, -1) - 2.6, m1 = vT(u, 1) + 2.6;
+      const a = vl(u) - 0.5, b = vr(u) + 0.5; g.set(mRW);
+      const face = (v0, v1, y0, y1) => { if (dir > 0) g.quad(P(u, v0, y0), P(u, v0, y1), P(u, v1, y1), P(u, v1, y0), [v0, y0, v0, y1, v1, y1, v1, y0]); else g.quad(P(u, v1, y0), P(u, v1, y1), P(u, v0, y1), P(u, v0, y0), [v1, y0, v1, y1, v0, y1, v0, y0]); };
+      face(a, b, yM, top); if (m0 > a) face(a, m0, yTB, yM); if (m1 < b) face(m1, b, yTB, yM);
+      const u2 = u - dir * 0.6;                                                                                  // the coping and the soffit over the mouth
+      const [c0, c1] = dir > 0 ? [a, b] : [b, a], [s0, s1] = dir > 0 ? [m0, m1] : [m1, m0];
+      g.quad(P(u2, c0, top), P(u2, c1, top), P(u, c1, top), P(u, c0, top), [c0, 0, c1, 0, c1, 0.6, c0, 0.6]);
+      g.set(mSoff); g.quad(P(u, s0, yM), P(u, s1, yM), P(u2, s1, yM), P(u2, s0, yM), [s0, 0, s1, 0, s1, 0.6, s0, 0.6]);
+    }
+    // the open stretches: Under cuts over the walls' middle lines (the ground and Towns' ground above the floor go; the
+    // raster edge is ragged by ~1 m either way: the coping hides a slot outside, a sliver inside is ground over the wall)
+    for (const [u0, u1] of tr.open) {
+      const us = []; for (let u = u0; u < u1; u += 8) us.push(u); us.push(u1);
+      const poly = [...us.map(u => WUV(u, vl(u) - 0.25)), ...us.slice().reverse().map(u => WUV(u, vr(u) + 0.25))];
+      T.cuts.push({ id: `st:${T.st.id}:trench:${T.cuts.length}`, poly, below: tr.below });
+    }
+    yield;
+  }
   // ------------------------------------------------------------------------------------------------ inlays and columns
   function* floorInlays(T) {
     const { plats, H, zones } = T;

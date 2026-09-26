@@ -21,7 +21,7 @@ def validate(a):
     issues = []
     summary = {}
     for prod, ext in (('img', 'jpg'), ('h', 'bin'), ('m', 'bin'), ('t', 'bin')):
-        for L in range(0, 9):
+        for L in range(0, 10):
             d = os.path.join(C.PUB, prod, str(L))
             if not os.path.isdir(d):
                 continue
@@ -41,12 +41,13 @@ def validate(a):
                 try:
                     if prod == 'img':
                         im = Image.open(io.BytesIO(b)); im.load()
-                        if im.size != (C.IMG, C.IMG) or im.mode != 'RGB':
+                        ok_px = (C.IMG, C.IMG) if L < 8 else ((C.IMG, C.IMG), (1024, 1024))       # (L8 / L9: 1024 px after the GPU pass)
+                        if (im.size not in ok_px if L >= 8 else im.size != ok_px) or im.mode != 'RGB':
                             raise ValueError(f'size/mode {im.size} {im.mode}')
                     elif prod == 'h':
                         hh = H.decode_fast(b)
                         extra.setdefault('hmin', []).append(float(hh.min())); extra.setdefault('hmax', []).append(float(hh.max()))
-                        if hh.min() < -150 or hh.max() > 1500:
+                        if hh.min() < -200.5 or hh.max() > 1500:                     # (bathymetry is clamped at -200 m)
                             raise ValueError(f'height range {hh.min()} {hh.max()}')
                     elif prod == 'm':
                         m = np.frombuffer(zlib.decompress(b), np.uint8)

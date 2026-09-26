@@ -384,19 +384,27 @@ const MetroStations = (() => {
   // ------------------------------------------------------------------------------------------------ ground pads
   // Where a station meets the ground (the lobby under an aerial deck and its apron) the terrain is graded to its floor:
   // a Terrain height filter (fine levels, >= 7) flattens each pad and blends back to the natural ground over `blend` m.
-  // The footprints of every station are made when the network loads, so the pads exist before those tiles stream.
+  // A trench station's pads only carve (never raise) and only the detail levels (>= 8: the base the towns stand on
+  // keeps its streets over the trench). The footprints of every station are made when the network loads, so the pads
+  // exist before those tiles stream; tiles already loaded are re-graded in place (Terrain.addHeightFilter with a
+  // one-shot filter for that pad: WORLD's in-place refilter; an older Terrain re-streams them through padFilter).
   const pads = [];
   function setPads(st, list) {
     for (let i = pads.length - 1; i >= 0; i--) if (pads[i].st === st.id) pads.splice(i, 1);
     for (const p of list) { const P = p.pts; let x0 = 1e18, z0 = 1e18, x1 = -1e18, z1 = -1e18; for (const [x, z] of P) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
       let area = 0; for (let i = 0; i < 4; i++) { const a = P[i], b = P[(i + 1) % 4]; area += a[0] * b[1] - b[0] * a[1]; }
       const Q = new Float64Array(8); (area < 0 ? P.slice().reverse() : P).forEach(([x, z], i) => { Q[i * 2] = x; Q[i * 2 + 1] = z; });
-      const pad = { st: st.id, P: Q, y: p.y, blend: p.blend || 10, bb: [x0 - (p.blend || 10), z0 - (p.blend || 10), x1 + (p.blend || 10), z1 + (p.blend || 10)] };
-      pads.push(pad);
-      if (padsLive && typeof Terrain !== 'undefined' && Terrain.addHeightFilter) Terrain.addHeightFilter(noopFilter, pad.bb);   // re-grade tiles already loaded there
+      const b = p.blend || 10, pad = { st: st.id, P: Q, y: p.y, blend: b, carve: !!p.carve, minL: p.minL || 7, bb: [x0 - b, z0 - b, x1 + b, z1 + b] };
+      pads.push(pad); regrade(pad);
     }
   }
-  let padsLive = false, footPending = false; const noopFilter = () => {};
+  function regrade(pad) {
+    if (!padsLive || typeof Terrain === 'undefined' || !Terrain.addHeightFilter) return;
+    const one = (L, x0, z0, T, h) => one.live ? applyPads([pad], L, x0, z0, T, h) : false; one.live = true;
+    let P = null; try { P = Terrain.addHeightFilter(one, pad.bb); } catch (e) {}
+    if (P && P.then) P.then(() => { one.live = false; }, () => { one.live = false; }); else one.live = false;
+  }
+  let padsLive = false, footPending = false;
   // one step of the background footprint pass: the nearest station without a footprint gets its plan, next frame its
   // footprint (each <= ~10 ms, so no frame stalls)
   function footStep(camPos) {
@@ -408,10 +416,11 @@ const MetroStations = (() => {
     if (!best.plan) { best.plan = makePlan(best.data); if (!best.plan) kdone.add(best.id); return; }
     footprintOf(best);
   }
-  function padFilter(L, x0, z0, T, h) {
-    if (L < 7 || !pads.length) return;
-    const hit = pads.filter(p => !(p.bb[0] > x0 + T || p.bb[2] < x0 || p.bb[1] > z0 + T || p.bb[3] < z0)); if (!hit.length) return;
-    const step = T / 128;
+  function padFilter(L, x0, z0, T, h) { return applyPads(pads, L, x0, z0, T, h); }
+  function applyPads(list, L, x0, z0, T, h) {
+    if (L < 7 || !list.length) return false;
+    const hit = list.filter(p => L >= p.minL && !(p.bb[0] > x0 + T || p.bb[2] < x0 || p.bb[1] > z0 + T || p.bb[3] < z0)); if (!hit.length) return false;
+    const step = T / 128; let changed = false;
     for (const p of hit) {
       const i0 = Math.max(0, Math.floor((p.bb[0] - x0) / step)), i1 = Math.min(128, Math.ceil((p.bb[2] - x0) / step));
       const j0 = Math.max(0, Math.floor((p.bb[1] - z0) / step)), j1 = Math.min(128, Math.ceil((p.bb[3] - z0) / step));
@@ -422,9 +431,11 @@ const MetroStations = (() => {
           if (ex * (z - az) - ez * (x - ax) < 0) inside = false; const l2 = ex * ex + ez * ez || 1, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2)); const dx = ax + ex * t - x, dz = az + ez * t - z; d2 = Math.min(d2, dx * dx + dz * dz); }
         const d = inside ? 0 : Math.sqrt(d2); if (d >= p.blend) continue;
         const t = d / p.blend, w = 1 - t * t * (3 - 2 * t);
-        h[q] = h[q] + (p.y - h[q]) * w;
+        const y = h[q] + (p.y - h[q]) * w; if (p.carve && y >= h[q]) continue;
+        if (Math.abs(y - h[q]) > 1e-3) { h[q] = y; changed = true; }
       }
     }
+    return changed;
   }
   // the built station's own footprint replaces the first one (made on whatever terrain had streamed then): returns
   // true when it moved by more than half a metre anywhere
