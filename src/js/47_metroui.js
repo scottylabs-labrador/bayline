@@ -556,7 +556,8 @@ const MetroUI = (() => {
     el.mdd.textContent = d.doors > 0.01 ? (d.doors > 0.99 ? 'DOORS OPEN' : 'DOORS…') : 'DOORS SHUT'; el.mdsc.textContent = Math.round(d.score) + ' pts';
     el.mdgd.textContent = d.guide; el.mdgd.className = 'guide' + (/^(EMERG|PENALTY|ATC BRAKE|BRAKE NOW)/.test(d.guide) ? ' alarm' : /^(OVERSPEED|Start braking|Train ahead)/.test(d.guide) ? ' warn' : '');
     const n = d.next; el.mdns.textContent = n ? n.name : '—'; el.mdto.textContent = n ? (n.togo > 1000 ? (n.togo / 1609.34).toFixed(2) + ' mi' : n.togo.toFixed(1) + ' m') : '—';
-    el.mdsch.innerHTML = n ? `<span class="${d.late > 60 ? 'late' : d.late < -90 ? 'early' : 'ontime'}">${Env.clockText(n.sched)} (${d.late > 0 ? '+' : ''}${Math.round(d.late / 60)}m)</span>` : '—';
+    const lm = Math.round(d.late / 60), lt = Math.abs(d.late) < 30 ? 'on time' : (lm > 0 ? '+' + lm : lm < 0 ? '−' + (-lm) : (d.late > 0 ? '+' : '−') + '<1') + ' min';
+    el.mdsch.innerHTML = n ? `<span class="${d.late > 60 ? 'late' : d.late < -90 ? 'early' : 'ontime'}">${Env.clockText(n.sched)} (${lt})</span>` : '—';
     el.mdtr.textContent = d.target ? `${d.target.v < 0.5 ? 'stop' : Math.round(d.target.v / MPH) + ' mph'} in ${d.target.dist > 1600 ? (d.target.dist / 1609.34).toFixed(1) + ' mi' : Math.round(d.target.dist * 3.281) + ' ft'}` : d.clear >= 6 ? 'clear' : d.clear + ' circuit' + (d.clear === 1 ? '' : 's') + ' clear';
   }
   function drawStrip(tr) {

@@ -287,7 +287,7 @@ const MetroATC = (() => {
     for (const t of targetsAhead(D, 2000)) { const va = Math.sqrt(t.v * t.v + 2 * 0.8 * t.dist); if (va < vAllow) { vAllow = va; tgt = t; } }
     for (const t of occTargets(C, OT)) { const va = Math.sqrt(t.v * t.v + 2 * 0.8 * t.dist); if (va < vAllow) { vAllow = va; tgt = t; } }
     return { v: D.v, code: C.code, civil: C.civil, clear: C.clear, target: tgt, vAllow, mode: D.ato ? 'ATO' : 'MANUAL', notch: D.emergency ? 'EB' : notchText(D.lever), lever: D.lever,
-      atc: D.penalty ? 'penalty' : run.atc.state, guide: guide(), reverse: !!D.reverse, doors: D.doors, next: inf, score: run.score, late: inf ? Env.time.sec - inf.sched : 0 };
+      atc: D.penalty ? 'penalty' : run.atc.state, guide: guide(), reverse: !!D.reverse, doors: D.doors, next: inf, score: run.score, late: inf ? behind(D) : 0 };
   }
   // what the cab screen shows on any metro train you are in (driving or riding in the cab)
   function cabDisplay(tr) {
@@ -301,7 +301,19 @@ const MetroATC = (() => {
       nextStop: ns ? MetroSim.stName(ns.st) : '', distFt: ns ? Math.max(0, ns.ps - tr.s) * 3.281 : 0, clock: Env.clockText(Env.time.sec), atc: d ? d.atc : 'ok',
       line: MetroSim.lineName(tr.line), color: MetroSim.lineColor(tr.line), lineColor: MetroSim.lineColor(tr.line), destination: MetroSim.termName(tr) };
   }
-  const api = { start, end, update, supervise, driveKeys, dmi, guide, stopInfo, cabDisplay, codeFor, get run() { return run; }, best, LADDER, BLOCK };
+  // how far behind the timetable plan the driven train is (s, negative = early): at a stop, the planned departure
+  // (never negative while boarding); between stops, the planned time at the train's position on that run's profile
+  const RB = {};
+  function behind(D) {
+    const l = D.leg, S = l.stops, R = l.runs, now = Env.time.sec; if (!R || !R.length) return 0;
+    let k = -1; for (let i = 0; i < R.length; i++) if (S[R[i].k].ps <= D.s + 0.5) k = i; if (k < 0) return 0;
+    const run = R[k], a = S[run.k];
+    if (D.s <= a.ps + 0.5) return Math.max(0, now - a.tDep);
+    if (!run.R) run.R = MetroSim.getRun(l.path, a.ps, S[run.k + 1].ps, l.kind, l.cars, run.T, a.floor || 0);
+    let lo = 0, hi = run.T; for (let it = 0; it < 28; it++) { const m = (lo + hi) / 2; MetroSim.runAt(run.R, m, RB); if (RB.ps < D.s) lo = m; else hi = m; }
+    return now - (run.t0 + (lo + hi) / 2);
+  }
+  const api = { start, end, update, supervise, driveKeys, dmi, guide, stopInfo, cabDisplay, codeFor, behind, get run() { return run; }, best, LADDER, BLOCK };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroATC = api;
   return api;
 })();
