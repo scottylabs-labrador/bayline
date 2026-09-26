@@ -7,6 +7,13 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **10:00 INFRA round2 OK** (M2b round 2, frozen, `#metrodir=metro-next/`, one capture session): San Bruno: junction
+  chamber jc569 (W1 6337-6473) takes W1, M2 and the pocket tracks W-sd1 / W-sd3 with the switches out of the platform;
+  the pocket-track box meets the chamber; the third rail gaps at the W1 switch (6440-6453). Concord: the viaduct and its
+  twin girders read right from the deck (the crossovers on the embankment bring no structure of their own). Milpitas
+  (trench plus lids): ground and road intact over the lid east of the station, the trench / lid sequence reads as
+  portals. Daly City chamber: unchanged (post-M3 item below). A street-level QA shot under the Concord viaduct put the
+  camera under not-yet-streamed terrain (camera placement, not the guideway).
 - **09:40 Daly City chamber (lead's follow-up)**: it predates the thin-cover change: `bart` 4dfaca7 and 1126cde give
   identical captures inside it (M3 s 1640, M2b) and identical x-rays. Not a simple end-wall fix, so it is a **post-M3
   item** (below, Open problems).
