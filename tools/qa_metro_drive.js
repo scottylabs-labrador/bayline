@@ -21,7 +21,7 @@ new Promise(ok => { const f = () => window.__bayline && window.__bayline.MetroSi
     if (r.atK !== lastK && r.state === 'dwell') { if (lastK >= 0) { const L = r.log.filter(l => l[2]).slice(-3).map(l => l[2]); qa.stops.push({ at: M.stName(D.leg.stops[r.atK].st), err: +(r.stats.errSum / Math.max(1, r.stats.stops)).toFixed(2), log: L }); stopsDone++; } lastK = r.atK; }
     if (stopsDone >= maxStops) { qa.events.push(T() + ' done after ' + stopsDone + ' stops, score ' + Math.round(r.score)); clearInterval(iv); return; }
     if (r.state === 'dwell') { const dep = D.leg.stops[r.atK].dep; if (B.Env.time.sec >= dep - 2 && D.lever < 0.75) key('KeyW'); return; }
-    const inf = d.next, v = D.v, target = d.code - 3 * MPH;
+    const inf = d.next, v = D.v, target = Math.min(d.code, d.vAllow) - 3 * MPH;
     const need = inf ? v * v / (2 * Math.max(0.3, inf.togo - 0.6)) : 0;
     if (inf && inf.togo < 1500 && need > 0.95) { if (D.lever > -0.875) key('KeyS'); }
     else if (inf && inf.togo < 1500 && need > 0.7) { if (D.lever > -0.5) key('KeyS'); else if (D.lever < -0.75) key('KeyW'); }

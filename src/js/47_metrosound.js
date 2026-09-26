@@ -97,7 +97,7 @@ const MetroSound = (() => {
     const code = structAt(tr), under = code >= 6, tube = code === 9, aerial = code === 1 || code === 2;
     tunnelK = U.clamp(tunnelK + (under ? dt : -dt) * 1.4, 0, 1); aerialK = U.clamp(aerialK + (aerial ? dt : -dt) * 1.2, 0, 1); tubeK = U.clamp(tubeK + (tube ? dt : -dt) * 0.8, 0, 1);
     st.aerial = aerialK; st.tube = tubeK;
-    const kind = tr.kind === 'dmu' ? 'diesel' : tr.kind === 'oak' ? 'cable' : 'metro';
+    const kind = tr.kind === 'dmu' ? 'diesel' : tr.kind === 'apm' ? 'cable' : 'metro';
     const P = MetroSim.PERF[tr.kind] || MetroSim.PERF.bart;
     const power = tr.driven && MetroSim.drive ? U.clamp(MetroSim.drive.lever, -1, 1) : U.clamp((tr.a || 0) / (tr.a >= 0 ? P.a0 : P.b), -1, 1);
     // the listener underground on a platform hears the station box too

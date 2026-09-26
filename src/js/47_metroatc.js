@@ -4,14 +4,15 @@
 // speed code. The code at the head of the train is the lower of
 //   * the civil code: the civil speed limit there (MetroNet, with the timetable-consistent floor of the run), and
 //   * the occupancy code: counted in clear circuits to the next obstruction (the tail of any train on the tracks ahead,
-//     from any line, or the end of the track): 0 clear -> stop, 1 -> 18 mph, 2 -> 27, 3 -> 36, 4-5 -> 50, 6+ -> line speed.
+//     from any line, or the end of the track): 0 clear -> stop, 1 -> 6 mph, 2 -> 18, 3 -> 27, 4 -> 36, 5 -> 50, 6+ -> line
+//     speed. (The real system's codes: 0, 6, 18, 27, 36, 50, 70, 80 mph.)
 // ATO drives to the code and makes the programmed station stop at the berth mark. In MANUAL the player drives with the
 // master controller and ATC supervises: an overspeed alarm above the code, an ATC service brake if the player doesn't
 // react (or is far over), and a penalty (emergency) brake when a stop code is passed. Scoring: stopping accuracy at the
 // berth, punctuality against the published times, comfort (jerk), ATC interventions.
 const MetroATC = (() => {
   const MPH = 0.44704, BLOCK = 180, B_ATC = 0.9;
-  const LADDER = [0, 18, 27, 36, 50, 50, 70].map(v => v * MPH);
+  const LADDER = [0, 6, 18, 27, 36, 50, 70].map(v => v * MPH);
   const on = () => typeof MetroSim !== 'undefined' && MetroSim.enabled && MetroSim.ready;
   let run = null;                                      // active drive run
   const F = {}, Q = {};
@@ -259,7 +260,11 @@ const MetroATC = (() => {
   function dmi() {
     const D = on() ? MetroSim.drive : null; if (!run || !D) return null;
     const inf = stopInfo(), C = run.code || { code: 0, civil: 0 };
-    return { v: D.v, code: C.code, civil: C.civil, clear: C.clear, mode: D.ato ? 'ATO' : 'MANUAL', notch: D.emergency ? 'EB' : notchText(D.lever), lever: D.lever,
+    // the next lower code ahead and the speed a service-brake curve allows now (what a careful operator drives to)
+    let tgt = null, vAllow = C.code;
+    for (const t of targetsAhead(D, 2000)) { const va = Math.sqrt(t.v * t.v + 2 * 0.8 * t.dist); if (va < vAllow) { vAllow = va; tgt = t; } }
+    if (C.ob) { const va = Math.sqrt(2 * 0.8 * Math.max(0, C.ob.dist - 30)); if (va < vAllow) { vAllow = va; tgt = { dist: C.ob.dist, v: 0, why: 'train ahead' }; } }
+    return { v: D.v, code: C.code, civil: C.civil, clear: C.clear, target: tgt, vAllow, mode: D.ato ? 'ATO' : 'MANUAL', notch: D.emergency ? 'EB' : notchText(D.lever), lever: D.lever,
       atc: D.penalty ? 'penalty' : run.atc.state, guide: guide(), reverse: !!D.reverse, doors: D.doors, next: inf, score: run.score, late: inf ? Env.time.sec - inf.sched : 0 };
   }
   // what the cab screen shows on any metro train you are in (driving or riding in the cab)

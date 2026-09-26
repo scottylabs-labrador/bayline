@@ -31,7 +31,7 @@ const MetroSim = (() => {
   const PERF = {
     bart: { vmax: 70 * MPH, a0: 1.34, pw: 14.8, b: 1.12, bFull: 1.34, bEm: 1.62, carLen: 21.336, minCars: 2, maxCars: 10, res: [0.006, 0.00012, 0.000048] },
     dmu:  { vmax: 75 * MPH, a0: 0.95, pw: 8.2,  b: 0.95, bFull: 1.1, bEm: 1.35, carLen: 40.9, minCars: 1, maxCars: 2, res: [0.007, 0.00013, 0.00005] },
-    oak:  { vmax: 30 * MPH, a0: 0.75, pw: 30,   b: 0.72, bFull: 0.9, bEm: 1.2, carLen: 12.2, minCars: 3, maxCars: 3, res: [0.004, 0.0001, 0.00003] },
+    apm:  { vmax: 30 * MPH, a0: 0.75, pw: 30,   b: 0.72, bFull: 0.9, bEm: 1.2, carLen: 9.3, minCars: 3, maxCars: 3, res: [0.004, 0.0001, 0.00003] },
   };
   const resist = (P, v) => P.res[0] + P.res[1] * v + P.res[2] * v * v;
   const tractA = (P, v) => Math.min(P.a0, P.pw / Math.max(v, 0.5));
@@ -46,7 +46,7 @@ const MetroSim = (() => {
     '24TH': '24th St Mission', NCON: 'North Concord', PITT: 'Pittsburg / Bay Point', PCTR: 'Pittsburg Center', DELN: 'El Cerrito del Norte', PLZA: 'El Cerrito Plaza',
     DBRK: 'Downtown Berkeley', NBRK: 'North Berkeley', SSAN: 'South San Francisco', MONT: 'Montgomery St', POWL: 'Powell St', MCAR: 'MacArthur', 'PITT-T': 'Pittsburg / Bay Point' };
   const LINE_SHORT = { yellow: 'Yellow', orange: 'Orange', green: 'Green', red: 'Red', blue: 'Blue', grey: 'Airport', ebart: 'Antioch shuttle' };
-  const KIND = { emu: 'bart', dmu: 'dmu', apm: 'oak' };
+  const KIND = { emu: 'bart', dmu: 'dmu', apm: 'apm' };
   async function loadData() {
     if (typeof MetroNet === 'undefined' || !MetroNet.load) throw new Error('MetroNet is not in this build');
     MN = MetroNet; await MN.load(); TT = await MN.loadTimetable();
@@ -101,7 +101,7 @@ const MetroSim = (() => {
       const pf = sta && sta.platforms ? (sta.platforms.find(p => p.gtfs === st.gtfs && p.track === st.track) || sta.platforms.find(p => p.gtfs === st.gtfs)) : null;
       let ahead, plen = 213.4, side = 0;
       if (pf && pf.track === st.track) { ahead = clamp(((sign > 0 ? pf.s1 : pf.s0) - st.s) * sign, 0, 130); plen = Math.abs(pf.s1 - pf.s0); }
-      else ahead = kind === 'oak' ? 20 : 105.7;
+      else ahead = kind === 'apm' ? 20 : 105.7;
       if (pf && pf.side) side = (pf.side === 'right' ? 1 : -1) * sign;
       else side = sta && sta.layout === 'island' ? -1 : 1;
       let ps = st.d + Math.max(0, ahead - 1.0);
@@ -203,14 +203,14 @@ const MetroSim = (() => {
   // ---------------------------------------------------------------- dwell and consist length (assumptions, see notes)
   const DWELL = { EMBR: 35, MONT: 32, POWL: 30, CIVC: 30, '12TH': 30, '19TH': 30, MCAR: 32, WOAK: 26, BAYF: 28, BALB: 26, DALY: 26, '16TH': 24, '24TH': 24, SFIA: 30, MLBR: 30, PITT: 30, COLS: 26, LAKE: 24, DBRK: 26, FTVL: 24, WCRK: 24 };
   function dwellAt(st, kind, t) {
-    if (kind === 'oak') return 45;
+    if (kind === 'apm') return 45;
     let d = DWELL[st] || 20; const h = (t % 86400) / 3600;
     if ((h > 6.8 && h < 9.3) || (h > 16.3 && h < 18.8)) d *= 1.2;
     return d;
   }
   // consist length when the timetable doesn't say: 10 cars at the peaks, 8 midday, 6 in the evening (assumption)
   function carsFor(trip, kind, t0, wd) {
-    if (kind === 'oak') return 3; if (kind === 'dmu') return 2;
+    if (kind === 'apm') return 3; if (kind === 'dmu') return 2;
     if (trip.cars) return clamp(trip.cars, 2, 10);
     const h = (t0 % 86400) / 3600, wk = wd >= 1 && wd <= 5;
     if (h >= 20 || h < 5) return 6;
@@ -231,7 +231,7 @@ const MetroSim = (() => {
     const plan = { key: 'M:' + trip.id + (dayOff ? '@y' : ''), trip, dayOff, legs: [], tStart: 0, tEnd: 0, line: trip.line, id: trip.id, head: trip.head };
     for (let k = 0; k < pat.legs.length; k++) {
       const PL = pat.legs[k], path = legPath(trip.pat, k), times = trip.legs[k]; if (!path || !times) continue;
-      const kind = KIND[PL.vehicle] || 'bart', cars = clamp((trip.cars && trip.cars[k]) || (kind === 'oak' ? 3 : kind === 'dmu' ? 2 : 8), 1, 10);
+      const kind = KIND[PL.vehicle] || 'bart', cars = clamp((trip.cars && trip.cars[k]) || (kind === 'apm' ? 3 : kind === 'dmu' ? 2 : 8), 1, 10);
       const marks = stopMarks(path, kind);
       let cur = [];
       const flush = (rev) => { if (cur.length >= 2) plan.legs.push(makeLeg(plan, kind, path, cars, cur, rev, PL.sys === 'ebart' ? 'ebart' : trip.line)); };
@@ -289,8 +289,8 @@ const MetroSim = (() => {
     for (let j = 0; j < m; j++) { S[j].tDep = e[j]; S[j].tArr = j === 0 ? Math.min(e[j], S[j].arr) : e[j] - dw[j]; }
     S[m - 1].tArr = e[m - 1]; S[m - 1].tDep = e[m - 1];
     l.runs = []; for (let j = 0; j < m - 1; j++) l.runs.push({ k: j, t0: S[j].tDep, t1: S[j + 1].tArr, T: S[j + 1].tArr - S[j].tDep, R: null });
-    l.t0 = l.prev ? l.prev.stops[l.prev.stops.length - 1].tArr : S[0].tDep - (kind === 'oak' ? 90 : 240);
-    l.t1 = l.next ? S[m - 1].tArr : S[m - 1].tArr + (kind === 'oak' ? 40 : 150);
+    l.t0 = l.prev ? l.prev.stops[l.prev.stops.length - 1].tArr : S[0].tDep - (kind === 'apm' ? 90 : 240);
+    l.t1 = l.next ? S[m - 1].tArr : S[m - 1].tArr + (kind === 'apm' ? 40 : 150);
   }
   function ymdShift(ymd, days) { const d = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8) + days)); return { ymd: `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`, wd: d.getUTCDay() }; }
   function replan(force) {
@@ -415,7 +415,7 @@ const MetroSim = (() => {
       if (mats[kind]) return mats[kind];
       const body = new THREE.MeshStandardMaterial({ color: kind === 'dmu' ? 0xe8ecef : 0xdfe3e6, metalness: 0.55, roughness: 0.35 });
       const dark = new THREE.MeshStandardMaterial({ color: 0x15181c, metalness: 0.2, roughness: 0.25, emissive: 0xffe2b0, emissiveIntensity: 0 });
-      const stripe = new THREE.MeshStandardMaterial({ color: kind === 'oak' ? 0x8fa3ad : 0x2a6fb5, roughness: 0.45 });
+      const stripe = new THREE.MeshStandardMaterial({ color: kind === 'apm' ? 0x8fa3ad : 0x2a6fb5, roughness: 0.45 });
       const under = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.8 });
       return (mats[kind] = { body, dark, stripe, under });
     }
@@ -428,7 +428,7 @@ const MetroSim = (() => {
     }
     function create(kind, opts = {}) {
       const n = Math.max(1, opts.cars || (kind === 'bart' ? 8 : kind === 'dmu' ? 2 : 3));
-      const L = kind === 'bart' ? 21.336 : kind === 'dmu' ? 40.9 : 12.2, W = kind === 'oak' ? 2.6 : 3.2, H = kind === 'oak' ? 3.0 : 3.35, FL = kind === 'oak' ? 0.35 : kind === 'dmu' ? 0.76 : 0.991;
+      const L = kind === 'bart' ? 21.336 : kind === 'dmu' ? 40.9 : 9.3, W = kind === 'apm' ? 2.6 : 3.2, H = kind === 'apm' ? 3.0 : 3.35, FL = kind === 'apm' ? 0.35 : kind === 'dmu' ? 0.76 : 0.991;
       const M = mat(kind), cars = []; let off = 0;
       for (let i = 0; i < n; i++) {
         const cab = i === 0 || i === n - 1, g = new THREE.Group(), inner = new THREE.Group(); g.add(inner); if (i === n - 1 && n > 1) inner.rotation.y = Math.PI;
@@ -455,7 +455,7 @@ const MetroSim = (() => {
   })();
   // consists are built with the train's exact length (D cars at both ends); a free consist of another length is
   // recycled only when the pool is full
-  const pool = []; const POOLMAX = { bart: 9, dmu: 2, oak: 4 };
+  const pool = []; const POOLMAX = { bart: 9, dmu: 2, apm: 4 };
   function makeConsist(kind, cars, seed) {
     let c = null;
     if (typeof MetroKit !== 'undefined' && MetroKit.createConsist) { try { c = MetroKit.createConsist(kind, { cars, seed, name: 'metro' }); } catch (e) { console.error('MetroKit', kind, e); c = null; } }
@@ -577,7 +577,7 @@ const MetroSim = (() => {
         for (let i = 0; i < n && fN < FARMAX; i++) {
           tr.leg.path.at(tr.s - (i + 0.5) * L, F1); const h = Math.hypot(F1.tx, F1.tz) || 1;
           _e.set(0, Math.atan2(-F1.tz, F1.tx), Math.atan2(F1.ty, h)); _q.setFromEuler(_e);
-          _m4.compose(_p.set(F1.x, F1.y + 0.95, F1.z), _q, _s.set(L - 0.9, tr.kind === 'oak' ? 2.6 : 2.45, tr.kind === 'oak' ? 2.6 : 3.2));
+          _m4.compose(_p.set(F1.x, F1.y + 0.95, F1.z), _q, _s.set(L - 0.9, tr.kind === 'apm' ? 2.6 : 2.45, tr.kind === 'apm' ? 2.6 : 3.2));
           _m4.toArray(fp, fN * 16); far.setColorAt(fN, _c); fN++;
         }
         if (night > 0.05 && lN < LMAX - 2 && !tr.underground) {       // head and tail lamps, read as a line of light at night
@@ -718,14 +718,16 @@ const MetroSim = (() => {
   // live mode (47_metrolive.js): replace a trip's targets with predicted times and replan just that trip
   // live mode (47_metrolive.js): replace a trip's times (per pattern leg, [arr, dep, ...] seconds of the service day,
   // like timetable.json) with predictions and replan just that trip; the physical train keeps its identity
-  function applyLive(tripId, legTimes) {
+  function applyLive(tripId, legTimes, liveCars) {
     const p = planFor(tripId); if (!p) return false;
-    const trip = { ...p.trip, legs: p.trip.legs.map((L, k) => legTimes[k] ? legTimes[k].map((v, i) => v - p.dayOff) : L) };
+    const pat = MN.patterns[p.trip.pat]; if (!pat) return false;
+    const cars = pat.legs.map((PL, k) => { const old = p.legs.find(l => l.stops[0].k === k); return liveCars && PL.vehicle === 'emu' ? clamp(liveCars, 2, 10) : old ? old.cars : (p.trip.cars || [])[k]; });
+    const trip = { ...p.trip, cars, legs: p.trip.legs.map((L, k) => legTimes[k] ? legTimes[k].map(v => v - p.dayOff) : L) };
     const sd = Env.serviceDay(), np = planTrip(trip, p.dayOff, ymdShift(sd.ymd, p.dayOff ? -1 : 0).wd); if (!np) return false;
     np.live = true; np.trip = p.trip; np.key = p.key;
     for (let i = 0; i < np.legs.length && i < p.legs.length; i++) { const a = p.legs[i], b = np.legs[i];
-      b.lead = a.lead; b.cars = a.cars; b.turn = a.turn; b.from = a.from; b.sameTurn = a.sameTurn; b.chainKey = a.chainKey;
-      if (a.from && a.sameTurn) { b.t0 = a.t0; b.from.turn = b; } if (a.turn && a.sameTurn) { b.t1 = Math.max(b.stops[b.stops.length - 1].tArr, a.turn.stops[0].tDep); a.turn.from = b; } }
+      b.lead = a.lead; b.turn = a.turn; b.from = a.from; b.sameTurn = a.sameTurn; b.chainKey = a.chainKey;
+      if (a.from && a.sameTurn) { b.t0 = Math.min(b.t0, a.from.t1); a.from.turn = b; } if (a.turn && a.sameTurn) { b.t1 = Math.max(b.stops[b.stops.length - 1].tArr, a.turn.stops[0].tDep); a.turn.from = b; } }
     const idx = plans.indexOf(p); if (idx >= 0) plans[idx] = np; planById.set(np.key, np);
     np.tStart = Math.min(...np.legs.map(l => l.t0)); np.tEnd = Math.max(...np.legs.map(l => l.t1));
     plans.sort((a, b) => a.tStart - b.tStart); liveDirty = true; return true;

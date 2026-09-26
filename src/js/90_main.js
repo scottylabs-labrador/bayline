@@ -120,7 +120,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   if (METRO) MetroSim.init().then(ok => { if (!ok) return;
     if (hash.get('mst')) MetroPlay.teleport(hash.get('mst'), hash.get('mplat') || undefined);
     if (hash.get('mdrive')) { const p = MetroSim.planFor(hash.get('mdrive')); if (p) MetroATC.start(p, { station: hash.get('mfrom') || undefined, manual: hash.has('manual') }); }
-    if (hash.get('mmap')) MetroUI.openMap({ view: hash.get('mmap') === 'geo' ? 'geo' : 'schematic' }); });
+    if (hash.get('mmap')) MetroUI.openMap({ view: hash.get('mmap') === 'geo' ? 'geo' : 'schematic' });
+    if (hash.get('mlive') === '1') MetroLive.setOn(true); });
   if (hash.get('fly') && typeof Flight !== 'undefined') { if (!started) start('explore'); Flight.fromHash(hash.get('fly')).catch(e => console.error('fly', e)); }
   if (hash.get('flyat') && typeof Flight !== 'undefined') { if (!started) start('explore'); Flight.fromFlyAt(hash.get('flyat')).catch(e => console.error('flyat', e)); }
   const hfly = $('hfly'); if (hfly) hfly.addEventListener('click', () => { if (typeof Flight !== 'undefined') { if (Flight.active) FHud.menu(true); else FHud.setup(true); } });

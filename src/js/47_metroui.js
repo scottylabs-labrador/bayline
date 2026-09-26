@@ -86,6 +86,7 @@ const MetroUI = (() => {
       <div class="bar"><h2>System map</h2>
         <div class="seg" id="mview"><button data-v="schematic" class="on">Schematic</button><button data-v="geo">Geographic</button></div>
         <input id="msearch" placeholder="Find a station…" autocomplete="off" spellcheck="false">
+        <button class="chip" id="mlive" title="Place every train from the operator's real-time predictions"><span class="dot" id="mlivedot"></span><span id="mlivet">Live positions</span></button>
         <span id="mlines" style="display:flex;gap:6px;flex-wrap:wrap"></span></div>
       <div class="wrap"><div style="position:relative"><canvas id="msysc"></canvas><div class="res panel" id="mres" hidden></div></div><div class="side" id="mside"></div></div>
       <div class="foot"><span id="mfoot"></span><span>Click a station to see its trains, a train to follow it. Scroll to zoom, drag to pan. <kbd>N</kbd> opens this map.</span></div></div></div>`);
@@ -102,15 +103,19 @@ const MetroUI = (() => {
       <div class="gauge"><i id="mdg"></i><b id="mdgb"></b></div>
       <div class="row"><span class="pill" id="mdm">ATO</span><span class="pill" id="mdn">N</span><span class="pill" id="mdd">DOORS</span><span style="flex:1"></span><span class="pill" id="mdsc">0</span></div>
       <div class="guide" id="mdgd"></div>
-      <div class="grid"><span>Next station</span><b id="mdns">—</b><span>To the berth</span><b id="mdto">—</b><span>Schedule</span><b id="mdsch">—</b><span>Track ahead</span><b id="mdtr">—</b></div></div>`);
+      <div class="grid"><span>Next station</span><b id="mdns">—</b><span>To the berth</span><b id="mdto">—</b><span>Schedule</span><b id="mdsch">—</b><span>Next code</span><b id="mdtr">—</b></div></div>`);
     el.strip = addH(`<div id="mstrip" class="panel" hidden><canvas id="mstripc"></canvas></div>`);
-    for (const id of ['msysc', 'mside', 'mres', 'msearch', 'mlines', 'mfoot', 'mview', 'mbk', 'mbt', 'mbsub', 'mbp', 'mbc', 'mba', 'mrc', 'mrl', 'mrd', 'mrk', 'mrn', 'mrs', 'mri', 'mrline', 'mds', 'mdc', 'mdcv', 'mdg', 'mdgb', 'mdm', 'mdn', 'mdd', 'mdsc', 'mdgd', 'mdns', 'mdto', 'mdsch', 'mdtr', 'mstripc']) el[id] = $(id);
+    for (const id of ['mlive', 'mlivedot', 'mlivet', 'msysc', 'mside', 'mres', 'msearch', 'mlines', 'mfoot', 'mview', 'mbk', 'mbt', 'mbsub', 'mbp', 'mbc', 'mba', 'mrc', 'mrl', 'mrd', 'mrk', 'mrn', 'mrs', 'mri', 'mrline', 'mds', 'mdc', 'mdcv', 'mdg', 'mdgb', 'mdm', 'mdn', 'mdd', 'mdsc', 'mdgd', 'mdns', 'mdto', 'mdsch', 'mdtr', 'mstripc']) el[id] = $(id);
     document.querySelectorAll('[data-mclose]').forEach(b => b.addEventListener('click', () => closeAll()));
     for (const o of [el.sys, el.board]) o.addEventListener('mousedown', (e) => { if (e.target === o) closeAll(); });
     el.mview.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { setView(b.dataset.v); }));
     el.msearch.addEventListener('input', () => search(el.msearch.value));
     el.msearch.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { const b = el.mres.querySelector('button'); if (b) b.click(); } if (e.key === 'Escape') { el.msearch.value = ''; search(''); el.msearch.blur(); } });
     initMap();
+    el.mlive.addEventListener('click', () => { if (typeof MetroLive !== 'undefined') MetroLive.setOn(!MetroLive.on); });
+    if (typeof MetroLive !== 'undefined') MetroLive.onChange((st) => { el.mlivedot.classList.toggle('on', st.on && !st.error); el.mlive.classList.toggle('on', st.on);
+      el.mlivet.textContent = !st.on ? 'Live positions' : st.error ? 'Live: ' + st.error : st.matched >= 0 ? `Live: ${st.matched} trains from ${st.source === 'gtfs-rt' ? 'real-time trip updates' : 'real-time departures'}` : 'Live: connecting…';
+      if (st.on && st.error && typeof UI !== 'undefined') UI.toast(st.error, 5); });
     if (typeof UI !== 'undefined' && UI.addOverlay) { UI.addOverlay(el.sys); UI.addOverlay(el.board); }
     titleCard();
   }
@@ -298,7 +303,7 @@ const MetroUI = (() => {
       S.querySelectorAll('.mrow').forEach(r => r.addEventListener('click', (e) => { const ev = rows[+r.dataset.ev]; closeAll(); if (e.shiftKey) drive(ev); else ride(ev); }));
     } else if (h.tr) {
       const tr = MetroSim.trainByKey(h.tr.key) || h.tr, S2 = tr.leg.stops, ns = S2[tr.nextK];
-      S.innerHTML = `<div class="kicker">${esc(MetroSim.lineName(tr.line))}</div><h3>${esc(MetroSim.termName(tr))}</h3><div class="sub">${tr.cars}-car ${tr.kind === 'dmu' ? 'diesel shuttle' : tr.kind === 'oak' ? 'cable train' : 'train'} · ${Math.round(tr.v / MPH)} mph · ${tr.phase === 'run' ? 'next ' + esc(ns ? MetroSim.stName(ns.st) : '') : tr.stationId ? 'at ' + esc(MetroSim.stName(tr.stationId)) : ''}${tr.plan && tr.plan.live ? ' · live' : ''}</div>
+      S.innerHTML = `<div class="kicker">${esc(MetroSim.lineName(tr.line))}</div><h3>${esc(MetroSim.termName(tr))}</h3><div class="sub">${tr.cars}-car ${tr.kind === 'dmu' ? 'diesel shuttle' : tr.kind === 'apm' ? 'cable train' : 'train'} · ${Math.round(tr.v / MPH)} mph · ${tr.phase === 'run' ? 'next ' + esc(ns ? MetroSim.stName(ns.st) : '') : tr.stationId ? 'at ' + esc(MetroSim.stName(tr.stationId)) : ''}${tr.plan && tr.plan.live ? ' · live' : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px"><button class="btn primary" id="mfo">Follow</button><button class="btn" id="mcb">Cab view</button>${tr.kind === 'bart' ? '<button class="btn" id="mdr">Drive from the next stop</button>' : ''}</div>
         <div style="font-size:13px;color:var(--ink-dim)">${S2.slice(Math.max(0, tr.nextK || 0)).map(s => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span>${esc(MetroSim.stName(s.st))}</span><span style="font-family:var(--mono)">${Env.clockText(s.tArr)}</span></div>`).join('')}</div>`;
       $('mfo').onclick = () => { closeAll(); Player.setFocus(tr.key); Player.setMode('chase'); UI.toast('Following the ' + MetroSim.lineName(tr.line) + ' to ' + MetroSim.termName(tr), 4); };
@@ -432,7 +437,7 @@ const MetroUI = (() => {
     el.mdgd.textContent = d.guide; el.mdgd.className = 'guide' + (/^(EMERG|PENALTY|ATC BRAKE|BRAKE NOW)/.test(d.guide) ? ' alarm' : /^(OVERSPEED|Start braking|Train ahead)/.test(d.guide) ? ' warn' : '');
     const n = d.next; el.mdns.textContent = n ? n.name : '—'; el.mdto.textContent = n ? (n.togo > 1000 ? (n.togo / 1609.34).toFixed(2) + ' mi' : n.togo.toFixed(1) + ' m') : '—';
     el.mdsch.innerHTML = n ? `<span class="${d.late > 60 ? 'late' : d.late < -90 ? 'early' : 'ontime'}">${Env.clockText(n.sched)} (${d.late > 0 ? '+' : ''}${Math.round(d.late / 60)}m)</span>` : '—';
-    el.mdtr.textContent = d.clear >= 6 ? 'clear' : d.clear + ' circuit' + (d.clear === 1 ? '' : 's') + ' clear';
+    el.mdtr.textContent = d.target ? `${d.target.v < 0.5 ? 'stop' : Math.round(d.target.v / MPH) + ' mph'} in ${d.target.dist > 1600 ? (d.target.dist / 1609.34).toFixed(1) + ' mi' : Math.round(d.target.dist * 3.281) + ' ft'}` : d.clear >= 6 ? 'clear' : d.clear + ' circuit' + (d.clear === 1 ? '' : 's') + ' clear';
   }
   function drawStrip(tr) {
     const c = el.mstripc, r = c.getBoundingClientRect(), dpr = devicePixelRatio; if (!tr || !tr.leg) return;
