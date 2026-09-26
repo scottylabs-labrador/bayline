@@ -5,25 +5,73 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
-## Status (2026-09-26 00:45)
+## Status (2026-09-26 03:20) — M1 done, M2 under way
 
-- Started. Codebase read (25_stations, 30_towns, 60_life, 55_player, 90_main, env/gfx/post). Station research for all
-  50 stations running (web). Station micro-geometry (stairs, escalators, elevators, entrances, canopies/roofs,
-  footbridges, fare gates) being fetched from OSM for all stations (`data/raw/metrostations/`).
-- Next: the parametric kit + lighting model in a preview, then MetroNet integration as soon as the data spec lands.
+- **All 50 stations build** from MetroNet v0 (verified in one session: 12k–89k triangles each, 0.4–1.5 s of
+  time-sliced build), by archetype: subway box + concourse above + street entrance shafts; aerial deck on bents +
+  lobby below; at grade / freeway median / open trench with footbridges; per-station character for all 50 from
+  research (`28_stationheroes.js`, facts in `notes/bart/stations-research.md`): corrected types and side/island
+  layouts, canopy style/extent/colours (flat with louvres and clerestories, shed, butterfly, gull-wing, hipped,
+  gable, box frame, wave, humps, barrel, open frames, pill), post rows, open-end frames, floors/walls/ceilings,
+  subway column rows (Montgomery/Powell stainless, Civic Center black granite, 12th/19th brick), wall bands.
+- **Combined build (bart M1 + Under)**: fixed the navy Embarcadero platform (see "Under" below); every subway station
+  verified at platform and concourse level (shots in `notes/bart/shots/stations/`). 12TH/19TH have no concourse yet:
+  the v0 profile puts them ~7 m under the street (stacked hero waits for the M2 profile).
+- Lighting: per-fragment analytic line lights (exact segment irradiance + representative-point GGX) per zone, glossy
+  terrazzo/tile reflections of the light troughs, lit 24/7 underground (Under's fixed exposure), canopy lights on by day.
+- Crowds sized by real weekday exits (Aug 2026) and time of day; waiting people walk to open metro doors and board.
+- Platform displays show the next scheduled trains from the timetable; SIM's `setBoard` rows win for 90 s.
 
-## Planned public API (draft; finalised at M1)
+## Preview
 
-- `MetroStations.init()`, `MetroStations.update(dt, camPos)`: streaming build per station (≤ 1.5 km), time-sliced.
-- `MetroStations.setBoard(stationId, platformKey, rows)`: live departures for the platform next-train displays
-  (SIM writes; `rows = [{ line: 'yellow', dest: 'SFO / Millbrae', cars: 10, min: 3 }, ...]`).
-- `MetroStations.floorAt(x, y, z)`: walkable floor height at (x, z) for feet near height y (multi-level stations),
-  `MetroStations.blocked(x0, z0, x1, z1, y)`: wall test for walk mode.
-- `MetroStations.list`, `byId`, `spawnPoint(id, platformKey)`, `crowdZones(id)`.
+- Build `BAYLINE_OUT=dist/stations.html python3 build.py`, serve `python3 tools/devserver.py 8135`, open
+  `http://localhost:8135/stations.html#auto&metro=1&t=08:15&ll=37.7892,-122.4016,150,0.8,-0.4` (Montgomery).
+- QA camera from the console: `__bayline.MetroStations.shot('MONT', { u: -30, v: 0, h: 1.65, yaw: 0.2, fov: 70 })`
+  (u along the platforms from their middle, v to the right, h above the platform top; `cut: 6` = cutaway above that
+  height with everything else hidden; `perf: true` = GPU cost and draw calls with/without the stations).
+- Many views in one page load: `python3 tools/wd.py 590 node tools/metro_shots.mjs --views views.json --out DIR`.
+
+## APIs (M1, stable)
+
+- `MetroStations.setBoard(stationId, platformCode, rows)`, rows `[{ line, color, dest, cars, min }]` (SIM pushes).
+- `MetroStations.floorAt(x, y, z)` / `blocked(x0, z0, x1, z1, y)` (walk mode; SIM's Player uses them).
+- `MetroStations.spawnPoint(stationId, platformCode | gtfsId)` → `{ x, y, z, yaw }` (yaw = heading toward the track).
+- `MetroStations.limits(stationId)` → `[{ track, s0, s1 }]` (where station structure replaces INFRA's guideway).
+- `MetroStations.list / byId / stats / enabled / ready`, `StationCrowds.population(id)`.
+- Hooks: MetroStations rides on `Stations.init/update` (no main-loop edits); inert without `#metro=1`.
+
+## Costs (measured, High, 1600x900, GPU shared with other workstreams' Chromes, so indicative)
+
+| view | +draw calls | +triangles | GPU with / without |
+|---|---|---|---|
+| Montgomery platform (crowd) | +40 | +0.72 M (incl. people) | +21 % |
+| Bay Fair platform | +24 | +0.10 M | +3 % |
+| West Oakland platform | +26 | +0.16 M | +24 % |
+| Bay Fair from 120 m | +24 | +0.06 M | noisy (to re-measure) |
+
+Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-station budgets checked at every hero.
 
 ## Requests
 
-### To INFRA: the Under API (draft of 2026-09-26 00:40), from a subway-station point of view
+### To INFRA: Under — the Embarcadero fix (agreed contract, 03:10)
+
+What was wrong (all on my side): my whole stations group is a top-level scene object, so `Under.preRender` hid it
+underground (and my cells' groups inside it); I also passed `ambient` as an RGB array. Now:
+- `Under.keep(MetroStations.group)`; each underground level is a cell whose `group` holds that level's structure AND
+  its near-only detail (signs, boards, escalator steps, furniture), so portal visibility is exact per level.
+- Aerial/at-grade stations (no cells) are registered with `Under.outdoor(root)` (hidden with the outdoor world).
+- Cells: `st:<ID>:plat`, `st:<ID>:conc`, `st:<ID>:ent<k>` (street shafts, `daylight: [concourse floor, street]`);
+  portals: wells plat↔conc (horizontal, at the concourse floor), shaft↔conc (horizontal at the concourse roof for
+  in-box shafts, vertical at the wall door for side passages), shaft↔outdoors (horizontal at the street); cuts over
+  every shaft. `ambient` = 1.6 x the luminance of the style's fill (~0.65); my own fill is off when Under runs.
+- Exposure: with Under I no longer compensate (your fixed 1.0 underground); fixtures are calibrated for it.
+- **Request (your M2 item 6, accepted):** `Under.addLights`: people and trains in stations are lit only by the cell
+  ambient today, so they read as silhouettes against my lit surfaces. The GLSL is `StationKit.LIGHT_GLSL`
+  (`skLineE(P, N, A, B)` = exact clipped segment irradiance per unit intensity; `skLines(...)` = diffuse + GGX with the
+  representative point); inputs are view-space endpoints (`uLA/uLB` xyz, w = range/radius), colour (`uLC`), facing
+  (`uLD`). I will call `Under.addLights(cellId, lights)` with my per-zone lists (world coords) as soon as it exists.
+
+### (history) INFRA requests of 00:45
 
 Plan on my side: every subway station registers one cell per level (`st:<ID>:plat`, `st:<ID>:muni` where Muni Metro
 shares the box, `st:<ID>:conc`, and `st:<ID>:ent<k>` per street entrance shaft), portals at every stair/escalator/
