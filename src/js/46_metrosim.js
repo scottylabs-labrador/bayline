@@ -577,7 +577,12 @@ const MetroSim = (() => {
     lights = new THREE.Points(lg, new THREE.PointsMaterial({ size: 3.2, sizeAttenuation: false, vertexColors: true, depthWrite: false, transparent: true, opacity: 0.95, fog: false, blending: THREE.AdditiveBlending }));
     lights.frustumCulled = false; lights.renderOrder = 4; Env.scene.add(lights);
     const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DMAX * 3), 3)); dg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(DMAX * 3), 3));
-    dots = new THREE.Points(dg, new THREE.PointsMaterial({ size: 7, sizeAttenuation: false, vertexColors: true, depthWrite: false, depthTest: false, transparent: true, opacity: 0.95, fog: false }));
+    // the map dots seen from high up: small soft round marks, depth-tested (a train in the Tube or under Market Street
+    // is under the ground or the water, so its dot is too), fading in from 1.2 km above the ground
+    const dc = document.createElement('canvas'); dc.width = dc.height = 32; { const g = dc.getContext('2d'), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.55, 'rgba(255,255,255,1)'); gr.addColorStop(0.8, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); }
+    const dotTex = new THREE.CanvasTexture(dc); dotTex.colorSpace = THREE.SRGBColorSpace;
+    dots = new THREE.Points(dg, new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, vertexColors: true, map: dotTex, alphaTest: 0.02, depthWrite: false, depthTest: true, transparent: true, opacity: 0.95, fog: false }));
     dots.frustumCulled = false; dots.renderOrder = 6; Env.scene.add(dots);
   }
   const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YZX'), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _c = new THREE.Color();
@@ -595,7 +600,7 @@ const MetroSim = (() => {
   function isUnder(st) { return st === 'bored' || st === 'cutcover' || st === 'tube' || st === 'subway' || st === 'tunnel' || st === 'underground'; }
   // ---------------------------------------------------------------- far from the metro (M3.1)
   // With no metro track within the far-train range of the camera (4.5 km on the ground, more from the air), the air
-  // dots off (below 350 m), no metro train driven and the system map closed, nothing of the metro can be seen: the
+  // dots off (below 1.2 km), no metro train driven and the system map closed, nothing of the metro can be seen: the
   // trains' state (positions and distances included: the HUD, Tab, the sounds and the missions read it) is refreshed
   // twice a second and nothing is posed, batched or uploaded. "Any track within R" is a few hundred lookups in the set
   // of 1 km cells that hold track, and the answer is kept until the camera has moved 250 m.
@@ -634,7 +639,7 @@ const MetroSim = (() => {
     // far trains are drawn only where they could cover a pixel or two: ~4.5 km from the ground, out to 30 km from the air
     // (a Peninsula view with no metro nearby draws nothing of it); the map dots from the air are separate
     const farDist = U.clamp(4500 + Math.max(0, alt) * 9, 4500, 30000);
-    const quiet = !drive && alt <= 350 && !(typeof MetroUI !== 'undefined' && MetroUI.mapOpen) && !metroNear(camPos, farDist);
+    const quiet = !drive && alt <= 1200 && !(typeof MetroUI !== 'undefined' && MetroUI.mapOpen) && !metroNear(camPos, farDist);
     stats.quiet = quiet;
     if (quiet) {
       if (!quietOn) { quietOn = true; hideAll(); quietT = 0; }
@@ -663,7 +668,8 @@ const MetroSim = (() => {
     running.sort((a, b) => (b.key === focusKey) - (a.key === focusKey) || a.dist - b.dist);
     if (quiet) { for (const tr of running) tr.entry = null; stats.running = running.length; stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05; return; }
     for (const e of pool) e.busy = false;
-    const night = U.uNight.value, maxNear = nearBudget(), wantDots = alt > 350;
+    const cap = typeof window !== 'undefined' && window.__bayline && window.__bayline.capture && window.__bayline.capture.on;
+    const night = U.uNight.value, maxNear = nearBudget(), wantDots = alt > 1200 && (!cap || api.dotsInCapture);
     let nNear = 0, fN = 0, lN = 0, dN = 0;
     if (kitFar) kitFar.begin();
     const fp = far.instanceMatrix.array, lp = lights.geometry.attributes.position.array, lc = lights.geometry.attributes.color.array, dp = dots.geometry.attributes.position.array, dc = dots.geometry.attributes.color.array;
@@ -671,11 +677,10 @@ const MetroSim = (() => {
     let nHidden = 0;
     for (const tr of running) {
       // out of sight costs nothing: a train entirely under the street seen from above ground, or a surface train far
-      // from a camera that is itself underground (the map dots still show them)
+      // from a camera that is itself underground
       const own = tr.key === focusKey || tr.driven;
       if (!own && ((tr.buried && !camUnder) || (camUnder && !seenFromUnder(tr)))) { tr.entry = null; nHidden++;
-        if (wantDots && dN < DMAX) { const c = lineCol(tr.line); dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; dc[dN * 3] = c.r; dc[dN * 3 + 1] = c.g; dc[dN * 3 + 2] = c.b; dN++; }
-        continue; }
+        continue; }                                                   // (no dot for a train under the street: the system map shows those)
       const near = own || (nNear < maxNear && tr.seen < 1500);
       const e = near ? acquire(tr.kind, tr.key, tr.cars) : null; tr.entry = e;
       if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead); setupConsist(tr, e, dt, night); }
@@ -704,14 +709,14 @@ const MetroSim = (() => {
         }
         }
       }
-      if (wantDots && dN < DMAX) { const c = tr.remote ? _c.set(tr.remote.color || '#ffffff') : lineCol(tr.line); dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; dc[dN * 3] = c.r; dc[dN * 3 + 1] = c.g; dc[dN * 3 + 2] = c.b; dN++; }
+      if (wantDots && !tr.underground && dN < DMAX) { const c = tr.remote ? _c.set(tr.remote.color || '#ffffff') : lineCol(tr.line); dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; dc[dN * 3] = c.r; dc[dN * 3 + 1] = c.g; dc[dN * 3 + 2] = c.b; dN++; }
     }
     for (const e of pool) if (!e.busy && e.shown !== 0) { for (const car of e.consist.cars) car.group.visible = false; e.shown = 0; }
     far.count = fN; far.visible = fN > 0; far.instanceMatrix.needsUpdate = true; if (far.instanceColor) far.instanceColor.needsUpdate = true;
     if (kitFar) kitFar.end(night, Env.renderer && Env.renderer.getDrawingBufferSize ? Env.renderer.getDrawingBufferSize(_res) : undefined);   // (lamp billboards keep a minimum pixel size)
     lights.geometry.setDrawRange(0, lN); lights.visible = lN > 0; lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
     dots.geometry.setDrawRange(0, dN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
-    dots.visible = wantDots && dN > 0; dots.material.opacity = U.smooth(350, 1200, alt);
+    dots.visible = wantDots && dN > 0; dots.material.opacity = 0.95 * U.smooth(1200, 2500, alt);
     stats.running = running.length; stats.consists = nNear; stats.far = fN; stats.runs = runCache.size; stats.hidden = nHidden;
     stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05;
   }
@@ -1008,7 +1013,7 @@ const MetroSim = (() => {
   }
   if (typeof Metro !== 'undefined') Metro.onTeardown(shutdown);
 
-  const api = { get enabled() { return isOn(); }, init, update, shutdown, setQuality(q) { quality = q; }, get ready() { return ready; }, get quiet() { return quietOn; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
+  const api = { get enabled() { return isOn(); }, init, update, shutdown, setQuality(q) { quality = q; }, get ready() { return ready; }, get quiet() { return quietOn; }, dotsInCapture: false, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
     stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, changeFor, legDest, nextStopName, PERF, MPH, netKey, resolveNet, platformSide, stopSide,
