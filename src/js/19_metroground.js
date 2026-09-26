@@ -216,15 +216,35 @@ const MetroGround = (() => {
   }
   // cuts and cells register as the metro builds near the camera, usually after the trees there loaded: every second the
   // boxes of the new ones are re-filtered (Flora.refreshIn: the drop filters on the loaded trees there, nothing reloads)
+  // (and the street lamps of the Towns tiles there are re-tested: Towns.relamp, lampDrop below)
   const seenCuts = new Set();
   function watchCuts() {
-    if (typeof Under === 'undefined' || !Under.enabled || typeof Flora === 'undefined' || !Flora.refreshIn) return;
+    if (typeof Under === 'undefined' || !Under.enabled) return;
     const R = [];
     for (const m of [Under.cuts, Under.cells]) if (m && m.entries) for (const [id, c] of m.entries()) {
       if (seenCuts.has(id)) continue; seenCuts.add(id);
       if (c.bb) R.push([c.bb[0] - 2, c.bb[1] - 2, c.bb[2] + 2, c.bb[3] + 2]);
     }
-    if (R.length) Flora.refreshIn(R);
+    if (!R.length) return;
+    if (typeof Flora !== 'undefined' && Flora.refreshIn) Flora.refreshIn(R);
+    if (typeof Towns !== 'undefined' && Towns.relamp) stats.relamped = (stats.relamped || 0) + Towns.relamp(R);
+  }
+  // street lamps (Towns.addLampDrop): none stands on ground the metro cut away (an opening: onCutGround) or lowered (a
+  // trench within its walls, a ground-level platform's cut), nor on the track bed at ground level (grade / embankment /
+  // median: within 3.2 m of a track). (West Oakland: an OSM lamp stood between the rails in front of the Tube portal,
+  // its pool of light a flat tan band on the trench floor.) Towns keeps every other pool on its street
+  function lampDrop(x, z) {
+    if (onCutGround(x, z)) return true;
+    const a = grid.get(ck(Math.floor(x / CELL), Math.floor(z / CELL))); if (!a) return false;
+    for (const k of a) {
+      const o = k * SEG, ax = S[o], az = S[o + 1], bx = S[o + 2], bz = S[o + 3], kind = S[o + 6], side = S[o + 7];
+      const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz, len = Math.sqrt(L2) || 1;
+      const u0 = L2 > 1e-9 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0, u = u0 < 0 ? 0 : u0 > 1 ? 1 : u0;
+      const d = Math.hypot(x - ax - dx * u, z - az - dz * u);
+      if (kind === 0 ? d < CORE + 0.8 : kind === 1 ? d < TRENCH_CORE + TRENCH_EDGE + 0.5 : false) return true;
+      if (kind === 2 && u0 > -0.05 && u0 < 1.05) { const lat = ((x - ax) * -dz + (z - az) * dx) / len * side; if (lat > PLAT_IN - PLAT_EDGE && lat < PLAT_W + PLAT_EDGE) return true; }
+    }
+    return false;
   }
   // road traffic never drives on a BART track at ground level or over an open trench (an OSM road drawn across it, e.g.
   // West Oakland): a keep-out in the shape of MetroStations' (Life's cutRoads cuts the lanes there). Trench: any road
@@ -267,6 +287,8 @@ const MetroGround = (() => {
     // what already stands near the lines is re-placed there only (no dispose: nothing elsewhere reloads or goes black):
     // trees first, by the carve's height change under each (computed on the ground before the carve), and the drop filter
     try { if (typeof Flora !== 'undefined' && Flora.adjust) { Flora.addDrop(dropTree); stats.flora = Flora.adjust(R, (x, z) => { const hn = Terrain.h(x, z); return carvePoint(x, z, hn) - hn; }); } } catch (e) { console.warn('MetroGround flora', e); }
+    // street lamps: the tiles re-placed below (Towns.refresh) and every later build test lampDrop
+    try { if (typeof Towns !== 'undefined' && Towns.addLampDrop) Towns.addLampDrop(lampDrop); } catch (e) { console.warn('MetroGround lamps', e); }
     // the terrain re-filters its loaded tiles in place (spread over frames), then the towns rebuild the touched tiles
     Promise.resolve(Terrain.addHeightFilter(filter, bbox)).then(() => {
       try { if (typeof Towns !== 'undefined' && Towns.refresh) { Towns.addDrop(dropBuilding); stats.towns = Towns.refresh(R); } } catch (e) { console.warn('MetroGround towns', e); }
@@ -287,7 +309,7 @@ const MetroGround = (() => {
     }, 400);
   }
   let rects = null;
-  const api = { install, carveAt, carvePoint, onCutGround, cutNear, roadKeepOut, stats, get installed() { return installed; }, get rects() { return rects; },
+  const api = { install, carveAt, carvePoint, onCutGround, cutNear, roadKeepOut, lampDrop, stats, get installed() { return installed; }, get rects() { return rects; },
     // (QA handles: the modules this one works with, for headless checks)
     _dbg: { flora: () => (typeof Flora !== 'undefined' ? Flora : null), terrain: () => Terrain, world: () => (typeof World !== 'undefined' ? World : null), ground: () => (typeof GroundCover !== 'undefined' ? GroundCover : null), metronet: () => MetroNet,
       segsNear(x, z, r) { const out = []; for (let k = 0; k < nS; k++) { const o = k * SEG, ax = S[o], az = S[o + 1], bx = S[o + 2], bz = S[o + 3];

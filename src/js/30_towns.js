@@ -573,18 +573,22 @@ const Towns = (() => {
     uniforms: { uNight: U.uNight },
     vertexShader: `#include <common>
       #include <logdepthbuf_pars_vertex>
-      varying vec2 vUv; varying float vUp; void main(){ vUv = uv; gl_Position = projectionMatrix * blBend(modelViewMatrix * instanceMatrix * vec4(position, 1.0));
+      varying vec2 vUv; varying float vUp; varying vec3 vWP, vWN; void main(){ vUv = uv; gl_Position = projectionMatrix * blBend(modelViewMatrix * instanceMatrix * vec4(position, 1.0));
         // seen from above (the camera well over the lamp) a pool of light is no longer a disc on the street: it fades to a
         // faint glow; at eye level it is unchanged (Bayline Metro world)
         vUp = smoothstep(35.0, 140.0, cameraPosition.y - (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y);
+        vWP = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz; vWN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * vec3(0.0, 1.0, 0.0));
       #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `#include <common>
       #include <logdepthbuf_pars_fragment>
-      uniform float uNight; varying vec2 vUv; varying float vUp;
+      uniform float uNight; varying vec2 vUv; varying float vUp; varying vec3 vWP, vWN;
       void main(){
         #include <logdepthbuf_fragment>
         float d = length(vUv - 0.5) * 2.0; float a = pow(max(0.0, 1.0 - d), 1.8) * uNight * 0.55 * (1.0 - 0.85 * vUp);
+        // seen at a grazing angle (far down the street at eye level) the disc would squash into a thin, hard-edged bright
+        // band: it fades out below ~5 degrees over the street (Bayline Metro world)
+        a *= smoothstep(0.0, 0.08, abs(dot(normalize(cameraPosition - vWP), vWN)));
         if (a < 0.004) discard; gl_FragColor = vec4(vec3(1.0, 0.72, 0.42) * a, 1.0); }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
@@ -1621,24 +1625,35 @@ const Towns = (() => {
       });
       mesh.castShadow = true; mesh.receiveShadow = true; mesh.computeBoundingSphere(); mesh.name = 'trees-' + kind; objs.push(mesh); ntrees += list.length;
     }
-    if (lights.length) {
-      const poles = new THREE.InstancedMesh(lightGeo, poleMat, lights.length), glows = new THREE.InstancedMesh(glowGeo, glowMat, lights.length);
-      const pools = new THREE.InstancedMesh(poolGeo, poolMat, lights.length);
-      lights.forEach((l, i) => {
+    // (Bayline Metro: no lamp stands where lampOut says so: ground the metro cut away or lowered, a station's footprint)
+    const LL = lights.filter(l => !lampOut(t.ox + l[0], t.oz + l[2])); let lampSet = null;
+    if (LL.length) {
+      const poles = new THREE.InstancedMesh(lightGeo, poleMat, LL.length), glows = new THREE.InstancedMesh(glowGeo, glowMat, LL.length);
+      const pools = new THREE.InstancedMesh(poolGeo, poolMat, LL.length);
+      LL.forEach((l, i) => {
         _q.setFromAxisAngle(_up, l[3]); _m.compose(_p.set(l[0], l[1], l[2]), _q, _s.set(1, 1, 1)); poles.setMatrixAt(i, _m);
         const hx = l[0] + Math.sin(l[3]) * 1.95, hz = l[2] + Math.cos(l[3]) * 1.95;
         _m.makeTranslation(hx, l[1] + 8.1, hz); glows.setMatrixAt(i, _m);
-        _m.makeTranslation(hx, hf(hx, hz) + 0.5, hz); pools.setMatrixAt(i, _m);
+        // the pool of light lies on the street it lights: never below the lamp's own footing (an arm reaching over a cut or
+        // a wall: at the footing, level), and on a hill tilted with the street (at most 1:3), so the rising ground never
+        // slices the disc with a hard edge
+        const gh = hf(hx, hz), foot = l[1] - 0.3, y0 = gh < foot - 1.0 ? foot : gh, e = 3;
+        const ha = hf(hx + e, hz), hb = hf(hx - e, hz), hc = hf(hx, hz + e), hd = hf(hx, hz - e);
+        let gx = (ha - hb) / (2 * e), gz = (hc - hd) / (2 * e);
+        if (y0 !== gh || Math.max(Math.abs(ha - gh), Math.abs(hb - gh), Math.abs(hc - gh), Math.abs(hd - gh)) > 1.5) gx = gz = 0;
+        const gs = Math.hypot(gx, gz); if (gs > 0.33) { gx *= 0.33 / gs; gz *= 0.33 / gs; }
+        _q.setFromUnitVectors(_up, _pn.set(-gx, 1, -gz).normalize()); _m.compose(_p.set(hx, y0 + 0.5, hz), _q, _s.set(1, 1, 1)); pools.setMatrixAt(i, _m);
       });
       pools.computeBoundingSphere(); pools.userData.pool = true; pools.renderOrder = 4; pools.name = 'streetlight-pools'; objs.push(pools);
       poles.computeBoundingSphere(); poles.castShadow = false; poles.userData.pole = true; glows.userData.glow = true; glows.frustumCulled = false; glows.renderOrder = 5;
       poles.name = 'streetlights'; glows.name = 'streetlight-glow'; objs.push(poles, glows);
+      lampSet = { L: LL, n: LL.length, at: Uint32Array.from(LL, (_, i) => i), poles, glows, pools };
     }
     clearGnd(t);
     if (g) { const m = new THREE.Mesh(g, roadMat); m.receiveShadow = true; m.name = 'ground'; t.root.add(m); t.gndMesh = m; t.gndTris = (g.index ? g.index.count : 0) / 3; stats.groundTris += t.gndTris; }
     for (const o of objs) t.root.add(o);
-    t.objs = objs; t.houses = houses;
-    t.nH = houses.length; t.nT = ntrees; t.nL = lights.length; stats.houses += t.nH; stats.trees += t.nT; stats.lights += t.nL;
+    t.objs = objs; t.houses = houses; t.lampSet = lampSet;
+    t.nH = houses.length; t.nT = ntrees; t.nL = LL.length; stats.houses += t.nH; stats.trees += t.nT; stats.lights += t.nL;
     buildHouses(t, hi);
     t.gndLvl = lvl; t.treeNear = t.poleVis = t.glowVis = t.poolVis = t.gndVis = null; lodTouch(t, true);
     stats.built++;
@@ -1647,7 +1662,7 @@ const Towns = (() => {
     if (t.gndMesh) { t.root.remove(t.gndMesh); t.gndMesh.geometry.dispose(); t.gndMesh = null; stats.groundTris -= t.gndTris || 0; t.gndTris = 0; }
     for (const o of t.objs || []) { t.root.remove(o); disposeObj(o); }
     for (const m of t.houseMeshes || []) { t.root.remove(m); disposeObj(m); }
-    t.objs = []; t.houseMeshes = []; t.houses = null; t.gndLvl = 0;
+    t.objs = []; t.houseMeshes = []; t.houses = null; t.gndLvl = 0; t.lampSet = null;
     stats.houses -= t.nH || 0; stats.trees -= t.nT || 0; stats.lights -= t.nL || 0; t.nH = t.nT = t.nL = 0;
   }
   let groundVis = true;
@@ -1660,6 +1675,7 @@ const Towns = (() => {
     const lv = nv && t.dist < POOL_R && gv; if (force || t.poolVis !== lv) { t.poolVis = lv; for (const o of t.objs) if (o.userData.pool) o.visible = lv; }
   }
   const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0), _c = new THREE.Color();
+  const _pn = new THREE.Vector3();
   const HOUSE_ATTRS = ['position', 'normal', 'aPart', 'aWinId', 'color'];
   function buildHouses(t, near) {
     for (const m of t.houseMeshes || []) { t.root.remove(m); disposeObj(m); }
@@ -1895,6 +1911,38 @@ const Towns = (() => {
   // stations draw themselves): fn(building, centroid x, z) -> true drops it when a tile decodes (call dispose() after)
   const dropFilters = [];
   const addDrop = (fn) => { dropFilters.push(fn); };
+  // street-lamp drop filters (Bayline Metro: MetroGround keeps lamps off ground the metro cut away or lowered):
+  // fn(x, z) -> true drops the lamp standing at world (x, z) when a tile builds; the stations' keep-out (ctx.keepOut
+  // 'lamp') applies as well
+  const lampDrops = [];
+  const addLampDrop = (fn) => { lampDrops.push(fn); };
+  function lampOut(x, z) {
+    if (ctx.keepOut && ctx.keepOut(x, z, 'lamp')) return true;
+    for (const f of lampDrops) if (f(x, z)) return true;
+    return false;
+  }
+  // re-test the lamps of the built tiles in rects (world [x0, z0, x1, z1]) after the ground changed there (Bayline Metro:
+  // the metro's openings register as it builds near the camera, often after the tile was built): a lamp now out goes
+  // (the instances after it move up one, the meshes draw one fewer); nothing rebuilds. Returns the number of lamps removed
+  const _mr = new THREE.Matrix4();
+  function relamp(rects) {
+    let n = 0;
+    for (const t of tiles.values()) {
+      const S = t.lampSet; if (!S || !rects.some(r => r[0] < t.ox + TILE && r[2] > t.ox && r[1] < t.oz + TILE && r[3] > t.oz)) continue;
+      let k = 0;
+      for (let i = 0; i < S.n; i++) {
+        const l = S.L[S.at[i]], x = t.ox + l[0], z = t.oz + l[2];
+        if (rects.some(r => x > r[0] - 4 && x < r[2] + 4 && z > r[1] - 4 && z < r[3] + 4) && lampOut(x, z)) continue;
+        if (k !== i) { for (const m of [S.poles, S.glows, S.pools]) { m.getMatrixAt(i, _mr); m.setMatrixAt(k, _mr); } S.at[k] = S.at[i]; }
+        k++;
+      }
+      if (k === S.n) continue;
+      const dn = S.n - k; n += dn; S.n = k; t.nL -= dn; stats.lights -= dn;
+      for (const m of [S.poles, S.glows, S.pools]) { m.count = k; m.instanceMatrix.needsUpdate = true; }
+    }
+    stats.relamped = (stats.relamped || 0) + n;
+    return n;
+  }
   // re-place what stands inside rects (world [x0, z0, x1, z1]) after the ground or the drop filters changed there (Bayline
   // Metro: MetroGround's carve, the stations' keep-outs). Only the loaded tiles that overlap are touched: they re-read
   // their data (the drop filters apply at decode) and rebuild on the current ground in the background, while their
@@ -1948,6 +1996,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh,
+  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh, addLampDrop, relamp,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();
