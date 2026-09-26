@@ -1666,7 +1666,8 @@ const MetroKit = (() => {
         if (dt > 0) c._sway(dt, this.speed, this._aL, this.odo, this.sway);
         c.S.mkSpd.value = c.flip ? -this.speed : this.speed;
         if (c.openMesh !== false) c._openings();
-        if (c.lod === 0 ? c.dirty : (c.lod === 1 && c.lodBaked && c.doorDirty)) c._pose();     // (a baked LOD 1 moves its doors)
+        // (a baked LOD 1 moves its doors, and an articulated unit's bodies follow the curves)
+        if (c.lod === 0 ? c.dirty : (c.lod === 1 && c.lodBaked && (c.doorDirty || (c.bodyM && c.dirty)))) c._pose();
       }
     }
   }

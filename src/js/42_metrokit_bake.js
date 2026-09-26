@@ -132,4 +132,57 @@
   // (for previews and tests: resolves once every requested bake is done)
   K.bakesSettled = () => new Promise(res => { const tick = () => (state !== 1 && !waiting.size) ? res() : setTimeout(tick, 50); tick(); });
   K.bakeLayout = layout; K.bakeUV = uv; K.bakeViewFor = viewFor; K._bakeNow = bakeNow;
+
+  // ------------------------------------------------------------------------------------------ helpers for the LODs
+  // (the builders' lodBaked: 42_metrokit_dmu.js, 42_metrokit_apm.js; the FOTF has its own, with its nose)
+  // a coarse section (right half, skirt -> roof centre) of profile P through the heights ys, a sample where the normal
+  // turns more than maxDeg
+  function lodSection(P, ys, maxDeg) {
+    const { profAt, tAtY } = K.fotfProfile, D = P.dense, n = D.p.length, maxA = maxDeg * Math.PI / 180, ts = [0, D.t[n - 1]];
+    for (const y of ys) ts.push(tAtY(P, y));
+    let last = 0;
+    for (let i = 1; i < n; i++) { const a0 = Math.atan2(D.n[last][0], D.n[last][1]), a1 = Math.atan2(D.n[i][0], D.n[i][1]); if (Math.abs(a1 - a0) > maxA) { ts.push(D.t[i]); last = i; } }
+    ts.sort((a, b) => a - b);
+    const out = [], q = { y: 0, z: 0, ny: 0, nz: 0 };
+    for (const t of ts) { if (out.length && t - out[out.length - 1].t < 0.03) continue; profAt(P, t, q); out.push({ t, y: q.y, z: q.z, ny: q.ny, nz: q.nz }); }
+    const e = out[out.length - 1]; e.z = 0; e.ny = 1; e.nz = 0;
+    return out;
+  }
+  const lodLoop = sec => sec.map(p => ({ y: p.y, z: p.z, ny: p.ny, nz: p.nz })).concat(sec.slice(0, -1).reverse().map(p => ({ y: p.y, z: -p.z, ny: p.ny, nz: -p.nz })));
+  // a builder bound to a mesh builder E and a bake: quads that take the view their average normal faces
+  function lodKit(E, bake) {
+    const vtx = (p, n, v) => { const t = bake.uv(v, p[0], p[1], p[2]); return E.v(p[0], p[1], p[2], n[0], n[1], n[2], t[0], t[1]); };
+    const quad = (A, B, C, D, nA, nB, nC, nD) => {
+      const v = bake.viewFor((nA[0] + nB[0] + nC[0] + nD[0]) / 4, (nA[1] + nB[1] + nC[1] + nD[1]) / 4, (nA[2] + nB[2] + nC[2] + nD[2]) / 4);
+      E.quadA(vtx(A, nA, v), vtx(B, nB, v), vtx(C, nC, v), vtx(D, nD, v)); };
+    return {
+      vtx, quad,
+      // the section swept over [x0, x1] split at xs (sides only; the roof in one span); skip(xm, ya, yb) leaves a hole
+      shell(sec, x0, x1, xs, skip) {
+        for (const s of [1, -1]) for (let j = 0; j < sec.length - 1; j++) {
+          const A = sec[j], B = sec[j + 1], side = Math.abs(A.nz + B.nz) > 0.8, X = side ? [x0, ...xs.filter(x => x > x0 && x < x1), x1] : [x0, x1];
+          for (let i = 0; i < X.length - 1; i++) {
+            const xa = X[i], xb = X[i + 1]; if (skip && skip((xa + xb) / 2, A.y, B.y)) continue;
+            const nA = [0, A.ny, s * A.nz], nB = [0, B.ny, s * B.nz];
+            quad([xa, A.y, s * A.z], [xb, A.y, s * A.z], [xb, B.y, s * B.z], [xa, B.y, s * B.z], nA, nA, nB, nB);
+          }
+        }
+      },
+      // a flat end cap (the section) at x facing e
+      cap(sec, x, e) { const pts = lodLoop(sec).map(p => [p.z, p.y]), v = e > 0 ? 3 : 4;
+        E.shape(pts, [], (z, y) => ({ p: [x, y, z], n: [e, 0, 0] }), (z, y) => { const t = bake.uv(v, x, y, z); return [t[0], t[1]]; }); },
+      // a flat quad on the side z = s * zz over [x0, x1] x [y0, y1] (door leaves, skirts), the side view's texels
+      side(x0, x1, y0, y1, zz, s) { const n = [0, 0, s], v = s > 0 ? 0 : 1, z = s * zz;
+        E.quadA(vtx([x0, y0, z], n, v), vtx([x1, y0, z], n, v), vtx([x1, y1, z], n, v), vtx([x0, y1, z], n, v)); },
+      // a lamp disc (radius r) centred at p facing along n
+      disc(p, n, r, seg = 10) {
+        const t = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0], a = [n[1] * t[2] - n[2] * t[1], n[2] * t[0] - n[0] * t[2], n[0] * t[1] - n[1] * t[0]], la = Math.hypot(...a) || 1;
+        const u = a.map(c => c / la), w = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+        const c = E.v(p[0], p[1], p[2], n[0], n[1], n[2]), ring = [];
+        for (let k = 0; k <= seg; k++) { const an = k / seg * Math.PI * 2, cs = Math.cos(an) * r, sn = Math.sin(an) * r; ring.push(E.v(p[0] + u[0] * cs + w[0] * sn, p[1] + u[1] * cs + w[1] * sn, p[2] + u[2] * cs + w[2] * sn, n[0], n[1], n[2])); }
+        for (let k = 0; k < seg; k++) E.triA(c, ring[k], ring[k + 1]);
+      },
+    };
+  }
+  Object.assign(K, { lodSection, lodLoop, lodKit });
 })();

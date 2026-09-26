@@ -140,6 +140,33 @@
     return { geo: E.geometry(), glass: G.geometry(), tris: E.I.length / 3 };
   }
 
+  // ------------------------------------------------------------------------------------------ baked LOD
+  // (42_metrokit_bake.js) the body with its door portal open behind the leaves, the end car's nose as fillet rings and
+  // a flat face, skirt cards, the head lamp discs
+  function lodBaked(d, level, bake) {
+    const E = new MB(), P = d.profile, L1 = level === 1, k = K.lodKit(E, bake), isEnd = d.type === 'end', R = A.NOSE_R;
+    const sec = L1 ? K.lodSection(P, [A.FLOOR + 0.02, A.BAND0, A.BAND1, 2.62, 2.95], 13) : K.lodSection(P, [A.BAND0, A.BAND1], 34);
+    const xR = -A.LEN / 2 + 0.08, xF = isEnd ? A.LEN / 2 + 0.25 : A.LEN / 2 - 0.08;
+    E.pal('baked'); E.bone = 0;
+    k.shell(sec, xR, xF, L1 ? [-A.DOOR_W, A.DOOR_W] : [], L1 ? (xm, ya, yb) => Math.min(ya, yb) >= A.FLOOR + 0.018 && Math.max(ya, yb) <= 2.622 && Math.abs(xm) < A.DOOR_W : null);
+    if (L1) for (const s of [1, -1]) for (const kk of [-1, 1]) { E.bone = BONE.leaf(s, kk); k.side(kk < 0 ? -A.DOOR_W : 0, kk < 0 ? 0 : A.DOOR_W, A.FLOOR + 0.03, 2.6, A.W + 0.004, s); }
+    E.bone = 0;
+    for (const s of [1, -1]) k.side(xR + 0.2, xF - 0.2, 0.0, A.SKIRT + 0.03, A.W - 0.12, s);
+    k.cap(sec, xR, -1);
+    if (!isEnd) k.cap(sec, xF, 1);
+    else {
+      const loop = K.lodLoop(sec), St = L1 ? 3 : 1, cols = St + 1, Pp = [], Nn = [], xf = xF + R * 1.4;
+      for (let i = 0; i < loop.length; i++) for (let j = 0; j <= St; j++) {
+        const a = (j / St) * Math.PI / 2, p = loop[i], off = R * (1 - Math.cos(a));
+        Pp.push([xF + R * Math.sin(a) * 1.4, p.y - p.ny * off, p.z - p.nz * off]); Nn.push([Math.sin(a), p.ny * Math.cos(a), p.nz * Math.cos(a)]);
+      }
+      for (let i = 0; i < loop.length - 1; i++) for (let j = 0; j < St; j++) { const q = [i * cols + j, i * cols + j + 1, (i + 1) * cols + j + 1, (i + 1) * cols + j]; k.quad(Pp[q[0]], Pp[q[1]], Pp[q[2]], Pp[q[3]], Nn[q[0]], Nn[q[1]], Nn[q[2]], Nn[q[3]]); }
+      const face = loop.map(p => [p.z - p.nz * R, p.y - p.ny * R]);
+      E.shape(face, [], (z, y) => ({ p: [xf, y, z], n: [1, 0, 0] }), (z, y) => { const t = bake.uv(3, xf, y, z); return [t[0], t[1]]; });
+      if (L1) { E.pal('headLamp'); for (const Lp of d.lamps) k.disc([xf + 0.012, Lp.p[1], Lp.p[2]], [1, 0, 0], 0.05, 10); }
+    }
+    return E.geometry();
+  }
   K.builders.apm = function (type, q) {
     const b = build(type, q), hb = A.WB / 2;
     const bones = []; for (let i = 0; i < BONE.N; i++) bones.push({ pivot: [0, 0, 0] });
@@ -164,6 +191,7 @@
     };
   };
   K.builders.apm.interior = (d, q) => interior(d, q);
+  K.builders.apm.lodBaked = (d, level, bake) => lodBaked(d, level, bake);
   K.builders.apm.lod = (d, level) => lod(d, level);
   K.builders.apm.consist = (n) => { n = Math.max(2, n || 3); const out = []; for (let i = 0; i < n; i++) out.push({ type: i === 0 || i === n - 1 ? 'end' : 'mid', flip: i === n - 1, number: String(21 + i) }); return out; };
 })();
