@@ -139,6 +139,11 @@ const Stations = (() => {
     M.clock = new THREE.MeshStandardMaterial({ map: M.clockTex, roughness: 0.4, emissive: 0xffffff, emissiveMap: M.clockTex, emissiveIntensity: 0 });
   }
 
+  // Millbrae's island face (see layout): openings in its railing to the metro's side of the island, as fractions of its
+  // length (steps; the ramp's landing): the metro stations build the steps and the ramp there, this station keeps them
+  // clear of furniture
+  const XPLAT = { open: [0.15, 0.36, 0.53, 0.665], ramp: 0.79 };
+  const xplatOpenings = (p) => [...p.xplat.open, p.xplat.ramp].map(f => p.s0 + (p.s1 - p.s0) * f);
   // ---------- platform layout from OSM platforms + lanes (gameplay; unchanged) ----------
   function layout(st) {
     const around = Track.feat.platforms.filter(p => p.s1 > st.s - 260 && p.s0 < st.s + 260);
@@ -171,6 +176,17 @@ const Stations = (() => {
       if (!plats.some(p => p.side === 'R')) { const q = plats[0]; plats.push({ s0: q.s0, s1: q.s1, side: 'R', w: 4.5 }); }
       if (!plats.some(p => p.side === 'L')) { const q = plats[0]; plats.push({ s0: q.s0, s1: q.s1, side: 'L', w: 4.5 }); }
     }
+    // Bayline Metro at Millbrae (the metro on, place_MLBR only): the real intermodal layout. Caltrain's northbound track
+    // is the west face of one island whose east face is the metro's platform 3; southbound has the west side platform
+    // (where OSM maps the benches, validators and ticket machines on both). This station builds the northbound face
+    // ('xplat': no outer fence; its openings to the metro's side kept clear); the metro stations build the rest of the
+    // island (the strip to platform 3, the steps and ramp at the openings, the railing on this face's edge). With the
+    // metro off, or once it fails (see init), the fallback island as before.
+    if (typeof Metro !== 'undefined' && Metro.on && st.id === 'place_MLBR' && plats.length) {
+      const s0 = Math.min(...plats.map(p => p.s0)), s1 = Math.max(...plats.map(p => p.s1));
+      plats.length = 0; plats.push({ s0, s1, side: 'R', w: 4.5, ref: '' }, { s0, s1, side: 'L', w: 4.5, ref: '', xplat: XPLAT });
+    }
+    st.xplat = plats.some(p => p.xplat);
     if (st.id === 'san_francisco') for (const p of plats) { p.s0 = Math.max(0, p.s0); p.s1 = Math.max(p.s1, 225); }
     if (st.id === 'gilroy') for (const p of plats) { p.s0 = Math.min(p.s0, Track.length - 215); }
     for (const p of plats) { p.s0 = Math.max(0, p.s0); p.s1 = Math.min(Track.length - 1, p.s1); sMin = Math.min(sMin, p.s0); sMax = Math.max(sMax, p.s1); }
@@ -386,7 +402,7 @@ const Stations = (() => {
     B.fence.push(g);
   }
   function outerFence(st, p, B, gaps) {
-    if (p.side === 'I') return;
+    if (p.side === 'I' || p.xplat) return;
     let run = []; const flush = () => { fenceRun(run, 1.07, B); run = []; };
     for (let s = p.s0 + 1.5; s <= p.s1 - 1.5; s += 2.5) {
       if (gaps.some(([a, b]) => s > a && s < b)) { flush(); continue; }
@@ -555,7 +571,8 @@ const Stations = (() => {
       const L0 = osmPts[kind]; if (!L0 || !L0.length) continue;
       const L = L0.filter(rec => { const w = Geo.ll2w(rec[0], rec[1]); return !!platOf(st, w.x - OX, w.z - OZ, 0.8, 2); }); if (!L.length) continue; used.add(kind);
       for (const rec of L) {
-        const w = Geo.ll2w(rec[0], rec[1]); const x = w.x - OX, z = w.z - OZ; if (!platOf(st, x, z, 0.8, 2)) continue;   // station furniture only
+        const w = Geo.ll2w(rec[0], rec[1]); const x = w.x - OX, z = w.z - OZ; const on = platOf(st, x, z, 0.8, 2); if (!on) continue;   // station furniture only
+        if (on.p.xplat) { const [li, lo] = platLat(on.p, on.s); if ((on.lat - lo) * Math.sign(lo - li) > -0.3 || xplatOpenings(on.p).some(s => Math.abs(s - on.s) < 2.6)) continue; }
         const y = groundAt(st, x, z); const [proto, bucket] = OSMMAP[kind];
         put(B[bucket], proto, x, y, z, facingTrackYaw(x, z));
         if (kind === 'help') put(B.blue, PROTO.helpBeacon, x, y, z, 0);
@@ -610,7 +627,7 @@ const Stations = (() => {
       // one platform clock per station
       if (!clockDone) { const s = mid + 20; const ed = isl ? fr0w(p, s) / 2 : fr0w(p, s) - 0.9; if (free(p, s, ed - 0.4, ed + 0.4)) { const fr = atPlat(p, s, ed, 0); put(B.steel, PROTO.clockPost, fr[0], fr[1], fr[2], fr[3]); B.clocks.push(fr); clockDone = true; take(p, s - 0.5, s + 0.5, ed - 0.4, ed + 0.4); } }
       // bike lockers and racks on the ground just outside a side platform
-      if (!lockersDone && !isl && !used.has('bikepark')) {
+      if (!lockersDone && !isl && !p.xplat && !used.has('bikepark')) {
         const s = mid - 30; Track.frame(s, F); const [li, lo] = platLat(p, s); const sg = Math.sign(lo - li) || 1;
         const lat = lo + sg * 2.4; const x = F.x + F.rx * lat - OX, z = F.z + F.rz * lat - OZ, y = Terrain.h(x + OX, z + OZ);
         if (y > F.y - 2.5) { const yaw = Math.atan2(-F.dz, F.dx) + (sg > 0 ? 0 : Math.PI); put(B.props, PROTO.lockers, x, y, z, yaw);
@@ -768,6 +785,7 @@ const Stations = (() => {
     }
     if (!xings.length && c.xing) { if (c.xing !== 'end') xings.push(st.sMin - RAMP - 2.5); if (c.xing !== 'start') xings.push(st.sMax + RAMP + 2.5); }
     for (const p of st.plats) { const mid = (p.s0 + p.s1) / 2; outerFence(st, p, B, [[mid - 4, mid + 4], ...(p.hole ? [[p.hole.s0 - 2, p.hole.s1 + 2]] : [])]); }
+    for (const p of st.plats) if (p.xplat) for (const s of xplatOpenings(p)) occupied.push({ p, s0: s - 2.6, s1: s + 2.6, ed0: fr0w(p, s) - 1.8, ed1: 99 });
     midFence(st, B, xings);
     for (const sx of xings) if (sx < st.sMin - 2 || sx > st.sMax + 2) pedXing(st, sx, B);
     furnish(st, c, B, occupied);
@@ -862,6 +880,11 @@ const Stations = (() => {
     for (const st of Track.stations) {
       const o = st; layout(o); Track.frame(o.s, F); o.x = F.x; o.z = F.z; o.y = F.y; o.boards = o.boards || []; list.push(o);
     }
+    // (Millbrae's island face exists only with the metro: if the metro fails, the fallback island, rebuilt)
+    if (typeof Metro !== 'undefined' && Metro.onTeardown) Metro.onTeardown(() => { for (const st of list) if (st.xplat) {
+      layout(st); if (crowdStation === st) crowdStation = null;
+      if (st.obj) { group.remove(st.obj); st.obj.traverse(o => { if (o.isMesh) o.geometry.dispose(); }); for (const b of st.boards) b.tex.dispose();
+        st.obj = st.base = st.detail = st.glow = null; st.signMat = st.xlampMat = null; st.boards = []; st._pending = false; } } });
     osmReady = (typeof Stream !== 'undefined' ? Stream.json('stations/osm.json', 3) : Promise.reject(new Error('no stream')))
       .then(j => { OSM = j.stations || null; }, () => { OSM = null; });
     setupCrowd();
