@@ -1661,6 +1661,59 @@ const StationTypes = (() => {
     zC.lights.add({ a: [f0.x - f0.tz * v, yTop - 0.25, f0.z + f0.tx * v], b: [f1.x - f1.tz * v, yTop - 0.25, f1.z + f1.tx * v], color: LC.map(c => c * 0.8), range: 14, radius: 0.08, dir: [0, -1, 0], focus: 1 });
     yield;
     yield* walkways(T);
+    if (T.H.sharedHall) yield* sharedHall(T);
+  }
+  // Millbrae's shared intermodal hall (lead, M3): a steel barrel vault along the line over the Caltrain island and BART
+  // platform 3, springing over the footbridge mezzanine, carried on two rows of columns in the gap between the BART
+  // platform and the Caltrain northbound track and cantilevered over both platforms, ribbed every 12 m, light lines
+  // under the crown. It replaces the Caltrain-era depot hall, which stood over BART's tracks (Landmarks hides it while
+  // this station is shown); the Caltrain platforms, their canopy, lamps, boards and prompts stay the Peninsula's.
+  function* sharedHall(T) {
+    const H = T.H.sharedHall, { zones, M, L2, WUV, frames, plats } = T, z = zones[0], g = z.m.sk;
+    const p3 = plats[0], edge = (u) => p3.sideV < 0 ? p3.eR(u) : p3.eL(u), back = (u) => p3.sideV < 0 ? p3.eL(u) : p3.eR(u), sv = p3.sideV < 0 ? -1 : 1;
+    // the Caltrain island and its northbound track, from the Peninsula station (station v at the middle), else fallbacks
+    let vWest = H.vWest, vNB = H.vNB;
+    try { const PS = Stations.list.find(s => s.id === H.peninsula), n = PS && Track.nearest(...WUV(T.uc, 0), 90);
+      if (PS && n) { const F = {}; Track.frame(n.s, F); const toV = (lat) => { const [x, zz] = L2(T.uc, 0); const wx = F.x + F.rx * lat - T.OX, wz = F.z + F.rz * lat - T.OZ; const f = T.frameAt(T.uc); return (wx - x) * -f.tz + (wz - zz) * f.tx; };
+        const P = PS.plats.find(q => n.s > q.s0 && n.s < q.s1); if (P) { const lat = Stations.platLat(P, n.s).map(toV); vWest = Math.min(...lat) - 0.6; }
+        const lanes = [Track.lane(n.s, 0), Track.lane(n.s, 1)].map(toV); vNB = sv < 0 ? Math.max(...lanes) : Math.min(...lanes); } } catch (e) { /* fallbacks */ }
+    const yTopM = T.yCF + 3.2, ys = Math.max(yTopM + 0.9, p3.y + 7.5), R = H.rise || 5, um = T.ub0 !== undefined ? (T.ub0 + T.ub1) / 2 : T.uc;
+    const u0 = um - (H.len || 80) / 2, u1 = um + (H.len || 80) / 2;
+    const vA = (u) => Math.min(vWest, edge(u) + sv * 1.2), vB = (u) => Math.max(vWest, edge(u) + sv * 1.2);   // the shell's two edges
+    const N = 18, arch = (u, inner) => { const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, P = [];
+      for (let k = 0; k <= N; k++) { const t = Math.PI * k / N, v = c - hw * Math.cos(t), y = ys + R * Math.sin(t) - (inner ? 0.18 : 0); P.push([v, y]); }
+      return P; };
+    const mOut = M([0xb9c0c6, K.STEEL, 0.3], { sky: 1 }), mIn = M([0xdfe2e3, K.PAINT, 0.2], { sky: 0.7 }), mSteel = M([0x8d949a, K.STEEL, 0.3], { sky: 0.9 });
+    const fr = frames(u0, u1);
+    g.sweep(fr, (i, f) => arch(f.u, false).map(([v, y], k) => [v, y, null, k < N ? mOut : undefined]));                        // outside (up)
+    g.sweep(fr, (i, f) => arch(f.u, true).reverse().map(([v, y], k) => [v, y, null, k < N ? mIn : undefined]));               // soffit (down)
+    for (const u of [u0, u1]) { const A = arch(u, false), I = arch(u, true); g.set(mSteel);                                    // end fascias (both faces)
+      for (let k = 0; k < N; k++) { const P = (v, y) => { const [x, zz] = L2(u, v); return [x, y, zz]; };
+        const q = [P(A[k][0], A[k][1]), P(A[k + 1][0], A[k + 1][1]), P(I[k + 1][0], I[k + 1][1]), P(I[k][0], I[k][1])];
+        g.quad(q[0], q[1], q[2], q[3], [0, 0, 1, 0, 1, 1, 0, 1]); g.quad(q[3], q[2], q[1], q[0], [0, 1, 1, 1, 1, 0, 0, 0]); } }
+    yield;
+    // ribs and columns every 12 m; columns stand in the gap (clear of the BART platform's back and the Caltrain
+    // northbound track's envelope), not where the walkway crosses or a Peninsula lamp stands
+    const lamps = []; try { let dep = null; Env.scene.traverse(o => { if (!dep && o.name === 'depot:millbrae') dep = o; });
+      if (dep) { dep.updateMatrixWorld(true); for (let i = 0; i < 6; i++) { const w = new THREE.Vector3(-30 + i * 12, 0, -16).applyMatrix4(dep.matrixWorld); lamps.push([w.x - T.OX, w.z - T.OZ]); } } } catch (e) {}
+    const cols = [(u) => back(u) + sv * 0.9, (u) => vNB - sv * 2.9];
+    for (let u = u0 + 6; u <= u1 - 5; u += 12) {
+      // (a rib: a steel band 0.3 m wide under the soffit, facing down)
+      const A = arch(u, true); g.set(mSteel);
+      for (let k = 0; k < N; k++) { const P = (uu, v, y) => { const [x, zz] = L2(uu, v); return [x, y - 0.12, zz]; };
+        g.quad(P(u - 0.15, A[k + 1][0], A[k + 1][1]), P(u + 0.15, A[k + 1][0], A[k + 1][1]), P(u + 0.15, A[k][0], A[k][1]), P(u - 0.15, A[k][0], A[k][1]), [0, 0, 1, 0, 1, 1, 0, 1]); }
+      if (Math.abs(u - um) < 4) continue;
+      for (const cv of cols) { const v = cv(u); if ((v - vA(u)) * (vB(u) - v) <= 0) continue; const [x, zz] = L2(u, v);
+        if (lamps.some(([lx, lz]) => Math.hypot(lx - x, lz - zz) < 1.3)) continue;
+        const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, t = U.clamp((v - c) / hw, -1, 1);
+        const gy = Terrain.h(x + T.OX, zz + T.OZ) - 0.2, top = ys + R * Math.sqrt(1 - t * t) - 0.2;
+        g.set(mSteel); g.cyl(x, gy, zz, 0.24, 0.3, top - gy, 14, true); }
+      yield;
+    }
+    // light lines under the crown
+    const f0 = T.frameAt(u0 + 3), f1 = T.frameAt(u1 - 3), vc = (vA(um) + vB(um)) / 2;
+    z.lights.add({ a: [f0.x - f0.tz * vc, ys + R - 0.5, f0.z + f0.tx * vc], b: [f1.x - f1.tz * vc, ys + R - 0.5, f1.z + f1.tx * vc], color: T.S.light.map(c => c * 1.1), range: 26, radius: 0.12, dir: [0, -1, 0], focus: 1 });
+    void WUV;
   }
   const bridgeSupports = (T) => { const vl = T.edgeV(T.uc, -1) - 2, vr = T.edgeV(T.uc, 1) + 2; const out = []; for (const v of [vl + 1, vr - 1]) for (const u of [T.ub0 + 1, T.ub1 - 1]) out.push([u, v]); return out; };
 

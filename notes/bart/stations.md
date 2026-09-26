@@ -5,7 +5,15 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
-## M3 gate (2026-09-26 08:30 EDT): items 2-4 done, Millbrae needs a Peninsula decision
+## Post-M3 backlog (first item, lead 09:00)
+
+1. **Millbrae cross-platform island**: Caltrain NB becomes the east face of the shared island (Peninsula layout `R`
+   from the NB edge to BART platform 3's back, ~12.6 m at the middle; SB the west side platform), Caltrain NB doors
+   open to the east; the BART face keeps its height (0.991 m over its rail) and the Caltrain face its own, with a ramp
+   between; the shared hall's west column row then moves onto the island. Needs Peninsula platform geometry and the
+   Caltrain door/stop logic: after the flip.
+
+## M3 gate (2026-09-26 08:30 EDT): items 2-4 done, Millbrae shared hall done (09:40)
 
 - **Item 2, performance (High, 1600x900, 17:30, M2b)**: the whole metro (stations + guideway + trains) adds
   **+23 to +81 draw calls** in hero views (`tools/metro_calls.js`: every metro scene group hidden vs shown): EMBR
@@ -32,7 +40,20 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   - BART platform 3 now faces **west** (the data says right of W3, which puts it on storage track W-yd5 4.4 m east;
     the platform guard moves it; DATA asked to set `left`). Research: platform 3 and Caltrain platform 4 (NB) are
     one island (BART's own elevator notes), 16 m between the W3 and Caltrain NB centrelines here.
-  - **Blocking issue, Peninsula side**: the Caltrain-era depot kit (`Landmarks` 'millbrae', placed 41 m east of the
+  - **Done (lead decision, 09:00)**: with `Metro.on` the Landmarks 'millbrae' kit builds its hall, vault, columns,
+    annex and name signs as their own group `depot:millbrae:hall` (50_landmarks.js, a guarded 6-line change; with
+    the metro off the kit is built exactly as before: same meshes, vertex counts and checksums, verified at
+    `#auto&t=09:10&at=place_MLBR&metro=0`, before/after `shots/stations/mlbr_depot_before_after.jpg`; note the
+    Peninsula id is `place_MLBR`, `at=millbrae` does not resolve). MetroStations hides that group while the BART
+    station is on screen and shows it again when the station is dropped or the metro fails (`Metro.onTeardown`;
+    checked with `#metrofail=stations`). The BART station draws the **shared intermodal hall**: a steel barrel vault
+    along the line from the Caltrain island (its west edge from the Peninsula station's own platform geometry) over
+    BART platform 3, springing over the footbridge mezzanine (15 m) with a 5.2 m rise, ribs every 12 m, two rows of
+    columns in the gap between the BART platform and the Caltrain northbound track (clear of both envelopes, the
+    walkway and the Peninsula platform lamps), light lines under the crown (`shots/stations/mlbr_shared_hall_*.jpg`).
+    Caltrain platforms, canopy, lamps, boards and prompts untouched; the walk stays BART platform -> mezzanine ->
+    west walkway -> plaza.
+  - (history) **Blocking issue, Peninsula side**: the Caltrain-era depot kit (`Landmarks` 'millbrae', placed 41 m east of the
     Caltrain track in `place_MLBR`) stands over BART: its 64 x 26 m glass hall spans station v -9 .. +21 m (W3 at 0,
     W-yd5 at +4.4, W-yd3 at +16.4) and its annex sits over W-yd3, so BART trains run through its glass end walls and
     both our platform positions (east before, west now) lie inside the hall. No z-fighting (no coplanar faces), but

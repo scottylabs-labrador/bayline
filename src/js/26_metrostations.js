@@ -352,6 +352,19 @@ const MetroStations = (() => {
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
     if (typeof StationCrowds !== 'undefined') StationCrowds.update(dt, camPos, list);
+    sharedBuildings();
+  }
+  // Millbrae is one intermodal building: the Caltrain-era depot's hall (Landmarks, 'depot:millbrae:hall', split off
+  // only with the metro on) stands where BART's platform 3 and tracks are, so it is hidden while the BART station (which
+  // draws the shared hall) is on screen, shown again when that station is dropped, and on a metro failure (teardown)
+  let depotHall = null, depotLook = 0;
+  function sharedBuildings() {
+    if (!depotHall) { if (--depotLook > 0) return; depotLook = 120; if (typeof Env === 'undefined') return;
+      Env.scene.traverse(o => { if (!depotHall && o.name === 'depot:millbrae:hall') depotHall = o; });
+      if (!depotHall) return;
+      if (typeof Metro !== 'undefined' && Metro.onTeardown) Metro.onTeardown(() => { if (depotHall) depotHall.visible = true; }); }
+    const st = byId.MLBR, show = !(st && st.root && st.root.userData.warm !== false && st.root.parent);
+    if (depotHall.visible !== show) depotHall.visible = show;
   }
 
   // ------------------------------------------------------------------------------------------------ walk metadata
