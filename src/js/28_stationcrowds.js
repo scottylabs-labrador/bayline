@@ -110,5 +110,7 @@ const StationCrowds = (() => {
     }
     people.count = k; people.update && people.update(dt);
   }
-  return { update, population, EXITS, get people() { return people; }, get active() { return active; } };
+  const api = { update, population, EXITS, get people() { return people; }, get active() { return active; } };
+  if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).StationCrowds = api;   // (QA, trailer shots)
+  return api;
 })();

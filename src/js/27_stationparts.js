@@ -277,7 +277,7 @@ const StationParts = (() => {
   }
   // station agent booth: w x d at the origin (front -X), glass upper walls
   function agentBooth(B, opts = {}) {
-    const w = opts.w ?? 3.2, d = opts.d ?? 2.4, h = 2.7;
+    const w = opts.w ?? 3.2, d = opts.d ?? 2.4, h = opts.h ?? 2.7;
     B.metal.mat(C.steel, K.STEEL); B.metal.box(-d / 2, 0, -w / 2, d / 2, 1.05, w / 2);
     B.sk.mat(C.navy, K.PAINT); B.sk.box(-d / 2 - 0.05, h, -w / 2 - 0.05, d / 2 + 0.05, h + 0.45, w / 2 + 0.05);
     B.metal.mat(C.glassFrame, K.PAINT);
