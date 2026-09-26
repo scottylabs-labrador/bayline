@@ -885,7 +885,8 @@ const StationTypes = (() => {
     // ceiling (with the escalator wells), its slab edge faces, and (without a concourse above) the roof slab
     slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1), (u) => edgeV(u, 1), ceilY, ceilHoles, mCeil, false);
     yield;
-    for (const h of ceilHoles) { inclinedWell(T, g, h, M(S.wall), M(S.ceil), top ? undefined : { ceilY, yTop: T.levels[L.k - 1].yT - 0.3, zone: z }); yield; }
+    // (the wells take the station's relief finish where research gives one: William Mitchell's cast concrete at 16th/24th)
+    for (const h of ceilHoles) { inclinedWell(T, g, h, M(T.H.wellWall || S.wall), M(S.ceil), top ? undefined : { ceilY, yTop: T.levels[L.k - 1].yT - 0.3, zone: z }); yield; }
     if (top && T.mode === 'ends') slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1) - wallT, (u) => edgeV(u, 1) + wallT, ceilY + 0.8, T.ceilHoles, M([0x77746e, K.CONCRETE]), true);
     // end walls with tunnel openings around each track (the tunnels themselves are INFRA's)
     for (const [ue, dir] of [[boxU0, -1], [boxU1, 1]]) {
