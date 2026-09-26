@@ -39,7 +39,7 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 7. Housekeeping once Velroi has everything: delete the staging folders (`data/raw/tiles/sr_l8_stage` 470 MB, `fix_*`).
 
 **Promo shots (world):** each finds its moment in the timetable of the day it runs, so a capture on any service day works.
-- P01 `p_dawn_bay` (06:15, 70 mm from 600 m over Yerba Buena): San Francisco's lights and their reflections across the
+- P01 `p_dawn_bay` (06:15, 70 mm from 600 m over the bay by Treasure Island): San Francisco's lights and their reflections across the
   still bay with the Bay Bridge's west span leading in, framed south-west so the setting full moon's glitter stays out.
 - P20 `p_night_flyover` (evening, found by `metroFramed`): a slow glide west-north-west over the Port side of West Oakland,
   30 m north of the aerial: a train big enough to read in frame at every tap (headlights and lit windows coming out of
