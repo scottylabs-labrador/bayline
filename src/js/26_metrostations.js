@@ -184,6 +184,8 @@ const MetroStations = (() => {
     for (const c of res.cuts || []) if (typeof Under !== 'undefined' && Under.addCut) try { Under.addCut(c); } catch (e) { console.warn('Under.addCut', e); }
     for (const b of res.boards || []) st.boards.set(b.key, b);
     st.root.updateMatrixWorld(true);
+    if (res.footprint && res.footprint.pads) { const old = pads.filter(p => p.st === st.id); const nw = res.footprint.pads;
+      if (old.length !== nw.length || nw.some((p, i) => Math.abs(p.y - old[i].y) > 0.05)) setPads(st, nw); }
     if (res.footprint && setFootprint(st, res.footprint)) {
       try { const cp = Env.camera.position; if (typeof World !== 'undefined' && World.traffic && Math.hypot(cp.x - st.x, cp.z - st.z) < 900) World.traffic.cx = 1e9; } catch (e) {}
     }
@@ -219,6 +221,13 @@ const MetroStations = (() => {
       // keep-out zones: Towns drops OSM buildings standing in a station (Towns.addDrop, world workstream), the rest of
       // the world asks keepOut() itself; anything placed before now is placed again
       if (typeof Towns !== 'undefined' && Towns.addDrop) Towns.addDrop(dropBuilding);
+      try { cutTownsGround(); } catch (e) { console.warn('metrostations: towns ground cut', e); }
+      // every station's footprint and ground pads now (~2 ms each), then the terrain filter re-grades loaded tiles
+      for (const st of list) if (!kdone.has(st.id)) footprintOf(st);
+      if (typeof Terrain !== 'undefined' && Terrain.addHeightFilter) {
+        Terrain.addHeightFilter(padFilter, [1e9, 1e9, 1e9, 1e9]);                  // (no tile there: nothing reloads yet)
+        for (const p of pads) Terrain.addHeightFilter(noopFilter, p.bb);           // only the tiles under a pad reload
+        padsLive = true; }
       refreshWorld();
     })
       .catch(e => { console.warn('MetroStations: no network data', e); });
@@ -333,8 +342,42 @@ const MetroStations = (() => {
     if (!st.plan) st.plan = makePlan(st.data);
     if (!st.plan || typeof StationTypes === 'undefined' || !StationTypes.footprint) return;
     let zs = []; try { zs = StationTypes.footprint(st, ctx()); } catch (e) { console.warn('metrostations footprint', st.id, e); return; }
-    addZones(st, zs);
+    addZones(st, zs); setPads(st, zs.pads || []);
     stats.koStations++; stats.koZones = kzones.length; stats.koMs += performance.now() - t0;
+  }
+  // ------------------------------------------------------------------------------------------------ ground pads
+  // Where a station meets the ground (the lobby under an aerial deck and its apron) the terrain is graded to its floor:
+  // a Terrain height filter (fine levels, >= 7) flattens each pad and blends back to the natural ground over `blend` m.
+  // The footprints of every station are made when the network loads, so the pads exist before those tiles stream.
+  const pads = [];
+  function setPads(st, list) {
+    for (let i = pads.length - 1; i >= 0; i--) if (pads[i].st === st.id) pads.splice(i, 1);
+    for (const p of list) { const P = p.pts; let x0 = 1e18, z0 = 1e18, x1 = -1e18, z1 = -1e18; for (const [x, z] of P) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+      let area = 0; for (let i = 0; i < 4; i++) { const a = P[i], b = P[(i + 1) % 4]; area += a[0] * b[1] - b[0] * a[1]; }
+      const Q = new Float64Array(8); (area < 0 ? P.slice().reverse() : P).forEach(([x, z], i) => { Q[i * 2] = x; Q[i * 2 + 1] = z; });
+      const pad = { st: st.id, P: Q, y: p.y, blend: p.blend || 10, bb: [x0 - (p.blend || 10), z0 - (p.blend || 10), x1 + (p.blend || 10), z1 + (p.blend || 10)] };
+      pads.push(pad);
+      if (padsLive && typeof Terrain !== 'undefined' && Terrain.addHeightFilter) Terrain.addHeightFilter(noopFilter, pad.bb);   // re-grade tiles already loaded there
+    }
+  }
+  let padsLive = false; const noopFilter = () => {};
+  function padFilter(L, x0, z0, T, h) {
+    if (L < 7 || !pads.length) return;
+    const hit = pads.filter(p => !(p.bb[0] > x0 + T || p.bb[2] < x0 || p.bb[1] > z0 + T || p.bb[3] < z0)); if (!hit.length) return;
+    const step = T / 128;
+    for (const p of hit) {
+      const i0 = Math.max(0, Math.floor((p.bb[0] - x0) / step)), i1 = Math.min(128, Math.ceil((p.bb[2] - x0) / step));
+      const j0 = Math.max(0, Math.floor((p.bb[1] - z0) / step)), j1 = Math.min(128, Math.ceil((p.bb[3] - z0) / step));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = x0 + i * step, z = z0 + j * step, q = j * 129 + i;
+        let inside = true, d2 = 1e18;
+        for (let k = 0; k < 4; k++) { const ax = p.P[k * 2], az = p.P[k * 2 + 1], bx = p.P[((k + 1) & 3) * 2], bz = p.P[((k + 1) & 3) * 2 + 1]; const ex = bx - ax, ez = bz - az;
+          if (ex * (z - az) - ez * (x - ax) < 0) inside = false; const l2 = ex * ex + ez * ez || 1, t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2)); const dx = ax + ex * t - x, dz = az + ez * t - z; d2 = Math.min(d2, dx * dx + dz * dz); }
+        const d = inside ? 0 : Math.sqrt(d2); if (d >= p.blend) continue;
+        const t = d / p.blend, w = 1 - t * t * (3 - 2 * t);
+        h[q] = h[q] + (p.y - h[q]) * w;
+      }
+    }
   }
   // the built station's own footprint replaces the first one (made on whatever terrain had streamed then): returns
   // true when it moved by more than half a metre anywhere
@@ -427,6 +470,18 @@ const MetroStations = (() => {
   }
   // (QA) the zones near a point: [{ st, kind, pts: [x, z, ...] }]
   function keepOutZones(x, z, r = 400) { ensureNear(x, z); return kzones.filter(Z => Z.bb[2] > x - r && Z.bb[0] < x + r && Z.bb[3] > z - r && Z.bb[1] < z + r).map(Z => ({ st: Z.st, kind: Z.kind, under: Z.under > -1e8 ? +Z.under.toFixed(1) : undefined, pts: Array.from(Z.P, v => +v.toFixed(2)) })); }
+  // Towns' ground (streets, sidewalks, plazas, lawns) honours Under's cuts the way the terrain does, so a street entrance
+  // on a sidewalk is not paved over. (Chained onto Towns' material under #metro=1 with Under; WORLD/INFRA: please adopt
+  // it in Towns or Under and this goes.)
+  function cutTownsGround() {
+    if (typeof Towns === 'undefined' || !Towns.materials || !Towns.materials.roadMat || typeof Under === 'undefined' || !Under.enabled) return;
+    const m = Towns.materials.roadMat; if (m.userData.blCut) return; m.userData.blCut = true;
+    const prev = m.onBeforeCompile, key = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
+    m.onBeforeCompile = function (sh, r) { if (prev) prev.call(this, sh, r);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', '#include <lights_fragment_begin>\nif ( blU.w > 0.5 ) discard;'); };
+    m.customProgramCacheKey = () => (key ? key() : '') + '|blcut';
+    m.needsUpdate = true;
+  }
   // once the stations are known: world pieces placed before (towns, trees, parked cars) are placed again with the
   // footprints. MetroGround (world) re-places Towns and Flora itself when it installs after us.
   function refreshWorld() {
@@ -457,9 +512,10 @@ const MetroStations = (() => {
     if (B.Post && B.Post.debug) B.Post.debug.shafts = !(st.type === 'subway' && (o.h ?? 1.65) < 30 && o.y === undefined);
     // the camera at (u, v): height o.y absolute, o.gh above the ground there (street level), else o.h above the platform
     // top; o.lobby: u measured from the ground-level lobby's entrance end (once built)
-    const aim = (u) => {
-      const S = spineAt(pl, u, {}); const px = S.x + S.rx * (o.v || 0), pz = S.z + S.rz * (o.v || 0);
-      const py = o.y !== undefined ? o.y : o.gh !== undefined ? Terrain.h(px, pz) + o.gh : yT + (o.h ?? 1.65);
+    const aim = (u, vOver, yTop) => {
+      const vv = vOver !== undefined ? vOver : (o.v || 0);
+      const S = spineAt(pl, u, {}); const px = S.x + S.rx * vv, pz = S.z + S.rz * vv;
+      const py = o.y !== undefined ? o.y : o.gh !== undefined ? Terrain.h(px, pz) + o.gh : (yTop ?? yT) + (o.h ?? 1.65);
       const yaw = Math.atan2(S.tz, S.tx) + (o.yaw || 0), pitch = o.pitch || 0;
       const tx = px + Math.cos(yaw) * Math.cos(pitch) * 10, tz = pz + Math.sin(yaw) * Math.cos(pitch) * 10, ty = py + Math.sin(pitch) * 10;
       B.capture.cam = (t, c) => { c.position.set(px, py, pz); c.up.set(0, 1, 0); c.lookAt(tx, ty, tz); if (o.fov) { c.fov = o.fov; c.updateProjectionMatrix(); } c.near = 0.05; c.updateProjectionMatrix(); };
@@ -471,6 +527,15 @@ const MetroStations = (() => {
     for (let i = 0; i < 900 && st.state !== 'built' && st.state !== 'failed' && st.state !== 'nodata'; i++) { B.stepFrame(1); await sleep(20); }
     if (st.state !== 'built') return { state: st.state, error: st.error || null };
     if (o.lobby !== undefined && st.res && st.res.info && isFinite(st.res.info.cu0)) aim(st.res.info.cu0 + o.lobby);
+    // o.conc: at the concourse floor + o.h (the mezzanine above a subway, the lobby below a deck, a footbridge)
+    if (o.conc && st.res && st.res.info && isFinite(st.res.info.yCF)) aim(o.u || 0, o.v || 0, st.res.info.yCF);
+    // o.onPlat: k -> on platform k's middle line at o.u (station-local v from the built platform)
+    const PK = o.onPlat !== undefined && st.res && st.res.crowd ? st.res.crowd.plats[Math.min(o.onPlat, st.res.crowd.plats.length - 1)] : null;
+    if (PK) { const u = U.clamp(o.u || 0, PK.u0 + 2, PK.u1 - 2); aim(u, (PK.eL(u) + PK.eR(u)) / 2 + (o.dv || 0), PK.y); }
+    // o.ent: k -> at street level o.back m in front of street entrance k (subway), looking at it
+    const EK = o.ent !== undefined && st.res && st.res.entrances ? st.res.entrances[Math.min(o.ent, st.res.entrances.length - 1)] : null;
+    if (EK) { const bk = o.back ?? 10, a = (o.yaw || 0.6); const px = EK.wx + Math.cos(a) * bk, pz = EK.wz + Math.sin(a) * bk, py = Terrain.h(px, pz) + (o.gh ?? 1.7);
+      B.capture.cam = (t, c) => { c.position.set(px, py, pz); c.up.set(0, 1, 0); c.lookAt(EK.wx, o.lookDown ? Terrain.h(EK.wx, EK.wz) : py - 1.2, EK.wz); if (o.fov) { c.fov = o.fov; c.updateProjectionMatrix(); } c.near = 0.05; c.updateProjectionMatrix(); }; }
     // o.landing: k -> look back at footbridge landing k from o.back m beyond its foot, o.gh above the street
     const Lk = o.landing !== undefined && st.res && st.res.info && st.res.info.landings ? st.res.info.landings[o.landing] : null;
     if (Lk) { const bk = o.back ?? 14, sd = o.side ?? 0; const [dx, dz] = Lk.dir; const px = Lk.foot[0] + dx * bk + dz * sd, pz = Lk.foot[1] + dz * bk - dx * sd, py = Terrain.h(px, pz) + (o.gh ?? 1.7);

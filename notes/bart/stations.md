@@ -5,7 +5,36 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
-## Status (2026-09-26 03:26 EDT) — M1 done, keep-out zones done, M2 under way
+## Status (2026-09-26 04:42 EDT) — M1 done, keep-out zones done, M2 profile re-verified, M2 under way
+
+- **M2 profile (data promoted 03:30): every station re-verified and fixed** (`tools/metro_station_audit.js` builds
+  each station and flags what does not fit; then platform / concourse / entrance / exterior views of all 51):
+  - **Stacked 12th and 19th St** (lead QA: ceiling missing, street world visible): stations are now built per
+    level from the data's own rail heights (never one mean): each level has its box, zone and Under cell
+    (`st:<ID>:plat` upper, `st:<ID>:plat2` lower, the lower ceiling under the upper trackbed slab); trackbeds follow
+    each track; the lower side platform reaches under the upper island, and two esc+stair banks climb from it to the
+    upper island through inclined wells with portals between the levels. On the lower platform the camera is in
+    `st:12TH:plat2` with the outdoors culled.
+  - **Deep subway stations** (Market St 17–19 m, Lake Merritt/Mission ~13 m): the mezzanine sits just under the
+    lowest ground over it and long escalators climb to it through **inclined wells** (sloped soffit 2.9 m over the
+    nosing line, lit, tiled walls); the mezzanine floor opens only where the well reaches it. Concourse depth rules
+    read the lowest ground over the concourse (streets fall toward portals), so no roof or cell pokes through.
+  - **Shallow subways** (SSAN, and on M2 also GLEN and NBRK, too shallow for a mezzanine under their lowest ground):
+    stair shafts from the street straight down onto the platforms near both ends (`ends` access, was a stub).
+  - **Aerial / median stations too low for a lobby under the deck** (M2: UCTY, FRMT, SHAY 1.8–3.5 m; LAFY, CAST,
+    DUBL, RICH, MCAR) now use the footbridge + walkways + landing towers; a lobby under a deck needs >= 6.2 m.
+    Decks on bents only above 4.2 m; lower stations are at-grade structures.
+  - **Trench stations**: a trench's street is the ground along its rim when the data's street sits lower (NCON);
+    a "trench" platform at street level is built at grade (COLM); a footbridge is never under the street (BALB now at
+    street level with 12 m escalators). Narrow M2 islands (GLEN 4.2 m, DBRK 4.4, NBRK 3.4, 24TH 5.8, 16TH 6.8) get one
+    narrower stair (see To DATA).
+  - **Street entrances**: shaft cells no longer share one group (Under hid every shaft when one was out of sight:
+    the "blue holes" at entrances), cells and cuts stay below the lowest ground, a 3 m paved collar covers the raster
+    cut's ragged rim, passages to the box wall are their own underground cells, and Towns' ground (streets,
+    sidewalks, lawns) honours the cuts like the terrain (chained onto Towns' material; see To WORLD).
+  - **Ground pads**: under each aerial lobby and its apron the terrain is graded to the lobby floor (a Terrain
+    height filter; ORIN's lobby sat partly inside the freeway embankment). Bents never stand under an opening in the
+    platform (their cap beams crossed the escalators down to the lobby).
 
 - **Footbridge stations reach the street** (MLBR, WARM, WDUB, PITT, PCTR, ANTC and any `bridge` access above the
   street): the mezzanine now spans the tracks only, and covered walkways (glass, box or blue truss sides per
@@ -119,6 +148,12 @@ Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-stati
 
 ### To WORLD (Towns) — keep-out, 2026-09-26
 
+0. **(04:40) Towns ground and Under cuts**: street entrances on sidewalks were paved over by Towns' ground ribbons
+   (the cut only removes terrain). `MetroStations` chains a discard onto `Towns.materials.roadMat.onBeforeCompile`
+   under `#metro=1` with Under (`if (blU.w > 0.5) discard;` after `lights_fragment_begin`, the same test the terrain
+   uses; program key `|blcut`). Please adopt it in Towns (or INFRA in Under for any ground material) and tell me, and
+   I remove mine.
+
 1. **`Towns.addDrop` on bart**: I register `MetroStations.dropBuilding` with it when it exists (verified locally with
    your `ebc0f5d` patch applied, not committed: the OSM station outline around West Oakland's lobby goes away;
    together with your MetroGround `train_station` rule). Until it reaches bart, OSM buildings in footprints stay.
@@ -130,12 +165,30 @@ Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-stati
 3. Daly City: two long thin OSM polygons beside the deck (bus-bay canopies?) are drawn as solid ~3 m boxes; if they are
    canopies, your MetroGround canopy rule may want them (they are outside my deck footprint, so I keep them).
 
+### To DATA — M2 re-verification, 2026-09-26 04:40
+
+- **Island widths**: with M2 track spacing some subway islands are too narrow for their escalators: GLEN 4.18 m,
+  DBRK 4.39, NBRK 3.40, 24TH 5.83, 16TH 6.77 (and ASHB comes out as two 5.2 m side platforms). Real BART subway
+  islands are ~8–10 m; the OSM platform polygons should give the spread. I build what the tracks allow (one narrow
+  stair) until then.
+- **Heights**: UCTY/FRMT/SHAY platforms are only 1.8–3.5 m above the ground under them in M2 (research: embankment
+  +4–5.5 m with a lobby under), MCAR/LAFY/CAST/DUBL are near freeway level with no room under; they are built as
+  at-grade stations with footbridges until the profile lifts them. COLM's platform is at street level in M2 (research:
+  open cut ~6–7 m down).
+
 ### To DATA — keep-out, 2026-09-26
 
 - **Road crossings** in MetroNet (streets passing under / over each track: s, width, class, clearance), as your
   `profile2.py` already finds them for `ROAD_CLEAR`: lobbies and bents are placed clear of streets from Towns roads at
   build time today (decoded tiles only); a deterministic source would make footprints identical before and after a
   build (and help INFRA's guideway piers).
+
+### To INFRA — M2, 2026-09-26 04:40
+
+- Stacked stations have one Under cell per level: `st:12TH:plat` / `st:19TH:plat` (upper, K1 and K3.1) and
+  `st:12TH:plat2` / `st:19TH:plat2` (lower, K2); please join the K2 tunnels to the `plat2` cells.
+- Subway station concourse and platform cells now stay >= 0.5 m under the lowest ground over them; entrance shaft
+  cells are exactly the stair opening (their passages to the box wall are separate cells `…:ent<k>p`).
 
 ### To INFRA — keep-out, 2026-09-26
 
