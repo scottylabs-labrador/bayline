@@ -129,7 +129,14 @@ ATC civil code is MetroNet's code per segment (6/18/27/36/50/70; no more 5 mph f
   due there (Red to Richmond, dwelling at Embarcadero).
 - **Metro manual drive** (`qa_metro_drive.js`, keyboard only, WOAK → Civic Center): Embarcadero 0.57 m from the berth
   ("Good stop", on time), Montgomery 0.66 m, Powell 0.71 m, Civic Center 0.66 m ("On the berth"), all on time, 0
-  warnings / ATC brakes / penalties, max 67 mph, score 850.
+  warnings / ATC brakes / penalties, max 67 mph, score 850. Re-run after the envelope fix: Embarcadero 0.67 m (one ATC
+  overspeed brake on the approach: the scripted driver met an occupancy step behind the train ahead), Montgomery
+  0.73 m, Powell 0.75 m, all on time, 0 penalties.
+- **Metro ATC after the envelope fix**: 23 WARN, 22 ATC BRAKE, 0 penalty, codes 70/50/36/27, traction during an ATC
+  brake in 2 samples.
+- **Platform spawns after the envelope fix** (contact sheet `notes/bart/shots/sim/mst_platform_spawns.jpg`): EMBR, MONT
+  and WOAK now show the dwelling MetroKit train beside the walker, with the view open up the platform (MONT between
+  its column rows); MCAR, MLBR fine; 12TH lower level still without its station box (request below).
 - **Missions**: all seven start: Under the Bay, Market Street (manual), Berkeley Hills and Airport Reversal in the cab
   ("You have the Red Line to Millbrae", through the SFO reversal), Commute at Embarcadero, the Cable Train (3-car
   Airport Connector) and the Antioch Shuttle ("1-unit") rides. (Airport Reversal found no train on the first try: the
