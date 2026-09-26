@@ -6,7 +6,7 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Updated 2026-09-26 12:55. M3 is LIVE (11:36) on the world: all world sets are published on both servers.**
+**Updated 2026-09-26 16:45. M3 is LIVE (11:36) on the world: all world sets are published on both servers. M3.2 world items and the four promo shots are committed on bart-world (not deployed).**
 
 | set / change | state |
 |---|---|
@@ -19,10 +19,15 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 | Globe ocean (pale bands west of Marin) | bart-world a2d5bda, accepted for M3.1 |
 | night lights from the air (checkerboard, dusk) | bart-world 9f03eff, accepted for M3.1 |
 | INFRA items (tunnel-mouth / open-cut buildings, trees / grass on cut ground, traffic near BART, carve checks) | done (40bae4e, 74ec930, 0bb0e39; analyses below) |
+| M3.2: night lights from the air, resolved (a world-stable lamp field instead of the averaged wash beyond ~2 m pixels) | bart-world 4d7e83f, accepted; `shots/world/night_aerials_*` |
+| M3.2: street lamps seen from above (the glare a small point, the pool a faint glow once the camera is well over it) | bart-world 32025b9; `shots/world/street_lamps_from_above_before_after.jpg` |
+| M3.2: no street lamp on cut ground (openings, trenches, platform cuts, track bed; stations' 'lamp' keep-out; late openings drop lamps in place: `Towns.relamp`), pools never below their lamp's footing, tilted with hills, faded at grazing angles | bart-world 21246e1; `shots/world/lamp_on_cut_ground_before_after.jpg` (P02's West Oakland portal) |
+| Promo shots P01 `p_dawn_bay`, P20 `p_night_flyover`, P26 `p_embr_rise`, P27 `p_bay_night` (modules in `tools/trailer/shots/`, helpers `_world.mjs`) | committed; 6-frame sheets in `shots/promo/<shot>.jpg` (960x540 previews, 2.39 guides) |
 
 **Backlog (post-M3, queued):**
 1. Night aerials (lead): the glow almost entirely from the street / road mask at L7-L9 (thin bright lines), blocks dark apart
-   from sparse building points, the wash only at L5-L6 distances.
+   from sparse building points, the wash only at L5-L6 distances. (M3.2's lamp field covers the far look; freeway lines
+   from far away need an L0-L4 max re-pool of the mask: backlog.)
 2. Milpitas trench facets: infra geometry (a ground-coloured coping on the walls' outer top); DATA: fewer, longer
    trench / cut-and-cover pieces.
 3. The faint line at lat 38.07 over San Pablo Bay (terrain vs Globe water shading; the data now match in tone).
@@ -32,6 +37,17 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 6. The 90 broadly different pre-Metro mosaic parents (built from older children; left alone by the lead's call) and the
    invisible JPEG tails (~8,600 files, extra bytes or a last MCU off by a few levels): no action unless wanted.
 7. Housekeeping once Velroi has everything: delete the staging folders (`data/raw/tiles/sr_l8_stage` 470 MB, `fix_*`).
+
+**Promo shots (world):** each finds its moment in the timetable of the day it runs, so a capture on any service day works.
+- P01 `p_dawn_bay` (06:15, 70 mm from 600 m over Yerba Buena): San Francisco's lights and their reflections across the
+  still bay with the Bay Bridge's west span leading in, framed south-west so the setting full moon's glitter stays out.
+- P20 `p_night_flyover` (evening, found by `metroFramed`): a slow glide west-north-west over the Port side of West Oakland,
+  30 m north of the aerial: a train big enough to read in frame at every tap (headlights and lit windows coming out of
+  the Tube, one going the other way), the aerial leading to the portal and the Bay Bridge's lights beyond.
+- P26 `p_embr_rise` (19:26): from eye level at Embarcadero's A1 entrance on Market St, straight up past the towers and
+  the Ferry Building to 2 km over the bay: one move from the station door to the whole bay.
+- P27 `p_bay_night` (the busiest evening minute, `metroBusiest`): a 25 s orbit of the whole bay at night from 12 km with
+  the Bay Bridge at its centre.
 
 **M3 blocker fixed (bart-world ebd8fba ... 44c7379):** MetroGround no longer disposes Towns / Flora. Terrain re-filters its
 loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched tiles keeping their meshes and photo
