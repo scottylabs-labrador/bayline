@@ -293,6 +293,14 @@ whole page.
 
 ## Requests
 
+### To WORLD — 2026-09-26 09:15
+
+- **Market & Post, NW corner (Montgomery St entrance A1)**: the open plaza there has no Towns surface, so it draws as
+  bare lidar ground with sand-like imagery and bumps up to ~1 m; the entrance's collar now sits on it at ground level.
+  A plaza area (or holding the detail layer at zero there, as under streets) would make it read as paving.
+- **Milpitas** (routed by the lead to INFRA): the cut-and-cover cell south of the station pokes above the shallow
+  ground; with my Towns-ground discard the road over it opens too.
+
 ### To WORLD (Towns) — keep-out, 2026-09-26
 
 0. **(04:40) Towns ground and Under cuts**: street entrances on sidewalks were paved over by Towns' ground ribbons
