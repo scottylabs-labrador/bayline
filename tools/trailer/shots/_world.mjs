@@ -49,25 +49,26 @@ export const hideMapDots = `(() => { const W = window; if (!W.__mdots && !((W.__
 // the clock time in [t0, t1] (step s) at which the shot's own camera path sees the most metro trains in frame: the
 // camera is window.__mv(k) (moveLL) or window.__path(t) ({ p, q }) evaluated at `taps` seconds of a shot of `dur`;
 // a train counts at a tap when its head or middle is out in the open (structure < 6), dmin..dmax m from the camera and
-// inside `frac` of the frame (vertical fov `fov` degrees, 16:9), nearer ones more; trains both ways and more trains earn
-// a bonus. Sets
-// the clock there; returns { t, score, trains, both }
-export const metroFramed = `(t0, t1, step, taps, dur, fov, dmin, dmax, frac = 0.85) => { const M = window.__bayline.MetroSim, at = (${metroAt}), LS = {}, F = {};
+// inside `frac` of the frame (vertical fov `fov` degrees, 16:9), weighted by its size on screen (min(3, 250 m / distance));
+// every tap with a train big enough to read (weight >= 0.6: within ~420 m) earns `cover` (a train on screen through the
+// whole shot beats a crowd at its end), trains both ways and more trains a bonus.
+// Sets the clock there; returns { t, score, trains, both, cov (the best weight at each tap) }
+export const metroFramed = `(t0, t1, step, taps, dur, fov, dmin, dmax, frac = 0.85, cover = 4) => { const M = window.__bayline.MetroSim, at = (${metroAt}), LS = {}, F = {};
   const pose = (tt) => window.__path ? window.__path(tt) : window.__mv(tt / dur);
   const cams = taps.map(tt => { const P = pose(tt), dx = P.q.x - P.p.x, dy = P.q.y - P.p.y, dz = P.q.z - P.p.z, l = Math.hypot(dx, dy, dz);
     const f = { x: dx / l, y: dy / l, z: dz / l }, rl = Math.hypot(f.x, f.z) || 1, r = { x: -f.z / rl, y: 0, z: f.x / rl }, u = { x: r.y * f.z - r.z * f.y, y: r.z * f.x - r.x * f.z, z: r.x * f.y - r.y * f.x };
     return { p: P.p, f, r, u }; });
   const tv = Math.tan(fov * Math.PI / 360) * frac, th = tv * 16 / 9;
   const seen = (c, x, y, z) => { const dx = x - c.p.x, dy = y - c.p.y, dz = z - c.p.z, d = dx * c.f.x + dy * c.f.y + dz * c.f.z; if (d < dmin || d > dmax) return 0;
-    return Math.abs((dx * c.r.x + dy * c.r.y + dz * c.r.z) / d) < th && Math.abs((dx * c.u.x + dy * c.u.y + dz * c.u.z) / d) < tv ? 1 + 2 * (1 - d / dmax) : 0; };   // (nearer trains weigh more)
+    return Math.abs((dx * c.r.x + dy * c.r.y + dz * c.r.z) / d) < th && Math.abs((dx * c.u.x + dy * c.u.y + dz * c.u.z) / d) < tv ? Math.min(3, 250 / d) : 0; };   // (nearer trains weigh more: their size on screen)
   let best = null;
-  for (let t = t0; t <= t1; t += step) { let n = 0; const dirs = new Set(), keys = new Set();
+  for (let t = t0; t <= t1; t += step) { let n = 0; const dirs = new Set(), keys = new Set(), tw = taps.map(() => 0);
     taps.forEach((tt, i) => { const c = cams[i];
       for (const p of M.plans) { const tc = t + tt; if (p.tStart > tc) break; if (p.tEnd < tc) continue; const l = M.legAt(p, tc); if (!l) continue;
         M.legState(l, tc, LS); const len = l.cars * M.PERF[l.kind].carLen; let w = 0;
         for (const back of [0, len / 2]) { l.path.at(LS.ps - back, F); if (F.struct < 6) w = Math.max(w, seen(c, F.x, F.y + 2, F.z)); }
-        if (w > 0) { n += w; dirs.add(l.lead); keys.add(p.key); } } });
-    const score = n + (dirs.size > 1 ? taps.length : 0) + keys.size * 2;
-    if (!best || score > best.score) best = { t, score, trains: keys.size, both: dirs.size > 1 }; }
+        if (w > 0) { n += w; tw[i] = Math.max(tw[i], w); dirs.add(l.lead); keys.add(p.key); } } });
+    const score = n + cover * tw.filter(w => w >= 0.6).length + (dirs.size > 1 ? taps.length : 0) + keys.size * 2;
+    if (!best || score > best.score) best = { t, score, trains: keys.size, both: dirs.size > 1, cov: tw.map(w => +w.toFixed(1)) }; }
   if (best) { window.__bayline.Env.setClock(best.t); window.__bayline.Env.time.scale = 1; }
   return best; }`;
