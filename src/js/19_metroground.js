@@ -10,7 +10,10 @@
 //   portal, cut-and-cover, bored, tube, aerial, bridge: untouched (infra cuts the openings with Under.addCut)
 //   platforms of ground-level stations (grade / embankment / median / trench): ground cut to the bed from the track
 //                                out to PLAT_W m on the platform side, over the platform's length + 5 m
-//   MetroGround.stats      { segments, platforms, tiles, ms }
+// Towns (the new tiles/b2 already do this at bake time; the older tiles/b near the lines need it at runtime): OSM
+// train_station buildings within 160 m of a BART station, canopies / sheds / garages within 22 m of an above-ground BART
+// track, and anything centred within 7 m of one are dropped (the stations and guideway draw those themselves).
+//   MetroGround.stats      { segments, platforms, tiles, ms, dropped }
 //   MetroGround.carveAt(x, z, h)   the carved height for a natural height h (debug / QA)
 const MetroGround = (() => {
   const BED = 0.85, CORE = 2.4, SLOPE = 2.0, SLOPE_MIN = 1.5, SLOPE_MAX = 16.0;
@@ -21,7 +24,19 @@ const MetroGround = (() => {
   const ck = (cx, cz) => cx * 65536 + cz;
   // segments: ax, az, bx, bz, targetA, targetB, kind (0 bed, 1 trench cut, 2 platform cut), side (-1/0/1 for platforms)
   const SEG = 8; let S = new Float32Array(0), nS = 0;
-  const stats = { segments: 0, platforms: 0, tiles: 0, ms: 0 };
+  const stats = { segments: 0, platforms: 0, tiles: 0, ms: 0, dropped: 0 };
+  const ABOVE = new Uint8Array(16); for (const k of [0, 1, 2, 3, 4, 5]) ABOVE[k] = 1;
+  const fr = {};
+  function dropBuilding(b, x, z) {
+    let drop = false;
+    if (b.kind === 6 && MetroNet.stationsNear(x, z, 160).length) drop = true;
+    else {
+      const n = MetroNet.nearest(x, z, 22);
+      if (n) { MetroNet.frame(n.track, n.s, fr); drop = !!ABOVE[fr.struct] && (n.dist < 7 || b.kind === 5 || b.kind === 6 || b.kind === 7); }
+    }
+    if (drop) stats.dropped++;
+    return drop;
+  }
   let installed = false, bbox = null;
 
   function addSeg(ax, az, bx, bz, ta, tb, kind, side) {
@@ -121,6 +136,7 @@ const MetroGround = (() => {
     if (installed || typeof MetroNet === 'undefined' || !MetroNet.tracks || !MetroNet.tracks.length || typeof Terrain === 'undefined' || !Terrain.addHeightFilter) return false;
     installed = true; build();
     Terrain.addHeightFilter(filter, bbox);
+    if (typeof Towns !== 'undefined' && Towns.addDrop) Towns.addDrop(dropBuilding);
     // things already built on the old ground rebuild on the carved one
     try { if (typeof Towns !== 'undefined' && Towns.dispose) Towns.dispose(); } catch (e) {}
     try { if (typeof Flora !== 'undefined' && Flora.dispose) Flora.dispose(); } catch (e) {}

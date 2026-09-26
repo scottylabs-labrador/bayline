@@ -233,7 +233,9 @@ const UI = (() => {
       el.hclock.innerHTML = Env.clockText(tl).replace(' ', `<span style="font-size:15px;color:var(--ink-dim)">:${String(s).padStart(2, '0')} </span>`) + (away ? `<span style="font-size:12px;color:var(--ink-faint);margin-left:8px">local, UTC${Env.utcOffsetHere() >= 0 ? '+' : '−'}${Math.abs(Env.utcOffsetHere())}</span>` : '');
       el.hwhere.textContent = whereText();
       const tr = Player.focusTrain(); let sub = '';
+      const atM = typeof MetroUI !== 'undefined' && MetroUI.atMetro(Env.camera.position);
       if (tr && tr.metro) sub = MetroUI.subText(tr);
+      else if (atM && (Player.mode === 'walk' || !tr || Math.hypot(tr.x - Env.camera.position.x, tr.z - Env.camera.position.z) > 2500)) sub = MetroUI.stationSub(Env.camera.position);   // (at a metro station: its next trains, never an unrelated Peninsula train)
       else if (tr) { const ns = tr.plan && tr.seg ? tr.trip.stops[Sim.nextStopK(tr.plan, tr.seg)] : null; sub = `${Sim.routeShort(tr.trip)} ${tr.trip.id} → ${(Sim.TT.names[Sim.TT.stations[(tr.trip.stops[tr.trip.stops.length - 1] || [0])[0]]] || '')} · ${Math.round(tr.v / Sim.MPH)} mph${ns ? ' · next ' + Sim.TT.names[Sim.TT.stations[ns[0]]] : ''}`; }
       else sub = `${Sim.running.length} trains running · ${Env.serviceDay().kind === 'wkday' ? 'weekday' : 'weekend'} timetable`;
       el.hsub.textContent = away || (typeof Flight !== 'undefined' && Flight.active) ? (subFn ? subFn() || '' : '') : sub;

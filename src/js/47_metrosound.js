@@ -114,12 +114,12 @@ const MetroSound = (() => {
   }
   const XFER_TEXT = { MLBR: 'Transfer here for the Peninsula line.', MCAR: 'Transfer here between Richmond, Antioch and San Francisco trains.', '12TH': 'Transfer here between Richmond and San Francisco trains.',
     '19TH': 'Transfer here between Richmond and San Francisco trains.', BAYF: 'Transfer here for Dublin, Pleasanton and Berryessa trains.', COLS: 'Transfer here for the Oakland Airport.',
-    PITT: 'Transfer here for Antioch.', BALB: 'Transfer here for Muni Metro.', EMBR: 'Transfer here for the ferries and Muni Metro.', SFIA: 'This station serves the airport.', WOAK: 'Transfer here for Oakland and East Bay trains.' };
+    PITT: 'Transfer here for Antioch.', BALB: 'Transfer here for the city light rail.', EMBR: 'Transfer here for the ferries and the city light rail.', SFIA: 'This station serves the airport.', WOAK: 'Transfer here for Oakland and East Bay trains.' };
   const lineWord = (tr) => MetroSim.lineName(tr.line).replace(' Line', '');
   function departure(tr, k) { if (!tr) return; const S = tr.leg.stops, ns = S[k]; if (!ns) return;
     say(tr.key + ':dep:' + k, `This is a ${lineWord(tr)} Line train to ${MetroSim.termName(tr)}. The next station is ${MetroSim.stName(ns.st)}.`, true); }
   function approaching(tr, k) { if (!tr) return; const S = tr.leg.stops, s = S[k]; if (!s) return; const last = k === S.length - 1 && !tr.leg.next;
-    const side = s.side ? (s.side > 0 ? 'right' : 'left') : '';                      // (as the passengers face)
+    const side = MetroSim.stopSide(tr.leg, k) > 0 ? 'right' : 'left';                 // (as the passengers face)
     say(tr.key + ':app:' + k, last ? `Now arriving at ${MetroSim.stName(s.st)}. This is the last stop. Please take all your belongings.`
       : `Now arriving at ${MetroSim.stName(s.st)}.${side ? ' Doors will open on the ' + side + '.' : ''} ${XFER_TEXT[s.st] || ''}`.trim(), true); }
   function arrival(tr, k) { /* (the approach announcement covers it) */ }
@@ -142,11 +142,12 @@ const MetroSound = (() => {
     const now = Env.time.sec;
     for (const ev of MetroSim.arrivals(ms.id, now, 8)) {
       const inf = MetroSim.eventInfo(ev), eta = ev.leg.stops[ev.k].tArr - now, plat = inf.platform || '';
-      const who = `${NUM[inf.cars] || inf.cars} car ${inf.dest} train`;
+      const unit = inf.kind === 'dmu' ? 'unit' : 'car';                  // (the Antioch shuttle is counted in units)
+      const who = `${NUM[inf.cars] || inf.cars} ${unit} ${inf.dest} train`;
       const cw = NUM[inf.cars] || String(inf.cars), art = /^(eight|eleven|8|11)/.test(cw) ? 'an' : 'a';
-      if (eta > 100 && eta < 130) say(ev.plan.key + ':2m:' + ms.id, `The next ${inf.dest} train, ${art} ${cw} car ${MetroSim.lineName(inf.line)} train, arrives in two minutes${plat ? ' on platform ' + plat : ''}.`);
+      if (eta > 100 && eta < 130) say(ev.plan.key + ':2m:' + ms.id, `The next ${inf.dest} train, ${art} ${cw} ${unit} ${MetroSim.lineName(inf.line)} train, arrives in two minutes${plat ? ' on platform ' + plat : ''}.`);
       if (eta > 14 && eta < 32) say(ev.plan.key + ':now:' + ms.id, `${who[0].toUpperCase() + who.slice(1)} now approaching${plat ? ' platform ' + plat : ''}.`);
     }
   }
-  return { init, train, update, doorChime, departure, approaching, arrival, curveAt, get state() { return st; } };
+  return { init, train, update, doorChime, departure, approaching, arrival, curveAt, XFER_TEXT, get state() { return st; } };
 })();

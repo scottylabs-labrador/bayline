@@ -144,8 +144,8 @@ const MetroUI = (() => {
     HAYW: [19.2, 13.7, 'r'], SHAY: [19.2, 14.6, 'r'], UCTY: [19.2, 15.5, 'r'], FRMT: [19.2, 16.4, 'r'], WARM: [19.2, 17.3, 'r'], MLPT: [19.2, 18.2, 'r'], BERY: [19.2, 19.1, 'r'],
     CAST: [20.6, 12.8, 'b'], WDUB: [22.0, 12.8, 'a'], DUBL: [23.4, 12.8, 'b'],
     // Concord line and the Antioch shuttle
-    ROCK: [17.0, 5.0, 'a'], ORIN: [18.2, 5.0, 'b'], LAFY: [19.4, 5.0, 'a'], WCRK: [20.6, 5.0, 'b'], PHIL: [21.4, 4.2, 'r'], CONC: [22.2, 3.4, 'r'],
-    NCON: [23.0, 2.6, 'a'], PITT: [24.2, 2.6, 'b'], PCTR: [25.4, 2.6, 'a'], ANTC: [26.6, 2.6, 'b'] };
+    ROCK: [17.0, 5.0, 'a'], ORIN: [18.2, 5.0, 'b'], LAFY: [19.4, 5.0, 'a'], WCRK: [20.6, 5.0, 'b'], PHIL: [21.4, 4.2, 'br'], CONC: [22.2, 3.4, 'br'],
+    NCON: [23.0, 2.6, 'br'], PITT: [23.8, 1.8, 'br'], PCTR: [24.6, 1.0, 'br'], ANTC: [25.4, 0.2, 'br'] };
   // line segments (unordered station pairs) from the timetable's patterns; the order of strands on a shared segment
   let segs = null;                                           // key 'A|B' -> { a, b, lines: [...] }
   function buildSegs() {
@@ -240,6 +240,65 @@ const MetroUI = (() => {
       for (const pid of l.patterns || []) { const p = MN.patterns[pid]; if (!p) continue; for (let k = 0; k < p.legs.length; k++) { const P = MetroSim.legPath(pid, k); if (!P) continue; const sig = P.stops[0].station + P.stops[P.stops.length - 1].station + P.length.toFixed(0); if (seen.has(sig)) continue; seen.add(sig); set.push({ xz: P.samples(), line: p.legs[k].sys === 'ebart' ? 'ebart' : l.id }); } }
       geoPaths.set(l.id, set); }
   }
+  // station labels: eight spots around each station (right, left, above, below and the four diagonals), offset by the
+  // thickness of the line bundle through it; the preferred side first (schematic: SCH's side; geographic: right), then
+  // the others. A spot is taken only if its box clears the labels already placed, the station dots and the line bundles
+  // (circles of the bundle's half-width every few pixels along each segment); if none is clear, the one with the fewest
+  // hits. Interchanges are placed first. Cached per view (scale, centre, size, font, hidden lines).
+  let lblKey = '', lblSides = new Map();
+  const SPOTS = ['r', 'l', 'a', 'b', 'br', 'al', 'ar', 'bl'];
+  function labelAt(sd, p, tw, th, hw, dpr) {
+    const g1 = hw + 5 * dpr, dg = hw * 0.72 + 3 * dpr, up = -(hw + 4 * dpr + th / 2), dn = hw + 4 * dpr + th / 2;
+    let ax, ay, al;                                                 // text anchor and alignment
+    if (sd === 'r') { ax = p[0] + g1; ay = p[1]; al = 'left'; } else if (sd === 'l') { ax = p[0] - g1; ay = p[1]; al = 'right'; }
+    else if (sd === 'a') { ax = p[0]; ay = p[1] + up; al = 'center'; } else if (sd === 'b') { ax = p[0]; ay = p[1] + dn; al = 'center'; }
+    else { const right = sd[1] === 'r', above = sd[0] === 'a'; ax = p[0] + (right ? dg : -dg); ay = p[1] + (above ? -(dg + th / 2) : dg + th / 2); al = right ? 'left' : 'right'; }
+    const x0 = al === 'left' ? ax : al === 'right' ? ax - tw : ax - tw / 2, pad = 2 * dpr;
+    return { ax, ay, al, x0: x0 - pad, x1: x0 + tw + pad, y0: ay - th / 2, y1: ay + th / 2 };
+  }
+  function placeLabels(g, c, fs, dpr) {
+    const v = V(), key = [map.view, v.scale.toFixed(6), v.cx.toFixed(3), v.cz.toFixed(3), c.width, c.height, fs, [...hidden].sort().join(',')].join('|');
+    if (key === lblKey) return lblSides;
+    const geo = map.view === 'geo', W = c.width, H = c.height, lw = lineW(), CS = 48 * dpr;
+    // obstacles: circles (dots, bundle samples) in a coarse grid, and the label boxes placed so far
+    const grid = new Map(), boxes = [];
+    const addC = (x, y, r) => { if (x < -60 || y < -60 || x > W + 60 || y > H + 60) return; const k = Math.floor(x / CS) + ',' + Math.floor(y / CS); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(x, y, r); };
+    const hits = (b) => {
+      let n = 0; for (const o of boxes) if (b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0) n += 3;
+      const m = 14 * dpr, gx0 = Math.floor((b.x0 - m) / CS), gx1 = Math.floor((b.x1 + m) / CS), gy0 = Math.floor((b.y0 - m) / CS), gy1 = Math.floor((b.y1 + m) / CS);
+      for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) { const a = grid.get(gx + ',' + gy); if (!a) continue;
+        for (let i = 0; i < a.length; i += 3) { const dx = Math.max(b.x0 - a[i], 0, a[i] - b.x1), dy = Math.max(b.y0 - a[i + 1], 0, a[i + 1] - b.y1); if (dx * dx + dy * dy < a[i + 2] * a[i + 2]) n++; } }
+      return n; };
+    const bundle = (pts, w) => { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (4 * dpr)));
+      for (let k = 0; k <= n; k++) addC(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, w); } };
+    const hwAt = new Map();                                          // bundle half-width at each station
+    if (!geo && segs) for (const sg of segs.values()) { const n = sg.lines.filter(l => !hidden.has(l)).length; if (!n) continue; const a = stXY(sg.a, c), b = stXY(sg.b, c); if (!a || !b) continue;
+      const w = (n * lw) / 2 + 1.5 * dpr; bundle([a, b], w); for (const id of [sg.a, sg.b]) hwAt.set(id, Math.max(hwAt.get(id) || 0, (n * lw) / 2)); }
+    if (geo) for (const set of geoPaths.values()) for (const P of set) { if (hidden.has(P.line)) continue; const pts = [], A = P.xz, st = Math.max(2, Math.floor(A.length / 2 / 80) * 2);
+      for (let i = 0; i < A.length; i += st) pts.push(w2s(A[i], A[i + 1], c)); bundle(pts, lw * 0.35 + 1.5 * dpr); }
+    for (const s of MetroSim.stations) { const p = stXY(s.id, c); if (p) addC(p[0], p[1], 7.5 * dpr); }
+    lblSides = new Map();
+    const order = [...MetroSim.stations].sort((a, b) => b.lines.size - a.lines.size);
+    for (const s of order) {
+      const p = stXY(s.id, c); if (!p) continue; if (p[0] < -200 || p[1] < -50 || p[0] > W + 200 || p[1] > H + 50) continue;
+      const nl = [...s.lines].filter(l => !hidden.has(l)).length; if (!nl && s.lines.size) continue;
+      if (geo && v.scale < 0.006 && nl < 2) continue;                // (not labelled at this zoom)
+      const pref = geo ? 'r' : (SCH[s.id] || [0, 0, 'r'])[2], tw = g.measureText(s.short).width, hw = Math.max(6.5 * dpr * (geo ? 0.8 : 1), hwAt.get(s.id) || 0);
+      let best = null, bn = 1e9;
+      for (const sd of [pref, ...SPOTS.filter(q => q !== pref)]) {
+        const L = labelAt(sd, p, tw, fs, hw, dpr); let n = hits(L); if (L.x0 < 0 || L.x1 > W || L.y0 < 0 || L.y1 > H) n += 2;
+        if (n < bn) { bn = n; best = L; } if (n === 0) break; }
+      if (geo && bn > 0) continue;                                    // (geographic: a crowded label waits for a closer zoom; interchanges go first)
+      boxes.push(best); lblSides.set(s.id, best);
+    }
+    lblKey = key; return lblSides;
+  }
+  // the geographic view opens around you when you are near the metro, else on the whole system
+  function fitGeo(c) {
+    map.geoFit = false; const cp = Env.camera.position; if (MetroSim.nearestStation(cp, 9000)) return;
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const s of MetroSim.stations) { x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); z0 = Math.min(z0, s.z); z1 = Math.max(z1, s.z); }
+    if (!(x1 > x0)) return; map.geo.cx = (x0 + x1) / 2; map.geo.cz = (z0 + z1) / 2; map.geo.scale = Math.min(c.width / ((x1 - x0) * 1.1), c.height / ((z1 - z0) * 1.1));
+  }
   function draw() {
     const c = el.msysc, g = c.getContext('2d'), W = c.width, H = c.height, dpr = devicePixelRatio;
     g.fillStyle = '#0d1217'; g.fillRect(0, 0, W, H);
@@ -249,6 +308,7 @@ const MetroUI = (() => {
     const lw = lineW();
     g.lineCap = 'round'; g.lineJoin = 'round';
     if (map.view === 'geo') {
+      if (map.geoFit) fitGeo(c);
       drawGeoBase(g, c); if (!geoPaths.size) buildGeoPaths();
       for (const [lid, set] of geoPaths) for (const P of set) { if (hidden.has(P.line)) continue; g.strokeStyle = MetroSim.lineColor(P.line); g.lineWidth = Math.max(2 * dpr, lw * 0.6); g.globalAlpha = 0.9; g.beginPath();
         const a = P.xz; for (let i = 0; i < a.length; i += 2) { const [x, y] = w2s(a[i], a[i + 1], c); i ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); g.globalAlpha = 1; }
@@ -262,15 +322,14 @@ const MetroUI = (() => {
     // stations
     const fs = Math.max(10, Math.min(15, V().scale * (map.view === 'geo' ? 900 : 0.42))) * dpr;
     g.font = `600 ${fs}px Barlow, sans-serif`; g.textBaseline = 'middle';
+    const sides = placeLabels(g, c, fs, dpr);
     for (const s of MetroSim.stations) {
       const p = stXY(s.id, c); if (!p) continue; const nl = [...s.lines].filter(l => !hidden.has(l)).length; if (!nl && s.lines.size) continue;
       const r = (nl > 1 ? 6.5 : 5) * dpr * (map.view === 'geo' ? 0.8 : 1), sel = map.sel && map.sel.st === s, hov = map.hover && map.hover.st === s;
       g.fillStyle = '#f3efe6'; g.strokeStyle = '#0d1217'; g.lineWidth = 2.2 * dpr; g.beginPath(); g.arc(p[0], p[1], r + (sel || hov ? 2 * dpr : 0), 0, 7); g.fill(); g.stroke();
-      if (map.view === 'geo' && V().scale < 0.006 && nl < 2 && !sel && !hov) continue;
-      const side = map.view === 'geo' ? 'r' : (SCH[s.id] || [0, 0, 'r'])[2], label = s.short;
-      g.fillStyle = sel ? '#ffffff' : 'rgba(243,239,230,.86)'; g.textAlign = side === 'l' ? 'right' : side === 'r' ? 'left' : 'center';
-      const dx = side === 'l' ? -(r + 6 * dpr) : side === 'r' ? r + 6 * dpr : 0, dy = side === 'a' ? -(r + 9 * dpr) : side === 'b' ? r + 10 * dpr : 0;
-      g.lineWidth = 3.5 * dpr; g.strokeStyle = 'rgba(13,18,23,.9)'; g.strokeText(label, p[0] + dx, p[1] + dy); g.fillText(label, p[0] + dx, p[1] + dy);
+      const L = sides.get(s.id) || ((sel || hov) ? labelAt('r', p, g.measureText(s.short).width, fs, r, dpr) : null), label = s.short; if (!L) continue;
+      g.fillStyle = sel ? '#ffffff' : 'rgba(243,239,230,.86)'; g.textAlign = L.al;
+      g.lineWidth = 3.5 * dpr; g.strokeStyle = 'rgba(13,18,23,.9)'; g.strokeText(label, L.ax, L.ay); g.fillText(label, L.ax, L.ay);
     }
     g.textAlign = 'left';
     // live trains
@@ -318,7 +377,8 @@ const MetroUI = (() => {
     O.ids.forEach((id, i) => { const y = Y(i); g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1; g.beginPath(); g.moveTo(left, y); g.lineTo(W - right, y); g.stroke(); g.fillStyle = 'rgba(243,239,230,.72)'; g.fillText(MetroSim.stName(id), left - 8 * dpr, y); });
     g.textAlign = 'center'; g.textBaseline = 'top';
     for (let t = Math.ceil(t0 / 600) * 600; t <= t1; t += 600) { const x = X(t); g.strokeStyle = t % 3600 === 0 ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.06)'; g.beginPath(); g.moveTo(x, top - 6 * dpr); g.lineTo(x, H - bot); g.stroke(); g.fillStyle = 'rgba(243,239,230,.55)'; g.fillText(Env.clockText(t).replace(' ', '\u202f'), x, 8 * dpr); }
-    // every trip of the line in the window
+    // every trip of the line in the window (clipped to the plot: the station names stay readable)
+    g.save(); g.beginPath(); g.rect(left, top - 12 * dpr, W - left - right, H - top - bot + 12 * dpr); g.clip();
     g.lineWidth = 1.6 * dpr; g.lineJoin = 'round';
     for (const p of MetroSim.plans) {
       if (p.tEnd < t0 || p.tStart > t1) continue;
@@ -335,6 +395,7 @@ const MetroUI = (() => {
       let y; if (tr.phase !== 'run' && tr.stopK >= 0) { const i = O.order.get(S[tr.stopK].st.replace('-T', '')); if (i === undefined) continue; y = Y(i); }
       else { const a = S[Math.max(0, tr.nextK - 1)], b = S[tr.nextK]; if (!b) continue; const ia = O.order.get(a.st.replace('-T', '')), ib = O.order.get(b.st.replace('-T', '')); if (ia === undefined || ib === undefined) continue; const f = U.clamp((tr.s - a.ps) / Math.max(1, b.ps - a.ps), 0, 1); y = Y(ia + (ib - ia) * f); }
       g.fillStyle = tr.driven ? '#ff5a3c' : '#ffffff'; g.beginPath(); g.arc(xn, y, (tr.key === Player.focus ? 5.5 : 4) * dpr, 0, 7); g.fill(); }
+    g.restore();
     g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = col; g.font = `600 ${13 * dpr}px Barlow, sans-serif`;
     g.fillText(MetroSim.lineName(graphLine) + ' · pick a line with the chips above', left, H - 10 * dpr);
   }
@@ -344,13 +405,13 @@ const MetroUI = (() => {
     const now = Env.time.sec, rows = MetroSim.arrivals(stId, now, 40).filter(ev => !hidden.has(ev.leg.line)).slice(0, n);
     if (!rows.length) return `<div style="color:var(--ink-dim)">No more trains today.</div>`;
     return rows.map((ev, i) => { const inf = MetroSim.eventInfo(ev), m = Math.round((ev.t - now) / 60);
-      return `<div class="mrow ${cls}" data-ev="${i}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${inf.cars} car${inf.cars > 1 ? 's' : ''}${inf.platform ? ' · platform ' + esc(inf.platform) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('');
+      return `<div class="mrow ${cls}" data-ev="${i}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}${inf.platform ? ' · platform ' + esc(inf.platform) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('');
   }
   function renderSide() {
     const S = el.mside, h = map.sel;
     if (!h) { S.innerHTML = `<h3>Bayline Metro</h3><div class="sub">${MetroSim.lines.filter(l => l.id !== 'ebart').length} lines · ${MetroSim.stations.length} stations · ${Math.round(131.4)} route miles</div>
       ${MetroSim.lines.filter(l => !['ebart'].includes(l.id)).map(l => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><i style="width:8px;height:22px;border-radius:3px;background:${l.color}"></i><span><b>${esc(l.name)}</b><br><small style="color:var(--ink-dim)">${esc(l.terminals.join(' – '))}</small></span></div>`).join('')}
-      <p style="color:var(--ink-faint);font-size:12.5px;margin-top:10px">Unofficial. Not affiliated with the San Francisco Bay Area Rapid Transit District. Timetable: public GTFS feed.</p>`; return; }
+      <p style="color:var(--ink-faint);font-size:12.5px;margin-top:10px">Unofficial fan project, not affiliated with or endorsed by any transit agency. Timetable and live data: the operator's public feeds.</p>`; return; }
     if (h.st) {
       const s = h.st; S.innerHTML = `<div class="kicker">${esc(stationType(s))}</div><h3>${esc(s.name)}</h3><div class="sub">${[...s.lines].filter(l => l !== 'ebart').map(l => `<span class="mchip"><i style="background:${MetroSim.lineColor(l)}"></i>${esc(MetroSim.lineById.get(l) ? MetroSim.lineById.get(l).short : l)}</span>`).join(' ')}</div>
         <div style="display:flex;gap:8px;margin:6px 0 10px"><button class="btn primary" id="mgo">Go to the platform</button><button class="btn" id="mbd">Arrivals</button></div>${nextTrainsHtml(s.id, 9)}`;
@@ -360,7 +421,7 @@ const MetroUI = (() => {
       S.querySelectorAll('.mrow').forEach(r => r.addEventListener('click', (e) => { const ev = rows[+r.dataset.ev]; closeAll(); if (e.shiftKey) drive(ev); else ride(ev); }));
     } else if (h.tr) {
       const tr = MetroSim.trainByKey(h.tr.key) || h.tr, S2 = tr.leg.stops, ns = S2[tr.nextK];
-      S.innerHTML = `<div class="kicker">${esc(MetroSim.lineName(tr.line))}</div><h3>${esc(MetroSim.termName(tr))}</h3><div class="sub">${tr.cars}-car ${tr.kind === 'dmu' ? 'diesel shuttle' : tr.kind === 'apm' ? 'cable train' : 'train'} · ${Math.round(tr.v / MPH)} mph · ${tr.phase === 'run' ? 'next ' + esc(ns ? MetroSim.stName(ns.st) : '') : tr.stationId ? 'at ' + esc(MetroSim.stName(tr.stationId)) : ''}${tr.plan && tr.plan.live ? ' · live' : ''}</div>
+      S.innerHTML = `<div class="kicker">${esc(MetroSim.lineName(tr.line))}</div><h3>${esc(MetroSim.termName(tr))}</h3><div class="sub">${carsAdj(tr.cars, tr.kind)} ${tr.kind === 'dmu' ? 'diesel shuttle' : tr.kind === 'apm' ? 'cable train' : 'train'} · ${Math.round(tr.v / MPH)} mph · ${tr.phase === 'run' ? 'next ' + esc(ns ? MetroSim.stName(ns.st) : '') : tr.stationId ? 'at ' + esc(MetroSim.stName(tr.stationId)) : ''}${tr.plan && tr.plan.live ? ' · live' : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px"><button class="btn primary" id="mfo">Follow</button><button class="btn" id="mcb">Cab view</button>${tr.kind === 'bart' ? '<button class="btn" id="mdr">Drive from the next stop</button>' : ''}</div>
         <div style="font-size:13px;color:var(--ink-dim)">${S2.slice(Math.max(0, tr.nextK || 0)).map(s => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span>${esc(MetroSim.stName(s.st))}</span><span style="font-family:var(--mono)">${Env.clockText(s.tArr)}</span></div>`).join('')}</div>`;
       $('mfo').onclick = () => { closeAll(); Player.setFocus(tr.key); Player.setMode('chase'); UI.toast('Following the ' + MetroSim.lineName(tr.line) + ' to ' + MetroSim.termName(tr), 4); };
@@ -386,7 +447,7 @@ const MetroUI = (() => {
     build(); if (!on()) return;
     if (typeof UI !== 'undefined') UI.closeAll(); closeAll(); el.sys.hidden = false; if (typeof Player !== 'undefined') Player.releaseLock();
     const c = el.msysc, r = c.getBoundingClientRect(); c.width = Math.max(200, r.width * devicePixelRatio); c.height = Math.max(200, r.height * devicePixelRatio);
-    if (!map.opened) { map.opened = true; map.sch.scale = Math.min(c.width / 24.5, c.height / 21.5); map.sch.cx = 15.45; map.sch.cz = 10.75; const cp = Env.camera.position; map.geo.cx = cp.x; map.geo.cz = cp.z; map.geo.scale = Math.min(c.width / 70000, c.height / 60000); }
+    if (!map.opened) { map.opened = true; map.sch.scale = Math.min(c.width / 24.5, c.height / 22.4); map.sch.cx = 15.45; map.sch.cz = 10.3; const cp = Env.camera.position; map.geo.cx = cp.x; map.geo.cz = cp.z; map.geo.scale = Math.min(c.width / 70000, c.height / 60000); map.geoFit = true; }
     if (opts.view) setView(opts.view);
     if (ready()) { renderLines(); const ms = MetroSim.nearestStation(Env.camera.position, 1500); if (!map.sel && ms) map.sel = { st: ms }; renderSide(); }
   }
@@ -410,7 +471,7 @@ const MetroUI = (() => {
     el.mbp.innerHTML = plats.map(p => { const evs = byPlat.get(p).filter(ev => !ev.last).slice(0, 6), first = evs[0];
       const led = first ? (() => { const inf = MetroSim.eventInfo(first), m = Math.round((first.t - now) / 60); return `${inf.cars} CAR ${inf.dest.toUpperCase()} ${m <= 0 ? 'NOW BOARDING' : m + ' MIN'}`; })() : 'NO TRAINS';
       return `<div class="plat"><h4>Platform ${esc(p || '·')}</h4><div class="led">${esc(led)}</div>${evs.map(ev => { list.push(ev); const inf = MetroSim.eventInfo(ev), m = Math.round((ev.t - now) / 60);
-        return `<div class="mrow" data-ev="${list.length - 1}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${inf.cars} car${inf.cars > 1 ? 's' : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('') || '<div style="color:var(--ink-dim)">No more trains today.</div>'}</div>`; }).join('');
+        return `<div class="mrow" data-ev="${list.length - 1}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('') || '<div style="color:var(--ink-dim)">No more trains today.</div>'}</div>`; }).join('');
     el.mbp.querySelectorAll('.mrow').forEach(r => r.addEventListener('click', (e) => { const ev = list[+r.dataset.ev]; closeAll(); if (e.shiftKey) drive(ev); else ride(ev); }));
     // connections: the Peninsula line at Millbrae, bus bridges today
     let conn = '';
@@ -439,7 +500,7 @@ const MetroUI = (() => {
     const now = Env.time.sec; if (ev.t - now > 100 || ev.t < now) Env.setClock(ev.t - 75); Env.time.scale = 1;
     MetroPlay.teleport(ev.leg.stops[ev.k].st, ev.sid);
     Player.setFocus(ev.leg.chainKey || ev.plan.key);
-    const inf = MetroSim.eventInfo(ev); UI.toast(`Wait for the ${inf.cars}-car ${MetroSim.lineName(inf.line)} train to ${inf.dest}; press E at an open door to board`, 6);
+    const inf = MetroSim.eventInfo(ev); UI.toast(`Wait for the ${carsAdj(inf.cars, inf.kind)} ${MetroSim.lineName(inf.line)} train to ${inf.dest}; press E at an open door to board`, 6);
   }
   function drive(ev) { if (ev.leg.kind !== 'bart') { UI.toast('That one drives itself: ride it instead'); ride(ev); return; } MetroATC.start(ev.plan, { station: ev.leg.stops[ev.k].st }); }
 
@@ -468,7 +529,7 @@ const MetroUI = (() => {
     el.mrk.textContent = atSt ? (tr.doorsOpen ? 'Doors open' : 'Now at') : 'Next station';
     el.mrn.textContent = atSt ? MetroSim.stName(atSt.st) : ns ? MetroSim.stName(ns.st) : '—';
     el.mrs.innerHTML = `${Math.round(tr.v / MPH)}<small>mph</small>`;
-    const side = ns && ns.side ? (ns.side > 0 ? 'right' : 'left') : '';            // (as you face the direction of travel)
+    const side = ns ? (MetroSim.stopSide(tr.leg, tr.nextK) > 0 ? 'right' : 'left') : '';   // (as you face the direction of travel)
     el.mri.textContent = atSt ? (tr.dwellLeft > 0 ? `Departs in ${Math.max(0, Math.round(tr.dwellLeft))} s` : '') + (tr.phase === 'terminal' ? 'Last stop: everybody off' : '')
       : ns ? `Arriving ${Env.clockText(ns.tArr)}${side ? ' · doors open on the ' + side : ''}` : '';
     drawNextStops(el.mrline, tr);
@@ -495,7 +556,8 @@ const MetroUI = (() => {
     el.mdd.textContent = d.doors > 0.01 ? (d.doors > 0.99 ? 'DOORS OPEN' : 'DOORS…') : 'DOORS SHUT'; el.mdsc.textContent = Math.round(d.score) + ' pts';
     el.mdgd.textContent = d.guide; el.mdgd.className = 'guide' + (/^(EMERG|PENALTY|ATC BRAKE|BRAKE NOW)/.test(d.guide) ? ' alarm' : /^(OVERSPEED|Start braking|Train ahead)/.test(d.guide) ? ' warn' : '');
     const n = d.next; el.mdns.textContent = n ? n.name : '—'; el.mdto.textContent = n ? (n.togo > 1000 ? (n.togo / 1609.34).toFixed(2) + ' mi' : n.togo.toFixed(1) + ' m') : '—';
-    el.mdsch.innerHTML = n ? `<span class="${d.late > 60 ? 'late' : d.late < -90 ? 'early' : 'ontime'}">${Env.clockText(n.sched)} (${d.late > 0 ? '+' : ''}${Math.round(d.late / 60)}m)</span>` : '—';
+    const lm = Math.round(d.late / 60), lt = Math.abs(d.late) < 30 ? 'on time' : (lm > 0 ? '+' + lm : lm < 0 ? '−' + (-lm) : (d.late > 0 ? '+' : '−') + '<1') + ' min';
+    el.mdsch.innerHTML = n ? `<span class="${d.late > 60 ? 'late' : d.late < -90 ? 'early' : 'ontime'}">${Env.clockText(n.sched)} (${lt})</span>` : '—';
     el.mdtr.textContent = d.target ? `${d.target.v < 0.5 ? 'stop' : Math.round(d.target.v / MPH) + ' mph'} in ${d.target.dist > 1600 ? (d.target.dist / 1609.34).toFixed(1) + ' mi' : Math.round(d.target.dist * 3.281) + ' ft'}` : d.clear >= 6 ? 'clear' : d.clear + ' circuit' + (d.clear === 1 ? '' : 's') + ' clear';
   }
   function drawStrip(tr) {
@@ -533,6 +595,7 @@ const MetroUI = (() => {
       if (tr.phase !== 'run' && tr.stopK >= 0) return MetroSim.stName(S[tr.stopK].st) + ' · Bayline Metro';
       const a = S[Math.max(0, tr.nextK - 1)], b = S[tr.nextK]; return b ? `Between ${MetroSim.stName(a.st)} and ${MetroSim.stName(b.st)}` : null; }
     const ms = MetroSim.nearestStation(p, 450); if (!ms) return null;
+    if (Player.mode === 'walk' && Player.onMetroFloor && Player.onMetroFloor()) return ms.name + ' · Bayline Metro';
     const pen = typeof Stations !== 'undefined' ? Stations.nearest(p, 450) : null;
     if (pen && Math.hypot(pen.x - p.x, pen.z - p.z) < Math.hypot(ms.x - p.x, ms.z - p.z)) return null;
     return ms.name + ' · Bayline Metro';
@@ -541,10 +604,22 @@ const MetroUI = (() => {
   let atT = 0, atV = false;
   function atMetro(p) { const now = performance.now(); if (now - atT < 500) return atV; atT = now;
     if (!ready()) return (atV = false); const ms = MetroSim.nearestStation(p, 700); if (!ms) return (atV = false);
+    if (typeof Player !== 'undefined' && Player.mode === 'walk' && Player.onMetroFloor && Player.onMetroFloor()) return (atV = true);
     const pen = typeof Stations !== 'undefined' ? Stations.nearest(p, 700) : null; return (atV = !pen || Math.hypot(ms.x - p.x, ms.z - p.z) < Math.hypot(pen.x - p.x, pen.z - p.z)); }
-  function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK]; return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)} · ${tr.cars} cars · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
+  // the HUD line at a metro station: the next train of each line and direction, soonest first
+  function stationSub(p) {
+    const ms = MetroSim.nearestStation(p, 700); if (!ms) return '';
+    const now = Env.time.sec, seen = new Set(), out = [];
+    for (const ev of MetroSim.arrivals(ms.id, now, 24)) { const inf = MetroSim.eventInfo(ev), k = inf.line + '>' + inf.dest; if (seen.has(k)) continue; seen.add(k);
+      const m = Math.max(0, Math.round((ev.t - now) / 60)); out.push(`${MetroSim.lineById.get(inf.line) ? MetroSim.lineById.get(inf.line).short : inf.line} to ${inf.dest} ${m ? m + ' min' : 'now'}`); if (out.length >= 3) break; }
+    return out.length ? 'Next: ' + out.join(' · ') : 'No more trains today';
+  }
+  // train sizes: cars, or units for the Antioch shuttle (each a two-car articulated diesel)
+  function carsText(n, kind) { return kind === 'dmu' ? `${n} unit${n > 1 ? 's' : ''}` : `${n} car${n > 1 ? 's' : ''}`; }
+  function carsAdj(n, kind) { return kind === 'dmu' ? `${n}-unit` : `${n}-car`; }
+  function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK]; return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)} · ${carsText(tr.cars, tr.kind)} · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
 
-  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
+  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
   return api;
 })();
@@ -558,7 +633,9 @@ const MetroMissions = (() => {
   // the next departure from `from` whose next stop is `to` (or whose later stops include it), BART vehicles only
   function nextRun(from, to, after) {
     const t0 = after !== undefined ? after : Env.time.sec;
-    for (const ev of MetroSim.arrivals(from, t0 + 45, 120)) { const S = ev.leg.stops; if (ev.leg.kind !== 'bart' || ev.k >= S.length - 1) continue; if (S.slice(ev.k + 1).some(s => s.st === to)) return ev; }
+    for (const ev of MetroSim.arrivals(from, t0 + 45, 120)) { const S = ev.leg.stops; if (ev.leg.kind !== 'bart' || ev.k >= S.length - 1) continue;
+      if (S.slice(ev.k + 1).some(s => s.st === to)) return ev;
+      for (let x = ev.leg.next; x; x = x.next) if (x.stops.some(s => s.st === to)) return ev; }   // (through a reversal: SFO)
     return null;
   }
   function list() {

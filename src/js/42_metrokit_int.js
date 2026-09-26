@@ -91,33 +91,39 @@
     for (const x of [-6.5, 0.9, 6.5]) { if (isD && x > 8) continue; E.pal('camDome'); E.at(mul(tr(x, 3.14, 0), rotX(Math.PI)), m => m.lathe([[0.001, 0], [0.05, 0.005], [0.058, 0.03], [0.05, 0.05], [0.0, 0.06]].map(([r, y]) => [r, y]), 14)); }
     for (const x of [-8.2, -3.3, 2.4, 7.4]) { if (isD && x > 7) continue; E.pal('grilleInt'); E.box(x - 0.14, 3.134, -0.14, x + 0.14, 3.139, 0.14); }
     // ---------------- overhead grab rails (both sides), brackets
-    const railY = 2.88, railZ = 0.56, rx0 = xR + 0.9, rx1 = (isD ? 8.2 : xF - 0.9);
+    const railY = 2.88, railZ = 0.5, rx0 = xR + 0.9, rx1 = (isD ? 8.2 : xF - 0.9);
     E.pal('pole');
     for (const s of [1, -1]) {
       E.cyl([rx0, railY, s * railZ], [rx1, railY, s * railZ], 0.016, 0.016, 10);
       for (let x = rx0 + 0.3; x < rx1; x += 1.62) E.cyl([x, railY, s * railZ], [x, 3.115, s * railZ], 0.011, 0.011, 8, false);
     }
     // hanging straps: dense at the doorways, a few along the aisle
-    const strapAt = (x, s) => { E.pal('strap'); E.box(x - 0.016, railY - 0.3, s * railZ - 0.004, x + 0.016, railY - 0.01, s * railZ + 0.004);
-      E.tube(Array.from({ length: 11 }, (_, i) => { const a = i / 10 * TAU; return [x + Math.sin(a) * 0.075, railY - 0.3 - 0.075 + Math.cos(a) * 0.075, s * railZ]; }), 0.009, 6, false); };
+    // a strap: a flat black band from the rail and a teardrop loop (0.1 m wide, 0.16 m tall)
+    const strapAt = (x, s) => { E.pal('strap'); E.box(x - 0.014, railY - 0.26, s * railZ - 0.003, x + 0.014, railY - 0.01, s * railZ + 0.003);
+      E.tube(Array.from({ length: 13 }, (_, i) => { const a = i / 12 * TAU, yy = Math.cos(a); return [x + Math.sin(a) * (0.05 - 0.018 * Math.max(0, yy)), railY - 0.26 - 0.08 + yy * 0.08, s * railZ]; }), 0.0065, 6, false); };
     for (const dc of F.DOORS) for (const s of [1, -1]) for (const dx of (dc === 0 ? [-0.9, -0.62, -0.34, 0.34, 0.62, 0.9] : [-0.75, -0.45, 0.45, 0.75])) strapAt(dc + dx, s);
     // ---------------- doorway partitions, grab poles, lamps, intercoms, screens
     for (let di = 0; di < 3; di++) {
       const dc = F.DOORS[di];
       for (const s of [1, -1]) for (const k of [-1, 1]) {
-        const x = dc + k * 0.715, z0 = s * 1.43, z1 = s * 0.93, ytop = FY + 1.88;
-        E.pal('wallInt2'); E.shape(
-          [[0, 0], [1, 0], [1, 0.82], [0.9, 0.97], [0.75, 1.0], [0, 1.0]].map(([u, v]) => [u, v]), [],
-          (u, v) => ({ p: [x, FY + 0.06 + v * (ytop - FY - 0.06), lerp(z0, z1, u)], n: [k, 0, 0] }));
-        E.shape([[0, 0], [0, 1.0], [0.75, 1.0], [0.9, 0.97], [1, 0.82], [1, 0]], [], (u, v) => ({ p: [x - k * 0.04, FY + 0.06 + v * (ytop - FY - 0.06), lerp(z0, z1, u)], n: [-k, 0, 0] }));
-        E.pal('pole'); E.tube([[x - k * 0.02, FY + 0.02, z1 - s * 0.03], [x - k * 0.02, ytop - 0.1, z1 - s * 0.03], [x - k * 0.02, ytop + 0.25, s * (railZ + 0.12)], [x - k * 0.02, railY, s * railZ]], 0.017, 10);
-        E.pal('seatFrame'); E.cyl([x - k * 0.02, FY, z1 - s * 0.03], [x - k * 0.02, FY + 0.02, z1 - s * 0.03], 0.04, 0.04, 12);
+        // a narrow screen (0.38 m) with rounded edges, a stainless grab bar along its aisle edge bending up to the rail
+        const x = dc + k * 0.72, z0 = s * 1.44, z1 = s * 1.07, ytop = FY + 1.84;
+        E.pal('wallInt2'); E.at(tr(x - k * 0.02, 0, 0), m => rbox(m, -0.022, FY + 0.08, Math.min(z0, z1), 0.022, ytop, Math.max(z0, z1), 0.02, 2));
+        const gz = z1 - s * 0.04;
+        E.pal('pole'); E.tube([[x - k * 0.02, FY + 0.02, gz], [x - k * 0.02, ytop - 0.05, gz], [x - k * 0.02, ytop + 0.12, gz - s * 0.06], [x - k * 0.02, ytop + 0.4, s * (railZ + 0.18)], [x - k * 0.02, railY - 0.1, s * (railZ + 0.03)], [x - k * 0.02, railY, s * railZ]], 0.017, 10);
+        E.pal('seatFrame'); E.cyl([x - k * 0.02, FY, gz], [x - k * 0.02, FY + 0.02, gz], 0.04, 0.04, 12);
         // intercom on the partition's doorway face (one per doorway)
-        if (k === 1) { E.pal('bezel'); E.box(x + 0.001, FY + 1.28, z1 + s * 0.12 - 0.07, x + 0.02, FY + 1.46, z1 + s * 0.12 + 0.07);
-          E.pal('keyRed'); E.cyl([x + 0.02, FY + 1.33, z1 + s * 0.12], [x + 0.03, FY + 1.33, z1 + s * 0.12], 0.018, 0.018, 10); }
+        if (k === 1) { E.pal('bezel'); E.box(x + 0.001, FY + 1.28, z1 + s * 0.16 - 0.07, x + 0.02, FY + 1.46, z1 + s * 0.16 + 0.07);
+          E.pal('keyRed'); E.cyl([x + 0.02, FY + 1.33, z1 + s * 0.16], [x + 0.03, FY + 1.33, z1 + s * 0.16], 0.018, 0.018, 10); }
       }
       // red door lamps over the portal (inside), per side
       for (const s of [1, -1]) { E.pal(s > 0 ? 'lampIntR' : 'lampIntL'); E.box(dc - 0.06, FY + 1.955, s * 1.38 - 0.02, dc + 0.06, FY + 1.985, s * 1.38 + 0.02); }
+      // an advertising frame on the wall panel on the other side of the doorway (a different ad per doorway)
+      for (const s of [1, -1]) {
+        const xs = dc - s * 1.18, name = 'ad' + ((di * 2 + (s > 0 ? 0 : 1)) % 4), r = K.ATL[name], w = 0.46, h = 0.69, yc = FY + 1.62, zw = s * 1.458;
+        E.pal('seatFrame'); E.at(mul(tr(xs, yc, zw), rotY(s > 0 ? Math.PI : 0)), m => { m.box(-w / 2 - 0.025, -h / 2 - 0.025, -0.012, w / 2 + 0.025, h / 2 + 0.025, 0.0);
+          m.pal('decalInt'); const a = m.v(-w / 2, -h / 2, 0.001, 0, 0, 1, r[0], r[1]), b = m.v(w / 2, -h / 2, 0.001, 0, 0, 1, r[2], r[1]), c = m.v(w / 2, h / 2, 0.001, 0, 0, 1, r[2], r[3]), e = m.v(-w / 2, h / 2, 0.001, 0, 0, 1, r[0], r[3]); m.quadA(a, b, c, e); });
+      }
       // passenger screen: one per doorway on the wall panel beside the portal, high up, tilted down; LCD via uv1
       for (const s of [1, -1]) {
         const xs = dc + s * 1.18, yc = 2.62, zc = s * 1.43, w = 0.54, h = 0.31, tilt = 0.18;
@@ -146,8 +152,8 @@
         const xb = face > 0 ? x0 : x1, m = mul(tr(xb, FY, side * 0.44), M4().makeScale(face, 1, side));
         E.at(m, mm => seatUnit(mm, 2, col, q, { handle: -1 }));
         // pole from the handle up to the rail
-        const hx = xb - face * 0.07, hz = side * 0.47;
-        E.pal('pole'); E.tube([[hx, FY + 1.18, hz], [hx, FY + 1.6, hz], [hx, railY - 0.25, side * (railZ - 0.02)], [hx, railY, side * railZ]], 0.016, 10, false);
+        const hx = xb - face * 0.07, hz = side * railZ;
+        E.pal('pole'); E.cyl([hx, FY + 1.13, hz], [hx, railY, hz], 0.016, 0.016, 10, false);
       } else {
         const n = kind === 'L1' ? 1 : 2, W = n * SW, xm = (x0 + x1) / 2;
         // longitudinal: back to the wall, facing the aisle; local z along the car
@@ -170,8 +176,20 @@
     }
     for (const [x, s] of [[-1.35, 1], [1.35, -1]]) {
       const r = K.ATL.floorWheel; E.pal('decalInt');
-      const a = E.v(x - 0.45, FY + 0.002, s * 1.4, 0, 1, 0, r[0], r[1]), b = E.v(x + 0.45, FY + 0.002, s * 1.4, 0, 1, 0, r[2], r[1]), c = E.v(x + 0.45, FY + 0.002, s * 0.5, 0, 1, 0, r[2], r[3]), e = E.v(x - 0.45, FY + 0.002, s * 0.5, 0, 1, 0, r[0], r[3]);
+      const a = E.v(x - 0.26, FY + 0.002, s * 1.22, 0, 1, 0, r[0], r[1]), b = E.v(x + 0.26, FY + 0.002, s * 1.22, 0, 1, 0, r[2], r[1]), c = E.v(x + 0.26, FY + 0.002, s * 0.7, 0, 1, 0, r[2], r[3]), e = E.v(x - 0.26, FY + 0.002, s * 0.7, 0, 1, 0, r[0], r[3]);
       E.quadA(a, b, c, e);
+    }
+    // ---------------- exterior LED destination signs behind the glass (seen from outside through clear glass)
+    { const SS = K.SIDE_SIGN, SG = K.SIGN.front;
+      for (const xc of [-3.149, 3.149]) for (const s of [1, -1]) {
+        const z = s * SS.zin, x0 = xc - SS.hw, x1 = xc + SS.hw;
+        E.pal('bezel'); E.box(x0 - 0.02, SS.y0 - 0.02, Math.min(z, z - s * 0.05), x1 + 0.02, SS.y1 + 0.02, Math.max(z - s * 0.001, z - s * 0.05));
+        E.pal('ledSign'); const ua = s > 0 ? 0 : 1, ub = 1 - ua;
+        const a = E.v(x0, SS.y0, z, 0, 0, s, ua, SG[1]), b = E.v(x1, SS.y0, z, 0, 0, s, ub, SG[1]), c = E.v(x1, SS.y1, z, 0, 0, s, ub, SG[3]), dd = E.v(x0, SS.y1, z, 0, 0, s, ua, SG[3]); E.quadA(a, b, c, dd);
+      }
+      if (isD) { const FS = K.FRONT_SIGN;
+        E.pal('bezel'); E.box(FS.x - 0.06, FS.y0 - 0.02, FS.z0 - 0.02, FS.x - 0.001, FS.y1 + 0.02, FS.z1 + 0.02);
+        E.pal('ledSign'); const a = E.v(FS.x, FS.y0, FS.z1, 1, 0, 0, 0, SG[1]), b = E.v(FS.x, FS.y0, FS.z0, 1, 0, 0, 1, SG[1]), c = E.v(FS.x, FS.y1, FS.z0, 1, 0, 0, 1, SG[3]), dd = E.v(FS.x, FS.y1, FS.z1, 1, 0, 0, 0, SG[3]); E.quadA(a, b, c, dd); }
     }
     // ---------------- end walls: rear (and front for E): lime panels, end door, LED sign, posters
     endWall(E, G, -1, xR, FY);
@@ -249,32 +267,41 @@
       // the cab back wall seen from inside
     }
     E.shape([[-zR, FY], [zR, FY], [zR, 3.05], [-zR, 3.05]], [[[-0.45, FY], [0.45, FY], [0.45, 3.04], [-0.45, 3.04]]], (z, y) => ({ p: [x0 + 0.005, y, z], n: [1, 0, 0] }));
-    // ---------- operator console (right): cabinet, desk, instrument panel tilted up under the windscreen
-    const zc0 = 0.18, zc1 = 1.42, deskY = FY + 0.78;
-    E.pal('console'); rbox(E, 9.55, FY, zc0, 10.12, deskY, zc1, 0.03, 3);
-    E.pal('consoleDk'); rbox(E, 9.45, deskY - 0.02, zc0 - 0.02, 10.15, deskY + 0.03, zc1 + 0.01, 0.015, 3);
-    // instrument panel (angled): two displays side by side, keypad between
-    E.at(mul(tr(10.02, deskY + 0.25, (zc0 + zc1) / 2), rotZ(-0.72)), m => {
-      m.pal('console'); rbox(m, -0.03, -0.24, -0.62, 0.03, 0.24, 0.62, 0.02, 3);
-      const L = K.LCD.cab, scr = (zc, u0, u1) => { m.pal('bezel'); m.box(-0.04, -0.17, zc - 0.22, -0.029, 0.17, zc + 0.22);
-        m.pal('lcd'); const a = m.v(-0.042, -0.155, zc - 0.205, -1, 0, 0, u0, L[1]), b = m.v(-0.042, -0.155, zc + 0.205, -1, 0, 0, u1, L[1]), c = m.v(-0.042, 0.155, zc + 0.205, -1, 0, 0, u1, L[3]), e = m.v(-0.042, 0.155, zc - 0.205, -1, 0, 0, u0, L[3]); m.quadA(a, b, c, e); };
-      // the ATC display in front of the operator, the status screen to its left (toward the centre)
-      scr(0.03, L[0], (L[0] + L[2]) / 2); scr(-0.47, (L[0] + L[2]) / 2, L[2]);
-      m.pal('brushed'); m.box(-0.036, -0.2, 0.32, -0.03, 0.2, 0.58);
-      for (let i = 0; i < 12; i++) { const r = i % 3, c = Math.floor(i / 3); m.pal(i === 11 ? 'keyRed' : i === 9 ? 'keyGreen' : 'consoleDk'); m.box(-0.046, -0.14 + c * 0.075, 0.36 + r * 0.07, -0.036, -0.09 + c * 0.075, 0.41 + r * 0.07); }
+    // ---------- operator console (right half; after the 2014 cab mock-up): an L-shaped white desk with a dark front edge,
+    // two 10-inch displays side by side in dark bezels on a near-vertical back panel (VATC speed display left, the
+    // train status screen right), a brushed plate with a 3 x 3 keypad on the left of the desk, round buttons and the red
+    // emergency mushroom in the middle, the MANUAL CONTROL plate with the T-handle on the right, a key switch.
+    const deskY = FY + 0.8, dx0 = 9.5, dx1 = 10.08, dz0 = -0.02, dz1 = 1.38;
+    E.pal('console'); rbox(E, dx0 + 0.06, FY, dz0 + 0.05, dx1, deskY - 0.03, dz1 - 0.02, 0.03, 3);
+    E.pal('console'); rbox(E, dx0, deskY - 0.035, dz0, dx1, deskY, dz1, 0.012, 3);
+    E.pal('consoleDk'); rbox(E, dx0 - 0.012, deskY - 0.06, dz0 + 0.02, dx0 + 0.012, deskY - 0.005, dz1 - 0.02, 0.01, 2);
+    E.pal('grilleInt'); E.box(dx0 + 0.055, FY + 0.12, 0.2, dx0 + 0.06, FY + 0.26, 0.5);
+    // back panel with the displays (reclined 0.28 rad)
+    E.at(mul(tr(9.98, deskY + 0.17, 0.72), rotZ(-0.28)), m => {
+      m.pal('console'); rbox(m, -0.025, -0.17, -0.58, 0.02, 0.17, 0.58, 0.015, 3);
+      const L = K.LCD.cab, um = (L[0] + L[2]) / 2, scr = (zc, u0, u1) => { m.pal('bezel'); rbox(m, -0.045, -0.125, zc - 0.155, -0.02, 0.125, zc + 0.155, 0.01, 2);
+        m.pal('lcd'); const a = m.v(-0.047, -0.1, zc - 0.13, -1, 0, 0, u0, L[1]), b = m.v(-0.047, -0.1, zc + 0.13, -1, 0, 0, u1, L[1]), c = m.v(-0.047, 0.1, zc + 0.13, -1, 0, 0, u1, L[3]), e = m.v(-0.047, 0.1, zc - 0.13, -1, 0, 0, u0, L[3]); m.quadA(a, b, c, e); };
+      scr(-0.19, L[0], um); scr(0.19, um, L[2]);
     });
-    // e-stop mushroom, horn / door buttons on the desk, the T-handle controller on its bone
-    E.pal('consoleDk'); E.cyl([9.72, deskY + 0.03, 1.2], [9.72, deskY + 0.06, 1.2], 0.05, 0.05, 16);
-    E.pal('mushroom'); E.cyl([9.72, deskY + 0.06, 1.2], [9.72, deskY + 0.1, 1.2], 0.042, 0.035, 16);
-    for (const [bz, pal] of [[0.95, 'keyGreen'], [1.02, 'keyAmber'], [0.62, 'keyGreen'], [0.55, 'keyRed']]) { E.pal('consoleDk'); E.box(9.6, deskY + 0.03, bz - 0.03, 9.66, deskY + 0.045, bz + 0.03); E.pal(pal); E.cyl([9.63, deskY + 0.045, bz], [9.63, deskY + 0.058, bz], 0.018, 0.018, 10); }
-    E.pal('brushed'); E.box(9.5, deskY + 0.03, 0.26, 9.78, deskY + 0.05, 0.4);                     // controller quadrant plate
-    E.pal('consoleDk'); E.box(9.52, deskY + 0.05, 0.325, 9.76, deskY + 0.056, 0.335);             // slot
-    E.bone = 21;                                                                                   // (bone pivot at [9.64, deskY + 0.05, 0.33])
-    E.pal('handleBlack'); E.cyl([9.64, deskY + 0.05, 0.33], [9.64, deskY + 0.2, 0.33], 0.012, 0.012, 8);
-    E.pal('handleBlack'); rbox(E, 9.6, deskY + 0.19, 0.27, 9.68, deskY + 0.235, 0.39, 0.02, 3);
+    // keypad plate (left), buttons and mushroom (middle), MANUAL CONTROL plate (right), key switch
+    E.pal('brushed'); E.box(dx0 + 0.04, deskY, 0.05, dx0 + 0.3, deskY + 0.006, 0.42);
+    for (let i = 0; i < 9; i++) { const r = i % 3, c2 = Math.floor(i / 3); E.pal(i === 2 ? 'keyRed' : i === 5 ? 'keyRed' : 'keyGreen'); E.box(dx0 + 0.08 + c2 * 0.06, deskY + 0.006, 0.14 + r * 0.06, dx0 + 0.125 + c2 * 0.06, deskY + 0.02, 0.185 + r * 0.06); }
+    for (const [bz, pal] of [[0.5, 'consoleDk'], [0.58, 'consoleDk'], [0.8, 'consoleDk'], [0.88, 'keyAmber']]) { E.pal('consoleDk'); E.cyl([dx0 + 0.15, deskY, bz], [dx0 + 0.15, deskY + 0.01, bz], 0.024, 0.024, 12); E.pal(pal); E.cyl([dx0 + 0.15, deskY + 0.01, bz], [dx0 + 0.15, deskY + 0.022, bz], 0.017, 0.017, 12); }
+    E.pal('consoleDk'); E.cyl([dx0 + 0.16, deskY, 0.69], [dx0 + 0.16, deskY + 0.02, 0.69], 0.05, 0.05, 16);
+    E.pal('mushroom'); E.cyl([dx0 + 0.16, deskY + 0.02, 0.69], [dx0 + 0.16, deskY + 0.055, 0.69], 0.04, 0.034, 16);
+    E.pal('brushed'); E.box(dx0 + 0.05, deskY, 0.98, dx0 + 0.32, deskY + 0.006, 1.2);          // MANUAL CONTROL plate
+    E.pal('consoleDk'); E.box(dx0 + 0.07, deskY + 0.006, 1.085, dx0 + 0.3, deskY + 0.01, 1.095);   // the controller's slot
+    E.pal('handleBlack'); E.box(dx0 + 0.24, deskY + 0.006, 1.26, dx0 + 0.3, deskY + 0.04, 1.32);    // key switch
+    E.bone = 21;                                                                                    // T-handle (bone pivot at the slot)
+    E.pal('handleBlack'); E.cyl([9.64, deskY + 0.01, 1.09], [9.64, deskY + 0.13, 1.09], 0.011, 0.011, 8);
+    E.pal('handleBlack'); rbox(E, 9.6, deskY + 0.12, 1.03, 9.68, deskY + 0.16, 1.15, 0.018, 3);
     E.bone = 0;
+    // the radio handset on the left wall of the operator's bay, the sun blind rolled half down in the windscreen
+    E.pal('handleBlack'); rbox(E, 9.35, FY + 1.1, -0.05, 9.42, FY + 1.34, 0.0, 0.015, 2);
+    E.pal('blackInt'); E.q4([10.2, 3.12, 0.5], [10.2, 3.12, 1.25], [10.24, 3.38, 1.25], [10.24, 3.38, 0.5]);
+    E.pal('seatFrame'); E.cyl([10.23, 3.39, 0.48], [10.23, 3.39, 1.27], 0.022, 0.022, 10);
     // operator seat (navy pinstripe), pedestal
-    { const sx = 9.12, sz = 0.72;
+    { const sx = 8.9, sz = 0.72;
       E.pal('seatFrame'); E.cyl([sx, FY, sz], [sx, FY + 0.38, sz], 0.05, 0.05, 12); E.lathe([[0.26, FY], [0.24, FY + 0.03], [0.05, FY + 0.05]].map(([r, y]) => [r, y]), 18);
       E.at(tr(sx, 0, sz), m => { m.pal('cabSeat'); rbox(m, -0.24, FY + 0.38, -0.25, 0.24, FY + 0.5, 0.25, 0.05, 3);
         m.at(mul(tr(-0.24, FY + 0.5, 0), rotZ(0.14)), mm => { rbox(mm, -0.12, 0.0, -0.24, 0.0, 0.66, 0.24, 0.05, 3); rbox(mm, -0.1, 0.72, -0.14, 0.0, 0.92, 0.14, 0.04, 3); });

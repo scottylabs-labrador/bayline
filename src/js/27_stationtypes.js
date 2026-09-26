@@ -68,16 +68,17 @@ const StationTypes = (() => {
     }
   }
 
-  // ------------------------------------------------------------------------------------------------ build
-  function* build(st, C) {
+  // ------------------------------------------------------------------------------------------------ setup
+  // Everything decided before any geometry: the station frame, the platforms (faces paired into islands or sides),
+  // the structure lines (deck edge / wall line), the circulation plan (concourse mode, escalator groups, openings) and
+  // what stands on the ground (lobby / concourse extents, bents, footbridge). build() and footprint() both start here,
+  // so the keep-out zones handed to the world are exactly what gets built. Returns null for a station without platforms.
+  function setup(st, C) {
     const plan = st.plan, OX = plan.cx, OZ = plan.cz;
     const S = styleFor(st);
     const H = (typeof StationHeroes !== 'undefined' ? StationHeroes.config(st.id) : null) || {};
     const type = H.type || st.type || 'surface';
     const under = type === 'subway';
-    const root = new THREE.Group(); root.name = 'metro-' + st.id; root.position.set(OX, 0, OZ);
-    const near = new THREE.Group(); near.name = 'near'; root.add(near);
-    const walk = { floors: [], walls: [] };
     // local spine frames
     const FR = plan.spine.map(s => ({ u: s.u, x: s.x - OX, z: s.z - OZ, tx: s.tx, tz: s.tz }));
     const DU = C.DU, U0 = plan.spine[0].u;
@@ -97,13 +98,14 @@ const StationTypes = (() => {
     const tv = (t, u) => C.trackV(plan, t, u);
     const W2 = (x, z) => [x + OX, z + OZ];                                                        // local -> world xz
     const WUV = (u, v) => W2(...L2(u, v));
-    yield;
 
     // ---------------------------------------------------------------- platform faces -> platforms
     // platform faces; a face whose range is short or far from the first face's (v0 data maps some GTFS stops onto the
     // wrong stretch of a track) takes the first face's range: both sides of a station are the same 213 m
-    const ref0 = plan.plats[0]; const refC = (ref0.u0 + ref0.u1) / 2, refL = Math.min(216, Math.max(150, ref0.u1 - ref0.u0));
-    for (const p of plan.plats) { const c = (p.u0 + p.u1) / 2, l = p.u1 - p.u0; if (l < 150 || Math.abs(c - refC) > 40) { p.u0 = refC - refL / 2; p.u1 = refC + refL / 2; } }
+    // (the least believable length is the vehicle's: 150 m for BART, 110 m for the Antioch DMU, 30 m for the people mover)
+    const ref0 = plan.plats[0]; const minL = ref0.minL || 150;
+    const refC = (ref0.u0 + ref0.u1) / 2, refL = plan.isOac ? Math.max(30, ref0.u1 - ref0.u0) : Math.min(216, Math.max(minL, ref0.u1 - ref0.u0));
+    if (!plan.isOac) for (const p of plan.plats) { const c = (p.u0 + p.u1) / 2, l = p.u1 - p.u0; if (l < minL || Math.abs(c - refC) > 40) { p.u0 = refC - refL / 2; p.u1 = refC + refL / 2; } }
     // a known layout (research) corrects the sides the v0 data inferred: side platforms extend away from the other
     // track, island faces toward it
     if ((H.layout === 'side' || H.layout === 'island') && plan.plats.length >= 2 && new Set(plan.plats.map(q => q.t)).size === 2) {
@@ -114,7 +116,7 @@ const StationTypes = (() => {
         p.sideV = (H.layout === 'side' ? -1 : 1) * Math.sign(dv);
       }
     }
-    const faces = plan.plats.map(p => ({ p, e: (u) => tv(p.t, u) + p.sideV * EDGE }));
+    const faces = plan.plats.map(p => ({ p, e: (u) => tv(p.t, u) + p.sideV * (p.edge || EDGE) }));
     const plats = []; const used = new Set();
     for (let i = 0; i < faces.length; i++) {
       if (used.has(i)) continue; const A = faces[i];
@@ -134,14 +136,28 @@ const StationTypes = (() => {
         const la = A.p.u1 - A.p.u0, lb = B.p.u1 - B.p.u0, ca = (A.p.u0 + A.p.u1) / 2, cb = (B.p.u0 + B.p.u1) / 2;
         const Lr = Math.min(216, Math.max(la, lb)); const cc = Math.abs(ca - cb) < 20 ? (ca + cb) / 2 : (la >= lb ? ca : cb);
         const u0 = cc - Lr / 2, u1 = cc + Lr / 2;
-        plats.push({ kind: 'island', u0, u1, eL: Lf.e, eR: Rf.e, y: (A.p.yRail + B.p.yRail) / 2 + PH, keys: [Lf.p.key, Rf.p.key], faces: [Lf, Rf], tracks: [Lf.p.t, Rf.p.t], holes: [] });
+        // one walking surface: each face's rail + its vehicle's floor (a transfer island between BART and the DMU needs
+        // the DMU's track raised by the difference, as at Pittsburg/Bay Point)
+        const yA = A.p.yRail + (A.p.ph || PH), yB = B.p.yRail + (B.p.ph || PH);
+        plats.push({ kind: 'island', u0, u1, eL: Lf.e, eR: Rf.e, y: (yA + yB) / 2, ph: ((A.p.ph || PH) + (B.p.ph || PH)) / 2, keys: [Lf.p.key, Rf.p.key], faces: [Lf, Rf], tracks: [Lf.p.t, Rf.p.t], holes: [] });
       } else {
         used.add(i); const w = under ? 5.2 : 6.5;
         const e = A.e; const sv = A.p.sideV;
-        plats.push({ kind: 'side', u0: A.p.u0, u1: A.p.u1, eL: sv > 0 ? e : (u) => e(u) - w, eR: sv > 0 ? (u) => e(u) + w : e, y: A.p.yRail + PH, keys: [A.p.key], faces: [A], sideV: sv, tracks: [A.p.t], holes: [] });
+        plats.push({ kind: 'side', u0: A.p.u0, u1: A.p.u1, eL: sv > 0 ? e : (u) => e(u) - w, eR: sv > 0 ? (u) => e(u) + w : e, y: A.p.yRail + (A.p.ph || PH), ph: A.p.ph || PH, keys: [A.p.key], faces: [A], sideV: sv, tracks: [A.p.t], holes: [] });
       }
     }
-    if (!plats.length) return { root, near, walk, cells: [], portals: [], cuts: [], boards: [] };
+    if (!plats.length) return null;
+    // levels (stacked stations, 12th and 19th St): platforms grouped by height, the top level first; each level has its
+    // own box, cell and zone; a lower level's side platform reaches under the platforms above (room for the escalators)
+    plats.sort((a, b) => b.y - a.y);
+    const levels = [];
+    for (const p of plats) { let L = levels.find(q => Math.abs(q.yT - p.y) < 2.5); if (!L) levels.push(L = { k: levels.length, yT: p.y, plats: [], tracks: [] });
+      L.plats.push(p); for (const t of p.tracks) if (!L.tracks.includes(t)) L.tracks.push(t); p.level = L; }
+    for (const L of levels.slice(1)) for (const p of L.plats) if (p.kind === 'side') {
+      const up = levels[L.k - 1];
+      if (p.sideV > 0) { const e = p.eL; const far = (u) => Math.max(...up.plats.map(q => q.eR(u))); p.eR = (u) => U.clamp(far(u), e(u) + 5.2, e(u) + 14); }
+      else { const e = p.eR; const far = (u) => Math.min(...up.plats.map(q => q.eL(u))); p.eL = (u) => U.clamp(far(u), e(u) - 14, e(u) - 5.2); }
+    }
     const yRail = plan.yRail, yT = plats[0].y;
     const pu0 = Math.min(...plats.map(p => p.u0)), pu1 = Math.max(...plats.map(p => p.u1));
     const Lp = pu1 - pu0, uc = (pu0 + pu1) / 2;
@@ -151,29 +167,92 @@ const StationTypes = (() => {
     // the wall line (subway) / deck edge (aerial): past the outer track by 2.3 m, or past a side platform's back
     const edgeV = (u, side) => side < 0 ? Math.min(tracksOut(u, -1) - 2.3, platOut(u, -1)) : Math.max(tracksOut(u, 1) + 2.3, platOut(u, 1));
     const boxU0 = pu0 - (under ? 14 : 8), boxU1 = pu1 + (under ? 14 : 8);
-    const street = (st.data.levels && isFinite(st.data.levels.street)) ? st.data.levels.street : (under ? yT + 12 : yT - 9);
-    const groundC = Terrain.h(OX, OZ);
+    let street = (st.data.levels && isFinite(st.data.levels.street)) ? st.data.levels.street : (under ? yT + 12 : yT - 9);
+    // (the ground at the station's centre, taken once: the lobby floor is set from it and the ground is then graded to
+    // the floor, so a later reading must not move the floor)
+    const groundC = st.groundC0 !== undefined ? st.groundC0 : (st.groundC0 = Terrain.h(OX, OZ));
+    // the ground beside the station (median of samples 12 m past its edges): a trench's street is the ground along its
+    // rim when the data's street level sits lower (M2: e.g. North Concord)
+    const side = []; for (const du of [-40, 0, 40]) for (const sd of [-1, 1]) { const [x, z] = WUV(uc + du, edgeV(uc + du, sd) + sd * 12); side.push(Terrain.h(x, z)); }
+    side.sort((a, b) => a - b); const groundSide = (side[2] + side[3]) / 2;
+    if (type === 'trench' && groundSide > street) street = groundSide;
 
-    // zones
-    const zP = new Zone('plat', { under, amb: under ? S.amb : [0, 0, 0] });
-    const zones = [zP];
     const M = (spec, extra) => Object.assign({ col: lin(spec[0]), kind: spec[1], prm: spec[2] || 0 }, extra || {});
-    const T = { H, zones, zP, S, plan, st, type, plats, yT, yRail, pu0, pu1, uc, Lp, boxU0, boxU1, edgeV, tracksOut, platOut, frames, frameAt, L2, yawAt, place, placeB, popB, tv, W2, WUV, walk, M, OX, OZ,
-      under, near, root, C, street, groundC, esc: [], cells: [], portals: [], cuts: [], occupied: [], ceilY: yT + (S.ceilH || 4.6) };
+    // each track's own rail height along the station (the level boxes and trackbeds follow the data, never one mean)
+    const trackY = (t, u) => { const Sp = plan.spine; const f = U.clamp((u - Sp[0].u) / DU, 0, Sp.length - 1.0001); const i = Math.floor(f), k = f - i; return t.y[i] + (t.y[i + 1] - t.y[i]) * k; };
+    for (const L of levels) {
+      L.yRail = L.tracks.reduce((a, t) => a + trackY(t, uc), 0) / Math.max(1, L.tracks.length);
+      L.edgeV = (u, sd) => { const tv0 = L.tracks.map(t => tv(t, u)); const pv = sd < 0 ? Math.min(...L.plats.map(p => p.eL(u))) : Math.max(...L.plats.map(p => p.eR(u)));
+        return sd < 0 ? Math.min(Math.min(...tv0) - 2.3, pv) : Math.max(Math.max(...tv0) + 2.3, pv); };
+      L.ceilHoles = []; L.name = L.k === 0 ? 'plat' : 'plat' + (L.k + 1);
+    }
+    for (const L of levels.slice(1)) L.ceilY = levels[L.k - 1].yRail - 0.6 - 0.9;     // under the level above's trackbed slab
+    const T = { H, S, plan, st, type, plats, levels, trackY, yT, yRail, pu0, pu1, uc, Lp, boxU0, boxU1, edgeV, tracksOut, platOut, frames, frameAt, L2, yawAt, place, placeB, popB, tv, W2, WUV, M, OX, OZ,
+      allT, under, C, street, groundC, groundSide, esc: [], cells: [], portals: [], cuts: [], occupied: [], ceilY: yT + (S.ceilH || 4.6) };
+    // streets under the station (the build hands them over from Towns): lobbies and bents keep clear of them
+    T.roads = st.roads ? roadsUV(T, st.roads) : [];
     // ---------------------------------------------------------------- circulation plan (before any slab is built)
     planCirculation(T);
+    groundPlan(T);
+    return T;
+  }
+  // world roads ({ pts: [x, y, z, ...], width, lanes, bridge }) -> segments in station coordinates near the spine,
+  // { u0, v0, u1, v1, hw } (hw: half the carriageway)
+  function roadsUV(T, roads) {
+    const out = [];
+    for (const rd of roads) {
+      if (rd.bridge) continue;
+      const P = rd.pts, n = P.length / 3; const hw = (rd.width || Math.max(1, rd.lanes || 2) * 3.4) / 2;
+      let prev = null;
+      for (let i = 0; i < n; i++) {
+        const uv = toUV(T, P[i * 3] - T.OX, P[i * 3 + 2] - T.OZ);
+        if (prev && uv && (Math.abs(prev[1]) < 80 || Math.abs(uv[1]) < 80) && Math.max(prev[0], uv[0]) > T.boxU0 - 40 && Math.min(prev[0], uv[0]) < T.boxU1 + 40)
+          out.push({ u0: prev[0], v0: prev[1], u1: uv[0], v1: uv[1], hw });
+        prev = uv;
+      }
+    }
+    return out;
+  }
+  // distance from (u, v) to a road segment's centreline
+  function segDist(r, u, v) { const du = r.u1 - r.u0, dv = r.v1 - r.v0; const L2 = du * du + dv * dv || 1; const t = U.clamp(((u - r.u0) * du + (v - r.v0) * dv) / L2, 0, 1); return Math.hypot(r.u0 + du * t - u, r.v0 + dv * t - v); }
+  const roadAt = (T, u, v, clear) => T.roads.some(r => segDist(r, u, v) < r.hw + clear);
+  // does any carriageway (+ clear) reach into the rectangle [u0, u1] x [v0, v1]?
+  function roadInRect(T, u0, u1, v0, v1, clear) {
+    for (const r of T.roads) {
+      const e = r.hw + clear; if (Math.max(r.u0, r.u1) < u0 - e || Math.min(r.u0, r.u1) > u1 + e || Math.max(r.v0, r.v1) < v0 - e || Math.min(r.v0, r.v1) > v1 + e) continue;
+      const L = Math.hypot(r.u1 - r.u0, r.v1 - r.v0), m = Math.max(1, Math.ceil(L));
+      for (let k = 0; k <= m; k++) { const t = k / m, u = r.u0 + (r.u1 - r.u0) * t, v = r.v0 + (r.v1 - r.v0) * t;
+        const du = Math.max(u0 - u, 0, u - u1), dv = Math.max(v0 - v, 0, v - v1); if (du * du + dv * dv < e * e) return true; }
+    }
+    return false;
+  }
+
+  // ------------------------------------------------------------------------------------------------ build
+  function* build(st, C) {
+    const root = new THREE.Group(); root.name = 'metro-' + st.id; root.position.set(st.plan.cx, 0, st.plan.cz);
+    const near = new THREE.Group(); near.name = 'near'; root.add(near);
+    const walk = { floors: [], walls: [] };
+    const T = setup(st, C);
+    if (!T) return { root, near, walk, cells: [], portals: [], cuts: [], boards: [] };
+    // zones
+    const zP = new Zone('plat', { under: T.under, amb: T.under ? T.S.amb : [0, 0, 0] });
+    const zones = [zP];
+    for (const L of T.levels) { L.zone = L.k === 0 ? zP : new Zone(L.name, { under: T.under, amb: T.under ? T.S.amb : [0, 0, 0] }); if (L.k) zones.push(L.zone); for (const p of L.plats) p.zone = L.zone; }
+    const zoneOfTrack = (t) => (T.levels.find(L => L.tracks.includes(t)) || T.levels[0]).zone;
+    Object.assign(T, { root, near, walk, zones, zP });
+    const { H, S, type, under, plats, yT, yRail, pu0, pu1, uc, boxU0, boxU1, frames, frameAt, L2, yawAt, tv, W2, WUV, M, OX, OZ, allT, street } = T;
     yield;
 
     // ---------------------------------------------------------------- platforms (sweeps with per-face materials, openings)
     const covered = (u) => under ? 0 : (u > pu0 + 8 && u < pu1 - 8 ? 0.45 : 1);     // sky under the canopy (aerial/surface)
     for (const p of plats) {
-      const yP = p.y, yLip = yP - LIP, yTB = yP - PH - 0.6;
+      const yP = p.y, yLip = yP - LIP, yTB = yP - p.ph - 0.6;
       const cuts = []; for (const h of p.holes) cuts.push(h.u0, h.u1);
       const fr = frames(p.u0, p.u1, cuts);
       const mEdge = M(S.edgeFace), mCop = M(S.coping), mTac = M(S.tactile), mFloor = M(S.floor), mRec = M(S.trackbed);
       const holeAt = (u) => p.holes.filter(h => u > h.u0 + 1e-3 && u <= h.u1 + 1e-3);
       const hv = p.holes.map(h => h).sort((a, b) => a.v0 - b.v0);
-      zP.m.sk.sweep(fr, (i, f) => {
+      p.zone.m.sk.sweep(fr, (i, f) => {
         const a = p.eL(f.u), b = p.eR(f.u); const sky = covered(f.u); const skyO = under ? 0 : Math.min(1, sky + 0.3);
         const P = [];
         const leftEdge = p.kind === 'island' || p.sideV < 0, rightEdge = p.kind === 'island' || p.sideV > 0;
@@ -196,8 +275,8 @@ const StationTypes = (() => {
       });
       // platform end faces
       for (const [ue, dir] of [[p.u0, -1], [p.u1, 1]]) {
-        const f = frameAt(ue); const a = p.eL(ue), b = p.eR(ue); const g = zP.m.sk; g.mat(S.edgeFace[0], K.CONCRETE, 0);
-        const pa = [f.x - f.tz * a, f.z + f.tx * a], pb = [f.x - f.tz * b, f.z + f.tx * b]; const yb = yP - PH - 0.6;
+        const f = frameAt(ue); const a = p.eL(ue), b = p.eR(ue); const g = p.zone.m.sk; g.mat(S.edgeFace[0], K.CONCRETE, 0);
+        const pa = [f.x - f.tz * a, f.z + f.tx * a], pb = [f.x - f.tz * b, f.z + f.tx * b]; const yb = yP - p.ph - 0.6;
         if (dir > 0) g.quad([pa[0], yb, pa[1]], [pb[0], yb, pb[1]], [pb[0], yP, pb[1]], [pa[0], yP, pa[1]], [a, yb, b, yb, b, yP, a, yP]);
         else g.quad([pb[0], yb, pb[1]], [pa[0], yb, pa[1]], [pa[0], yP, pa[1]], [pb[0], yP, pb[1]], [b, yb, a, yb, a, yP, b, yP]);
       }
@@ -228,8 +307,8 @@ const StationTypes = (() => {
     for (const t of allT) {
       const fr = frames(boxU0, boxU1);
       const mTB = M(S.trackbed), mPl = M([0x8f8b84, K.CONCRETE, 0]), mTr = M([0x4a4845, K.CONCRETE, 0]);
-      zP.m.sk.sweep(fr, (i, f) => {
-        const v = tv(t, f.u), y = yRail; const yTB = y - 0.6, yPl = y - 0.2, yTr = y - 0.95; const sky = under ? 0 : 0.9;
+      zoneOfTrack(t).m.sk.sweep(fr, (i, f) => {
+        const v = tv(t, f.u), y = T.levels.length > 1 ? T.trackY(t, f.u) : yRail; const yTB = y - 0.6, yPl = y - 0.2, yTr = y - 0.95; const sky = under ? 0 : 0.9;
         return [[v - 2.05, yTB, null, Object.assign({}, mTB, { sky })], [v - 1.12, yTB, null, Object.assign({}, mPl, { sky })], [v - 1.12, yPl, null, Object.assign({}, mPl, { sky })], [v - 0.62, yPl, null, Object.assign({}, mPl, { sky: sky * 0.6 })],
           [v - 0.62, yTr, null, Object.assign({}, mTr, { sky: sky * 0.4 })], [v + 0.62, yTr, null, Object.assign({}, mPl, { sky: sky * 0.6 })], [v + 0.62, yPl, null, Object.assign({}, mPl, { sky })], [v + 1.12, yPl, null, Object.assign({}, mPl, { sky })],
           [v + 1.12, yTB, null, Object.assign({}, mTB, { sky })], [v + 2.05, yTB]];
@@ -239,8 +318,8 @@ const StationTypes = (() => {
 
     // ---------------------------------------------------------------- structure by archetype
     if (under) yield* subwayBox(T);
-    else if (type === 'aerial' || (type === 'median' && T.mode === 'below' && yT - T.groundC > 3.5)) yield* aerialDeck(T);
-    else yield* atGrade(T, type);
+    else if (T.elevated) yield* aerialDeck(T);
+    else yield* atGrade(T, T.effType);
     // floor inlays: brick bands across the platform, quarry-tile grids
     yield* floorInlays(T);
     if (under && H.cols) yield* platformColumns(T);
@@ -252,8 +331,9 @@ const StationTypes = (() => {
 
     // ---------------------------------------------------------------- finalise: meshes per zone
     const env = under ? interiorEnv(C.renderer) : null;
-    const res = { root, near, walk, cells: T.cells, portals: T.portals, cuts: T.cuts, boards: [], limits: [boxU0, boxU1], zones: {}, update: null,
-      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, plats: plats.map(p => [p.kind, +p.u0.toFixed(1), +p.u1.toFixed(1), +(p.eR(uc) - p.eL(uc)).toFixed(2), (p.groups || []).map(g => [g.kinds.join('+'), +g.uFoot.toFixed(1), +g.uHead.toFixed(1), +g.vc.toFixed(1)])]),
+    const res = { root, near, walk, cells: T.cells, portals: T.portals, cuts: T.cuts, boards: [], limits: [boxU0, boxU1], zones: {}, update: null, footprint: footprintT(T),
+      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated,
+        landDbg: T.landDbg, landings: (T.landings || []).map(L => ({ foot: T.W2(...L.foot), top: T.W2(...L.top), dir: L.dir, rise: +L.rise.toFixed(2), gy: L.gy, segs: L.segs.length, name: L.name })), plats: plats.map(p => [p.kind, +p.u0.toFixed(1), +p.u1.toFixed(1), +(p.eR(uc) - p.eL(uc)).toFixed(2), (p.groups || []).map(g => [g.kinds.join('+'), +g.uFoot.toFixed(1), +g.uHead.toFixed(1), +g.vc.toFixed(1)])]),
         ceilHoles: (T.ceilHoles || []).map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)]), platHoles: plats.map(p => p.holes.map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)])) } };
     const shared = sharedMats();
     const atlas = MetroSigns.stationAtlas(st);
@@ -274,9 +354,12 @@ const StationTypes = (() => {
       for (const b of z.boards) { const bd = MetroSigns.newBoard(st, b.key); const m = new THREE.Mesh(b.geo, new THREE.MeshBasicMaterial({ map: bd.tex, toneMapped: false })); m.material.color.setScalar(1.6); grpN.add(m); res.boards.push(bd); b.mat = m.material; }
       yield;
     }
-    if (T.esc.length) { const m = SP.escSteps(T.esc); if (m) { res.zones.plat.near.add(m); zP.lights.bind(m, root); } }
+    if (T.esc.length) { const m = SP.escSteps(T.esc); if (m) { (T.levels.length > 1 ? near : res.zones.plat.near).add(m); zP.lights.bind(m, root); } }
     res.nears = Object.values(res.zones).map(z => z.near);
-    for (const c of T.cells) if (res.zones[c.zone]) c.under.group = res.zones[c.zone].group;
+    res.entrances = (T.entrances || []).map(e => ({ wx: e.wx, wz: e.wz, name: e.name }));
+    // (the street entrances share one zone: their cells get no group, or Under would hide every shaft whenever one of
+    // them is out of sight; the shafts are cheap and stay drawn with the station)
+    for (const c of T.cells) if (res.zones[c.zone] && c.zone !== 'ent') c.under.group = res.zones[c.zone].group;
     indexWalk(walk);
     // crowd zones (station-local via toLocal/toWorld): platforms with their faces and circulation, the concourse
     res.toWorld = (u, v) => WUV(u, v); res.toLocal = (u, v) => L2(u, v); res.yawAt = (u) => yawAt(u); res.origin = [OX, OZ];
@@ -314,30 +397,72 @@ const StationTypes = (() => {
     let mode, H, yCF, yCC;
     const D = street - yT;
     const acc = T.H.access;
-    if (acc === 'bridge' && !under) { mode = 'bridge'; yCF = Math.max(yT + 6.2, (T.type === 'trench' ? street + 0.2 : -1e9)); yCC = yCF + 3.2; }
-    else if (acc === 'below' && !under) { mode = 'below'; yCF = Math.min(groundC + 0.15, yT - 4.5); yCC = Math.min(yT - PH - 2.6, yCF + 4.2); }
+    // a lobby at ground level under the station needs the deck (rail - 2.5 m) over a hall: >= 6.2 m from the ground
+    // under it to the platform top; lower (embankments, freeway medians at grade) the station is reached over a
+    // footbridge, which is never below the street (trench stations: at street level)
+    const hAbove = yT - groundC, lobbyFits = hAbove >= 6.2;
+    const bridgeY = Math.max(yT + 6.2, D > 0 ? street + 0.2 : -1e9);
+    T.hAbove = hAbove;
+    if (!under && (acc === 'bridge' || (acc === 'below' && !lobbyFits))) { mode = 'bridge'; yCF = bridgeY; yCC = yCF + 3.2; }
+    else if (acc === 'below' && !under) { mode = 'below'; yCF = Math.min(groundC + 0.15, yT - 4.5); yCC = Math.min(yT - plats[0].ph - 2.6, yCF + 4.2); }
     else if (under) {
-      if (D >= 12) { T.ceilY = yT + (S.ceilH || 4.6); yCF = T.ceilY + 0.9; yCC = Math.min(yCF + 3.8, street - 1.3); mode = 'above'; }
-      else if (D >= 8.2) { T.ceilY = yT + 3.7; yCF = T.ceilY + 0.6; yCC = street - 1.0; mode = 'above'; }
-      else { T.ceilY = Math.min(yT + (S.ceilH || 4.6), street - 0.8); mode = 'ends'; }
-    } else if (type === 'aerial' || (type !== 'median' && yT - groundC > 4.2)) { mode = 'below'; yCF = Math.min(groundC + 0.15, yT - 4.5); yCC = Math.min(yT - PH - 2.6, yCF + 4.2); }
-    else { mode = 'bridge'; yCF = yT + 6.2; yCC = yCF + 3.2; }
+      // the concourse roof stays under the lowest ground over it (streets slope; a roof poking through shows)
+      const gMin = Math.min(street, minGround(T, T.pu0 + 12, T.pu1 - 12, (u) => T.edgeV(u, -1), (u) => T.edgeV(u, 1)) + 0.2);
+      // deep (MetroNet M2 depths: Market St ~18-20 m, Mission/Lake Merritt ~13 m): the mezzanine sits just under the
+      // street (a 1.3 m roof) and the long escalators climb to it from the platforms; the band between the platform
+      // ceiling and the mezzanine floor is solid (Market Street's Muni level runs there), crossed by the escalator wells
+      // (the depth that counts is under the lowest ground over the concourse: a street falling toward a portal)
+      const Dg = gMin - yT;
+      // the mezzanine (4 m) sits just under that ground, and never lower than 0.6 m over the platform ceiling
+      if (Dg >= 8.2) { T.ceilY = yT + (Dg >= 12 ? (S.ceilH || 4.6) : 3.7); yCC = gMin - (Dg >= 12 ? 1.3 : 1.0); yCF = Math.max(T.ceilY + (Dg >= 12 ? 0.9 : 0.6), yCC - 4.0);
+        yCC = Math.min(yCC, yCF + 4.5); mode = 'above'; }
+      else { T.ceilY = Math.min(yT + (S.ceilH || 4.6), gMin - 0.8); mode = 'ends'; }
+    } else if ((type === 'aerial' || (type !== 'median' && hAbove > 4.2)) && lobbyFits) { mode = 'below'; yCF = Math.min(groundC + 0.15, yT - 4.5); yCC = Math.min(yT - plats[0].ph - 2.6, yCF + 4.2); }
+    else { mode = 'bridge'; yCF = bridgeY; yCC = yCF + 3.2; }
     T.mode = mode; T.yCF = yCF; T.yCC = yCC; H = mode === 'above' || mode === 'bridge' ? yCF - yT : mode === 'below' ? yT - yCF : 0; T.rise = H;
     T.ceilHoles = [];
+    // one bank of escalators and stairs at uc + gOff (the station's config); a lobby under an aerial deck moves along
+    // the station until neither it nor its entrance apron stands on a street that runs under the deck
+    T.gOff = T.H.groupOff || 0;
+    if (mode === 'below' && T.roads && T.roads.length && H >= 1.5) {
+      const run = Math.max(SP.escRun(H), stairRun(H)) + 0.6;
+      const vl = Math.min(T.edgeV(uc, -1), T.edgeV(T.pu0, -1), T.edgeV(T.pu1, -1)) - 1.6, vr = Math.max(T.edgeV(uc, 1), T.edgeV(T.pu0, 1), T.edgeV(T.pu1, 1)) + 1.6;
+      const clearOf = (off) => { const ug = uc + off; const a = ug - 18, b = Math.max(ug + 18, ug + run / 2 + 10);
+        if (ug - run / 2 < T.pu0 + 6 || ug + run / 2 > T.pu1 - 6) return false;
+        return !roadInRect(T, a - 8, b, vl, vr, 1.0); };
+      const best = [0, 8, -8, 16, -16, 24, -24, 32, -32, 40, -40, 50, -50, 60, -60].map(d => T.gOff + d).find(clearOf);
+      if (best !== undefined) T.gOff = best;
+    }
+    // a footbridge mezzanine sits where its main walkway leaves square to the line: over the station's main entrance
+    // (GTFS first, else the nearest usable one)
+    if (mode === 'bridge' && T.H.groupOff === undefined && H >= 1.5) {
+      const run = Math.max(SP.escRun(H), stairRun(H)) + 0.6; let best = null;
+      for (const e of dedupeEntrances(T.st.data.entrances || [])) {
+        const uv = toUV(T, e.x - T.OX, e.z - T.OZ); if (!uv) continue; const [ue, ve] = uv; const side = ve < 0 ? -1 : 1;
+        const out = side * (ve - T.edgeV(ue, side)); if (out < 6 || out > 140 || Math.abs(ue - uc) > 150) continue;
+        const score = (e.src === 'gtfs' ? 0 : 1000) + Math.abs(ue - uc); if (!best || score < best.score) best = { ue, score };
+      }
+      if (best) T.gOff = U.clamp(best.ue - run / 2 - uc, T.pu0 + 6 + run / 2 - uc, T.pu1 - 6 - run * 1.5 - uc);
+    }
     if (mode === 'ends' || H < 1.5) return;
-    // groups: at +-28 % of the platform length from the middle (big stations), or one at the middle
-    for (const p of plats) {
+    // groups: at +-28 % of the platform length from the middle (big stations), or one at the middle (top level only; a
+    // stacked station's lower levels climb to the level above, below)
+    for (const p of T.levels[0].plats) {
       p.groups = [];
       const w = (u) => p.eR(u) - p.eL(u);
       // subway concourses: two banks (big stations); lobbies below and footbridges: one bank at the middle (or where
       // the station's config puts it)
-      const gOff = T.H.groupOff || 0;
+      const gOff = T.gOff;
       const at = mode === 'above' && Lp > 150 ? [uc - Lp * 0.27, uc + Lp * 0.27] : [uc + gOff];
       for (const [k, ug] of at.entries()) {
-        const width = w(ug); const avail = p.kind === 'island' ? width - 2 * (TAC + 1.3) : width - (TAC + 1.6);
-        const kinds = avail >= 5.9 ? ['esc', 'stair', 'esc'] : avail >= 3.8 ? ['esc', 'stair'] : avail >= 2.0 ? ['stair'] : [];
+        const width = w(ug); const avail = p.kind === 'island' ? width - 2 * (TAC + 1.0) : width - (TAC + 1.6);
+        let kinds = avail >= 5.9 ? ['esc', 'stair', 'esc'] : avail >= 3.8 ? ['esc', 'stair'] : avail >= 2.0 ? ['stair'] : [];
+        let widths = kinds.map(q => q === 'esc' ? SP.ESC.OW : 2.0);
+        // a narrow island (M2 track spacing at some subway stations): one stair of what fits, >= 1.2 m, with tighter
+        // clearance to the edges
+        if (!kinds.length) { const tight = (p.kind === "island" ? width - 2 * 1.25 : width - 1.6); if (tight >= 0.6) { kinds = ["stair"]; widths = [U.clamp(tight, 1.2, 2.0)]; } }
         if (!kinds.length) continue;
-        const widths = kinds.map(q => q === 'esc' ? SP.ESC.OW : 2.0); const gw = widths.reduce((a, b) => a + b, 0) + 0.25 * (kinds.length - 1);
+        const gw = widths.reduce((a, b) => a + b, 0) + 0.25 * (kinds.length - 1);
         const vc = p.kind === 'island' ? (p.eL(ug) + p.eR(ug)) / 2 : (p.sideV > 0 ? p.eR(ug) - 0.4 - gw / 2 : p.eL(ug) + 0.4 + gw / 2);
         // runs rise (or fall) toward the middle of the station: the foot at ug, the head toward uc
         const dir = at.length > 1 ? (k === 0 ? 1 : -1) : 1;
@@ -352,7 +477,14 @@ const StationTypes = (() => {
           const need = Math.max(0, (T.ceilY - yT) - 2.4);           // height at which the escalator reaches the ceiling
           const xs = SP.escRun(H) * U.clamp(need / H, 0, 1) * 0.85;
           const a = dir > 0 ? uFoot + xs : uHead, b = dir > 0 ? uHead : uFoot - xs;
-          T.ceilHoles.push({ u0: Math.min(a, b) - 0.3, u1: Math.max(a, b) + 0.3, v0: vc - gw / 2 - 0.35, v1: vc + gw / 2 + 0.35, g });
+          const hole = { u0: Math.min(a, b) - 0.3, u1: Math.max(a, b) + 0.3, v0: vc - gw / 2 - 0.35, v1: vc + gw / 2 + 0.35, g };
+          // above the platform ceiling the run climbs in an inclined well; the mezzanine floor opens only where the well's
+          // soffit (2.9 m over the nosing line) has reached it
+          if (mode === 'above' && T.yCF - T.ceilY > 0.3) {
+            const t = U.clamp((T.yCF - WELL_SOFFIT - yT) / H, 0, 1); const uOpen = uFoot + dir * SP.escRun(H) * t;
+            hole.cu0 = dir > 0 ? Math.max(hole.u0, uOpen - 0.5) : hole.u0; hole.cu1 = dir > 0 ? hole.u1 : Math.min(hole.u1, uOpen + 0.5);
+          } else { hole.cu0 = hole.u0; hole.cu1 = hole.u1; }
+          T.ceilHoles.push(hole);
         } else {
           // going down from the platform: the head is at the platform (the foot at the concourse below)
           g.down = true; g.uFoot = ug + dir * run / 2; g.uHead = ug - dir * run / 2;   // head (platform level) at the outer end
@@ -362,6 +494,144 @@ const StationTypes = (() => {
         }
       }
     }
+    // stacked: banks from each lower platform up to the platform over it, two per platform rising toward the middle;
+    // the lower box's ceiling opens over the climb, the upper platform where the run's soffit reaches its floor
+    for (const L of T.levels.slice(1)) {
+      const up = T.levels[L.k - 1]; const Hl = up.yT - L.yT; if (Hl < 1.5 || mode === 'ends') continue;
+      for (const p of L.plats) {
+        p.groups = [];
+        const o = up.plats.map(q => ({ q, a: Math.max(p.eL(uc), q.eL(uc)), b: Math.min(p.eR(uc), q.eR(uc)) })).filter(x => x.b - x.a > 2.4).sort((x, y) => (y.b - y.a) - (x.b - x.a))[0];
+        if (!o) continue;
+        const avail = (o.b - o.a) - 2 * (TAC + 0.8);
+        const kinds = avail >= 5.9 ? ['esc', 'stair', 'esc'] : avail >= 3.8 ? ['esc', 'stair'] : avail >= 1.6 ? ['stair'] : []; if (!kinds.length) continue;
+        const widths = kinds.map(q => q === 'esc' ? SP.ESC.OW : Math.min(2.0, avail)); const gw = widths.reduce((x, y) => x + y, 0) + 0.25 * (kinds.length - 1);
+        const vc = (o.a + o.b) / 2, run = Math.max(SP.escRun(Hl), stairRun(Hl)) + 0.6;
+        for (const [k, ug] of [uc - 22, uc + 22].entries()) {
+          const dir = k === 0 ? 1 : -1, uFoot = ug - dir * run / 2, uHead = ug + dir * run / 2;
+          const g = { p, kinds, widths, gw, vc, dir, run, uFoot, uHead, H: Hl, ug, yFoot: L.yT, yUp: up.yT, upPlat: o.q };
+          p.groups.push(g);
+          const need = Math.max(0, (L.ceilY - L.yT) - 2.4), xs = SP.escRun(Hl) * U.clamp(need / Hl, 0, 1) * 0.85;
+          const a0 = dir > 0 ? uFoot + xs : uHead, b0 = dir > 0 ? uHead : uFoot - xs;
+          const hole = { u0: Math.min(a0, b0) - 0.3, u1: Math.max(a0, b0) + 0.3, v0: vc - gw / 2 - 0.35, v1: vc + gw / 2 + 0.35, g };
+          const t = U.clamp((up.yT - 0.3 - WELL_SOFFIT - L.yT) / Hl, 0, 1), uOpen = uFoot + dir * SP.escRun(Hl) * t;
+          hole.cu0 = dir > 0 ? Math.max(hole.u0, uOpen - 0.5) : hole.u0; hole.cu1 = dir > 0 ? hole.u1 : Math.min(hole.u1, uOpen + 0.5);
+          L.ceilHoles.push(hole);
+          o.q.holes.push({ u0: hole.cu0, u1: hole.cu1, v0: hole.v0 + 0.1, v1: hole.v1 - 0.1, g });
+          T.occupied.push({ p: o.q, u0: hole.cu0 - 1.5, u1: hole.cu1 + 1.5, v0: hole.v0 - 0.4, v1: hole.v1 + 0.4 });
+        }
+      }
+    }
+  }
+  // ------------------------------------------------------------------------------------------------ ground plan
+  // What stands on the ground, decided once for build() and footprint(): the structure archetype (T.elevated: a deck
+  // on bents), the concourse extents T.cu0..cu1 (the lobby under an aerial deck, the subway mezzanine), the footbridge
+  // bank T.ub0..ub1, the bents with their columns (T.bents) and the street entrances (T.entPlan, subway).
+  function groundPlan(T) {
+    const { plats, mode, uc, pu0, pu1, type, under, yT, groundC } = T;
+    T.elevated = !under && (type === 'aerial' || type === 'median' || mode === 'below') && yT - groundC > 4.2;
+    T.effType = type === 'trench' && T.street - yT < 2.5 ? 'surface' : type;      // (M2: some "trench" platforms sit at street level)
+    T.hasConc = mode !== 'ends' && T.rise >= 1.5;
+    if (T.hasConc && mode === 'below') {
+      const feet = []; for (const p of plats) for (const q of p.groups || []) feet.push(q.uFoot); const ug = uc + (T.gOff || 0);
+      T.cu0 = Math.min(ug - 18, ...feet.map(u => u - 10)); T.cu1 = Math.max(ug + 18, ...feet.map(u => u + 10));
+    } else if (T.hasConc && mode === 'above') { T.cu0 = pu0 + 12; T.cu1 = pu1 - 12; }
+    else if (T.hasConc && mode === 'bridge') {
+      const heads = []; for (const p of plats) for (const q of p.groups || []) heads.push(q.uHead);
+      const hc = heads.length ? heads.reduce((a, b) => a + b, 0) / heads.length : uc; T.ub0 = hc - 7; T.ub1 = hc + 7;
+      planBridge(T);
+    }
+    T.concHalf = T.cu1 !== undefined ? (T.cu1 - T.cu0) / 2 : 0;
+    T.bents = T.elevated ? bentPlan(T) : [];
+    T.entPlan = under && T.hasConc && mode === 'above' ? planEntrances(T, T.cu0, T.cu1) : [];
+    if (under && mode === 'ends') {
+      T.entPlan = planEndShafts(T);
+      for (const P of T.entPlan) { const ua = Math.min(P.uTop, P.uBot), ub = Math.max(P.uTop, P.uBot);
+        T.ceilHoles.push({ u0: ua - 0.25, u1: ub + 0.25, v0: P.ve - P.W / 2 - 0.3, v1: P.ve + P.W / 2 + 0.3, cu0: ua, cu1: ub });
+        T.occupied.push({ p: P.p, u0: ua - 1.5, u1: ub + 1.5, v0: P.ve - P.W / 2 - 0.8, v1: P.ve + P.W / 2 + 0.8 }); }
+    }
+  }
+  // bents every 24 m under an aerial deck: a cap beam and two columns; inside a ground-level lobby the columns stand
+  // clear of the escalator wells and of the fare line, booth and ticket machines at its entrance end
+  function bentPlan(T) {
+    const { boxU0, boxU1, edgeV } = T; const out = [];
+    const deckBot = T.yRail - 0.6 - 1.9;
+    const inLobby = (u) => T.mode === 'below' && T.hasConc && u > T.cu0 - 1 && u < T.cu1 + 1;
+    const colVs = (u) => { const vl = edgeV(u, -1), vr = edgeV(u, 1); const vc = (vl + vr) / 2, half = (vr - vl) / 2; return [vc - half * 0.55, vc + half * 0.55]; };
+    // (a bent's cap beam would cross the escalators passing down through an opening in the platform)
+    const underHole = (u) => T.plats.some(p => p.holes.some(h => u > h.u0 - 1.6 && u < h.u1 + 1.6));
+    let last = -1e9;
+    for (let u0 = boxU0 + 6; u0 <= boxU1 - 6; u0 += 24) {
+      // a street under the deck: the bent moves (spans over it) up to 10 m, keeping 12 m from the one before
+      let u = u0;
+      if (T.roads && T.roads.length) {
+        const clear = (uu) => uu - last >= 12 && uu >= boxU0 + 2 && uu <= boxU1 - 2 && !colVs(uu).some(v => roadAt(T, uu, v, 1.4)) && !underHole(uu);
+        const d = [0, 2, -2, 4, -4, 6, -6, 8, -8, 10, -10].find(dd => clear(u0 + dd)); if (d !== undefined) u = u0 + d;
+      } else if (underHole(u0)) {
+        const d = [2, -2, 4, -4, 6, -6, 8, -8, 10, -10, 12, -12].find(dd => u0 + dd - last >= 12 && !underHole(u0 + dd)); if (d !== undefined) u = u0 + d;
+      }
+      if (underHole(u)) continue;
+      const vl = edgeV(u, -1), vr = edgeV(u, 1); const vc = (vl + vr) / 2, half = (vr - vl) / 2;
+      const cols = [];
+      for (const v of [vc - half * 0.55, vc + half * 0.55]) {
+        if (T.roads && T.roads.length && roadAt(T, u, v, 1.4)) continue;
+        if (inLobby(u) && (u < T.cu0 + 10 || T.plats.some(p => p.holes.some(h => u > h.u0 - 2.5 && u < h.u1 + 2.5 && v > h.v0 - 1.3 && v < h.v1 + 1.3)))) continue;
+        const [x, z] = T.WUV(u, v); const gy = Terrain.h(x, z) - 0.5; const h = deckBot - 1.2 - gy; if (h < 0.5 || h > 40) continue;
+        cols.push({ v, gy, h });
+      }
+      out.push({ u, vc, half, cols }); last = u;
+    }
+    return out;
+  }
+  // ------------------------------------------------------------------------------------------------ footprint
+  // The station's ground-level keep-out zones (world xz), from the same setup the builders use:
+  //   [{ kind, pts: [[x, z] x 4], under? }] convex quads (under: a road or car below this height passes beneath); kinds:
+  //   deck      under an aerial deck (no buildings, trees or lamps; cars may park and drive under it)
+  //   track     an at-grade / trench / median trackway with its platforms and shoulders (nothing at all)
+  //   lobby     a ground-level lobby and fare area; plaza: the apron at its entrance end
+  //   column    a bent column or a footbridge support
+  //   bridge    under a footbridge (like deck)
+  //   entrance  a subway street entrance: the stair shaft, its railings and totem
+  //   landing   a footbridge's landing tower (stairs and elevator down to an entrance)
+  function footprint(st, C) { const T = setup(st, C); return T ? footprintT(T) : []; }
+  function footprintT(T) {
+    const out = [];
+    const quad = (kind, u0, u1, v0, v1) => out.push({ kind, pts: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => T.WUV(u, v)) });
+    const strip = (kind, u0, u1, vl, vr, step = 8) => { for (let u = u0; u < u1 - 1e-3; u += step) { const ub = Math.min(u1, u + step);
+      out.push({ kind, pts: [[u, vl(u)], [ub, vl(ub)], [ub, vr(ub)], [u, vr(u)]].map(([a, b]) => T.WUV(a, b)) }); } };
+    const { edgeV, boxU0, boxU1 } = T;
+    if (T.under) {
+      for (const P of T.entPlan) { const ua = Math.min(P.uTop, P.uBot), ub = Math.max(P.uTop, P.uBot); quad('entrance', ua - 0.4, ub + 0.4, P.ve - P.W / 2 - 0.5, P.ve + P.W / 2 + 1.2); }
+    } else if (T.elevated) {
+      strip('deck', boxU0, boxU1, (u) => edgeV(u, -1) - 0.4, (u) => edgeV(u, 1) + 0.4);
+      for (const b of T.bents) for (const c of b.cols) quad('column', b.u - 0.8, b.u + 0.8, c.v - 0.8, c.v + 0.8);
+      if (T.hasConc && T.mode === 'below' && Math.abs(T.yCF - T.groundC) < 2.5) {
+        strip('lobby', T.cu0, T.cu1, (u) => edgeV(u, -1) - 1.6, (u) => edgeV(u, 1) + 1.6, 6);
+        quad('plaza', T.cu0 - 8, T.cu0, edgeV(T.cu0, -1) - 1.6, edgeV(T.cu0, 1) + 1.6);
+        // the ground is graded to the lobby floor under the lobby and its apron (MetroStations' height filter)
+        const vl = Math.min(edgeV(T.cu0, -1), edgeV(T.cu1, -1), edgeV(T.uc, -1)) - 2.6, vr = Math.max(edgeV(T.cu0, 1), edgeV(T.cu1, 1), edgeV(T.uc, 1)) + 2.6;
+        out.pads = [{ pts: [[T.cu0 - 9, vl], [T.cu1 + 1, vl], [T.cu1 + 1, vr], [T.cu0 - 9, vr]].map(([u, v]) => T.WUV(u, v)), y: T.yCF - 0.03, blend: 12 }];
+      }
+    } else {
+      const m = T.type === 'median' ? 1.8 : 1.5; const n0 = out.length;
+      strip('track', boxU0, boxU1, (u) => edgeV(u, -1) - m, (u) => edgeV(u, 1) + m);
+      // a street well below the track bed passes under it (a station on an embankment or a freeway bridge)
+      for (let i = n0; i < out.length; i++) out[i].under = T.yRail - 0.6 - 4.5;
+      if (T.hasConc && T.mode === 'bridge') {
+        strip('bridge', T.ub0 - 0.5, T.ub1 + 0.5, (u) => edgeV(u, -1) - 2.5, (u) => edgeV(u, 1) + 2.5, 15);
+        for (const [u, v] of bridgeSupports(T)) quad('column', u - 0.4, u + 0.4, v - 0.4, v + 0.4);
+        const W2 = T.W2, hw = WALK_W / 2 + 0.6;
+        const box = (kind, a, b, h0, h1) => { const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; const ux = (b[0] - a[0]) / len, uz = (b[1] - a[1]) / len;
+          out.push({ kind, pts: [[-h0, -h1], [len + h0, -h1], [len + h0, h1], [-h0, h1]].map(([x, z]) => W2(a[0] + ux * x - uz * z, a[1] + uz * x + ux * z)) }); };
+        for (const L of T.landings || []) {
+          for (const [a, b] of L.segs) box('bridge', a, b, 0.5, hw);
+          for (const q of L.supports) box('column', [q[0] - Math.cos(q[2]) * 0.4, q[1] + Math.sin(q[2]) * 0.4], [q[0] + Math.cos(q[2]) * 0.4, q[1] - Math.sin(q[2]) * 0.4], 0, 0.4);
+          box('landing', L.foot, L.top, 0.8, 1.9);                                 // the stair tower
+          const ex = L.top[0] + L.dir[0] * 1.4 + L.dir[1] * 2.8, ez = L.top[1] + L.dir[1] * 1.4 - L.dir[0] * 2.8;   // the elevator beside its top
+          box('landing', [ex - L.dir[0] * 1.5, ez - L.dir[1] * 1.5], [ex + L.dir[0] * 1.5, ez + L.dir[1] * 1.5], 0, 1.6);
+        }
+      }
+    }
+    return out;
   }
   // the cell ambient handed to Under: the fixtures' bounce light, a little generous so people and trains (which get no
   // direct light from the station's line lights until Under.addLights) read under the lights
@@ -381,6 +651,39 @@ const StationTypes = (() => {
       return vs.map((v, k) => { if (k === vs.length - 1) return [v, y]; const m = (v + vs[k + 1]) / 2; return [v, y, null, inside.some(h => m > h.v0 && m < h.v1) ? 'skip' : mat]; });
     }, !up);
   }
+  // the lowest ground over a station-local area (samples every ~8 m along u, three across)
+  function minGround(T, u0, u1, vl, vr) {
+    let m = 1e9; const n = Math.max(2, Math.ceil((u1 - u0) / 8));
+    for (let i = 0; i <= n; i++) { const u = u0 + (u1 - u0) * i / n; for (const t of [0, 0.5, 1]) { const [x, z] = T.WUV(u, vl(u) + (vr(u) - vl(u)) * t); m = Math.min(m, Terrain.h(x, z)); } }
+    return m;
+  }
+  // the inclined well of a run climbing from the platform ceiling to the mezzanine: side walls from the ceiling up to a
+  // sloped soffit WELL_SOFFIT over the nosing line (capped at the mezzanine floor), the soffit, and the end walls
+  const WELL_SOFFIT = 2.9;
+  const soffitAt = (T, G, u) => (G.yFoot ?? T.yT) + G.H * U.clamp(((u - G.uFoot) * G.dir) / SP.escRun(G.H), 0, 1) + WELL_SOFFIT;
+  function inclinedWell(T, g, h, mWall, mSoff, lv) {
+    const ceilY = lv ? lv.ceilY : T.ceilY, yCF = lv ? lv.yTop : T.yCF; const G = h.g;
+    if (!G || yCF - ceilY < 0.3) { holeRim(T, g, h, ceilY, yCF || ceilY + 0.8, mWall); return; }
+    const top = (u) => Math.max(ceilY + 0.05, Math.min(yCF, soffitAt(T, G, u)));
+    const fr = T.frames(h.u0, h.u1);
+    g.sweep(fr, (i, f) => [[h.v0, top(f.u), top(f.u), mWall], [h.v0, ceilY, ceilY]]);
+    g.sweep(fr, (i, f) => [[h.v1, ceilY, ceilY, mWall], [h.v1, top(f.u), top(f.u)]]);
+    // the soffit over the part of the run below the mezzanine floor (facing down)
+    const lo = G.dir > 0 ? h.u0 : h.cu1, hi = G.dir > 0 ? h.cu0 : h.u1;
+    if (hi - lo > 0.2) {
+      g.sweep(T.frames(lo, hi), (i, f) => [[h.v0, top(f.u), null, mSoff], [h.v1, top(f.u)]], true);
+      // a light line along the soffit over the middle of the run
+      const vc = (h.v0 + h.v1) / 2, LC = T.S.light, z = lv ? lv.zone : T.zones[0];
+      z.m.glow.mat(LC); z.m.glow.sweep(T.frames(lo, hi), (i, f) => [[vc - 0.12, top(f.u) - 0.03], [vc + 0.12, top(f.u) - 0.03]], true);
+      if (z.lights.lights.length < StationKit.MAXL) { const fa = T.frameAt(lo), fb = T.frameAt(hi);
+        z.lights.add({ a: [fa.x - fa.tz * vc, top(lo) - 0.12, fa.z + fa.tx * vc], b: [fb.x - fb.tz * vc, top(hi) - 0.12, fb.z + fb.tx * vc], color: LC.map(c => c * T.S.lightI * 0.8), range: 14, radius: 0.1, dir: [0, -1, 0], focus: 1 }); }
+    }
+    // end walls: at the foot end from the ceiling to the soffit, at the head end up to the mezzanine floor
+    const P = (u, v, y) => { const f = T.frameAt(u); return [f.x - f.tz * v, y, f.z + f.tx * v]; }; g.set(mWall);
+    const endW = (u, y1, facePlus) => { const q = [P(u, h.v0, ceilY), P(u, h.v1, ceilY), P(u, h.v1, y1), P(u, h.v0, y1)];
+      if (facePlus) g.quad(q[0], q[1], q[2], q[3], [h.v0, ceilY, h.v1, ceilY, h.v1, y1, h.v0, y1]); else g.quad(q[1], q[0], q[3], q[2], [h.v1, ceilY, h.v0, ceilY, h.v0, y1, h.v1, y1]); };
+    if (G.dir > 0) { endW(h.u0, top(h.u0), true); endW(h.u1, yCF, false); } else { endW(h.u1, top(h.u1), false); endW(h.u0, yCF, true); }
+  }
   // vertical faces around an opening (slab edges) from y0 to y1, inward facing
   function holeRim(T, g, h, y0, y1, mat) {
     const { frameAt } = T; g.set(mat);
@@ -392,10 +695,14 @@ const StationTypes = (() => {
   }
 
   // ------------------------------------------------------------------------------------------------ subway box
-  function* subwayBox(T) {
-    const { zones, S, yT, yRail, boxU0, boxU1, frames, frameAt, edgeV, M, plats, pu0, pu1, walk, W2, tv, plan } = T;
-    const z = zones[0], g = z.m.sk;
-    const yTB = yRail - 0.6, ceilY = T.ceilY, wallT = 0.5;
+  // one box per level (stacked stations: the lower level's ceiling is the slab under the upper level's trackbed)
+  function* subwayBox(T) { for (const L of T.levels) yield* subwayLevel(T, L); }
+  function* subwayLevel(T, L) {
+    const { S, boxU0, boxU1, frames, frameAt, M, pu0, pu1, walk, W2, tv } = T;
+    const top = L.k === 0, z = L.zone, g = z.m.sk, plats = L.plats, edgeV = T.levels.length > 1 ? L.edgeV : T.edgeV;
+    const yT = L.yT, yRail = T.levels.length > 1 ? L.yRail : T.yRail;
+    const yTB = yRail - 0.6, ceilY = top ? T.ceilY : L.ceilY, wallT = 0.5;
+    const ceilHoles = top ? T.ceilHoles : L.ceilHoles;
     const fr = frames(boxU0, boxU1);
     const mLow = M(S.wallLow), mWall = M(S.wall), mUp = M(S.wallUp), mCeil = M(S.ceil);
     // side walls (left wall faces +v: traverse top -> bottom; right wall faces -v: bottom -> top)
@@ -409,13 +716,13 @@ const StationTypes = (() => {
     g.sweep(fr, (i, f) => wallProf(edgeV(f.u, -1), -1));
     g.sweep(fr, (i, f) => wallProf(edgeV(f.u, 1), 1));
     // ceiling (with the escalator wells), its slab edge faces, and (without a concourse above) the roof slab
-    slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1), (u) => edgeV(u, 1), ceilY, T.ceilHoles, mCeil, false);
-    for (const h of T.ceilHoles) holeRim(T, g, h, ceilY, T.yCF || ceilY + 0.8, M(S.wallUp));
-    if (T.mode === 'ends') slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1) - wallT, (u) => edgeV(u, 1) + wallT, ceilY + 0.8, [], M([0x77746e, K.CONCRETE]), true);
+    slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1), (u) => edgeV(u, 1), ceilY, ceilHoles, mCeil, false);
+    for (const h of ceilHoles) inclinedWell(T, g, h, M(S.wall), M(S.ceil), top ? undefined : { ceilY, yTop: T.levels[L.k - 1].yT - 0.3, zone: z });
+    if (top && T.mode === 'ends') slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1) - wallT, (u) => edgeV(u, 1) + wallT, ceilY + 0.8, T.ceilHoles, M([0x77746e, K.CONCRETE]), true);
     // end walls with tunnel openings around each track (the tunnels themselves are INFRA's)
     for (const [ue, dir] of [[boxU0, -1], [boxU1, 1]]) {
       const f = frameAt(ue); const vl = edgeV(ue, -1), vr = edgeV(ue, 1);
-      const holes = plan.tracks.map(t => { const v = tv(t, ue); return [v - 2.2, v + 2.2]; }).sort((a, b) => a[0] - b[0]);
+      const holes = L.tracks.map(t => { const v = tv(t, ue); return [v - 2.2, v + 2.2]; }).sort((a, b) => a[0] - b[0]);
       const P = (v, y) => [f.x - f.tz * v, y, f.z + f.tx * v];
       g.mat(S.wallUp[0], K.CONCRETE, 0);
       const band = (va, vb, ya, yb) => { if (vb - va < 0.01 || yb - ya < 0.01) return; const q = [P(va, ya), P(vb, ya), P(vb, yb), P(va, yb)];
@@ -429,12 +736,29 @@ const StationTypes = (() => {
     }
     const poly = []; for (const f of fr) { const v = edgeV(f.u, -1) - wallT; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
     for (let i = fr.length - 1; i >= 0; i--) { const f = fr[i]; const v = edgeV(f.u, 1) + wallT; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
-    T.cells.push({ zone: 'plat', under: { id: `st:${T.st.id}:plat`, kind: 'station', poly: poly.map(([x, zz]) => W2(x, zz)), floor: yRail - 1.2, ceil: ceilY + 0.9, ambient: ambOf(S) } });
+    // (up to the mezzanine floor: the escalator wells above the platform ceiling belong to this level)
+    const cellTop = !top ? ceilY + 0.3 : T.mode === 'above' ? Math.max(ceilY + 0.9, T.yCF) : Math.min(ceilY + 0.9, minGround(T, boxU0, boxU1, (u) => edgeV(u, -1), (u) => edgeV(u, 1)) - 0.5);
+    T.cells.push({ zone: L.name, under: { id: `st:${T.st.id}:${L.name}`, kind: 'station', poly: poly.map(([x, zz]) => W2(x, zz)), floor: yRail - 1.2, ceil: cellTop, ambient: ambOf(S) } });
     // lights: continuous troughs over each platform (both edges of an island) + wall-wash coves along both track walls
     const LC = S.light, I = S.lightI; const trough = M([0x34332f, K.PAINT]);
+    const pend = T.H.pendants === 'dome';
     for (const p of plats) {
       const um0 = p.u0 + 3, um1 = p.u1 - 3; const f0 = frameAt(um0), f1 = frameAt(um1); const umid = (um0 + um1) / 2;
       const vs = p.kind === 'island' ? [p.eL(umid) + 1.4, p.eR(umid) - 1.4] : [(p.eL(umid) + p.eR(umid)) / 2];
+      if (pend && p.kind === 'island') {
+        // rows of white dome pendants on stems (Montgomery, Powell): the fixtures; two long line lights stand in for them
+        const cv0 = (p.eL(umid) + p.eR(umid)) / 2, off = Math.min(4.0, (p.eR(umid) - p.eL(umid)) / 2 - 1.3); const yL = ceilY - 1.15;
+        for (const s of [-1, 1]) {
+          z.lights.add({ a: [f0.x - f0.tz * (cv0 + s * off), yL, f0.z + f0.tx * (cv0 + s * off)], b: [f1.x - f1.tz * (cv0 + s * off), yL, f1.z + f1.tx * (cv0 + s * off)], color: [LC[0] * I * 0.9, LC[1] * I * 0.9, LC[2] * I * 0.9], range: 24, radius: 0.3, dir: [0, -1, 0], focus: 1 });
+          for (let u = um0 + 2.6; u < um1; u += 5.2) {
+            const vv = (p.eL(u) + p.eR(u)) / 2 + s * off;
+            T.place(z.d.sk, u, vv, ceilY, 0); z.d.sk.mat(0x2a2a2c, K.PAINT); z.d.sk.cyl(0, -1.0, 0, 0.012, 0.012, 1.0, 6, false);
+            z.d.sk.mat(0xf2f1ec, K.PLAIN, 0.35); z.d.sk.cyl(0, -1.28, 0, 0.36, 0.08, 0.28, 18, true); z.d.sk.pop();
+            T.place(z.d.glow, u, vv, ceilY - 1.285, 0); z.d.glow.mat(LC); z.d.glow.cyl(0, -0.01, 0, 0.3, 0.3, 0.01, 18, true); z.d.glow.pop();
+          }
+        }
+        continue;
+      }
       for (const v of vs) {
         z.lights.add({ a: [f0.x - f0.tz * v, ceilY - 0.2, f0.z + f0.tx * v], b: [f1.x - f1.tz * v, ceilY - 0.2, f1.z + f1.tx * v], color: [LC[0] * I, LC[1] * I, LC[2] * I], range: 26, radius: 0.12, dir: [0, -1, 0], focus: 1 });
         const fr2 = frames(um0, um1);
@@ -446,6 +770,9 @@ const StationTypes = (() => {
       const f0 = frameAt(pu0), f1 = frameAt(pu1); const v = edgeV(T.uc, side) - side * 0.35;
       z.lights.add({ a: [f0.x - f0.tz * v, ceilY - 1.1, f0.z + f0.tx * v], b: [f1.x - f1.tz * v, ceilY - 1.1, f1.z + f1.tx * v], color: LC.map(c => c * I * 0.55), range: 18, radius: 0.1, dir: [-side * 0.3, 0.2, 0], focus: 0 });
     }
+    // portals from this level up to the one above, at the openings of the runs climbing between them
+    if (!top) for (const h of ceilHoles) { const q = [[h.cu0 ?? h.u0, h.v0], [h.cu1 ?? h.u1, h.v0], [h.cu1 ?? h.u1, h.v1], [h.cu0 ?? h.u0, h.v1]].map(([u, v]) => { const [x, zz] = T.WUV(u, v); return [x, ceilY + 0.15, zz]; });
+      T.portals.push({ id: `st:${T.st.id}:lv${L.k}:${T.portals.length}`, a: `st:${T.st.id}:${L.name}`, b: `st:${T.st.id}:${T.levels[L.k - 1].name}`, quad: q, day: 0 }); }
     yield;
   }
 
@@ -462,15 +789,9 @@ const StationTypes = (() => {
         [vl + 1.2, deckBot, null, Object.assign({}, mDeck, { sky: 0.45 })], [vr - 1.2, deckBot, null, Object.assign({}, mFascia, { sky: 0.8 })], [vr + 0.25, deckBot + 0.3, null, Object.assign({}, mFascia, { sky: 1 })], [vr + 0.25, deckTop + 1.05, null, Object.assign({}, mFascia, { sky: 1 })], [vr - 0.1, deckTop + 1.05]];
     }, true);
     for (const side of [-1, 1]) g.sweep(fr, (i, f) => { const v = side < 0 ? edgeV(f.u, -1) + 0.1 : edgeV(f.u, 1) - 0.1; return side < 0 ? [[v, deckTop + 1.05, null, M(S.deck, { sky: 1 })], [v, deckTop]] : [[v, deckTop, null, M(S.deck, { sky: 1 })], [v, deckTop + 1.05]]; });
-    const ground = (u, v) => { const [x, zz] = T.L2(u, v); return Terrain.h(x + T.OX, zz + T.OZ); };
-    for (let u = boxU0 + 6; u <= boxU1 - 6; u += 24) {
-      const vl = edgeV(u, -1), vr = edgeV(u, 1); const vc = (vl + vr) / 2, half = (vr - vl) / 2;
-      if (T.mode === 'below' && Math.abs(u - T.uc) < T.concHalf + 2) continue;    // the concourse carries the deck there
-      for (const v of [vc - half * 0.55, vc + half * 0.55]) {
-        const gy = ground(u, v) - 0.5; const h = deckBot - 1.2 - gy; if (h < 0.5 || h > 40) continue;
-        T.place(g, u, v, gy); g.mat(S.col[0], S.col[1], S.col[2]); g.cyl(0, 0, 0, 0.7, 0.62, h, 20, false); g.pop();
-      }
-      T.place(g, u, vc, deckBot - 1.25); g.mat(S.deck[0], K.CONCRETE, 0); g.box(-0.9, 0, -half * 0.8, 0.9, 1.25, half * 0.8); g.pop();
+    for (const b of T.bents) {
+      for (const c of b.cols) { T.place(g, b.u, c.v, c.gy); g.mat(S.col[0], S.col[1], S.col[2]); g.cyl(0, 0, 0, 0.7, 0.62, c.h, 20, false); g.pop(); }
+      T.place(g, b.u, b.vc, deckBot - 1.25); g.mat(S.deck[0], K.CONCRETE, 0); g.box(-0.9, 0, -b.half * 0.8, 0.9, 1.25, b.half * 0.8); g.pop();
     }
     for (const p of plats) yield* canopy(T, p);
     for (const p of plats) if (p.kind === 'side') {
@@ -661,9 +982,10 @@ const StationTypes = (() => {
 
   // ------------------------------------------------------------------------------------------------ inlays and columns
   function* floorInlays(T) {
-    const { plats, H, zones } = T; const g = zones[0].d.sk;
+    const { plats, H, zones } = T;
     if (H.bands === undefined && H.grid === undefined) return;
     for (const p of plats) {
+      const g = (p.zone || zones[0]).d.sk;
       const col = lin(H.bands !== undefined ? H.bands : H.grid);
       const mat = { col, kind: K.TILE, prm: -0.2, sky: T.under ? 0 : 0.8 };
       // bands across the platform every 6 m (and, for a grid, two longitudinal lines)
@@ -680,16 +1002,17 @@ const StationTypes = (() => {
     }
   }
   function* platformColumns(T) {
-    const { plats, H, zones, S } = T; const C = H.cols; const g = zones[0].m.sk;
+    const { plats, H, zones, S } = T; const C = H.cols;
     for (const p of plats) {
       if (p.kind !== 'island') continue;
+      const g = (p.zone || zones[0]).m.sk; const colTop = p.level && p.level.k ? p.level.ceilY : T.ceilY;
       for (let u = p.u0 + 6; u < p.u1 - 4; u += C.along) {
         if (inGroups(p, u, 1.2)) continue;
         const c = (p.eL(u) + p.eR(u)) / 2; const vs = C.rows === 2 ? [c - C.across / 2, c + C.across / 2] : [c];
         for (const v of vs) {
           T.place(g, u, v, p.y); g.mat(C.col, C.kind ?? K.CONCRETE, C.kind === K.BRICK ? 1 : 0.12);
-          if (C.shape === 'round') { g.cyl(0, 0, 0, C.size / 2, C.size / 2, T.ceilY - p.y, 24, false); g.mat(0x2a2a2a, K.PAINT); g.cyl(0, 0, 0, C.size / 2 + 0.02, C.size / 2 + 0.02, 0.12, 24, false); }
-          else g.cbox(0, 0, 0, C.depth || C.size, T.ceilY - p.y, C.size);
+          if (C.shape === 'round') { g.cyl(0, 0, 0, C.size / 2, C.size / 2, colTop - p.y, 24, false); g.mat(0x2a2a2a, K.PAINT); g.cyl(0, 0, 0, C.size / 2 + 0.02, C.size / 2 + 0.02, 0.12, 24, false); }
+          else g.cbox(0, 0, 0, C.depth || C.size, colTop - p.y, C.size);
           g.pop();
           T.occupied.push({ p, u0: u - 0.8, u1: u + 0.8, v0: v - 0.8, v1: v + 0.8 });
         }
@@ -705,9 +1028,10 @@ const StationTypes = (() => {
     if (mode === 'ends' || !T.rise || T.rise < 1.5) { yield* platformEndsAccess(T); return; }
     // the concourse zone
     const zC = new Zone('conc', { under: T.under, amb: T.under ? S.amb : [0.03, 0.03, 0.03] }); zones.push(zC); T.zC = zC;
-    const zP = zones[0];
-    // escalator + stair groups on each platform
+    // escalator + stair groups on each platform (in its level's zone; a stacked station's lower banks climb to the
+    // platform over them)
     for (const p of plats) for (const g of p.groups || []) {
+      const zP = p.zone || zones[0];
       const B = zP.d; const up = !g.down;
       let v = g.vc - g.gw / 2;
       for (let k = 0; k < g.kinds.length; k++) {
@@ -731,10 +1055,12 @@ const StationTypes = (() => {
       }
       // guard railings around the opening on the upper level (three sides; the head end is open)
       const u0 = Math.min(g.uFoot, g.uHead), u1 = Math.max(g.uFoot, g.uHead);
-      const yUp = up ? T.yCF : p.y; const hv0 = g.vc - g.gw / 2 - 0.3, hv1 = g.vc + g.gw / 2 + 0.3;
-      const uOpen = g.uHead, uClosed = up ? (g.dir > 0 ? u0 + 2 : u1 - 2) : g.uFoot;
+      const yUp = g.yUp ?? (up ? T.yCF : p.y); const hv0 = g.vc - g.gw / 2 - 0.3, hv1 = g.vc + g.gw / 2 + 0.3;
+      // (the rail runs along the opening in the floor above: over a deep inclined well only its last part is open)
+      const hTop = up ? (g.upPlat ? g.upPlat.holes : T.ceilHoles || []).find(h => h.g === g) : null;
+      const uOpen = g.uHead, uClosed = up ? (hTop ? (g.dir > 0 ? (hTop.cu0 ?? hTop.u0) : (hTop.cu1 ?? hTop.u1)) : (g.dir > 0 ? u0 + 2 : u1 - 2)) : g.uFoot;
       const railPts = (vv) => { const pts = []; const ua = Math.min(uOpen, uClosed), ub = Math.max(uOpen, uClosed); for (let u = ua; u <= ub + 1e-6; u += 2) { const [x, z] = T.L2(Math.min(u, ub), vv); pts.push([x, yUp, z]); } return pts; };
-      const zR = up ? zC : zP;
+      const zR = g.upPlat ? (g.upPlat.zone || zones[0]) : up ? zC : zP;
       SP.railing(zR.d, railPts(hv0), 1.07, 'glass'); SP.railing(zR.d, railPts(hv1), 1.07, 'glass');
       { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, 'glass'); }
       for (const vv of [hv0, hv1]) { const a = T.WUV(Math.min(uOpen, uClosed), vv), b = T.WUV(Math.max(uOpen, uClosed), vv); addWall(T.walk, a, b, yUp - 0.5, yUp + 2.5); }
@@ -762,17 +1088,19 @@ const StationTypes = (() => {
   function* subwayConcourse(T) {
     const { S, M, frames, frameAt, edgeV, zC, place, walk, W2, yCF, yCC, pu0, pu1, uc } = T;
     const g = zC.m.sk;
-    const cu0 = pu0 + 12, cu1 = pu1 - 12;
+    const cu0 = T.cu0, cu1 = T.cu1;            // pu0 + 12 .. pu1 - 12 (groundPlan)
     const vl = (u) => edgeV(u, -1), vr = (u) => edgeV(u, 1);
-    const holes = T.ceilHoles.map(h => ({ u0: h.u0, u1: h.u1, v0: h.v0, v1: h.v1 }));
-    // entrances first: shafts inside the box footprint pass through the concourse ceiling and roof
-    T.entPlan = planEntrances(T, cu0, cu1);
+    const holes = T.ceilHoles.map(h => ({ u0: h.cu0 ?? h.u0, u1: h.cu1 ?? h.u1, v0: h.v0, v1: h.v1 }));
+    // entrances (planned in groundPlan): shafts inside the box footprint pass through the concourse ceiling and roof
     const roofHoles = T.entPlan.filter(e => e.inBox).map(e => ({ u0: Math.min(e.uTop, e.uBot) - 0.3, u1: Math.max(e.uTop, e.uBot) + 0.3, v0: e.ve - e.W / 2 - 0.25, v1: e.ve + e.W / 2 + 0.25 }));
     T.roofHoles = roofHoles;
     // floor (with the wells), ceiling, walls, end walls
     slab(T, g, cu0, cu1, vl, vr, yCF, holes, M(S.cFloor), true);
-    slab(T, g, cu0, cu1, vl, vr, yCC, roofHoles, M(S.cCeil), false);
+    const vault = T.H.vault === 'ribs' && !roofHoles.length && yCC - yCF > 3.2;
+    if (vault) yield* vaultCeiling(T, g, cu0, cu1, vl, vr, yCC);
+    else slab(T, g, cu0, cu1, vl, vr, yCC, roofHoles, M(S.cCeil), false);
     for (const h of roofHoles) holeRim(T, g, h, yCC, yCC + 0.9, M(S.cWall));
+    if (T.H.mural) yield* tileMurals(T, zC, cu0, cu1, vl, vr, yCF);
     const fr = frames(cu0, cu1);
     const mW = M(S.cWall), mL = M(S.wallLow);
     g.sweep(fr, (i, f) => { const v = vl(f.u); return [[v, yCC, yCC, mW], [v, yCF + 0.15, yCF + 0.15, mL], [v, yCF, yCF]]; });
@@ -808,7 +1136,7 @@ const StationTypes = (() => {
       zC.signs.push({ u: ug - face * 0.6, v: (a + b) / 2, y: yCF + 2.7, yaw: T.yawAt(ug) + (face < 0 ? Math.PI / 2 * 0 + Math.PI : 0), w: 2.8, h: 0.7, region: 'gates', both: true, T });
       yield;
     }
-    T.concZone = { y: yCF, u0: cu0 + 2, u1: cu1 - 2, vl, vr, holes: T.ceilHoles.map(h => ({ u0: h.u0, u1: h.u1, v0: h.v0, v1: h.v1 })) };
+    T.concZone = { y: yCF, u0: cu0 + 2, u1: cu1 - 2, vl, vr, holes: holes.map(h => ({ u0: h.u0, u1: h.u1, v0: h.v0, v1: h.v1 })) };
     // lights: rows of troughs along the concourse ceiling
     const LC = S.light, I = S.lightI * 0.85; const f0 = frameAt(cu0 + 2), f1 = frameAt(cu1 - 2); const vm = (vl(uc) + vr(uc)) / 2, hw = (vr(uc) - vl(uc)) / 2;
     for (const off of [-0.5, 0, 0.5]) {
@@ -821,11 +1149,58 @@ const StationTypes = (() => {
     { const u = uc + 3; zC.signs.push({ u, v: vl(u) + 0.03, y: yCF + 1.5, yaw: T.yawAt(u) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T }); }
     // cell: the concourse footprint
     const poly = []; for (const f of fr) { const v = vl(f.u) - 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); } for (let i = fr.length - 1; i >= 0; i--) { const f = fr[i]; const v = vr(f.u) + 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
-    T.cells.push({ zone: 'conc', under: { id: `st:${T.st.id}:conc`, kind: 'station', poly: poly.map(([x, z]) => W2(x, z)), floor: yCF - 0.5, ceil: yCC + 0.9, ambient: ambOf(S) } });
-    for (const h of T.ceilHoles) { const q = [[h.u0, h.v0], [h.u1, h.v0], [h.u1, h.v1], [h.u0, h.v1]].map(([u, v]) => { const [x, z] = T.WUV(u, v); return [x, yCF, z]; }); T.portals.push({ a: `st:${T.st.id}:plat`, b: `st:${T.st.id}:conc`, quad: q, day: 0 }); }
+    // (the cell stays half a metre under the lowest ground over it: the terrain drops fragments inside cell volumes)
+    T.cells.push({ zone: 'conc', under: { id: `st:${T.st.id}:conc`, kind: 'station', poly: poly.map(([x, z]) => W2(x, z)), floor: yCF - 0.5, ceil: Math.min(yCC + 0.9, minGround(T, cu0, cu1, vl, vr) - 0.5), ambient: ambOf(S) } });
+    for (const h of holes) { const q = [[h.u0, h.v0], [h.u1, h.v0], [h.u1, h.v1], [h.u0, h.v1]].map(([u, v]) => { const [x, z] = T.WUV(u, v); return [x, yCF, z]; }); T.portals.push({ a: `st:${T.st.id}:plat`, b: `st:${T.st.id}:conc`, quad: q, day: 0 }); }
     // roof slab over the concourse
     slab(T, g, cu0, cu1, (u) => vl(u) - 0.5, (u) => vr(u) + 0.5, yCC + 0.9, roofHoles, M([0x77746e, K.CONCRETE]), true);
     yield* streetEntrances(T, cu0, cu1);
+  }
+
+  // 16th/24th St: a segmental vault of wood slats between cream precast arch ribs on splayed brackets, lit along the ribs
+  function* vaultCeiling(T, g, cu0, cu1, vl, vr, yCC) {
+    const { S, M, frames, zC } = T; const rise = 1.1, spring = yCC - rise;
+    const mS = M(S.cCeil), mR = M([0xd9cfb8, K.CONCRETE, 0]);
+    const arc = (u, t) => { const a = vl(u), b = vr(u); return [a + (b - a) * t, spring + rise * Math.sin(Math.PI * t)]; };
+    const N = 10;
+    g.sweep(frames(cu0, cu1), (i, f) => { const P = []; for (let k = N; k >= 0; k--) { const [v, y] = arc(f.u, k / N); P.push([v, y, null, k > 0 ? mS : undefined]); } return P; });
+    // ribs every 3.2 m: a deeper band under the vault, springing from splayed brackets on the walls
+    for (let u = cu0 + 1.6; u < cu1 - 1; u += 3.2) {
+      const fr = frames(u - 0.18, u + 0.18);
+      // the rib's underside (facing down: traversed right to left) and its two faces across u
+      g.sweep(fr, (i, f) => { const P = []; for (let k = N; k >= 0; k--) { const [v, y] = arc(f.u, k / N); P.push([v, y - 0.32, null, k > 0 ? mR : undefined]); } return P; });
+      g.set(mR);
+      for (const [uu, face] of [[u - 0.18, -1], [u + 0.18, 1]]) {
+        const ff = T.frameAt(uu); const W3 = (v, y) => [ff.x - ff.tz * v, y, ff.z + ff.tx * v];
+        for (let k = 0; k < N; k++) { const [v0, y0] = arc(uu, k / N), [v1, y1] = arc(uu, (k + 1) / N);
+          const q = [W3(v0, y0 - 0.32), W3(v1, y1 - 0.32), W3(v1, y1), W3(v0, y0)];
+          if (face > 0) g.quad(q[0], q[1], q[2], q[3], [v0, 0, v1, 0, v1, 0.32, v0, 0.32]); else g.quad(q[1], q[0], q[3], q[2], [v1, 0, v0, 0, v0, 0.32, v1, 0.32]); }
+      }
+      for (const side of [0, 1]) { const [v, y] = arc(u, side); T.place(g, u, v + (side ? -0.25 : 0.25), y - 0.9, 0); g.mat(0xd9cfb8, K.CONCRETE, 0); g.cbox(0, 0, 0, 0.36, 0.9, 0.5); g.pop(); }
+    }
+    const LC = S.light; const f0 = T.frameAt(cu0 + 1), f1 = T.frameAt(cu1 - 1);
+    for (const t of [0.22, 0.78]) { const [va, ya] = arc(cu0 + 1, t), [vb, yb] = arc(cu1 - 1, t);
+      zC.lights.add({ a: [f0.x - f0.tz * va, ya - 0.4, f0.z + f0.tx * va], b: [f1.x - f1.tz * vb, yb - 0.4, f1.z + f1.tx * vb], color: LC.map(c => c * 1.1), range: 18, radius: 0.1, dir: [0, -1, 0], focus: 0 }); }
+    yield;
+  }
+  // Janet Bennett-style tile murals on the concourse walls: panels of small glazed tiles in the station's palette, laid in
+  // flowing bands (a serpentine at 24th St)
+  function* tileMurals(T, zC, cu0, cu1, vl, vr, yCF) {
+    const pal = T.H.mural.map(c => lin(c)); const g = zC.d.sk;
+    for (let u0 = cu0 + 6; u0 < cu1 - 8; u0 += 14) {
+      for (const side of [-1, 1]) {
+        for (let du = 0; du < 7.2; du += 0.6) for (let y = 0.9; y < 2.7; y += 0.6) {
+          const u = u0 + du; const v = side < 0 ? vl(u) + 0.012 : vr(u) - 0.012; const f = T.frameAt(u);
+          const k = Math.floor(pal.length * (0.5 + 0.5 * Math.sin(du * 0.55 + y * 1.3 + u0 * 0.7 + side))) % pal.length;
+          g.mat(pal[k], K.MOSAIC, 0.05);
+          const P = (uu, yy) => { const ff = T.frameAt(uu); const vv = side < 0 ? vl(uu) + 0.012 : vr(uu) - 0.012; return [ff.x - ff.tz * vv, yCF + yy, ff.z + ff.tx * vv]; };
+          const q = [P(u, y), P(u + 0.6, y), P(u + 0.6, y + 0.6), P(u, y + 0.6)];
+          if (side > 0) g.quad(q[1], q[0], q[3], q[2], [u + 0.6, y, u, y, u, y + 0.6, u + 0.6, y + 0.6]); else g.quad(q[0], q[1], q[2], q[3], [u, y, u + 0.6, y, u + 0.6, y + 0.6, u, y + 0.6]);
+          void f; void v;
+        }
+      }
+      yield;
+    }
   }
 
   // ---------------------------------------------------------------- street entrances (subway)
@@ -858,6 +1233,8 @@ const StationTypes = (() => {
     let k = 0;
     for (const P of T.entPlan || []) {
       const { e, ve, dir, uTop, uBot, topY, riseE, runE, inBox, W } = P;
+      // (a shallow station's end shafts land on the platform, pass the box roof and open into the platform's cell)
+      const yCF = P.yBot ?? T.yCF, roofTop = P.roofY ?? (yCC + 0.9), link = P.link || 'conc';
       const yaw = dir > 0 ? 0 : Math.PI;
       T.placeB(zE.m, uBot, ve, yCF, yaw + Math.PI); SP.stairs(zE.m, riseE, { W, cheeks: 'wall', wallH: 1.1, wallCol: lin(S.cWall[0]), wallKind: S.cWall[1], wallPrm: S.cWall[2], treadCol: lin(0x9a968e) }); T.popB(zE.m);
       slopeUV(T, uBot, -dir, ve, W / 2 - 0.1, yCF, riseE, runE);
@@ -871,8 +1248,18 @@ const StationTypes = (() => {
           return side < 0 ? [[vv, yt, yt, mat], [vv, yb, yb]] : [[vv, yb, yb, mat], [vv, yt, yt]]; });
       }
       g.sweep(T.frames(ua, ub), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const y = Math.min(yCF + riseE * t + 3.2, topY - 0.05);
-        if (y >= topY - 0.1 || (inBox && y < yCC + 0.9)) return [[ve + W / 2 + 0.2, y, null, 'skip'], [ve - W / 2 - 0.2, y]];
+        if (y >= topY - 0.1 || (inBox && y < roofTop)) return [[ve + W / 2 + 0.2, y, null, 'skip'], [ve - W / 2 - 0.2, y]];
         return [[ve + W / 2 + 0.2, y, null, Object.assign(M(S.cCeil), { sky: t * 0.5 })], [ve - W / 2 - 0.2, y]]; });
+      // a paved collar around the opening, draped on the ground: the ground cut is a raster (~1 m texels near the
+      // camera, 4 m beyond), so its edge is ragged and would show the void under the street
+      { const hu0 = ua, hu1 = ub, hv0 = ve - W / 2 - 0.2, hv1 = ve + W / 2 + 0.2, o = 3.0; const mPave = Object.assign(M([0xa8a49c, K.PAVING, 1.5]), { sky: 1 });
+        const gyAt = (u, v) => { const [x, z] = T.WUV(u, v); return Math.max(Terrain.h(x, z), topY - 0.6) + 0.035; };
+        const band = (ua0, ua1, va0, va1) => { const nu = Math.max(1, Math.ceil((ua1 - ua0) / 1.5)), nv = Math.max(1, Math.ceil((va1 - va0) / 1.5));
+          for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) { const u0 = ua0 + (ua1 - ua0) * i / nu, u1 = ua0 + (ua1 - ua0) * (i + 1) / nu, v0 = va0 + (va1 - va0) * j / nv, v1 = va0 + (va1 - va0) * (j + 1) / nv;
+            const P = (u, v) => { const [x, z] = T.L2(u, v); return [x, gyAt(u, v), z]; }; g.set(mPave);
+            g.quad(P(u0, v1), P(u1, v1), P(u1, v0), P(u0, v0), [u0, v1, u1, v1, u1, v0, u0, v0]); } };
+        band(hu0 - o, hu1 + o, hv1, hv1 + o); band(hu0 - o, hu1 + o, hv0 - o, hv0);            // along both sides
+        band(hu0 - o, hu0, hv0, hv1); band(hu1, hu1 + o, hv0, hv1); }                          // across both ends
       // street: railings on three sides, the totem at the head
       for (const vv of [ve - W / 2 - 0.3, ve + W / 2 + 0.3]) { const pts = [[uBot, vv], [uTop - dir * 0.2, vv]].map(([u, v]) => { const [x, z] = T.L2(u, v); return [x, topY, z]; }); SP.railing(zE.d, pts, 1.07, 'bars'); }
       { const [x0, z0] = T.L2(uBot - dir * 0.1, ve - W / 2 - 0.3), [x1, z1] = T.L2(uBot - dir * 0.1, ve + W / 2 + 0.3); SP.railing(zE.d, [[x0, topY, z0], [x1, topY, z1]], 1.07, 'bars'); }
@@ -885,18 +1272,27 @@ const StationTypes = (() => {
       zE.lights.add({ a: [ax, yCF + 3.0, az], b: [bx, topY - 0.2, bz], color: S.light.map(c => c * 0.8), range: 12, radius: 0.08, dir: [0, -1, 0], focus: 1 });
       // Under: the sidewalk cut, the shaft cell (and its passage), portals to the street and to the concourse
       const rect = (u0, u1, v0, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => T.WUV(u, v));
+      // (the cut is raster, ~1 m texels, and the shaft cell's volume (dilated ~1.5 texels) drops the ground over the
+      // opening too; the collar covers the ragged rim)
       const cutPoly = rect(ua - 0.2, ub + 0.2, ve - W / 2 - 0.35, ve + W / 2 + 0.35);
-      T.cuts.push({ id: `st:${st.id}:cut${k}`, poly: cutPoly, below: topY - 0.3 });
-      let poly = cutPoly;
-      if (door) { const side = door.side; const vW = T.edgeV(uBot, side); const va = Math.min(vW, ve), vb = Math.max(vW, ve);
-        poly = hull([...cutPoly, ...rect(door.u0, door.u1, va - 0.2, vb + 0.2)]); }
+      const gOpen = minGround(T, ua - 1.2, ub + 1.2, () => ve - W / 2 - 1.3, () => ve + W / 2 + 1.3);
+      T.cuts.push({ id: `st:${st.id}:cut${k}`, poly: rect(ua - 0.5, ub + 0.5, ve - W / 2 - 0.6, ve + W / 2 + 0.6), below: Math.min(topY, gOpen) - 0.3 });
       const id = `st:${st.id}:ent${k}`;
-      T.cells.push({ zone: 'ent', under: { id, kind: 'shaft', poly, floor: (inBox ? yCC : yCF) - 0.3, ceil: topY + 3, ambient: 0.05, daylight: [yCF, topY] } });
+      // (the cell stops under the street: the terrain drops fragments inside cell volumes, and the top of the stair is
+      // simply outdoors; the cut opens the ground over the shaft)
+      // the shaft: its opening, from the bottom up into the street (the portal to the outdoors lies inside it); a passage
+      // to the concourse wall is its own cell, kept under the ground (the terrain drops fragments inside cell volumes)
+      T.cells.push({ zone: 'ent', under: { id, kind: 'shaft', poly: cutPoly, floor: (inBox ? roofTop - 0.9 : yCF) - 0.3, ceil: topY + 3, ambient: 0.05, daylight: [yCF, topY] } });
+      if (door) { const vW = T.edgeV(uBot, door.side); const va = Math.min(vW, ve), vb = Math.max(vW, ve);
+        const gP = minGround(T, door.u0, door.u1, () => va, () => vb);
+        T.cells.push({ zone: 'ent', under: { id: id + 'p', kind: 'station', poly: rect(door.u0 - 0.2, door.u1 + 0.2, va - 0.2, vb + 0.2), floor: yCF - 0.3, ceil: Math.min(yCF + door.h + 0.6, gP - 0.6), ambient: 0.4 } });
+        const vM = ve - door.side * (W / 2 + 0.2);
+        T.portals.push({ id: `st:${st.id}:pe${k}p`, a: id, b: id + 'p', quad: [[door.u0, yCF], [door.u1, yCF], [door.u1, yCF + door.h], [door.u0, yCF + door.h]].map(([u, y]) => { const [x, z] = T.WUV(u, vM); return [x, y, z]; }) }); }
       const quad = (y) => cutPoly.map(([x, z]) => [x, y, z]);
       T.portals.push({ id: `st:${st.id}:pe${k}o`, a: id, b: null, quad: quad(topY + 0.05) });
-      if (inBox) T.portals.push({ id: `st:${st.id}:pe${k}c`, a: id, b: `st:${st.id}:conc`, quad: rect(ua, ub, ve - W / 2 - 0.2, ve + W / 2 + 0.2).map(([x, z]) => [x, yCC + 0.4, z]) });
-      else if (door) { const vW = T.edgeV(uBot, door.side); T.portals.push({ id: `st:${st.id}:pe${k}c`, a: id, b: `st:${st.id}:conc`, quad: [[door.u0, yCF], [door.u1, yCF], [door.u1, yCF + door.h], [door.u0, yCF + door.h]].map(([u, y]) => { const [x, z] = T.WUV(u, vW); return [x, y, z]; }) }); }
-      const [wx, wz] = T.WUV(uTop, ve); T.entrances.push({ wx, wz, name: e.name });
+      if (inBox) T.portals.push({ id: `st:${st.id}:pe${k}c`, a: id, b: `st:${st.id}:${link}`, quad: rect(ua, ub, ve - W / 2 - 0.2, ve + W / 2 + 0.2).map(([x, z]) => [x, roofTop - 0.5, z]) });
+      else if (door) { const vW = T.edgeV(uBot, door.side); T.portals.push({ id: `st:${st.id}:pe${k}c`, a: id + 'p', b: `st:${st.id}:conc`, quad: [[door.u0, yCF], [door.u1, yCF], [door.u1, yCF + door.h], [door.u0, yCF + door.h]].map(([u, y]) => { const [x, z] = T.WUV(u, vW); return [x, y, z]; }) }); }
+      const [wx, wz] = T.WUV(uTop, ve); T.entrances.push({ wx, wz, name: e ? e.name : '' });
       k++;
       yield;
     }
@@ -945,10 +1341,7 @@ const StationTypes = (() => {
   function* concourseBelow(T) {
     const { S, M, frames, frameAt, edgeV, zC, walk, W2, yCF, uc, plats, place } = T;
     const g = zC.m.sk;
-    // extent: around the groups' feet
-    const feet = []; for (const p of plats) for (const q of p.groups || []) feet.push(q.uFoot);
-    const cu0 = Math.min(uc - 18, ...feet.map(u => u - 10)), cu1 = Math.max(uc + 18, ...feet.map(u => u + 10));
-    T.concHalf = (cu1 - cu0) / 2;
+    const cu0 = T.cu0, cu1 = T.cu1;            // around the groups' feet (groundPlan)
     const vl = (u) => edgeV(u, -1) - 1.5, vr = (u) => edgeV(u, 1) + 1.5;
     const yTop = Math.min(T.yCC, yCF + 4.2);
     slab(T, g, cu0, cu1, vl, vr, yCF, [], Object.assign(M(S.cFloor), { sky: 0.3 }), true);
@@ -984,54 +1377,230 @@ const StationTypes = (() => {
 
   // ---------------------------------------------------------------- at grade / median: a footbridge over the tracks
   function* footbridge(T) {
-    const { S, M, frames, frameAt, edgeV, zC, walk, W2, yCF, uc, plats, place } = T;
+    const { S, M, frames, frameAt, edgeV, zC, walk, W2, yCF, uc, place } = T;
     const g = zC.m.sk;
-    const heads = []; for (const p of plats) for (const q of p.groups || []) heads.push(q.uHead);
-    const hc = heads.length ? heads.reduce((a, b) => a + b, 0) / heads.length : uc;
-    const ub0 = hc - 7, ub1 = hc + 7;
-    const vl = (u) => edgeV(u, -1) - 14, vr = (u) => edgeV(u, 1) + 3;
+    const ub0 = T.ub0, ub1 = T.ub1, um = (ub0 + ub1) / 2;      // over the groups' heads (groundPlan)
+    const vl = (u) => edgeV(u, -1) - 2, vr = (u) => edgeV(u, 1) + 2;
     const yTop = yCF + 3.2;
     slab(T, g, ub0, ub1, vl, vr, yCF, [], Object.assign(M(S.cFloor), { sky: 0.4 }), true);
     slab(T, g, ub0, ub1, vl, vr, yCF - 0.6, [], Object.assign(M(S.deck || S.cCeil), { sky: 0.6 }), false);
     slab(T, g, ub0 - 0.5, ub1 + 0.5, (u) => vl(u) - 0.5, (u) => vr(u) + 0.5, yTop, [], Object.assign(M(S.canopy || S.cCeil), { sky: 1 }), true);
     slab(T, g, ub0 - 0.5, ub1 + 0.5, (u) => vl(u) - 0.5, (u) => vr(u) + 0.5, yTop - 0.2, [], Object.assign(M(S.canopyUnder || S.cCeil), { sky: 0.3 }), false);
+    // deck edge faces
+    for (const side of [-1, 1]) g.sweep(frames(ub0, ub1), (i, f) => { const v = side < 0 ? vl(f.u) : vr(f.u); return side < 0 ? [[v, yCF, null, M(S.deck || S.cCeil, { sky: 0.8 })], [v, yCF - 0.6]] : [[v, yCF - 0.6, null, M(S.deck || S.cCeil, { sky: 0.8 })], [v, yCF]]; });
     const fr = frames(ub0, ub1);
-    for (const ue of [ub0, ub1]) { const f = frameAt(ue); const a = vl(ue), b = vr(ue); const P = (vv, y) => [f.x - f.tz * vv, y, f.z + f.tx * vv];
-      zC.m.glass.quad(P(a, yCF + 0.1), P(b, yCF + 0.1), P(b, yTop - 0.3), P(a, yTop - 0.3), [0, 0, 1, 0, 1, 1, 0, 1]); zC.m.glass.quad(P(b, yCF + 0.1), P(a, yCF + 0.1), P(a, yTop - 0.3), P(b, yTop - 0.3), [0, 0, 1, 0, 1, 1, 0, 1]);
-      addWall(walk, W2(...[P(a, 0)[0], P(a, 0)[2]]), W2(...[P(b, 0)[0], P(b, 0)[2]]), yCF - 0.5, yTop); }
+    const glassWall = (P0, P1) => { zC.m.glass.quad([P0[0], yCF + 0.1, P0[1]], [P1[0], yCF + 0.1, P1[1]], [P1[0], yTop - 0.3, P1[1]], [P0[0], yTop - 0.3, P0[1]], [0, 0, 1, 0, 1, 1, 0, 1]);
+      zC.m.glass.quad([P1[0], yCF + 0.1, P1[1]], [P0[0], yCF + 0.1, P0[1]], [P0[0], yTop - 0.3, P0[1]], [P1[0], yTop - 0.3, P1[1]], [0, 0, 1, 0, 1, 1, 0, 1]);
+      addWall(walk, W2(...P0), W2(...P1), yCF - 0.5, yTop); };
+    // glass ends, and glass sides with an opening where each walkway leaves
+    for (const ue of [ub0, ub1]) glassWall(T.L2(ue, vl(ue)), T.L2(ue, vr(ue)));
+    const WW = 3.6;
+    for (const side of [-1, 1]) {
+      const open = (T.landings || []).some(L => L.side === side);
+      const vv = (u) => side < 0 ? vl(u) : vr(u);
+      const spans = open ? [[ub0, um - WW / 2], [um + WW / 2, ub1]] : [[ub0, ub1]];
+      for (const [a, b] of spans) { const fr2 = frames(a, b); for (let i = 0; i + 1 < fr2.length; i++) glassWall(T.L2(fr2[i].u, vv(fr2[i].u)), T.L2(fr2[i + 1].u, vv(fr2[i + 1].u))); }
+      // mullions
+      for (let u = ub0; u <= ub1 + 1e-6; u += 2.33) { if (open && Math.abs(u - um) < WW / 2) continue; place(g, u, vv(u), yCF, 0); g.mat(S.steel ? S.steel[0] : 0x3f464d, K.PAINT); g.cbox(0, 0, 0, 0.1, yTop - 0.2 - yCF, 0.1); g.pop(); }
+    }
     for (let i = 0; i + 1 < fr.length; i++) { const f0 = fr[i], f1 = fr[i + 1]; const q = [[f0.u, vl(f0.u)], [f1.u, vl(f1.u)], [f1.u, vr(f1.u)], [f0.u, vr(f0.u)]].map(([u, v]) => T.WUV(u, v)); addFloor(walk, q, yCF); }
     // supports down to the ground at both sides
-    for (const v of [vl(uc) + 1, vr(uc) - 1]) for (const u of [ub0 + 1, ub1 - 1]) { const [x, z] = T.L2(u, v); const gy = Math.min(Terrain.h(x + T.OX, z + T.OZ) - 0.3, yCF - 1.2); if (yCF - 0.6 - gy > 30) continue; place(g, u, v, gy); g.mat(S.col[0], S.col[1], S.col[2]); g.cbox(0, 0, 0, 0.5, yCF - 0.6 - gy, 0.5); g.pop(); }
-    // stair down to the street at the outer end
-    const ue = (ub0 + ub1) / 2; const rise = yCF - Terrain.h(...T.WUV(ue, vl(ue) - 1)); if (rise > 1) {
-      const [x, z] = T.L2(ue, vl(ue)); zC.m.sk.push().at(x, yCF - rise, z, T.yawAt(ue) - Math.PI / 2 + Math.PI); void x; zC.m.sk.pop(); }
-    const ug = ue; const a = vl(ug) + 2, b = a + 6; const nG = 6; const arrW = nG * 0.86 + 0.6;
-    T.placeB(zC.d, ub0 + 2.5, a + 1, yCF, Math.PI / 2); SP.fareGates(zC.d, Math.min(nG, Math.floor((ub1 - ub0 - 6) / 0.86))); T.popB(zC.d); void b; void arrW;
+    for (const [u, v] of bridgeSupports(T)) { const [x, z] = T.L2(u, v); const gy = Math.min(Terrain.h(x + T.OX, z + T.OZ) - 0.3, yCF - 1.2); if (yCF - 0.6 - gy > 30) continue; place(g, u, v, gy); g.mat(S.col[0], S.col[1], S.col[2]); g.cbox(0, 0, 0, 0.6, yCF - 0.6 - gy, 0.6); g.pop(); }
+    // fare gates across the mouth of each walkway (unpaid side outward)
+    for (const L of T.landings || []) {
+      const nG = 5, width = nG * 0.86 + 0.24 + 0.45; const vG = (L.side < 0 ? vl(um) : vr(um)) - L.side * 2.2;
+      T.placeB(zC.d, L.side < 0 ? um + width / 2 : um - width / 2, vG, yCF, L.side < 0 ? -Math.PI / 2 : Math.PI / 2); SP.fareGates(zC.d, nG); T.popB(zC.d);
+      zC.signs.push({ u: um, v: vG - L.side * 0.6, y: yCF + 2.7, yaw: T.yawAt(um) + (L.side < 0 ? 0 : Math.PI), w: 2.8, h: 0.7, region: 'gates', both: true, T });
+    }
     const LC = S.light; const f0 = frameAt(ub0 + 1), f1 = frameAt(ub1 - 1); const v = (vl(uc) + vr(uc)) / 2;
     zC.lights.add({ a: [f0.x - f0.tz * v, yTop - 0.25, f0.z + f0.tx * v], b: [f1.x - f1.tz * v, yTop - 0.25, f1.z + f1.tx * v], color: LC.map(c => c * 0.8), range: 14, radius: 0.08, dir: [0, -1, 0], focus: 1 });
     yield;
+    yield* walkways(T);
   }
-  // shallow subway: stairs from the street straight to the platform ends
-  function* platformEndsAccess(T) { yield; }
+  const bridgeSupports = (T) => { const vl = T.edgeV(T.uc, -1) - 2, vr = T.edgeV(T.uc, 1) + 2; const out = []; for (const v of [vl + 1, vr - 1]) for (const u of [T.ub0 + 1, T.ub1 - 1]) out.push([u, v]); return out; };
+
+  // ------------------------------------------------------------------------------------------------ walkways and landing towers
+  // A footbridge mezzanine over the tracks reaches the street by covered walkways to the station's real entrances
+  // (MetroNet: GTFS first), one per side of the line (across the freeway lanes at a median station), each ending in a
+  // landing tower: two stair flights down to the entrance and a glass elevator. Without a usable entrance a walkway
+  // leaves the left side. A trench station's mezzanine at street level needs none.
+  const WALK_W = 3.6;
+  function planBridge(T) {
+    T.landings = [];
+    if (T.yCF - T.street < 1.5) return;
+    const { edgeV, ub0, ub1 } = T; const um = (ub0 + ub1) / 2;
+    const cands = [];
+    for (const e of dedupeEntrances(T.st.data.entrances || [])) {
+      const uv = toUV(T, e.x - T.OX, e.z - T.OZ); if (!uv) continue;
+      const [ue, ve] = uv; const side = ve < 0 ? -1 : 1; const out = side * (ve - edgeV(ue, side));
+      if (out < 6 || out > 140 || Math.abs(ue - um) > 150) continue;
+      cands.push({ e, ue, ve, side, d: Math.hypot(ue - um, out), gtfs: e.src === 'gtfs' ? 1 : 0 });
+    }
+    const pick = [];
+    for (const side of [-1, 1]) { const c = cands.filter(q => q.side === side).sort((a, b) => (b.gtfs - a.gtfs) || (a.d - b.d))[0]; if (c) pick.push(c); }
+    T.landDbg = { um, cands: cands.map(c => [+c.ue.toFixed(1), +c.ve.toFixed(1), c.side]), skipped: [] };
+    if (!pick.length) pick.push({ side: -1, ue: um, ve: edgeV(um, -1) - 24, fallback: true });
+    for (const c of pick) {
+      const vS = edgeV(um, c.side) + c.side * 2;
+      const S = T.L2(um, vS), N0 = T.L2(um, vS + c.side * 6);
+      const E = c.fallback ? T.L2(c.ue, c.ve) : [c.e.x - T.OX, c.e.z - T.OZ];
+      // ground at the stair foot (the entrance) sets the rise; two flights with a 1.6 m landing
+      let dx = E[0] - N0[0], dz = E[1] - N0[1], dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      // a turn of less than ~35 degrees needs no square-out stub
+      const nx = N0[0] - S[0], nz = N0[1] - S[1], nl = Math.hypot(nx, nz) || 1; const straight = (dx * nx + dz * nz) / nl > 0.82;
+      const A = straight ? S : N0;
+      if (straight) { dx = E[0] - S[0]; dz = E[1] - S[1]; dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl; }
+      const gy = Terrain.h(E[0] + T.OX, E[1] + T.OZ); const rise = T.yCF - gy; if (rise < -1.2 || rise > 25) { T.landDbg.skipped.push(['rise', +rise.toFixed(1)]); continue; }
+      // (the ground at the entrance level with the walkway: it just ends there; a short rise: one flight)
+      const flush = rise < 0.35, single = !flush && rise < 2.6;
+      const n1 = flush ? 0 : single ? Math.max(1, Math.round(rise / SP.RISER)) : Math.max(1, Math.round(rise / 2 / SP.RISER));
+      const n2 = flush || single ? 0 : Math.max(1, Math.round((rise - n1 * SP.RISER) / SP.RISER));
+      const run = flush ? 0 : (n1 + n2) * SP.TREAD + (n2 ? 1.6 : 0);
+      const toE = Math.hypot(E[0] - A[0], E[1] - A[1]);
+      const Lw = Math.max(1.5, toE - run);
+      const top = [A[0] + dx * Lw, A[1] + dz * Lw], foot = [top[0] + dx * run, top[1] + dz * run];
+      const segs = straight ? [[S, top]] : [[S, N0], [N0, top]];
+      // walkway supports every ~20 m (one near each end of a segment), moved up to 6 m to stand clear of a street
+      const supports = [];
+      for (const [a, b] of segs) {
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]); if (len < 1) continue; const ux = (b[0] - a[0]) / len, uz = (b[1] - a[1]) / len;
+        const nS = Math.max(1, Math.round(len / 20));
+        for (let k = 1; k <= nS; k++) {
+          const x0 = k === nS ? len - 0.6 : k * len / nS;
+          const ok = (x) => { const uv = toUV(T, a[0] + ux * x, a[1] + uz * x); return !uv || !T.roads.length || !roadAt(T, uv[0], uv[1], 1.0); };
+          const d = [0, 2, -2, 4, -4, 6, -6].find(dd => x0 + dd > 0.5 && x0 + dd < len - 0.3 && ok(x0 + dd)); if (d === undefined) continue;
+          supports.push([a[0] + ux * (x0 + d), a[1] + uz * (x0 + d), segYaw(a, b)]);
+        }
+      }
+      T.landings.push({ side: c.side, segs, top, foot, dir: [dx, dz], rise, gy, n1, n2, run, supports, flush, name: c.e ? c.e.name : '' });
+    }
+  }
+  // the local frame of a segment: +X along it, +Z to its right; yaw for GB.at
+  const segYaw = (a, b) => Math.atan2(-(b[1] - a[1]), b[0] - a[0]);
+  function* walkways(T) {
+    const { S, M, zC, walk, W2, yCF } = T;
+    const g = zC.m.sk, gd = zC.d.sk; const W = WALK_W, hw = W / 2, yRoof = yCF + 3.0;
+    const style = T.H.bridgeStyle || 'glass', colB = lin(T.H.bridgeCol !== undefined ? T.H.bridgeCol : (S.steel ? S.steel[0] : 0x5e6f7c));
+    const mDeck = M(S.deck || [0xb5afa3, K.CONCRETE, 0], { sky: 0.8 }), mFloor = M(S.cFloor, { sky: 0.5 });
+    const LC = S.light;
+    for (const L of T.landings || []) {
+      // walkway segments: deck, floor, roof, sides (glass panels or a steel truss), lights; walk floors and walls
+      for (const [a, b] of L.segs) {
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]); if (len < 0.3) continue; const yaw = segYaw(a, b);
+        g.push().at(a[0], 0, a[1], yaw);
+        g.set(mDeck); g.box(-0.3, yCF - 0.7, -hw - 0.2, len + 0.3, yCF, hw + 0.2, 'y+');
+        g.set(mFloor); g.quad([-0.3, yCF + 0.003, hw + 0.2], [len + 0.3, yCF + 0.003, hw + 0.2], [len + 0.3, yCF + 0.003, -hw - 0.2], [-0.3, yCF + 0.003, -hw - 0.2], [0, 0, len, 0, len, W, 0, W]);
+        g.set(M(S.canopy || S.cCeil, { sky: 1 })); g.box(-0.4, yRoof, -hw - 0.45, len + 0.4, yRoof + 0.22, hw + 0.45, 'y-');
+        g.set(M(S.canopyUnder || S.cCeil, { sky: 0.4 })); g.quad([-0.4, yRoof, -hw - 0.45], [len + 0.4, yRoof, -hw - 0.45], [len + 0.4, yRoof, hw + 0.45], [-0.4, yRoof, hw + 0.45], [0, 0, len, 0, len, W, 0, W]);
+        const nP = Math.max(1, Math.round(len / 3.0));
+        if (style === 'truss') {
+          // Warren truss sides: top and bottom chords, diagonals, verticals at the panel points
+          g.mat(colB, K.PAINT);
+          for (const z of [-hw - 0.12, hw + 0.12]) {
+            g.box(-0.3, yCF - 0.1, z - 0.1, len + 0.3, yCF + 0.12, z + 0.1); g.box(-0.3, yRoof - 0.25, z - 0.1, len + 0.3, yRoof, z + 0.1);
+            for (let k = 0; k < nP; k++) { const x0 = k * len / nP, x1 = (k + 1) * len / nP; g.tube(k % 2 ? [x0, yRoof - 0.2, z] : [x0, yCF + 0.1, z], k % 2 ? [x1, yCF + 0.1, z] : [x1, yRoof - 0.2, z], 0.08, 6); g.cbox(x0, yCF, z, 0.14, yRoof - yCF, 0.14); }
+            g.cbox(len, yCF, z, 0.14, yRoof - yCF, 0.14);
+          }
+          for (const z of [-hw, hw]) zC.m.glass.quad([0, yCF + 1.1, z], [len, yCF + 1.1, z], [len, yCF + 2.4, z], [0, yCF + 2.4, z], [0, 0, 1, 0, 1, 1, 0, 1]);
+        } else {
+          g.mat(colB, K.PAINT);
+          for (let k = 0; k <= nP; k++) { const x = k * len / nP; for (const z of [-hw - 0.05, hw + 0.05]) g.cbox(x, yCF, z, 0.1, yRoof - yCF, 0.1); }
+          for (const z of [-hw - 0.05, hw + 0.05]) { g.box(0, yCF + 1.05, z - 0.04, len, yCF + 1.12, z + 0.04); if (style === 'box') g.box(0, yRoof - 0.9, z - 0.06, len, yRoof, z + 0.06); }
+          for (const z of [-hw - 0.05, hw + 0.05]) { const y1 = style === 'box' ? yRoof - 0.9 : yCF + 2.4;
+            zC.m.glass.quad([0, yCF + 0.05, z], [len, yCF + 0.05, z], [len, y1, z], [0, y1, z], [0, 0, 1, 0, 1, 1, 0, 1]); zC.m.glass.quad([len, yCF + 0.05, z], [0, yCF + 0.05, z], [0, y1, z], [len, y1, z], [0, 0, 1, 0, 1, 1, 0, 1]); }
+        }
+        // line light under the roof
+        zC.m.glow.mat(LC); zC.m.glow.box(0.5, yRoof - 0.06, -0.1, len - 0.5, yRoof - 0.02, 0.1);
+        g.pop();
+        const ca = Math.cos(yaw), sa = Math.sin(yaw);     // local +X = (cos, -sin), +Z = (sin, cos)
+        const P = (x, z) => [a[0] + x * ca + z * sa, a[1] - x * sa + z * ca];
+        if (zC.lights.lights.length < StationKit.MAXL) { const p0 = P(0.5, 0), p1 = P(len - 0.5, 0); zC.lights.add({ a: [p0[0], yRoof - 0.1, p0[1]], b: [p1[0], yRoof - 0.1, p1[1]], color: LC.map(c => c * 0.7), range: 10, radius: 0.08, dir: [0, -1, 0], focus: 1 }); }
+        addFloor(walk, [P(-0.3, -hw), P(len + 0.3, -hw), P(len + 0.3, hw), P(-0.3, hw)].map(q => W2(...q)), yCF);
+        for (const z of [-hw, hw]) addWall(walk, W2(...P(-0.3, z)), W2(...P(len + 0.3, z)), yCF - 0.5, yRoof);
+      }
+      // supports (planned clear of the streets under the walkway)
+      for (const q of L.supports) { const gyS = Math.min(Terrain.h(q[0] + T.OX, q[1] + T.OZ) - 0.3, yCF - 1.2); if (yCF - 0.7 - gyS > 30) continue;
+        g.push().at(q[0], gyS, q[1], q[2]); g.mat(S.col[0], S.col[1], S.col[2]); g.cbox(0, 0, 0, 0.7, yCF - 0.7 - gyS, 0.7); g.pop(); }
+      // corner pads where segments meet
+      for (let i = 1; i < L.segs.length; i++) { const q = L.segs[i][0]; g.push().at(q[0], 0, q[1], segYaw(L.segs[i][0], L.segs[i][1])); g.set(mDeck); g.box(-hw - 0.2, yCF - 0.7, -hw - 0.2, hw + 0.2, yCF - 0.02, hw + 0.2, 'y+'); g.set(mFloor); g.quad([-hw - 0.2, yCF, hw + 0.2], [hw + 0.2, yCF, hw + 0.2], [hw + 0.2, yCF, -hw - 0.2], [-hw - 0.2, yCF, -hw - 0.2], [0, 0, W, 0, W, W, 0, W]); g.pop();
+        addFloor(walk, [[q[0] - hw, q[1] - hw], [q[0] + hw, q[1] - hw], [q[0] + hw, q[1] + hw], [q[0] - hw, q[1] + hw]].map(p => W2(...p)), yCF); }
+      // landing tower: two flights from the entrance (foot) up to the walkway (top), a mid landing, a roof, the elevator
+      if (L.flush) { yield; continue; }
+      const [dx, dz] = L.dir; const yawUp = Math.atan2(dz, -dx);      // stairs rise along local +X: from the foot back toward the top
+      const two = L.n2 > 0, r1 = two ? L.n1 * SP.RISER : L.rise, r2 = L.rise - r1, run1 = L.n1 * SP.TREAD, run2 = L.n2 * SP.TREAD;
+      const stairB = (x, y, H) => { const B = zC.m; for (const gg of new Set([B.sk, B.glass, B.glow])) { gg.push(); gg.at(L.foot[0], 0, L.foot[1], yawUp); gg.translate(x, y, 0); } SP.stairs(B, H, { W: 2.6, cheeks: 'stringer', treadCol: lin(S.tread || 0xa39e95) }); for (const gg of new Set([B.sk, B.glass, B.glow])) gg.pop(); };
+      stairB(0, L.gy, r1);
+      g.push().at(L.foot[0], 0, L.foot[1], yawUp); if (two) { g.set(mDeck); g.box(run1 - SP.TREAD, L.gy + r1 - 0.3, -1.4, run1 + 1.6, L.gy + r1, 1.4, ''); g.set(mFloor); g.quad([run1 - SP.TREAD, L.gy + r1 + 0.005, 1.4], [run1 + 1.6, L.gy + r1 + 0.005, 1.4], [run1 + 1.6, L.gy + r1 + 0.005, -1.4], [run1 - SP.TREAD, L.gy + r1 + 0.005, -1.4], [0, 0, 1.6, 0, 1.6, 2.8, 0, 2.8]);
+      // posts under the mid landing, glass guards along the flights, a sloped roof over the tower
+      g.mat(colB, K.PAINT); for (const z of [-1.3, 1.3]) g.cbox(run1 + 0.8, L.gy - 0.2, z, 0.2, r1 - 0.1, 0.2); }
+      const runT = two ? run1 + 1.6 + run2 : run1;
+      g.set(M(S.canopy || S.cCeil, { sky: 1 })); g.quad([-0.6, L.gy + 3.1, 1.9], [runT + 0.2, yCF + 3.1, 1.9], [runT + 0.2, yCF + 3.1, -1.9], [-0.6, L.gy + 3.1, -1.9], [0, 0, runT, 0, runT, 3.8, 0, 3.8]);
+      g.set(M(S.canopyUnder || S.cCeil, { sky: 0.4 })); g.quad([-0.6, L.gy + 3.0, -1.9], [runT + 0.2, yCF + 3.0, -1.9], [runT + 0.2, yCF + 3.0, 1.9], [-0.6, L.gy + 3.0, 1.9], [0, 0, runT, 0, runT, 3.8, 0, 3.8]);
+      g.mat(colB, K.PAINT); for (const x of [-0.5, runT + 0.1]) for (const z of [-1.8, 1.8]) { const yb = x < 0 ? L.gy : yCF; g.cbox(x, yb, z, 0.14, (x < 0 ? L.gy + 3.0 : yCF + 3.0) - yb, 0.14); }
+      g.pop();
+      if (two) stairB(run1 + 1.6, L.gy + r1, r2);
+      // walk: the two flights and the mid landing
+      const ca = Math.cos(yawUp), sa = Math.sin(yawUp); const PU = (x, z) => [L.foot[0] + x * ca + z * sa, L.foot[1] - x * sa + z * ca];
+      addSlope(walk, [[0, -1.2, L.gy], [run1, -1.2, L.gy + r1], [run1, 1.2, L.gy + r1], [0, 1.2, L.gy]].map(([x, z, y]) => { const q = W2(...PU(x, z)); return [q[0], q[1], y]; }));
+      if (two) { addFloor(walk, [PU(run1, -1.3), PU(run1 + 1.6, -1.3), PU(run1 + 1.6, 1.3), PU(run1, 1.3)].map(q => W2(...q)), L.gy + r1);
+        addSlope(walk, [[run1 + 1.6, -1.2, L.gy + r1], [runT, -1.2, yCF], [runT, 1.2, yCF], [run1 + 1.6, 1.2, L.gy + r1]].map(([x, z, y]) => { const q = W2(...PU(x, z)); return [q[0], q[1], y]; })); }
+      for (const z of [-1.3, 1.3]) addWall(walk, W2(...PU(-0.3, z)), W2(...PU(runT, z)), L.gy - 1, yCF + 2.5);
+      for (const z of [-1.35, 1.35]) { const pts = (two ? [[0, L.gy + 0.05], [run1, L.gy + r1], [run1 + 1.6, L.gy + r1], [runT, yCF]] : [[0, L.gy + 0.05], [runT, yCF]]).map(([x, y]) => { const q = PU(x, z); return [q[0], y, q[1]]; }); SP.railing(zC.d, pts, 1.07, 'glass'); }
+      // glass elevator beside the top of the stair, from the street to the walkway
+      const ex = runT - 1.4, ez = 1.3 + 0.2 + 1.3; const eq = PU(ex, ez); const egy = Terrain.h(eq[0] + T.OX, eq[1] + T.OZ);
+      if (yCF - egy > 1.5 && yCF - egy < 25) { const B = zC.m; for (const gg of new Set([B.sk, B.glass, B.glow])) { gg.push(); gg.at(eq[0], egy, eq[1], yawUp + Math.PI / 2); } SP.elevator(B, yCF - egy, { levels: [0, yCF - egy] }); for (const gg of new Set([B.sk, B.glass, B.glow])) gg.pop(); }
+      // the entrance sign at the foot
+      zC.signs.push({ u: 0, v: 0, y: L.gy + 2.6, yaw: Math.atan2(dx, dz), w: 1.6, h: 0.4, region: 'word', both: true, T: { L2: () => PU(-0.4, 0) } });
+      yield;
+    }
+  }
+  // shallow subway ('ends': too shallow for a mezzanine): stair shafts from the street straight down onto each
+  // platform near its ends, rising outward, through the box roof (planned in groundPlan: T.entPlan)
+  function* platformEndsAccess(T) {
+    if (!T.under || !(T.entPlan || []).length) { yield; return; }
+    yield* streetEntrances(T, 0, 0);
+  }
+  function planEndShafts(T) {
+    const out = []; const { plats, street } = T;
+    for (const p of plats) {
+      const rise = street - p.y; if (rise < 1.5) continue;
+      const runE = stairRun(rise);
+      for (const end of [-1, 1]) {
+        const uTop = end < 0 ? p.u0 + 3 : p.u1 - 3, dir = -end, uBot = uTop + dir * runE;
+        if ((uBot - p.u0) * (p.u1 - uBot) < 0) continue;
+        const ve = (p.eL(uBot) + p.eR(uBot)) / 2, W = U.clamp(Math.min(p.eR(uBot) - p.eL(uBot), p.eR(uTop) - p.eL(uTop)) - 2 * (p.kind === 'island' ? 1.4 : 1.0), 1.4, 3.0);
+        out.push({ e: null, ue: uTop, ve, dir, uTop, uBot, topY: street, riseE: rise, runE, inBox: true, W, yBot: p.y, roofY: T.ceilY + 0.8, link: 'plat', p });
+      }
+    }
+    return out;
+  }
 
   // ------------------------------------------------------------------------------------------------ furniture, signs, boards
   function* furnish(T) {
     const { zones, plats, place, frameAt, under } = T;
-    const z = zones[0], gd = z.d.sk, B = z.d;
     const busy = (p, u, v, pad = 0.8) => T.occupied.some(o => o.p === p && u > o.u0 - pad && u < o.u1 + pad && v > o.v0 - pad && v < o.v1 + pad);
     for (const p of plats) {
+      const z = p.zone || zones[0], gd = z.d.sk, B = z.d;
       const island = p.kind === 'island';
       const cv = (u) => (p.eL(u) + p.eR(u)) / 2;
       const backV = (u) => island ? cv(u) : (p.sideV > 0 ? p.eR(u) - 0.7 : p.eL(u) + 0.7);
       const faceYaw = island ? 0 : (p.sideV > 0 ? Math.PI : 0);
       for (let u = p.u0 + 18; u < p.u1 - 14; u += 32) {
         if (busy(p, u, cv(u), 2.5)) continue;
-        if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); }
+        if (T.H.benches === 'bullseye' || T.H.benches === 'drum') {
+          // round benches: terrazzo "bullseyes" (Montgomery, Powell) or precast concrete drums (Bay Fair, Orinda)
+          const bull = T.H.benches === 'bullseye'; const r = bull ? 0.8 : 0.5;
+          place(gd, u, island ? cv(u) : backV(u) + (p.sideV > 0 ? -0.5 : 0.5), p.y, 0);
+          if (bull) { gd.mat(0xcfc6b4, K.TERRAZZO, 0); gd.cyl(0, 0, 0, r, r, 0.46, 28, true); gd.mat(0x7a6f60, K.TERRAZZO, 0); gd.cyl(0, 0.46, 0, r * 0.62, r * 0.62, 0.006, 28, true); gd.mat(0xcfc6b4, K.TERRAZZO, 0); gd.cyl(0, 0.466, 0, r * 0.4, r * 0.4, 0.004, 28, true); }
+          else { gd.mat(0xaaa59a, K.CONCRETE, 0); gd.cyl(0, 0, 0, r, r, 0.45, 22, true); }
+          gd.pop();
+        }
+        else if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); }
         else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); }
         if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); }
         const [bx, bz] = T.L2(u, island ? cv(u) : backV(u)); void bx; void bz;
       }
-      const ceil = under ? T.ceilY : p.y + 4.4;
+      const ceil = under ? (p.level && p.level.k ? p.level.ceilY : T.ceilY) : p.y + 4.4;
       for (let u = p.u0 + 10; u < p.u1 - 5; u += 36) {
         const v = island ? cv(u) : backV(u); if (busy(p, u, v, 1.5)) continue; const y = p.y + 3.05;
         z.signs.push({ u, v, y, yaw: T.yawAt(u), w: 3.2, h: 0.4, region: 'nameS', both: true, T });
@@ -1058,9 +1627,9 @@ const StationTypes = (() => {
       z.signs.push({ u: u2, v: v2 + 0.09, y: p.y + 1.35, yaw: T.yawAt(u2) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T });
       yield;
     }
-    if (under) for (const side of [-1, 1]) for (let u = T.pu0 + 12; u < T.pu1 - 8; u += 25) {
-      const v = T.edgeV(u, side) - side * 0.03;
-      z.signs.push({ u, v, y: T.yT + 1.9, yaw: T.yawAt(u) + (side < 0 ? Math.PI : 0), w: 6.4, h: 1.2, region: 'name', both: false, T });
+    if (under) for (const L of T.levels) for (const side of [-1, 1]) for (let u = T.pu0 + 12; u < T.pu1 - 8; u += 25) {
+      const v = (T.levels.length > 1 ? L.edgeV : T.edgeV)(u, side) - side * 0.03;
+      L.zone.signs.push({ u, v, y: L.yT + 1.9, yaw: T.yawAt(u) + (side < 0 ? Math.PI : 0), w: 6.4, h: 1.2, region: 'name', both: false, T });
     }
   }
   // a display face on each side (normals +u and -u), 1.8 x 0.45 m, just proud of the housing
@@ -1114,5 +1683,5 @@ const StationTypes = (() => {
   function addWall(W, a, b, y0, y1) { W.walls.push({ x0: a[0], z0: a[1], x1: b[0], z1: b[1], y0, y1 }); }
   function indexWalk(W) { W.nFloors = W.floors.length; W.nWalls = W.walls.length; }
 
-  return { build, STYLE, ERA, styleFor, Zone, addFloor, addSlope, addWall };
+  return { build, footprint, STYLE, ERA, styleFor, Zone, addFloor, addSlope, addWall };
 })();
