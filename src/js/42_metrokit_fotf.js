@@ -76,7 +76,8 @@
       for (const [xr, tr_] of [[h.x0 + r[0], h.t0 + r[0]], [h.x1 - r[1], h.t0 + r[1]], [h.x1 - r[2], h.t1 - r[2]], [h.x0 + r[3], h.t1 - r[3]]]) { xs.add(xr); ts.add(tr_); } }
     const X = [...xs].filter(v => v >= xa - 1e-6 && v <= xb + 1e-6).sort((a, b) => a - b), T = [...ts].filter(v => v >= ta - 1e-6 && v <= tb + 1e-6).sort((a, b) => a - b);
     const ux = [], ut = []; for (const v of X) if (!ux.length || v - ux[ux.length - 1] > 1e-5) ux.push(v); for (const v of T) if (!ut.length || v - ut[ut.length - 1] > 1e-5) ut.push(v);
-    const vid = new Map(), key = (i, j) => i * 4096 + j;
+    // vertices are shared between cells of the same palette entry only (a vertex carries its cell's palette texel)
+    const vid = new Map(), key = (i, j) => (mb.u * 256 * 4096 + i) * 4096 + j;
     const V = (i, j) => { const k = key(i, j); let id = vid.get(k); if (id === undefined) { const b = bodyAt(P, ux[i], ut[j], s, off); id = mb.v(b.p[0], b.p[1], b.p[2], b.n[0], b.n[1], b.n[2], ux[i], ut[j], b.ty); vid.set(k, id); } return id; };
     const quadW = (a, b, c, d) => { if (s > 0) mb.quad(a, b, c, d); else mb.quad(a, d, c, b); };
     const triW = (a, b, c) => { if (s > 0) mb.tri(a, b, c); else mb.tri(a, c, b); };
@@ -764,6 +765,7 @@
   };
 
   K.builders.bart.interior = (d, q) => K.buildFotfInterior(d, q);
+  K.builders.bart.lod = (d, level) => K.fotfLod(d, level);
   K.buildFotf = buildFotf; K.sideGrid = sideGrid; K.rrXT = rrXT; K.ring = ring; K.fill = fill;
   K.fotfProfile = { makeProfile, profAt, tAtY, bodyAt };
 })();
