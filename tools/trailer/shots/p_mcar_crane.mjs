@@ -1,8 +1,8 @@
 // P06, late morning at MacArthur, the station in the freeway median: the camera starts at eye level on the west island
 // platform, looking north along it, eases to the platform's end and cranes up to 60 m past the canopy, revealing the
 // freeway lanes on both sides, trains both ways in the median and the Berkeley/Oakland hills beyond. The title BAYLINE sits over the
-// first half (calm centre: the platform's vanishing point and the hills). Trains: two passing each other in the median
-// 300-750 m ahead (__m.crossings on the Concord pair) when the crane is near the top, 9 s in.
+// first half (calm centre: the platform's vanishing point and the hills). Trains: a northbound and a southbound in the
+// median ahead when the crane is near the top (__m.meet 400 m up the line, their passages < 20 s apart).
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
 export default {
@@ -14,8 +14,10 @@ export default {
     const P = (d, h, lat = 0) => ({ x: A.x + nx * d + F.rx * lat, y: yP + h, z: A.z + nz * d + F.rz * lat });
     window.__P = { P }; __cine.put(P(52, 1.7), P(300, 2.2));
     // trains both ways: two trains passing each other within 150 m of the platform's middle, about halfway up the crane
-    const X = M.crossings('K3.2', 1000, 1480, 11 * 3600, 11.9 * 3600, { step: 40, gap: 6 })[0]; if (!X) return 'no crossing';
-    window.__dep = { t: X.t - 9.2, a: X.a, b: X.b, gap: X.gap, s: X.s };
+    // a northbound and a southbound past the same point 400 m up the median less than 20 s apart: both in view ahead
+    // when the crane is high (the midpoint of their passages 9.4 s in)
+    const X = M.meet({ track: 'K3.2', s: 1150 }, { heading: 9, tol: 40 }, { heading: 189, tol: 40 }, 10 * 3600 + 58 * 60, 9.4, { gap: 20, mid: true, within: 3 * 3600 });
+    if (!X) return 'no meeting'; window.__dep = X;
     return window.__dep; }`,
   prime: `() => { const P = window.__P.P; __cine.put(P(52, 1.7), P(300, 2.2)); window.__bayline.Env.setClock(window.__dep.t); return window.__dep.a.line + ' / ' + window.__dep.b.line + ' gap ' + window.__dep.gap; }`,
   before: `(t) => { window.__bayline.Env.camera.fov = 37; }`,

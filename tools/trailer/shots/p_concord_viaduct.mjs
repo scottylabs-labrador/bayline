@@ -18,8 +18,8 @@ export default {
   prime: `() => { const M = window.__m, S = window.__S, B = window.__bayline, C = __cine;
     let best = null; for (const c of S.cands) { const r = M.sight(c, M.trackPts(S.T, c.s, 70, 5, 2.2)); if (!best || r.clear > best.r.clear + 0.01) best = { c, r }; if (r.clear >= 0.99) break; }
     const c = best.c, el = (P) => Math.atan2(P.y - c.y, Math.hypot(P.x - c.x, P.z - c.z)), at = el(c.tr), as = el(S.sm);
-    // the lens: the span train..summit over 62% of the 2.39:1 band (which is 74% of the frame); the aim: the train 19% up the band
-    const span = as - at, vf = Math.min(16.4, Math.max(8.6, span / 0.62 / 0.74 * 180 / Math.PI)), band = vf * 0.74 * Math.PI / 180, aim = at + band * (0.5 - 0.19);
+    // the lens: the span train..summit over 56% of the 2.39:1 band (which is 74% of the frame); the aim: the train 30% up the band
+    const span = as - at, vf = Math.min(16.4, Math.max(8.6, span / 0.56 / 0.74 * 180 / Math.PI)), band = vf * 0.74 * Math.PI / 180, aim = at + band * (0.5 - 0.3);
     const q = { x: c.x + c.u.x * 1000, y: c.y + Math.tan(aim) * 1000, z: c.z + c.u.z * 1000 }, px = -c.u.z, pz = c.u.x, dd = 16;
     window.__P = { vf, c0: { x: c.x - px * dd, y: c.y, z: c.z - pz * dd }, c1: { x: c.x + px * dd, y: c.y + 2, z: c.z + pz * dd }, q0: { x: q.x - px * dd, y: q.y, z: q.z - pz * dd }, q1: { x: q.x + px * dd, y: q.y + 2, z: q.z + pz * dd } };
     window.__dep = M.pass({ track: 'C1', s: c.s }, {}, 18 * 3600 + 33 * 60, 4.8, { focus: true });
