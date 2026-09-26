@@ -13,10 +13,12 @@
 // API: MetroTrack.enabled, init(), update(camPos, dt), group, stats, DIM, PAL, GB (geometry builder), frameAt(track, s, o),
 //      pairAt(track, s) -> { t2, s2, lat } | null, limits(track) (station ranges: STATIONS builds the box/deck there).
 const MetroTrack = (() => {
-  const enabled = (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();
+  // the metro flag: MetroSim's rule (46_metrosim.js): #metro=1 / #metro=0 in the hash decide, else the shipped default,
+  // which the page has to set before the metro modules load: window.BAYLINE_METRO_DEFAULT (false until M3 ships)
+  const enabled = (() => { try { const h = new URLSearchParams(location.hash.slice(1)); return h.has('metro') ? h.get('metro') !== '0' : window.BAYLINE_METRO_DEFAULT === true; } catch (e) { return false; } })();
   const group = new THREE.Group(); group.name = 'metro-infra';
-  const stats = { chunks: 0, far: 0, body: 0, detail: 0, jobs: 0, buildMs: 0, tris: 0, inst: 0 };
-  if (!enabled) return { enabled: false, init() {}, update() {}, group, stats };
+  const stats = { chunks: 0, far: 0, body: 0, detail: 0, jobs: 0, buildMs: 0, tris: 0, inst: 0, away: 0, slow: [], instMs: 0 };
+  if (!enabled) return { enabled: false, init() {}, update() {}, setQuality() {}, group, stats };
 
   // ---------------------------------------------------------------- dimensions (metres; research: notes/bart/infra.md)
   const DIM = {
@@ -452,7 +454,7 @@ const MetroTrack = (() => {
         for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) {
           const l = grid.get(key(cx + a, cz + c)); if (!l) continue;
           for (let q = 0; q < l.length; q += 2) {
-            const R2 = TRACKS[l[q]]; if (R2 === R) continue; const t2 = R2.t, j = l[q + 1];
+            const R2 = TRACKS[l[q]]; if (R2 === R || R.cls === 'crossover' || R2.cls === 'crossover') continue; const t2 = R2.t, j = l[q + 1];   // (crossovers never share a structure)
             for (let jj = Math.max(0, j - 2); jj <= Math.min(t2.X.length - 2, j + 1); jj++) {
               const ax = t2.X[jj], az = t2.Z[jj], dx = t2.X[jj + 1] - ax, dz = t2.Z[jj + 1] - az, L2 = dx * dx + dz * dz || 1e-9;
               const uu = U.clamp(((F0.x - ax) * dx + (F0.z - az) * dz) / L2, 0, 1), px = ax + dx * uu, pz = az + dz * uu;
@@ -565,11 +567,13 @@ const MetroTrack = (() => {
     }
   }
   const jobs = [];
+  // (stats.slow: the slowest job steps seen, [ms, stage], for QA: every step should stay well under a frame)
   function runJobs() {
     const t0 = performance.now(); jobs.sort((a, b) => a.d - b.d);
     while (jobs.length && performance.now() - t0 < BUDGET) {
-      const j = jobs[0]; let r;
+      const j = jobs[0]; let r; const ts = performance.now();
       try { r = j.gen.next(); } catch (e) { console.error('metrotrack job', j.ch.layer, j.ch.R.id, j.ch.k, e); r = { done: true }; j.ch.failed++; j.ch.job = null; }
+      const dt = performance.now() - ts; if (dt > 6) { stats.slow.push([+dt.toFixed(1), j.ch.layer + ':' + (j.ch.stage || '?') + ':' + j.ch.R.id + ':' + j.ch.k]); if (stats.slow.length > 40) { stats.slow.sort((a, b) => b[0] - a[0]); stats.slow.length = 20; } }
       if (r.done) jobs.shift();
     }
     stats.buildMs = +(performance.now() - t0).toFixed(2); stats.jobs = jobs.length;
@@ -634,13 +638,15 @@ const MetroTrack = (() => {
     for (const run of ch.R.runs) {
       if (run.s1 <= ch.s0 || run.s0 >= ch.s1) continue;
       const a = Math.max(run.s0, ch.s0), b = Math.min(run.s1, ch.s1);
-      if (UNDERGROUND.has(run.type)) { if (typeof MetroTube !== 'undefined') MetroTube.body(ctx, run, a, b); }
-      else if (typeof MetroGuide !== 'undefined') MetroGuide.body(ctx, run, a, b);
+      ch.stage = run.type;
+      if (UNDERGROUND.has(run.type)) { if (typeof MetroTube !== 'undefined') { const it = MetroTube.body(ctx, run, a, b); if (it && it.next) yield* it; } }
+      else if (typeof MetroGuide !== 'undefined') { for (const [u0, u1] of MetroGuide.bodySplit(run, a, b)) { MetroGuide.body(ctx, run, u0, u1); yield; } }
       yield;
     }
-    const mi = addMesh(g, B.infra, MATS.infra); if (mi) outdoorMark(ch, mi);
+    ch.stage = 'mesh'; const mi = addMesh(g, B.infra, MATS.infra); if (mi) outdoorMark(ch, mi);
     if (B.fence) { const fm = B.fence.mesh(MATS.fence); if (fm) { g.add(fm); outdoorMark(ch, fm); } }
-    if (typeof MetroTube !== 'undefined') MetroTube.finish(ctx, g);
+    yield;
+    ch.stage = 'cells'; if (typeof MetroTube !== 'undefined') { const it = MetroTube.finish(ctx, g); if (it && it.next) yield* it; }
     ch.g = g; ch.job = null; g.visible = false; group.add(g);
     if (typeof MetroTube !== 'undefined') MetroTube.commitCells(ch);
   }
@@ -649,15 +655,15 @@ const MetroTrack = (() => {
   function* detailJob(ch) {
     const g = makeLayer(ch, 'detail'), ctx = ctxFor(ch, 'detail');
     const B = { infra: new GB(), tunnel: new TGB() }; ctx.B = B;
-    if (typeof MetroGuide !== 'undefined') { for (const step of MetroGuide.detail(ctx)) yield; }
-    const mi = addMesh(g, B.infra, MATS.infra, { shadow: true }); if (mi) outdoorMark(ch, mi);
+    ch.stage = 'detail'; if (typeof MetroGuide !== 'undefined') { for (const step of MetroGuide.detail(ctx)) yield; }
+    ch.stage = 'mesh'; const mi = addMesh(g, B.infra, MATS.infra, { shadow: true }); if (mi) outdoorMark(ch, mi);
     if (B.tunnel.count) addMesh(g, B.tunnel, MATS.tunnel, { shadow: false });
     ch.g = g; ch.job = null; g.visible = false; group.add(g);
   }
   function* farJob(ch) {
     const g = makeLayer(ch, 'far'), ctx = ctxFor(ch, 'far'); const B = { infra: new GB() }; ctx.B = B;
-    if (typeof MetroGuide !== 'undefined') MetroGuide.far(ctx, LAYERS.far.SUB);
-    yield;
+    ch.stage = 'far'; if (typeof MetroGuide !== 'undefined') { const it = MetroGuide.far(ctx, LAYERS.far.SUB); if (it && it.next) yield* it; }
+    yield; ch.stage = 'mesh';
     const mat = infraMaterial('far'); ch.mat = mat;                              // (its own uHide mask; the program is shared)
     const m = addMesh(g, B.infra, mat, { shadow: false }); if (m) { m.castShadow = false; outdoorMark(ch, m); }
     ch.g = g; ch.job = null; g.visible = false; group.add(g);
@@ -696,16 +702,33 @@ const MetroTrack = (() => {
   }
   const nearSets = { detail: new Set(), body: new Set(), far: new Set() };
   function chunkDist(ch, p) { const b = ch.bb; const dx = Math.max(b[0] - p.x, 0, p.x - b[3]), dy = Math.max(b[1] - p.y, 0, p.y - b[4]), dz = Math.max(b[2] - p.z, 0, p.z - b[5]); return Math.sqrt(dx * dx + dy * dy + dz * dz); }
-  function gather(layer, p) {
-    const set = nearSets[layer]; set.clear(); const G = grids[layer], rr = Math.ceil(LAYERS[layer].R * LAYERS[layer].keep / CG), ci = Math.floor(p.x / CG), cj = Math.floor(p.z / CG);
+  function gather(layer, p, R0) {
+    const set = nearSets[layer]; set.clear(); const G = grids[layer], rr = Math.ceil((R0 || LAYERS[layer].R) * LAYERS[layer].keep / CG), ci = Math.floor(p.x / CG), cj = Math.floor(p.z / CG);
     for (let a = -rr; a <= rr; a++) for (let b = -rr; b <= rr; b++) { const l = G.get((ci + a) * 100003 + (cj + b)); if (l) for (const ch of l) set.add(ch); }
     for (const ch of set) ch.d = chunkDist(ch, p);
     return set;
   }
   function schedule(ch, gen, dExtra) { ch.job = gen; built[ch.layer].add(ch); jobs.push({ gen, ch, d: ch.d + dExtra }); }
+  // Away from BART nothing is built and nothing runs: a coarse presence grid (2 km cells holding any track) answers "is
+  // any track within r" in O(1). The far ring (silhouettes) reaches 3 km from the ground and 11 km from the air, so
+  // views on the Peninsula cost nothing.
+  const PG = 2000, FAR_GROUND = 3000; let pres = null, away = true, farR = FAR_GROUND;
+  function buildPresence() { pres = new Set(); for (const R of TRACKS) { const t = R.t; for (let i = 0; i < t.X.length; i += 8) pres.add(Math.floor(t.X[i] / PG) * 100003 + Math.floor(t.Z[i] / PG)); } }
+  function bartWithin(x, z, r) { if (!pres) return false; const n = Math.ceil(r / PG), ci = Math.floor(x / PG), cj = Math.floor(z / PG);
+    for (let a = -n; a <= n; a++) for (let b = -n; b <= n; b++) if (pres.has((ci + a) * 100003 + (cj + b))) return true; return false; }
+  function disposeAll() { for (const j of jobs.slice()) dropJob(j.ch); jobs.length = 0; for (const layer of ['detail', 'body', 'far']) for (const ch of [...built[layer]]) { disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
+  // graphics tier: Low draws the structures and rails only (no instanced fasteners / ties / insulators, no fences)
+  let tierName = 'high';
+  function setQuality(name) { tierName = name || 'high'; const low = tierName === 'low'; if (MATS.fence) MATS.fence.visible = !low; if (typeof MetroGuide !== 'undefined' && MetroGuide.setLow) MetroGuide.setLow(low); }
   function update(camPos, dt) {
     applyShot();
     if (!ready) return;
+    const alt = camPos.y - groundAt(camPos.x, camPos.z); farR = U.lerp(FAR_GROUND, R_FAR, U.smooth(60, 450, alt));
+    if (!bartWithin(camPos.x, camPos.z, farR + 1000)) {
+      if (!away) { away = true; disposeAll(); if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) MetroGuide.updateInstances(camPos, TRACKS, true); }
+      stats.away = 1; stats.chunks = stats.far = stats.body = stats.detail = 0; stats.jobs = 0; stats.buildMs = 0; return;
+    }
+    away = false; stats.away = 0;
     // wetness follows the rain (dries slowly)
     const rain = typeof Precip !== 'undefined' && Precip.state && Precip.state.kind === 'rain' ? Precip.state.rate : 0;
     uWet.value = U.clamp(uWet.value + (rain > 0.05 ? dt / 40 : -dt / 900), 0, 1);
@@ -725,13 +748,13 @@ const MetroTrack = (() => {
     }
     // FAR: silhouettes of aerials, bridges, embankments; each 400 m piece hides where a body chunk shows
     const SUB = LAYERS.far.SUB, BC = LAYERS.body.CH;
-    for (const ch of gather('far', camPos)) {
+    for (const ch of gather('far', camPos, farR)) {
       if (ch.failed > 2 || !ch.R.hasSil[ch.k]) continue; const d = ch.d;
-      if (d < R_FAR && d > R_BODY * 0.5 && !ch.g && !ch.job) schedule(ch, farJob(ch), 500 + d * 0.3);
+      if (d < farR && d > R_BODY * 0.5 && !ch.g && !ch.job) schedule(ch, farJob(ch), 500 + d * 0.3);
       if (ch.g) {
         let mask = 0, nsub = Math.ceil((ch.s1 - ch.s0) / SUB);
         for (let j = 0; j < nsub; j++) { const sm = ch.s0 + (j + 0.5) * SUB, bc = ch.R.L.body[Math.min(ch.R.L.body.length - 1, Math.floor(sm / BC))]; if (bc && bc.g && bc.g.visible) mask |= 1 << j; }
-        ch.g.visible = d < R_FAR && mask !== (1 << nsub) - 1;
+        ch.g.visible = d < farR && mask !== (1 << nsub) - 1;
         if (ch.mat) ch.mat.userData.u.uHide.value = mask;
         if (ch.g.visible) nFar++;
       }
@@ -743,15 +766,22 @@ const MetroTrack = (() => {
       for (const ch of [...built[layer]]) { const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
     }
     runJobs();
-    if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) MetroGuide.updateInstances(camPos, TRACKS);
+    if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) { const ti = performance.now(); try { MetroGuide.updateInstances(camPos, TRACKS); } catch (e) { if (!instErr) { instErr = true; console.warn('MetroTrack: instanced parts off', e); } } stats.instMs = Math.max(stats.instMs * 0.98, performance.now() - ti); }
     stats.chunks = nearSets.body.size + nearSets.detail.size + nearSets.far.size; stats.far = nFar; stats.body = nBody; stats.detail = nDet;
   }
 
+  let instErr = false;
+  // (any failure here, missing data included, leaves the metro guideway out and the game as it was; MetroSim logs the
+  // one warning for a metro failure, so this module only notes it at info level)
   async function init() {
+    try { await init1(); } catch (e) { ready = false; try { disposeAll(); Env.scene.remove(group); } catch (e2) {} console.info('MetroTrack: off (' + (e && e.message || e) + ')'); }
+  }
+  async function init1() {
     MATS.infra = infraMaterial('infra'); MATS.tunnel = infraMaterial('tunnel'); MATS.far = infraMaterial('far'); MATS.fence = fenceMaterial();
+    net = await MetroNet.load();
+    if (!net || !net.tracks || !net.tracks.length) throw new Error('no metro tracks');
     Env.scene.add(group);
     if (typeof Under !== 'undefined') Under.keep(group);
-    try { net = await MetroNet.load(); } catch (e) { console.warn('MetroTrack: no MetroNet data', e); return; }
     for (const t of net.tracks) {
       if (t.sys === 'oac') continue;                              // the airport connector is its own thing (later)
       if (t.cls === 'yard' && !/yd/.test(t.id)) continue;
@@ -766,15 +796,16 @@ const MetroTrack = (() => {
     for (const R of TRACKS) { R.hasSil = R.L.far.map(ch => R.runs.some(r => r.s1 > ch.s0 && r.s0 < ch.s1 && (r.type === 'aerial' || r.type === 'bridge' || r.type === 'embankment'))); }
     if (typeof MetroGuide !== 'undefined' && MetroGuide.init) MetroGuide.init({ DIM, PAL, GB, MATS, group });
     if (typeof MetroTube !== 'undefined' && MetroTube.init) MetroTube.init({ DIM, PAL, GB, MATS, group, TRACKS });
+    buildPresence(); setQuality(tierName);
     ready = true;
-    console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
+    if (/(^|&)debug(=|&|$)/.test(location.hash.slice(1))) console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
   }
   // track by MetroNet track object or id
   const trackOf = (t) => TI.get(typeof t === 'string' ? (MetroNet.byId || {})[t] : t);
   // the contact rail as drawn, for TRAINS (collector shoes) and SIM: see notes/bart/infra.md "Third rail (contact rail)"
   const thirdRail = (id, s) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdAt(R, s) : null; };
   const thirdRuns = (id, s0, s1) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdRuns(R, s0, s1) : []; };
-  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
+  return { enabled: true, init, update, setQuality, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
     get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)

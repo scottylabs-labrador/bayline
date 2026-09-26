@@ -121,7 +121,7 @@ const MetroTube = (() => {
         const e = [c[0] + F.lx * o * 0.072, c[1] - 0.005, c[2] + F.lz * o * 0.072]; gb.box(e[0], e[1], e[2], T, Uv, Lv, 0.58, 0.045, 0.004, PAL.lamp);
       }
       // doors into the gallery / cross passages (grey steel in a concrete frame) and blue light stations
-      for (let s = Math.ceil(ss[0] / sec.doors) * sec.doors + 12; s < ss[ss.length - 1]; s += sec.doors) {
+      for (let s = Math.ceil((ss[0] - 12) / sec.doors) * sec.doors + 12; s < ss[ss.length - 1]; s += sec.doors) {
         MT.frameAt(ctx.R, s, F); setRef(gb, ctx, F); gb.s = s;
         const T = [F.tx, F.ty, F.tz], Lv = [F.lx, F.ly, F.lz], Uv = [F.vx, F.vy, F.vz];
         const h0 = WALK, wl = P.wallAt(h0 + 1.05) + o * 0.02, c = [F.x + F.lx * wl + F.vx * (h0 + 1.05) - ctx.ox, F.y + F.ly * wl + F.vy * (h0 + 1.05), F.z + F.lz * wl + F.vz * (h0 + 1.05) - ctx.oz];
@@ -213,25 +213,36 @@ const MetroTube = (() => {
   // a turnout): per level of the cluster (tracks within 3 m in height; the Oakland Wye stacks two), the track along
   // which the others run beside it the longest builds one wide cut-and-cover chamber (walls 2.01 m outside the outer
   // tracks, 5.3 m high), with end walls around the tunnels that continue; every other track's tunnel inside it is culled.
-  let CHB = null;
-  function chambers() {
-    if (CHB) return CHB; CHB = []; const byKey = new Map();
-    for (const R of TRACKS) for (const z of MetroGuide.zonesOf(R)) if (z[2]) { let l = byKey.get(z[2]); if (!l) byKey.set(z[2], l = []); l.push({ R, z }); }
+  let CHB = null, prepDone = false, prepIt = null;
+  function chambers() { if (!prepDone) { if (!prepIt) prepIt = chambersGen(); for (;;) { if (prepIt.next().done) break; } prepDone = true; } return CHB; }
+  // one slice of the chamber precompute (the body jobs call this until it is done, a key per step)
+  function prepStep() { if (prepDone) return; if (!prepIt) prepIt = chambersGen(); if (prepIt.next().done) prepDone = true; }
+  function* chambersGen() {
+    CHB = []; const byKey = new Map(); let n = 0;
+    for (const R of TRACKS) { for (const z of MetroGuide.zonesOf(R)) if (z[2]) { let l = byKey.get(z[2]); if (!l) byKey.set(z[2], l = []); l.push({ R, z }); } if (++n % 25 === 0) yield; }
+    yield;
     for (const [key, list] of byKey) {
+      yield;
       const lv = [];
       for (const e of list) { MT.frameAt(e.R, U.clamp((e.z[0] + e.z[1]) / 2, 0, e.R.len), F); e.y = F.y;
         let g = lv.find(g => Math.abs(g.y - e.y) < 3); if (!g) lv.push(g = { y: e.y, list: [] }); g.list.push(e); }
-      lv.forEach((g, li) => {
-        const set = new Set(g.list.map(e => e.R)); let best = null;
+      for (let li = 0; li < lv.length; li++) {
+        const g = lv[li], set = new Set(g.list.map(e => e.R)); let best = null;
         for (const own of g.list.slice().sort((a, b) => a.R.id < b.R.id ? -1 : 1)) {
-          const R = own.R, p = MT.pairAt(R, U.clamp((own.z[0] + own.z[1]) / 2, 0, R.len)), partner = p ? p.R2 : null;
+          // (only an underground track can own a chamber)
+          const R = own.R; MT.frameAt(R, U.clamp((own.z[0] + own.z[1]) / 2, 0, R.len), F); if (F.struct < 6 && !R.runs.some(r => UNDER.has(r.type) && r.s1 > own.z[0] - 60 && r.s0 < own.z[1] + 60)) continue;
+          const p = MT.pairAt(R, U.clamp((own.z[0] + own.z[1]) / 2, 0, R.len)), partner = p ? p.R2 : null;
           const r = alongside(R, own.z, set, partner); if (r && (!best || r[1] - r[0] > best.b - best.a)) best = { R, a: r[0], b: r[1], partner };
+          yield;
         }
-        if (!best || best.b - best.a < 12) return;
-        CHB.push({ key, lvl: li, R: best.R, s0: Math.max(0, best.a - 6), s1: Math.min(best.R.len, best.b + 6), tracks: set, partner: best.partner });
-      });
+        if (!best || best.b - best.a < 12) continue;
+        const c = { key, lvl: li, R: best.R, s0: Math.max(0, best.a - 6), s1: Math.min(best.R.len, best.b + 6), tracks: set, partner: best.partner };
+        // (a world bbox for quick rejects in inChamber)
+        let bx0 = 1e9, bz0 = 1e9, bx1 = -1e9, bz1 = -1e9; for (let q = c.s0; ; q = Math.min(c.s1, q + 5)) { MT.frameAt(c.R, q, F); bx0 = Math.min(bx0, F.x); bx1 = Math.max(bx1, F.x); bz0 = Math.min(bz0, F.z); bz1 = Math.max(bz1, F.z); if (q >= c.s1) break; }
+        c.bb = [bx0 - 25, bz0 - 25, bx1 + 25, bz1 + 25];
+        CHB.push(c);
+      }
     }
-    return CHB;
   }
   // along R around its junction zone: the s-range where another track of the set runs beside it (within 12 m, the same
   // level, roughly parallel, abreast rather than behind or ahead), underground and outside stations
@@ -253,7 +264,7 @@ const MetroTube = (() => {
   // is a point (world) inside a chamber other than one owned by R?  (projection onto the owner, span + 1.9 m)
   function inChamber(R, x, y, z) {
     for (const c of chambers()) {
-      if (c.R === R || !c.tracks.has(R)) continue;
+      if (c.R === R || !c.tracks.has(R) || x < c.bb[0] || x > c.bb[2] || z < c.bb[1] || z > c.bb[3]) continue;
       const t = c.R.t, st = t.step, i0 = Math.max(0, Math.floor(c.s0 / st)), i1 = Math.min(t.X.length - 2, Math.ceil(c.s1 / st));
       let bd = 1e9, bs = 0, bl = 0, by = 0, ba = 0;
       for (let i = i0; i <= i1; i++) { const ax = t.X[i], az = t.Z[i], dx = t.X[i + 1] - ax, dz = t.Z[i + 1] - az, L2 = dx * dx + dz * dz || 1e-9, u = ((x - ax) * dx + (z - az) * dz) / L2;
@@ -383,24 +394,26 @@ const MetroTube = (() => {
     return (R.mouths = out);
   }
   const dayOf = (R, s) => { let d = 1e9; for (const m of mouths(R)) d = Math.min(d, Math.abs(s - m.s)); return d > 60 ? 0 : Math.exp(-d / 9); };
-  function body(ctx, run, a, b) {
+  // (generators: the chunk job yields after every cell and every heavy step, so no frame carries more than a few ms)
+  function* body(ctx, run, a, b) {
     const R = ctx.R; ctx.B.tcells = ctx.B.tcells || [];
+    while (!prepDone) { ctx.ch.stage = 'tube:prep'; prepStep(); yield; }        // (the global chambers, computed in slices first)
     MT.frameAt(R, (a + b) / 2, F); const sec = sectionOf(run.type === 'portal' ? 'cutcover' : run.type, F.x, F.z);
     // chambers owned by this track inside [a, b]: build them, and the normal section only outside them
     const mine = chambers().filter(c => c.R === R && c.s1 > a && c.s0 < b).sort((x, y) => x.s0 - y.s0);
     if (mine.length) {
       let cur = a;
-      for (const c of mine) { const ca = Math.max(a, c.s0), cb = Math.min(b, c.s1); if (ca > cur + 0.5) body1(ctx, run, sec, cur, ca); ctx.B.tcells.push(buildChamber(ctx, c, ca, cb)); cur = cb; }
-      if (b > cur + 0.5) body1(ctx, run, sec, cur, b);
+      for (const c of mine) { const ca = Math.max(a, c.s0), cb = Math.min(b, c.s1); if (ca > cur + 0.5) yield* body1(ctx, run, sec, cur, ca); ctx.ch.stage = 'tube:chamber'; ctx.B.tcells.push(buildChamber(ctx, c, ca, cb)); yield; cur = cb; }
+      if (b > cur + 0.5) yield* body1(ctx, run, sec, cur, b);
       return;
     }
-    body1(ctx, run, sec, a, b);
+    yield* body1(ctx, run, sec, a, b);
   }
-  function body1(ctx, run, sec, a, b) {
+  function* body1(ctx, run, sec, a, b) {
     const R = ctx.R;
     // pieces of [a, b] outside any chamber (another track's) that swallows this track; where a piece meets a chamber,
     // its end is found to a few cm (bisection) and reaches 0.3 m into the chamber's end wall, so no gap shows
-    const ins = (q) => { MT.frameAt(R, q, F); return !!inChamber(R, F.x, F.y, F.z); };
+    ctx.ch.stage = 'tube:pieces'; const ins = (q) => { MT.frameAt(R, q, F); return !!inChamber(R, F.x, F.y, F.z); };
     const edge = (qIn, qOut) => { for (let k = 0; k < 7; k++) { const m = (qIn + qOut) / 2; if (ins(m)) qIn = m; else qOut = m; } return qOut + (qIn - qOut > 0 ? 0.3 : -0.3); };
     const pieces = []; { let cur = null, prevQ = null, prevIn = false;
       for (let q = a; ; q = Math.min(b, q + 2)) { const inside = ins(q);
@@ -408,9 +421,10 @@ const MetroTube = (() => {
         else if (cur) { cur[1] = Math.min(b, edge(q, cur[1])); pieces.push(cur); cur = null; }
         prevQ = q; prevIn = inside; if (q >= b) break; }
       if (cur) pieces.push(cur); }
-    for (const [pa, pb] of pieces) if (pb - pa > 0.5) body2(ctx, run, sec, pa, pb);
+    yield;
+    for (const [pa, pb] of pieces) if (pb - pa > 0.5) yield* body2(ctx, run, sec, pa, pb);
   }
-  function body2(ctx, run, sec, a, b) {
+  function* body2(ctx, run, sec, a, b) {
     const R = ctx.R;
     for (const [q0, q1] of MetroGuide.ownedRanges(ctx, a, b)) {
       const n = Math.max(1, Math.ceil((q1 - q0) / CELL));
@@ -423,7 +437,9 @@ const MetroTube = (() => {
         if (p) { const o = p.lat > 0 ? -1 : 1; tl.push({ L: 0, o }, { L: p.lat, o: -o }); } else tl.push({ L: 0, o: -innerSide(R, (s0 + s1) / 2) });
         const id = 'tn:' + R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0);
         const cell = { id, s0, s1, sec, tl, tgb: new MT.TGB(), R };
-        buildCell(ctx, cell, sec, tl, ss);
+        // (built in pieces of ~50 m that share their boundary rows, a step each)
+        ctx.ch.stage = 'tube:cell'; for (let i0 = 0; i0 < ss.length - 1;) { let i1 = i0 + 1; while (i1 < ss.length - 1 && ss[i1] - ss[i0] < 25) i1++; buildCell(ctx, cell, sec, tl, ss.slice(i0, i1 + 1)); i0 = i1; yield; }
+        ctx.ch.stage = 'tube:strip';
         // where this box meets a bored section (the Oakland box and the Tube, a portal box and the Berkeley Hills
         // bores): a bulkhead across the box with the bores' openings
         if (sec.kind === 'box') {
@@ -444,53 +460,57 @@ const MetroTube = (() => {
         // junctions: drop what lies inside another track's tunnel (the union of the tunnels remains: an opening in the
         // centre wall where a crossover passes, the split nose of a wye); the cluster's cells then show together
         const zs = MetroGuide.zonesOf(R).filter(z => z[1] > s0 && z[0] < s1);
-        if (zs.length) { cell.zone = zs.map(z => z[2]).filter(Boolean); if (!cell.zone.length) cell.zone = null; cullInside(ctx, cell, p ? [R, p.R2] : [R]); }
+        if (zs.length) { ctx.ch.stage = 'tube:cull'; cell.zone = zs.map(z => z[2]).filter(Boolean); if (!cell.zone.length) cell.zone = null; yield* cullInside(ctx, cell, p ? [R, p.R2] : [R]); }
+        ctx.ch.stage = 'tube:head';
         ctx.B.tcells.push(cell);
         // mouths in this cell: a headwall facing out
         for (const m of mouths(R)) if (m.s >= s0 - 0.5 && m.s <= s1 + 0.5 && m.s >= ctx.s0 && m.s < ctx.s1) {
           const secs = tl.map(t => sec.kind === 'box' ? boxProfile(sec, t.L, t.o, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25) : boreProfile(sec, t.L, t.o));
-          headwall(ctx, m.s, m.dir, secs, lo, hi, crown); cell.mouth = m;
+          headwall(ctx, m.s, m.dir, secs, lo, hi, crown); cell.mouth = m; yield;
         }
       }
     }
   }
   // envelope of a tunnel around a track: |lateral| < 2.3 m and top of rail - 0.6 .. + 4.7 m
-  function cullInside(ctx, cell, own) {
+  // (the other tracks' segments are bucketed in a 6 m grid, so each vertex tests only the few segments near it; the
+  // vertices are processed in batches between yields)
+  function* cullInside(ctx, cell, own) {
     const gb = cell.tgb, P = gb.p, I = gb.i; if (!I.length) return;
     // other underground tracks near this cell, as polylines (x, z, y) around it
     let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const q of cell.strip.pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[2]); z1 = Math.max(z1, q[2]); }
-    const envs = [];
     const mid = cell.strip.pts[Math.floor(cell.strip.pts.length / 2)], reach = Math.hypot(x1 - x0, z1 - z0) / 2 + 25;
+    const GS = 6, grid = new Map(), seg = [];          // seg: [ax, az, ay, bx, bz, by, underground]
     for (const q of MT.net.nearAll(mid[0], mid[2], reach)) {
       const Q = MT.trackOf(q.track); if (!Q || own.includes(Q)) continue;
       const t = Q.t, st = t.step, i0 = Math.max(0, Math.floor((q.s - reach - 30) / st)), i1 = Math.min(t.X.length - 1, Math.ceil((q.s + reach + 30) / st));
-      const pts = []; for (let i = i0; i <= i1; i++) { const c = t.ST[i]; pts.push(t.X[i], t.Z[i], t.Y[i], c >= 6 ? 1 : 0); }
-      if (pts.length >= 8) envs.push(pts);
+      for (let i = i0; i < i1; i++) { if (t.ST[i] < 6 && t.ST[i + 1] < 6) continue; const k = seg.length; seg.push([t.X[i], t.Z[i], t.Y[i], t.X[i + 1], t.Z[i + 1], t.Y[i + 1]]);
+        const gx0 = Math.floor((Math.min(t.X[i], t.X[i + 1]) - 2.3) / GS), gx1 = Math.floor((Math.max(t.X[i], t.X[i + 1]) + 2.3) / GS);
+        const gz0 = Math.floor((Math.min(t.Z[i], t.Z[i + 1]) - 2.3) / GS), gz1 = Math.floor((Math.max(t.Z[i], t.Z[i + 1]) + 2.3) / GS);
+        for (let gx = gx0; gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) { const key = gx * 100003 + gz; let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(k); } }
     }
-    if (!envs.length) return;
+    if (!seg.length) return;
     // a vertex is inside if it lies within another tunnel's envelope; a triangle goes only when all three are inside
     // (the straddlers stay, so no holes open along the intersection; they poke at most one row, 1 m, into the other)
     const ox = ctx.ox, oz = ctx.oz, nv = P.length / 3, ins = new Uint8Array(nv);
     for (let v = 0; v < nv; v++) {
-      const x = P[v * 3] + ox, y = P[v * 3 + 1], z = P[v * 3 + 2] + oz;
-      for (const e of envs) {
-        let bd = 1e9, by = 0, bu = 0;
-        for (let i = 0; i + 4 < e.length; i += 4) {
-          const ax = e[i], az = e[i + 1], dx = e[i + 4] - ax, dz = e[i + 5] - az, L2 = dx * dx + dz * dz || 1e-9;
-          const u = U.clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1), d = (ax + dx * u - x) ** 2 + (az + dz * u - z) ** 2;
-          if (d < bd) { bd = d; by = e[i + 2] + (e[i + 6] - e[i + 2]) * u; bu = e[i + 3]; }
-        }
-        if (bu && bd < 2.15 * 2.15 && y > by - 0.5 && y < by + 4.5) { ins[v] = 1; break; }
+      const x = P[v * 3] + ox, y = P[v * 3 + 1], z = P[v * 3 + 2] + oz, l = grid.get(Math.floor(x / GS) * 100003 + Math.floor(z / GS));
+      if (l) for (const k of l) {
+        const e = seg[k], ax = e[0], az = e[1], dx = e[3] - ax, dz = e[4] - az, L2 = dx * dx + dz * dz || 1e-9;
+        const u = U.clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1), d = (ax + dx * u - x) ** 2 + (az + dz * u - z) ** 2;
+        if (d >= 2.15 * 2.15) continue; const by = e[2] + (e[5] - e[2]) * u;
+        if (y > by - 0.5 && y < by + 4.5) { ins[v] = 1; break; }
       }
+      if ((v & 8191) === 8191) yield;
     }
     const out = []; for (let k = 0; k < I.length; k += 3) if (!(ins[I[k]] && ins[I[k + 1]] && ins[I[k + 2]])) out.push(I[k], I[k + 1], I[k + 2]);
     gb.i = out;
   }
   // after the body job: one mesh per cell (so portal visibility can hide it), outdoor meshes registered with Under
-  function finish(ctx, g) {
+  function* finish(ctx, g) {
     for (const c of ctx.B.tcells || []) {
-      const geo = c.tgb.geometry(); if (!geo) continue;
+      const geo = c.tgb.geometry(); c.tgb = null; if (!geo) continue;
       const m = new THREE.Mesh(geo, MATS.tunnel); m.castShadow = false; m.receiveShadow = true; m.matrixAutoUpdate = false; m.updateMatrix(); g.add(m); c.mesh = m;
+      yield;
     }
     ctx.ch.pendingCells = ctx.B.tcells || [];
   }

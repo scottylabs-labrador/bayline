@@ -271,6 +271,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof SunShade !== 'undefined') safe('sunshade', () => SunShade.setQuality(T.post));
     if (typeof ACModel !== 'undefined' && ACModel.setQuality) safe('acmodel', () => ACModel.setQuality(T.name));
     if (typeof MetroKit !== 'undefined' && MetroKit.setQuality) safe('metrokit', () => MetroKit.setQuality(T.name));   // Bayline Metro cars follow the tier too
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled && MetroTrack.setQuality) safe('metrotrack', () => MetroTrack.setQuality(T.name));   // (guideway: Low = structures and rails only)
     if (typeof MetroSim !== 'undefined' && MetroSim.enabled) MetroSim.setQuality(T.post);
     window.dispatchEvent(new Event('resize'));
     gfxUi();
@@ -373,7 +374,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (U2) safeFrame('under-pre', () => U2.preRender());
     if (typeof Post !== 'undefined' && Post.render && Post.enabled !== false && !postBroken) { try { Post.render(dt); } catch (e) { postBroken = true; console.error('post', e); Env.renderer.setRenderTarget(null); Env.renderer.render(Env.scene, Env.camera); } }
     else Env.renderer.render(Env.scene, Env.camera);
-    if (U2) U2.postRender();
+    if (U2) safeFrame('under-post', () => U2.postRender());
   }
   // capture: let the world catch up with the camera without advancing time (level of detail, tile requests and the
   // incremental builders run; nothing moves), then draw the frame again. Resolves with what was still loading.
