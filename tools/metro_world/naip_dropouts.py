@@ -25,10 +25,10 @@ def _blocks(im, mode):
 
 
 def rgb_dropout(im):
-    B = _blocks(im, 'RGB')
-    mean = B.mean((1, 3)); hi = np.percentile(B.transpose(0, 2, 1, 3, 4).reshape(G, G, -1, 3), 98, axis=2)
-    empty = hi < 6                                             # a band all but zero over the whole block
-    return bool((empty & (mean.max(2, keepdims=True) > 25)).any())
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    from tiles.fetch import rgb_dropout_array
+    im.draft('RGB', (max(64, im.size[0] // 8), max(64, im.size[1] // 8)))
+    return rgb_dropout_array(np.asarray(im.convert('RGB')).astype(np.float32))
 
 
 def nir_dropout(nir_im, rgb_im):

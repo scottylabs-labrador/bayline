@@ -42,27 +42,62 @@ def small(b, mode):
     im = Image.open(io.BytesIO(b)); im.draft(mode, (256, 256)); return np.asarray(im.convert(mode).resize((256, 256))).astype(np.float32)
 
 
+def quadrants(bb, px, band, dest):
+    """The box as four quarter-size requests (a different request pattern on the server), each validated, stitched
+    and written to the cache path the whole-box request would have used. -> JPEG bytes or None."""
+    w, s, e, n = bb; mx, my = (w + e) / 2, (s + n) / 2; h = px // 2
+    out = Image.new('RGB', (px, px))
+    try:
+        for (qx, qy, qb) in ((0, 0, (w, my, mx, n)), (1, 0, (mx, my, e, n)), (0, 1, (w, s, mx, my)), (1, 1, (mx, s, e, my))):
+            b = fetch.naip(qb, h, band, timeout=45)
+            out.paste(Image.open(io.BytesIO(b)).convert('RGB').resize((h, h)), (qx * h, qy * h))
+    except Exception as ex:
+        print('quadrants failed', os.path.basename(dest), ex, flush=True)
+        return None
+    buf = io.BytesIO(); out.save(buf, 'JPEG', quality=92); data = buf.getvalue()
+    if not fetch._rgb_ok(data):
+        return None
+    C.write_atomic(dest, data)
+    print('stitched from quadrants', os.path.basename(dest), flush=True)
+    return data
+
+
 def is_new(p):
     return os.path.exists(p) and os.path.getmtime(p) >= REF
 
 
 def main():
     flagged = json.load(open(os.path.join(C.WORK, 'naip_dropouts.json')))
-    changed = []
-    for p in flagged:
-        if not os.path.exists(p):
-            continue
+    if '--rgb-only' in sys.argv:                  # (the NIR check still flags clear water; RGB dropouts are unambiguous)
+        flagged = [p for p in flagged if '/rgb/' in p]
+    ref_t = os.path.getmtime(os.path.join(C.WORK, 'naip_dropouts.json'))
+    import concurrent.futures as cf
+
+    def one(p):
+        """-> (p, bb, px, band, diff) | None. Re-fetches unless a previous run already did (newer than the scan)."""
         bb, px, band = parse(p)
-        old = open(p, 'rb').read(); mode = 'RGB' if band == 'rgb' else 'L'
-        os.remove(p)
+        mode = 'RGB' if band == 'rgb' else 'L'
+        if os.path.exists(p) and os.path.getmtime(p) > ref_t:
+            return None                                  # re-fetched by an earlier run (its diff is unknown: re-bake anyway)
+        old = open(p, 'rb').read() if os.path.exists(p) else None
+        if old is not None:
+            os.remove(p)
         try:
-            new = fetch.naip(bb, px, band)
+            new = fetch.naip(bb, px, band, timeout=45)
         except Exception as e:
-            print('refetch failed', os.path.basename(p), e, flush=True)
-            open(p, 'wb').write(old); continue
-        d = float(np.abs(small(old, mode) - small(new, mode)).mean())
-        if d > 2.0:
-            changed.append((p, bb, px, band, round(d, 1)))
+            new = quadrants(bb, px, band, p) if band == 'rgb' else None     # the server keeps breaking this box: stitch
+            if new is None:
+                print('refetch failed', os.path.basename(p), e, flush=True)
+                if old is not None:
+                    open(p, 'wb').write(old)
+                return None
+        d = float(np.abs(small(old, mode) - small(new, mode)).mean()) if old is not None else 99.0
+        return (p, bb, px, band, round(d, 1)) if d > 2.0 else None
+    changed = []
+    with cf.ThreadPoolExecutor(6) as ex:
+        for r in ex.map(one, flagged):
+            if r:
+                changed.append(r)
     print(len(changed), 'of', len(flagged), 'responses really changed', flush=True)
     tiles = {}
     for (p, bb, px, band, d) in changed:
