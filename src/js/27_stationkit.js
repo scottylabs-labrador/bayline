@@ -14,6 +14,8 @@ const StationKit = (() => {
   const PLAT_H = 0.991;              // platform top above top of rail (= car floor, level boarding; trains ws)
   const EDGE = 1.676;                // track centreline -> platform edge (car half-width 1.600 + 76 mm)
   const MAXL = 12;                   // line lights per material
+  let LCAP = MAXL;                   // quality: the first LCAP lights of each set are uploaded (Low: 4)
+  const setLightCap = (n) => { LCAP = Math.max(1, Math.min(MAXL, n | 0)); };
   const TAU = Math.PI * 2;
   const _c = new THREE.Color();
   // linear [r, g, b] from an sRGB hex (three's colour management converts)
@@ -513,8 +515,8 @@ const StationKit = (() => {
       const u = mat.userData.sk; if (!u) return;
       // view matrix of this camera x the station root's world matrix
       _m4.multiplyMatrices(camera.matrixWorldInverse, root.matrixWorld); _n3.setFromMatrix4(_m4);
-      const L = this.lights; u.uLN.value = L.length;
-      for (let i = 0; i < L.length; i++) {
+      const L = this.lights, nL = Math.min(L.length, LCAP); u.uLN.value = nL;
+      for (let i = 0; i < nL; i++) {
         const l = L[i];
         _v.set(l.a[0], l.a[1], l.a[2]).applyMatrix4(_m4); u.uLA.value[i].set(_v.x, _v.y, _v.z, l.range || 30);
         _v.set(l.b[0], l.b[1], l.b[2]).applyMatrix4(_m4); u.uLB.value[i].set(_v.x, _v.y, _v.z, l.radius || 0.06);
@@ -558,5 +560,5 @@ const StationKit = (() => {
     return m;
   }
 
-  return { PLAT_H, EDGE, MAXL, K, GB, lin, mixc, scl, stationMat, glowMat, glassMat, LightSet, interiorEnv, PATTERN_GLSL, LIGHT_GLSL };
+  return { PLAT_H, EDGE, MAXL, K, GB, lin, mixc, scl, stationMat, glowMat, glassMat, LightSet, interiorEnv, PATTERN_GLSL, LIGHT_GLSL, setLightCap };
 })();
