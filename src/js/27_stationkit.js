@@ -200,29 +200,31 @@ const StationKit = (() => {
     // Consecutive profile points form faces; normals from the geometry (flat across the profile, smooth along u).
     // flip reverses the facing. uScale: pu = u * uScale (surface coordinate along the sweep).
     sweep(frames, prof, flip = false) {
-      let prev = null;
+      // P[k] = [v, y, pv?, mat?]: mat ({ col, kind, prm, sky, ao }) applies to the face from point k to k + 1
+      let prev = null, prevP = null;
+      const save = [this.col, this.kind, this.prm, this.sky, this.ao];
       for (let i = 0; i < frames.length; i++) {
         const f = frames[i], rx = -f.tz, rz = f.tx; const P = prof(i, f); if (!P) { prev = null; continue; }
         const row = [];
-        for (let k = 0; k < P.length; k++) {
-          const [v, y, pvv] = P[k]; row.push([f.x + rx * v, y, f.z + rz * v, f.u, pvv !== undefined ? pvv : v]);
-        }
+        for (let k = 0; k < P.length; k++) { const [v, y, pvv] = P[k]; row.push([f.x + rx * v, y, f.z + rz * v, f.u, pvv !== undefined && pvv !== null ? pvv : v]); }
         if (prev && prev.length === row.length) {
           for (let k = 0; k + 1 < row.length; k++) {
+            const m = P[k][3];
+            if (m === 'skip') continue;
+            if (m) { if (m.col !== undefined) this.col = typeof m.col === 'number' ? lin(m.col) : m.col; if (m.kind !== undefined) this.kind = m.kind; if (m.prm !== undefined) this.prm = m.prm; if (m.sky !== undefined) this.sky = m.sky; if (m.ao !== undefined) this.ao = m.ao; }
+            else { [this.col, this.kind, this.prm, this.sky, this.ao] = save; }
             const a = prev[k], b = prev[k + 1], c = row[k + 1], d = row[k];
-            if (a[5] === 'skip' || b[5] === 'skip') continue;
-            // face normal
             const e1x = b[0] - a[0], e1y = b[1] - a[1], e1z = b[2] - a[2], e2x = d[0] - a[0], e2y = d[1] - a[1], e2z = d[2] - a[2];
             let nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x; if (flip) { nx = -nx; ny = -ny; nz = -nz; }
             if (Math.hypot(nx, ny, nz) < 1e-9) continue;
-            const pva = P[k][2] !== undefined ? 1 : 0; void pva;
             const ia = this.vw(a[0], a[1], a[2], nx, ny, nz, a[3], a[4]), ib = this.vw(b[0], b[1], b[2], nx, ny, nz, b[3], b[4]);
             const ic = this.vw(c[0], c[1], c[2], nx, ny, nz, c[3], c[4]), id = this.vw(d[0], d[1], d[2], nx, ny, nz, d[3], d[4]);
             if (flip) { this.tri(ia, ic, ib); this.tri(ia, id, ic); } else { this.tri(ia, ib, ic); this.tri(ia, ic, id); }
           }
         }
-        prev = row;
+        prev = row; prevP = P;
       }
+      [this.col, this.kind, this.prm, this.sky, this.ao] = save; void prevP;
       return this;
     }
     get empty() { return this.ni === 0; }

@@ -22,55 +22,17 @@ const MetroStations = (() => {
   const stats = { built: 0, building: 0, jobsMs: 0, lastBuildMs: 0, tris: 0, calls: 0 };
 
   // ------------------------------------------------------------------------------------------------ network access
-  // MetroNet (data workstream) when present; else a small private reader of metro/network.json + metro/tracks.bin
-  const NetLite = (() => {
-    let J = null; const T = new Map();
-    async function load() {
-      J = await Stream.json('metro/network.json', 2);
-      const bin = await Stream.bin(J.tracksBin && J.tracksBin.path ? J.tracksBin.path : 'metro/tracks.bin', 2);
-      const dv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
-      for (const t of J.tracks) {
-        const n = t.n, pts = new Float32Array(n * 3);
-        for (let i = 0; i < n * 3; i++) pts[i] = dv.getFloat32(t.off + i * 4, true);
-        const meta = new Uint8Array(bin.buffer, bin.byteOffset + t.off + n * 12, n * 4);
-        T.set(t.id, Object.assign({}, t, { pts, meta }));
-      }
-      return api;
-    }
-    function frame(id, s, out = {}) {
-      const t = T.get(id); if (!t) return null;
-      const n = t.n, st = t.step; const f = U.clamp(s / st, 0, n - 1.0001); const i = Math.floor(f), k = f - i; const P = t.pts;
-      const x = P[i * 3] + (P[i * 3 + 3] - P[i * 3]) * k, y = P[i * 3 + 1] + (P[i * 3 + 4] - P[i * 3 + 1]) * k, z = P[i * 3 + 2] + (P[i * 3 + 5] - P[i * 3 + 2]) * k;
-      const i0 = Math.max(0, i - 1), i1 = Math.min(n - 1, i + 2); let dx = P[i1 * 3] - P[i0 * 3], dz = P[i1 * 3 + 2] - P[i0 * 3 + 2]; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
-      out.x = x; out.y = y; out.z = z; out.dx = dx; out.dz = dz; out.rx = -dz; out.rz = dx; out.grade = (P[i1 * 3 + 1] - P[i0 * 3 + 1]) / Math.max(1e-3, (i1 - i0) * st);
-      out.structure = (J.structCodes || [])[t.meta[i * 4]] || 'grade';
-      return out;
-    }
-    // nearest point on a track to (x, z): { s, d, lat } (lat > 0: to the right of the track direction)
-    function nearestOn(id, x, z, s0 = 0, s1 = 1e9) {
-      const t = T.get(id); if (!t) return null; const P = t.pts, st = t.step;
-      let bi = -1, bd = 1e18; const a = Math.max(0, Math.floor(s0 / st)), b = Math.min(t.n - 2, Math.ceil(s1 / st));
-      for (let i = a; i <= b; i++) { const dx = P[i * 3] - x, dz = P[i * 3 + 2] - z, d = dx * dx + dz * dz; if (d < bd) { bd = d; bi = i; } }
-      if (bi < 0) return null;
-      // refine on the two adjacent segments
-      let best = null;
-      for (const j of [bi - 1, bi]) { if (j < 0 || j >= t.n - 1) continue;
-        const ax = P[j * 3], az = P[j * 3 + 2], bx = P[j * 3 + 3], bz = P[j * 3 + 5]; const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
-        const u = U.clamp(((x - ax) * ex + (z - az) * ez) / L2, 0, 1); const px = ax + ex * u, pz = az + ez * u; const d = Math.hypot(x - px, z - pz);
-        if (!best || d < best.d) { const L = Math.sqrt(L2); const lat = ((x - ax) * (-ez) + (z - az) * ex) / L * -1; best = { s: (j + u) * st, d, lat: -((x - ax) * ez - (z - az) * ex) / L }; void lat; } }
-      return best;
-    }
-    const api = { load, frame, nearestOn, get stations() { return J ? J.stations : []; }, get lines() { return J ? J.lines : []; }, get tracks() { return J ? J.tracks : []; }, track: (id) => T.get(id), json: () => J };
-    return api;
-  })();
-  // unified access used by everything below
+  // everything goes through MetroNet (data workstream, 21_metronet.js); frames are reduced to the plan view here
   const N = {
-    frame: (id, s, out) => (typeof MetroNet !== 'undefined' && MetroNet.frame ? MetroNet.frame(id, s, out) : NetLite.frame(id, s, out)),
-    stations: () => (typeof MetroNet !== 'undefined' && MetroNet.stations ? MetroNet.stations : NetLite.stations),
-    lines: () => (typeof MetroNet !== 'undefined' && MetroNet.lines ? MetroNet.lines : NetLite.lines),
-    tracks: () => (typeof MetroNet !== 'undefined' && MetroNet.tracks ? MetroNet.tracks : NetLite.tracks),
-    trackLen(id) { const t = (typeof MetroNet !== 'undefined' && MetroNet.byTrack) ? MetroNet.byTrack[id] : NetLite.track(id); return t ? (t.length || (t.n - 1) * t.step) : 0; },
-    nearestOn(id, x, z, s0, s1) { return NetLite.nearestOn(id, x, z, s0, s1); },
+    frame(id, s, out = {}) {
+      const f = MetroNet.frame(id, s, out); if (!f) return null;
+      const hl = Math.hypot(f.tx, f.tz) || 1; out.dx = f.tx / hl; out.dz = f.tz / hl; out.hrx = -out.dz; out.hrz = out.dx;
+      out.structure = f.structName; return out;
+    },
+    stations: () => MetroNet.stations,
+    lines: () => MetroNet.lines,
+    trackLen(id) { const t = MetroNet.byId[id]; return t ? t.length : 0; },
+    nearestOn(id, x, z) { const r = MetroNet.nearAll(x, z, 90, (t) => t.id === id); const q = r[0]; return q ? { s: q.s, d: q.dist, lat: q.lat } : null; },
   };
 
   // ------------------------------------------------------------------------------------------------ station plans
@@ -90,7 +52,7 @@ const MetroStations = (() => {
     const tids = [...new Set(P.map(p => p.track))];
     // lateral offsets of each track at the centre, relative to the reference track (right = +)
     const offs = {};
-    for (const id of tids) { const n = N.nearestOn(id, cx, cz); offs[id] = n ? -n.lat : 0; }
+    for (const id of tids) { const n = N.nearestOn(id, cx, cz); if (!n) { offs[id] = 0; continue; } N.frame(id, n.s, F2); offs[id] = (F2.x - cx) * -tz + (F2.z - cz) * tx; }
     // the station length along the reference track: all platform extents mapped to u
     const halfL = Math.max(...P.map(p => (p.s1 - p.s0) / 2), 107);
     const margin = 40;
@@ -100,9 +62,9 @@ const MetroStations = (() => {
     const spine = [];
     const sRefDir = 1;
     for (let u = u0; u <= u1 + 1e-6; u += DU) {
-      const s = U.clamp(sc + u * sRefDir, 0, N.trackLen(ref.track) || 1e9);
+      const sw = sc + u * sRefDir, len = N.trackLen(ref.track) || 1e9, s = U.clamp(sw, 0, len), ex = sw - s;   // past a track end: extrapolate
       N.frame(ref.track, s, F);
-      spine.push({ u, x: F.x + F.rx * vShift, y: F.y, z: F.z + F.rz * vShift, tx: F.dx, tz: F.dz, grade: F.grade || 0, structure: F.structure });
+      spine.push({ u, x: F.x + F.hrx * vShift + F.dx * ex, y: F.y + (F.grade || 0) * ex, z: F.z + F.hrz * vShift + F.dz * ex, tx: F.dx, tz: F.dz, grade: F.grade || 0, structure: F.structure });
     }
     // per-track v(u), y(u): intersect the spine normal lines with each track
     const tracks = [];
@@ -206,7 +168,7 @@ const MetroStations = (() => {
   function init() {
     if (!enabled || initP) return initP;
     Env.scene.add(group);
-    const waitNet = (typeof MetroNet !== 'undefined' && MetroNet.load) ? Promise.resolve(MetroNet.ready || MetroNet.load()) : NetLite.load();
+    const waitNet = MetroNet.load();
     initP = waitNet.then(() => { net = true; stationRecords(); ready = true; if (typeof MetroSigns !== 'undefined') MetroSigns.init(N.lines(), list); })
       .catch(e => { console.warn('MetroStations: no network data', e); });
     return initP;
