@@ -5,6 +5,20 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## Since the M3 report (09:10)
+
+- **M2b round 2 re-verified** (`#metrodir=metro-next/`, 08:06 data): platform check clean on 52 records (the guard
+  no longer moves anything), audit: SBRN is now a real 7.7 m island, CONC on its viaduct (lobby under the deck),
+  ASHB/DBRK escalator + stair on both banks, SFIA's side face narrowed to 5.2 m by a third track 8.7 m behind it
+  (stair, no escalator); views of SBRN, MLBR, MLPT, CONC, SFIA, DALY, BERY clean.
+- **Covered halls**: a platform mostly under a trench cover (Milpitas under the Montague lid) gets columns rising to
+  the soffit into branching struts, skylight drums and a light line instead of a canopy
+  (`shots/stations/mlpt_covered_hall.jpg`); Balboa Park's trench walls take its fluted precast finish and its
+  overhead conduit runs along each platform edge.
+- **Entrances**: the Towns ground opens with the terrain's own fine cut test (BL_CUT + `Terrain.cutUniforms`);
+  collars on sidewalks follow the base ground 8 cm proud; Market St canopies stop short of a facade (Powell NE).
+  The jagged dark band beside Powell's NE entrance is the building's shadow-map edge, not geometry.
+
 ## Post-M3 backlog (first item, lead 09:00)
 
 1. **Millbrae cross-platform island**: Caltrain NB becomes the east face of the shared island (Peninsula layout `R`
