@@ -393,7 +393,7 @@ const Sound = (() => {
     // ---- Horns. EMU: two-chime air horn (Eb4 + F#4). Diesel: 5-chime K5LA-style D# minor 6th chord.
     const HORN_EMU = [311.13, 369.99], HORN_K5LA = [311.13, 369.99, 415.3, 493.88, 622.25];
     function makeHorn(kind, dest) {
-      const dz = kind === 'diesel', freqs = dz ? HORN_K5LA : HORN_EMU;
+      const dz = kind === 'diesel', freqs = dz ? HORN_K5LA : (kinds[kind] && kinds[kind].horn) || HORN_EMU;
       const env = G(0), peq = F('peaking', dz ? 950 : 1200, 1.1, 4), lp = F('lowpass', dz ? 3100 : 3600, 0.75); chain(env, peq, lp, dest);
       const delays = dz ? [0, 0.018, 0.035, 0.012, 0.05] : [0, 0.015];
       const voices = freqs.map((f, i) => { const g = G(0), o1 = O('sawtooth', f * 0.94), o2 = O('sawtooth', f * 0.94 * 1.0035); o1.connect(g); o2.connect(g); g.connect(env); return { f, g, o1, o2, delay: delays[i] }; });
@@ -580,11 +580,15 @@ const Sound = (() => {
     }
     function ambience(a = {}) { tick(); for (const k in AMB) AMB[k] = clamp(+a[k] || 0, 0, 1); applyAmb(); }
 
+    // ---- extension point: other traction sets (e.g. Bayline Metro, 47_metrosound.js) plug in as a named kind;
+    // fn(active, speed, power, dt, S) is called every train() like updEmu / updDiesel, opts.horn = horn chord (Hz)
+    const kinds = {};
+    function registerKind(name, fn, opts = {}) { kinds[name] = { fn, horn: opts.horn || null }; }
     // ---- per-frame driver for the player's train
     function silenceTrain() { ramp(trainBus.gain, 0, 0.2); }
     function train(s = {}) {
       tick();
-      const kind = s.kind === 'diesel' ? 'diesel' : 'emu';
+      const kind = s.kind === 'diesel' ? 'diesel' : kinds[s.kind] ? s.kind : 'emu';
       const v = Math.abs(+s.speed || 0), accel = +s.accel || 0;
       const power = s.power != null ? clamp(+s.power || 0, -1, 1) : clamp(accel / 0.9, -1, 1);
       const inCab = !!s.inCab, onboard = !!s.onboard || inCab;
@@ -609,6 +613,7 @@ const Sound = (() => {
       if (Math.abs(S.tunnelNow - tunnel) > 0.01) { S.tunnelNow = tunnel; applyAmb(); }
       updEmu(kind === 'emu', v, power);
       updDiesel(kind === 'diesel', v, power, dtLast);
+      for (const k in kinds) kinds[k].fn(kind === k, v, power, dtLast, S);
       updRoll(v, tunnel);
       updSqueal(v, curve);
     }
@@ -634,17 +639,20 @@ const Sound = (() => {
     }
     return {
       ctx, master, train, horn: hornFn, bell: bellFn, doorChime, alertTone, announce, crossings, passby, ambience, tick, setVolume, setMuted, warmStep,
-      get state() { return S; },
+      get state() { return S; }, registerKind,
+      ext: { ctx, sr, r, now, G, F, O, Loop, chain, ramp, oneShot, buf, B, trainBus, worldBus, uiBus, hornBus, S, smooth, clamp, partial, click, biq, peakNorm, loopable, white, pink, brown, mk, ensureSends },
     };
   }
 
   // ------------------------------------------------------------------ public singleton
   let E = null, muted = false, volume = 0.8, raf = 0, suspendTimer = 0;
+  const plugins = [];                           // fn(engine), run when the engine is created (Sound.plugin)
   function init() {
     if (E) { if (!muted && E.ctx.state !== 'running') E.ctx.resume().catch(() => {}); return true; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
     let ctx; try { ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { return false; }
     E = createEngine(ctx, { speech: true, live: true });
+    for (const k of plugins) try { k(E); } catch (e) { console.error('sound plugin', e); }
     E.setVolume(volume); E.setMuted(muted);
     if (!muted) ctx.resume().catch(() => {});
     const beat = () => { if (E) E.tick(); raf = requestAnimationFrame(beat); }; raf = requestAnimationFrame(beat);
@@ -675,6 +683,7 @@ const Sound = (() => {
     crossings(list) { if (E) E.crossings(list); },
     passby(p) { if (E) E.passby(p); },
     ambience(a) { if (E) E.ambience(a); },
+    plugin(fn) { plugins.push(fn); if (E) try { fn(E); } catch (e) { console.error('sound plugin', e); } },
     _createEngine: createEngine,           // for tests: build an engine on any (Offline)AudioContext
     get _engine() { return E; },
   };

@@ -11,8 +11,10 @@ import numpy as np
 from .common import RAW, WORK, ll2w, log
 
 PBF = os.path.join(RAW, 'osm_pbf', 'norcal-latest.osm.pbf')
-OUT = os.path.join(WORK, 'osm_extract.npz')
-BBOX = (-122.625, 36.905, -121.435, 37.860)          # lon_w, lat_s, lon_e, lat_n (world square + margin)
+# v3: the bbox reaches north over the Bayline Metro strip (the grid's negative rows, lat 37.8429 .. 38.0736). Tiles baked
+# before it used osm_extract.npz (lat_n 37.860); they are never re-baked, and inside the old bbox both extracts agree.
+OUT = os.path.join(WORK, 'osm_extract_v3.npz')
+BBOX = (-122.625, 36.905, -121.435, 38.095)          # lon_w, lat_s, lon_e, lat_n (world square + north strip + margin)
 
 AREA_WATER, AREA_SALT, AREA_WETLAND, AREA_SAND, AREA_ROCK, AREA_FOREST, AREA_FARM, AREA_URBAN, AREA_PARK, AREA_GRASS, AREA_PAVE, AREA_BAY = range(1, 13)
 AREA_NAMES = {AREA_WATER: 'water', AREA_SALT: 'salt pond', AREA_WETLAND: 'wetland', AREA_SAND: 'sand', AREA_ROCK: 'rock', AREA_FOREST: 'forest',
