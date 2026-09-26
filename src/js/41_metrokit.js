@@ -1127,6 +1127,7 @@ const MetroKit = (() => {
   // ------------------------------------------------------------------------------------------ runtime: Car
   const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _ax = new V3();
   const _one = new V3(1, 1, 1), _rpi = new THREE.Matrix4().makeRotationY(Math.PI);
+  const LOD0_R = 110;                                  // a car farther than this from the camera draws its LOD 1
   // body sway: roll f 0.8 Hz / damping / rad per g of unbalanced lateral acceleration; pitch per g of longitudinal
   // acceleration; bounce; roll centre height; track excitation amplitudes at 70 mph (rad, rad, m)
   const SWAY = { fr: 0.8, zr: 0.3, kr: 0.07, fp: 1.1, zp: 0.35, kp: 0.02, fb: 1.3, zb: 0.3, hrc: 0.9, exR: 0.0022, exP: 0.0007, exB: 0.006 };
@@ -1460,7 +1461,18 @@ const MetroKit = (() => {
       if (p) for (const c of this.cars) { const g = c.group.position, d = (g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2; if (d < bd) { bd = d; best = c.index; } }
       for (const c of this.cars) c.setInteriorVisible(best >= 0 && Math.abs(c.index - best) <= 1);
     }
-    setLOD(level) { for (const c of this.cars) c.setLOD(level); }
+    // LOD: the caller's level for the whole consist (the sim decides by the head's distance), refined per car by its own
+    // distance to the camera: a car beyond ~110 m draws LOD 1 even when its consist is at LOD 0 (a 10-car train is
+    // 213 m long, and from the air every car is that far). Re-evaluated every update (with hysteresis).
+    setLOD(level) { this.lodReq = clamp(level | 0, 0, 2); this._applyLod(); }
+    _applyLod() {
+      const base = this.lodReq === undefined ? 0 : this.lodReq, p = base === 0 ? camPos() : null;
+      for (const c of this.cars) {
+        let l = base;
+        if (p) { const g = c.group.position, d2 = (g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2, r = c.lod === 0 ? LOD0_R + 8 : LOD0_R - 8; if (d2 > r * r) l = 1; }
+        c.setLOD(l);
+      }
+    }
     // free the per-consist GPU resources (shared design geometry stays cached)
     dispose() {
       for (const c of this.cars) { for (const m of [c.mat, c.matGlass, c.matInt, c.matLod, c.openMesh && c.openMesh.material]) if (m) m.dispose(); if (c.skeleton) c.skeleton.dispose(); if (c.group.parent) c.group.parent.remove(c.group); }
@@ -1526,6 +1538,7 @@ const MetroKit = (() => {
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
       MKG.mkWet.value = wetNow();
+      if (this.lodReq === 0) this._applyLod();
       if (this.intAllowed || this.intAuto) this._applyInt();
       if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
@@ -1663,13 +1676,16 @@ const MetroKit = (() => {
   }
   // what MetroKit holds on the GPU (estimates from buffer and texture sizes) and how much it draws
   const geoBytes = g => { if (!g || !g.attributes) return 0; let b = g.index ? g.index.array.byteLength : 0; for (const k in g.attributes) b += g.attributes[k].array.byteLength; return b; };
+  // (tris / casters: triangles of the visible meshes / of the visible shadow casters, per pass; draws: visible meshes)
+  const triCount = g => g ? (g.index ? g.index.count : g.attributes.position.count) / 3 * (g.isInstancedBufferGeometry ? g.instanceCount : 1) : 0;
   function stats() {
-    let geo = 0, lcd = 0, sign = 0, bones = 0, cars = 0, lod0 = 0, ints = 0;
+    let geo = 0, lcd = 0, sign = 0, bones = 0, cars = 0, lod0 = 0, ints = 0, tris = 0, casters = 0, draws = 0;
     for (const key of Object.keys(designs)) { const d = designs[key]; geo += geoBytes(d.ext) + geoBytes(d.glass) + geoBytes(d.lod1) + geoBytes(d.lod2) + (d.int ? geoBytes(d.int.geo) + geoBytes(d.int.glass) : 0); }
     for (const c of live) { sign += SIGN.W * SIGN.H * 4; if (c.lcdTex) lcd += c.lcdTex.userData.bytes || 0;
-      for (const car of c.cars) { cars++; if (car.lod === 0) lod0++; if (car.int && car.int.visible) ints++; const bt = car.skeleton && car.skeleton.boneTexture; if (bt) bones += bt.image.data.byteLength; } }
+      for (const car of c.cars) { cars++; if (car.lod === 0) lod0++; if (car.int && car.int.visible) ints++; const bt = car.skeleton && car.skeleton.boneTexture; if (bt) bones += bt.image.data.byteLength;
+        if (car.group.visible) car.group.traverseVisible(o => { if (!o.isMesh) return; const n = triCount(o.geometry); draws++; tris += n; if (o.castShadow) casters += n; }); } }
     const atlas = K.atlasBytes ? K.atlasBytes() : 0, MB = 1 / 1048576;
-    return { quality: Q, consists: live.size, cars, lod0Cars: lod0, interiorsShown: ints, designs: Object.keys(designs).length,
+    return { quality: Q, consists: live.size, cars, lod0Cars: lod0, interiorsShown: ints, draws, ktris: Math.round(tris / 1000), kcasterTris: Math.round(casters / 1000), designs: Object.keys(designs).length,
       geometryMB: +(geo * MB).toFixed(1), atlasMB: +(atlas * MB).toFixed(1), screensMB: +(lcd * MB).toFixed(1), signsMB: +(sign * MB).toFixed(2), bonesMB: +(bones * MB).toFixed(2),
       totalMB: +((geo + atlas + lcd + sign + bones) * MB).toFixed(1) };
   }
