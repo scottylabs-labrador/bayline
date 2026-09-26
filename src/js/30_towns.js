@@ -573,15 +573,18 @@ const Towns = (() => {
     uniforms: { uNight: U.uNight },
     vertexShader: `#include <common>
       #include <logdepthbuf_pars_vertex>
-      varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * blBend(modelViewMatrix * instanceMatrix * vec4(position, 1.0));
+      varying vec2 vUv; varying float vUp; void main(){ vUv = uv; gl_Position = projectionMatrix * blBend(modelViewMatrix * instanceMatrix * vec4(position, 1.0));
+        // seen from above (the camera well over the lamp) a pool of light is no longer a disc on the street: it fades to a
+        // faint glow; at eye level it is unchanged (Bayline Metro world)
+        vUp = smoothstep(35.0, 140.0, cameraPosition.y - (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y);
       #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `#include <common>
       #include <logdepthbuf_pars_fragment>
-      uniform float uNight; varying vec2 vUv;
+      uniform float uNight; varying vec2 vUv; varying float vUp;
       void main(){
         #include <logdepthbuf_fragment>
-        float d = length(vUv - 0.5) * 2.0; float a = pow(max(0.0, 1.0 - d), 1.8) * uNight * 0.55;
+        float d = length(vUv - 0.5) * 2.0; float a = pow(max(0.0, 1.0 - d), 1.8) * uNight * 0.55 * (1.0 - 0.85 * vUp);
         if (a < 0.004) discard; gl_FragColor = vec4(vec3(1.0, 0.72, 0.42) * a, 1.0); }`,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   });
@@ -592,9 +595,12 @@ const Towns = (() => {
       uniform float uNight; varying vec2 vUv; varying float vA;
       void main(){ vUv = uv; vec4 c = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         // a lamp's glare: luminaire-sized up close (a big halo 20 m away reads as a moon), a minimum on-screen size far away
-        float dist = length(c.xyz); float s = mix(0.8, 2.4 + dist * 0.004, smoothstep(8.0, 160.0, dist));
+        // seen from above (the camera well over the lamp: a cut-off luminaire shows only its lens) the glare is a small bright
+        // point, not a disc: smaller, growing less with distance, a little brighter; at eye level unchanged (Bayline Metro world)
+        float up = smoothstep(30.0, 180.0, cameraPosition.y - (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y);
+        float dist = length(c.xyz); float s = mix(0.8, 2.4 + dist * mix(0.004, 0.0015, up), smoothstep(8.0, 160.0, dist)) * mix(1.0, 0.45, up);
         c.xyz += normalize(-c.xyz) * 0.6;
-        c.xy += (uv - 0.5) * s; vA = uNight * clamp(2.4 / s, 0.25, 1.0); gl_Position = projectionMatrix * blBend(c);
+        c.xy += (uv - 0.5) * s; vA = uNight * clamp(2.4 / s, 0.25, 1.0) * mix(1.0, 1.3, up); gl_Position = projectionMatrix * blBend(c);
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `#include <common>
