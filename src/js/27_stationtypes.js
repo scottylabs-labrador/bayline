@@ -1494,8 +1494,10 @@ const StationTypes = (() => {
       { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, 'glass'); }
       for (const vv of [hv0, hv1]) { const a = T.WUV(Math.min(uOpen, uClosed), vv), b = T.WUV(Math.max(uOpen, uClosed), vv); addWall(T.walk, a, b, yUp - 0.5, yUp + 2.5); }
       addWall(T.walk, T.WUV(uClosed, hv0), T.WUV(uClosed, hv1), yUp - 0.5, yUp + 2.5);
-      // direction signs over the group's foot (and, where the station has transfers, the transfer panel beyond it)
-      zP.signs.push({ u: g.uFoot - (up ? g.dir : 0) * 1.5, v: g.vc, y: p.y + 2.9, yaw: T.yawAt(g.uFoot) + (g.dir > 0 ? Math.PI / 2 + Math.PI / 2 : 0), w: 2.4, h: 0.6, region: 'exit', both: false, T });
+      // direction signs over the group's foot (and, where the station has transfers, the transfer panel beyond it), hung
+      // across the platform facing the people walking up to the bank: an up bank's foot from behind it (-dir), a down
+      // bank's head from past the head (they faced sideways, a navy back to one side of the platform)
+      zP.signs.push({ u: g.uFoot - (up ? g.dir : 0) * 1.5, v: g.vc, y: p.y + 2.9, yaw: T.yawAt(g.uFoot) + (up ? -g.dir : (g.uHead > g.uFoot ? 1 : -1)) * Math.PI / 2, w: 2.4, h: 0.6, region: 'exit', both: false, T });
       if ((T.st.data.transfers || []).length && !xferDone.has(p)) { xferDone.add(p);
         zP.signs.push({ u: g.uFoot - (up ? g.dir : 1) * 6, v: g.vc, y: p.y + 2.75, yaw: T.yawAt(g.uFoot) + Math.PI / 2, w: 3.4, h: 0.64, region: 'info', both: true, T }); }
       T.occupied.push({ p, u0: u0 - 1.5, u1: u1 + 1.5, v0: g.vc - g.gw / 2 - 0.6, v1: g.vc + g.gw / 2 + 0.6 });
@@ -1759,7 +1761,9 @@ const StationTypes = (() => {
         const [tx, tz] = T.L2(uTop + dir * 0.9, ve + W / 2 + 0.7), ty = colY(uTop + dir * 0.9, ve + W / 2 + 0.7) - 0.05; zE.d.sk.push().at(tx, ty, tz, T.yawAt(uTop) + (dir > 0 ? 0 : Math.PI)); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 0, 0, 0.14, 3.2, 0.9); zE.d.sk.pop();
         zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7, y: ty + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
       }
-      zE.signs.push({ u: uBot + dir * 0.5, v: ve, y: yCF + 2.6, yaw: T.yawAt(uBot) + (dir > 0 ? Math.PI : 0), w: 2.0, h: 0.5, region: 'exit', both: false, T });
+      // (over the stair's foot, facing the way it is walked up to: in the box from +dir (the stair climbs toward -dir),
+      // beside the box along the passage from the concourse wall)
+      zE.signs.push({ u: uBot + dir * 0.5, v: ve, y: yCF + 2.6, yaw: T.yawAt(uBot) + (inBox ? dir * Math.PI / 2 : ve > 0 ? Math.PI : 0), w: 2.0, h: 0.5, region: 'exit', both: false, T });
       let door = null; T.st._phase = 'ent:passage';
       if (!inBox) { const r = yield* passage(T, zE, uBot, ve, dir, W); door = r; }
       T.st._phase = 'ent:cells';
