@@ -187,6 +187,23 @@ def wanted_L9(band, station_r):
     return out
 
 
+def wanted_L9_bart(band, station_r):
+    """The Bayline Metro (BART) L9 band: tiles whose centre is within `band` m of a BART track or `station_r` m of a
+    BART station (the Peninsula's rule), over the square and the north strip, where the L7 parent exists."""
+    from scipy.spatial import cKDTree
+    from tools.tiles import metro
+    P = metro.points(); S = np.array([(x, z) for (_, _, x, z) in metro.stations()])
+    tree, stree = cKDTree(P), cKDTree(S)
+    T9 = C.T(9); n = 1 << 9
+    rows = np.arange(-C.north_rows(9), n)
+    xs = C.X0 + (np.arange(n) + 0.5) * T9; zs = C.Z0 + (rows + 0.5) * T9
+    gx, gz = np.meshgrid(xs, zs); g = np.stack([gx.ravel(), gz.ravel()], 1)
+    d, _ = tree.query(g, distance_upper_bound=band); ds, _ = stree.query(g, distance_upper_bound=station_r)
+    ok = (d < band) | (ds < station_r)
+    ix = np.tile(np.arange(n), len(rows))[ok]; iy = np.repeat(rows, n)[ok]
+    return {(int(x), int(y)) for x, y in zip(ix, iy) if C.exists(7, int(x) >> 2, int(y) >> 2)}
+
+
 # ------------------------------------------------------------------ bake
 def bake_L7(model, dtype, device, tx, ty, want, q, cache, force=False):
     kids = [(tx * 4 + i, ty * 4 + j) for j in range(4) for i in range(4)]
@@ -213,8 +230,13 @@ def bake_L7(model, dtype, device, tx, ty, want, q, cache, force=False):
 def update_index():
     p = os.path.join(C.PUB, 'index.json'); idx = json.load(open(p))
     d = os.path.join(C.PUB, 'img', '9')
-    lst = sorted([list(map(int, f[:-4].split('_'))) for f in os.listdir(d) if f.endswith('.jpg') and '_test' not in f]) if os.path.isdir(d) else []
+    allt = sorted([list(map(int, f[:-4].split('_'))) for f in os.listdir(d) if f.endswith('.jpg') and '_test' not in f], key=lambda c: (c[1], c[0])) if os.path.isdir(d) else []
+    lst = [t for t in allt if t[1] >= 0]; nl = [t for t in allt if t[1] < 0]
+    old = {tuple(t) for t in idx.get('levels', {}).get('9', [])}
+    assert old <= {tuple(t) for t in lst}, 'an L9 tile listed before is missing'
     idx.setdefault('levels', {})['9'] = lst
+    if nl and idx.get('north'):
+        idx['north'].setdefault('levels', {})['9'] = nl                  # the north strip: new clients only
     if 'products' in idx and 'img' in idx['products']:
         idx['products']['img']['levels'] = [0, 9]
         idx['products']['img']['size9'] = 1024
@@ -251,6 +273,8 @@ def main():
         print(f'SR {small.shape[0]}² -> {big.shape[0]}² in {dt:.2f}s; comparison /tmp/sr_test_side.png (left bicubic, right SR)')
         return
     want = wanted_L9(a.band, a.station) | aoi_L9()
+    if C.north_enabled():                                                   # (Bayline Metro coverage stages)
+        want |= wanted_L9_bart(a.band, a.station)
     L7s = sorted({(x >> 2, y >> 2) for (x, y) in want})
     print(f'{len(want)} L9 tiles wanted in {len(L7s)} L7 tiles', flush=True)
     t0 = time.time(); done = 0; made = 0

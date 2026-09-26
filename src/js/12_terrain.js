@@ -865,12 +865,17 @@ const Terrain = (() => {
   const isWater = (x, z) => maskAt(x, z, 0) > 0.5;
   const urbanAt = (x, z) => { const v = maskAt(x, z, 1); return v; };
   function setTownFade() {}
-  return { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, materialAt, update, setTownFade, setFine, lodFactor, stats, group,
+  const api = { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, materialAt, update, setTownFade, setFine, lodFactor, stats, group,
     groundDetail: groundDetailTexture, GROUND_TILE: GTILE, waveTexture, WATER_GLSL,
     get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH },
     get HMAX() { return HMAX; }, get materials() { return mat ? { tiles: mat.size, loaded: [...matRec.values()].filter(r => r.state === 2).length } : null; }, get lidar() { return h9 ? { tiles8: h9[8].size, tiles9: h9[9].size, attribution: h9.attribution } : null; },
-    get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; },
-    // the area this terrain draws: the square, plus the north strip once its tiles are published (x0, z0, x1, z1)
-    get area() { return [X0, North.on ? North.z0 : Z0, X0 + SIZE, Z0 + SIZE]; }, get north() { return North.on ? { z0: North.z0, lo: North.lo, hi: North.hi } : null; },
-    covers(x, z) { return (x >= X0 && x < X0 + SIZE && z >= Z0 && z < Z0 + SIZE) || North.contains(x, z); } };
+    get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; } };
+  // ---- Bayline Metro north strip (world workstream, notes/bart/world.md): the area this terrain draws (the square, plus
+  // the strip once its tiles are published: [x0, z0, x1, z1]; the Globe leaves exactly that to it), the strip's extent
+  Object.defineProperties(api, {
+    area: { get: () => [X0, North.on ? North.z0 : Z0, X0 + SIZE, Z0 + SIZE], enumerable: true },
+    north: { get: () => North.on ? { z0: North.z0, lo: North.lo, hi: North.hi } : null, enumerable: true },
+  });
+  api.covers = (x, z) => (x >= X0 && x < X0 + SIZE && z >= Z0 && z < Z0 + SIZE) || North.contains(x, z);
+  return api;
 })();
