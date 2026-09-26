@@ -64,6 +64,11 @@ const Towns = (() => {
     if (lat > 37.20) return 4;               // San Jose
     return 5;                                // South County
   }
+  // regions 6-9 (Bayline Metro towns, tiles/b2): 6 East Bay flats (Oakland, Berkeley, Richmond), 7 Hayward, Fremont,
+  // Milpitas, 8 behind the hills and the Tri-Valley (Orinda .. Concord, Dublin, Pleasanton), 9 Pittsburg, Antioch.
+  // Regions 0-5 keep their exact Peninsula behaviour (the checks below only branch for >= 6).
+  const EB_TILE = { 6: 0.08, 7: 0.28, 8: 0.2, 9: 0.55 };           // share of clay-tile roofs
+  const houseWall = (region, r) => region === 6 ? pick(PAL.ebWall, r) : region === 8 ? pick(PAL.dvWall, r) : region === 9 || region === 5 ? pick(PAL.southWall, r) : pick(PAL.penWall, r);
   const C = h => new THREE.Color(h);
   const PAL = {
     sfWall: ['#e9dcc0', '#d8c59f', '#c7d5de', '#e7e0cf', '#b9c9ad', '#e9c7a2', '#d4b9c8', '#f1eadb', '#a8bcc9', '#e6d39b', '#c9d9c3', '#f0d8c8', '#dfe3e6', '#cfd8cf'].map(C),
@@ -80,6 +85,10 @@ const Towns = (() => {
     stone: ['#c9bea8', '#b8ad96', '#d6ccb6', '#a89f8c', '#cfc6b3'].map(C),
     indus: ['#c2c0b8', '#b0aca0', '#d0ccc0', '#9fa3a6', '#bdb4a3', '#a7aaa3'].map(C),
     civic: ['#e8e0cc', '#d6c8a8', '#b99e7e', '#9c5a44', '#e4d9c1'].map(C),
+    // East Bay (regions 6-9, Bayline Metro): Oakland / Berkeley craftsman and Victorian colours (sage, brown shingle,
+    // slate blue, cream, white trim), behind-the-hills greys and earth tones, and the Delta's stucco tracts
+    ebWall: ['#b9b48f', '#8c7a5e', '#e6dcc4', '#9aa7a0', '#c9c2ad', '#7d8f86', '#d8cfb8', '#a8987a', '#f0ebe0', '#8a9aa6', '#cbb89a', '#b3a58c', '#dcd6c6', '#6f6452'].map(C),
+    dvWall: ['#d9cfbd', '#c7bba5', '#e7e1d3', '#b5aa96', '#cfc9bc', '#a9a295', '#dcd4c2', '#bfb6a4', '#e9e4da', '#9e968a'].map(C),
   };
   const pick = (arr, r) => arr[Math.floor(r * arr.length) % arr.length];
 
@@ -787,7 +796,7 @@ const Towns = (() => {
   // parapets + piers (bridges), crosswalks at urban intersections. Sidewalks stop at cross streets.
   function roadRibbon(tb, r, T, hf, inter, hi) {
     const P = r.pts, n0 = P.length / 2; if (n0 < 2) return;
-    const region = regionOf(T.oz + P[1]);
+    const region = T.region >= 6 ? T.region : regionOf(T.oz + P[1]);
     const bridge = !!(r.flags & 2), urban = !!(r.flags & 8), core = !!(r.flags & 4), c = r.cls;
     const hw = r.width / 2, mt = markType(r);
     const walks = hi && urban && !bridge && c >= 4 && c <= 12 && c !== 5 && c !== 7 && c !== 9;
@@ -974,6 +983,7 @@ const Towns = (() => {
       else if (kind === 4) mat = r2 < 0.45 ? 2 : r2 < 0.7 ? 1 : 7;
       else if (region === 0 && (kind === 0 || kind === 1)) mat = vict ? (r2 < 0.7 ? 5 : 7) : 7;
       else if (region === 0 && kind === 2) mat = r2 < 0.35 ? 1 : r2 < 0.55 ? 3 : 7;
+      else if (region === 6 && (kind === 0 || kind === 1)) mat = r2 < 0.55 ? 5 : r2 < 0.62 ? 1 : 7;    // wood siding / shingle
       else if (kind === 0) mat = r2 < 0.22 ? 5 : r2 < 0.3 ? 1 : 7;
       else if (kind === 2) mat = r2 < 0.2 ? 1 : r2 < 0.45 ? 3 : 7;
       else if (kind === 7) mat = 3;
@@ -985,20 +995,20 @@ const Towns = (() => {
     else if (mat === 4) wall = pick(PAL.glass, r1).clone();
     else if (mat === 6) wall = pick(PAL.indus, r1).clone();
     else if (mat === 3) wall = (kind === 2 ? pick(PAL.comm, r1) : pick(PAL.indus, r1)).clone();
-    else if (kind === 0) wall = pick(region === 0 ? PAL.sfWall : region === 5 ? PAL.southWall : PAL.penWall, r1).clone();
-    else if (kind === 1) wall = pick(region === 0 ? PAL.sfWall : PAL.penWall, r1).clone();
+    else if (kind === 0) wall = (region >= 6 ? houseWall(region, r1) : pick(region === 0 ? PAL.sfWall : region === 5 ? PAL.southWall : PAL.penWall, r1)).clone();
+    else if (kind === 1) wall = (region === 6 ? pick(r1 < 0.5 ? PAL.ebWall : PAL.sfWall, r1 * 2 % 1) : region >= 7 ? houseWall(region, r1) : pick(region === 0 ? PAL.sfWall : PAL.penWall, r1)).clone();
     else if (kind === 2) wall = pick(region === 0 ? PAL.sfComm : PAL.comm, r1).clone();
     else if (kind === 4) wall = pick(PAL.civic, r1).clone();
     else wall = pick(PAL.comm, r1).clone();
     const pitched = b.roof >= 1 && b.roof <= 4 && area < 1400;
     if (b.roofc) roofC = rgbFrom565(b.roofc);
-    else if (pitched) roofC = (region >= 2 && r3 < 0.35 ? pick(PAL.roofTile, r3 * 2.7) : pick(PAL.roofComp, r3 * 3.1)).clone();
+    else if (pitched) roofC = ((region >= 6 ? r3 < EB_TILE[region] : region >= 2 && r3 < 0.35) ? pick(PAL.roofTile, r3 * 2.7) : pick(PAL.roofComp, r3 * 3.1)).clone();
     else roofC = (r3 < 0.5 ? COL.roofMembrane : COL.roofGravel).clone().multiplyScalar(0.88 + r2 * 0.2);
     // roof material (drawn up close by the building shader): RM.membrane white TPO, grey EPDM, gravel ballast, bitumen,
     // standing-seam metal, asphalt shingles, clay (Spanish) tile, slate / concrete tile
     const r4 = U.hash2(Math.floor(r1 * 7919), Math.floor(r3 * 104729));
     let roofMat;
-    if (pitched) roofMat = region >= 2 && r3 < 0.35 ? RM.clay : kind === 3 || kind === 5 ? RM.metal : r4 < 0.12 ? RM.slate : RM.shingle;
+    if (pitched) roofMat = (region >= 6 ? r3 < EB_TILE[region] : region >= 2 && r3 < 0.35) ? RM.clay : kind === 3 || kind === 5 ? RM.metal : r4 < 0.12 ? RM.slate : RM.shingle;
     else if (kind === 3) roofMat = r4 < 0.55 ? RM.metal : r4 < 0.8 ? RM.white : RM.bitumen;
     else if (kind === 0 || kind === 1) roofMat = r4 < 0.45 ? RM.bitumen : r4 < 0.75 ? RM.gravel : RM.grey;
     else roofMat = r4 < 0.42 ? RM.white : r4 < 0.64 ? RM.gravel : r4 < 0.82 ? RM.grey : RM.bitumen;
@@ -1503,6 +1513,10 @@ const Towns = (() => {
             else if (region === 2) v = q < 0.32 ? 'ranch' : q < 0.6 ? 'twostory' : q < 0.8 ? 'bungalow' : 'eichler';
             else if (region === 3) v = q < 0.4 ? 'ranch' : q < 0.65 ? 'eichler' : 'twostory';
             else if (region === 4) v = q < 0.45 ? 'ranch' : q < 0.7 ? 'bungalow' : 'twostory';
+            else if (region === 6) v = q < 0.45 ? 'bungalow' : q < 0.78 ? 'twostory' : 'ranch';          // craftsman, Victorian / shingle
+            else if (region === 7) v = q < 0.52 ? 'ranch' : q < 0.88 ? 'twostory' : q < 0.95 ? 'bungalow' : 'eichler';
+            else if (region === 8) v = q < 0.46 ? 'ranch' : q < 0.9 ? 'twostory' : 'bungalow';
+            else if (region === 9) v = q < 0.58 ? 'twostory' : q < 0.95 ? 'ranch' : 'bungalow';
             else v = q < 0.55 ? 'ranch' : q < 0.85 ? 'twostory' : 'bungalow';
             const base = HV[v]; const W = base.W * (0.88 + rnd() * 0.24), D = base.D * (0.9 + rnd() * 0.2), H = base.H * (0.92 + rnd() * 0.16);
             const gap = 2.6 + rnd() * 3.5, lot = W + gap;
@@ -1525,11 +1539,13 @@ const Towns = (() => {
               let wall, roof;
               if (v === 'eichler') { wall = pick(PAL.eichWall, rr); roof = pick(PAL.roofFlat, rnd()); }
               else if (v === 'simpleFlat') { wall = pick(PAL.sfWall, rr); roof = pick(PAL.roofFlat, rnd()); }
+              else if (region >= 6) { wall = houseWall(region, rr); roof = rnd() < EB_TILE[region] ? pick(PAL.roofTile, rnd()) : pick(PAL.roofComp, rnd()); }
               else { wall = pick(region === 5 ? PAL.southWall : PAL.penWall, rr); roof = (region >= 2 && rnd() < 0.34) ? pick(PAL.roofTile, rnd()) : pick(PAL.roofComp, rnd()); }
               houses.push({ v, far: v === 'simpleFlat' ? 'simpleFlat' : 'simple', x: cx, y: Math.min(g0, g1, g2) - 0.05, z: cz, yaw, W, H, D, wall, roof, seed: rnd(), lit: 0.55 });
               if (hi && region >= 1) {
                 const lawnD = setback + D + 4, lcx = cxs + nxs * (edge + lawnD / 2), lcz = czs + nzs * (edge + lawnD / 2);
-                flatQuadR(tb, hf, lcx, lcz, ux, uz, (W + gap) / 2 - 0.3, lawnD / 2, tint(rnd(), region >= 4 || rnd() < 0.2 ? COL.lawnDry : COL.lawn, 1), 10, 0.10);
+                const lt = rnd(), dryLawn = region >= 6 ? (region === 9 || rnd() < (region === 7 ? 0.5 : 0.25)) : (region >= 4 || rnd() < 0.2);   // (same rnd() order as before for 0-5)
+                flatQuadR(tb, hf, lcx, lcz, ux, uz, (W + gap) / 2 - 0.3, lawnD / 2, tint(lt, dryLawn ? COL.lawnDry : COL.lawn, 1), 10, 0.10);
                 const dcx = cxs + ux * (W * 0.26) + nxs * (edge + setback / 2), dcz = czs + uz * (W * 0.26) + nzs * (edge + setback / 2);
                 flatQuadR(tb, hf, dcx, dcz, ux, uz, 1.6, setback / 2 + 0.3, COL.drive, 11, 0.12);
               }
@@ -1551,7 +1567,7 @@ const Towns = (() => {
     for (const r of T.r) {
       if (!(r.flags & 8) || r.flags & 2) continue;
       const region = T.region;
-      const want = (r.cls >= 4 && r.cls <= 9) || (r.cls >= 10 && r.cls <= 12 && (region === 0 || region === 4));
+      const want = (r.cls >= 4 && r.cls <= 9) || (r.cls >= 10 && r.cls <= 12 && (region === 0 || region === 4 || region === 6));
       if (!want) continue;
       const P = r.pts, n = P.length / 2, gapL = region === 0 ? 30 : 40; let next = rnd() * gapL, u0 = 0, side = 1;
       for (let i = 0; i + 1 < n; i++) {
@@ -1678,7 +1694,7 @@ const Towns = (() => {
   }
 
   // ------------------------------------------------------------------ streaming
-  const pathOf = (tx, ty, sky) => DIR + '7/' + tx + '_' + ty + (sky ? '.sky.bin' : '.bin');
+  const pathOf = (tx, ty, sky) => { const e = index.get(K(tx, ty)); return ((e && e.dir) || DIR) + '7/' + tx + '_' + ty + (sky ? '.sky.bin' : '.bin'); };
   function newTile(e, sky) {
     const [ox, oz] = tileOrigin(e.tx, e.ty);
     const t = { key: K(e.tx, e.ty), tx: e.tx, ty: e.ty, ox, oz, e, sky, path: pathOf(e.tx, e.ty, sky), root: new THREE.Group(), state: 'new', data: null, raw: null,
@@ -1852,12 +1868,33 @@ const Towns = (() => {
   }
   function dispose() { for (const t of [...tiles.values()]) unload(t, tiles); for (const s of [...skyTiles.values()]) unload(s, skyTiles); decoded.clear(); scanX = 1e9; }
 
+  // Bayline Metro towns (tiles/b2/, optional): the BART corridors and the north strip, same tile format. A b2 tile
+  // replaces the b tile with the same key (a superset: the Caltrain-era content plus the BART corridor's); old clients
+  // never read b2 (notes/bart/world.md). #b2=0 turns it off (QA).
+  async function readB2() {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.hash.slice(1)).get('b2') === '0') return;
+    try {
+      const i2 = await getJson('tiles/b2/index.json', 0);
+      if (!i2 || i2.version !== 3) return;
+      const strip = typeof Terrain !== 'undefined' && !!Terrain.north;       // (north of the old square only with the terrain there)
+      for (const [tx, ty, bytes, nb, sky] of i2.tiles) if (ty >= 0 || strip) index.set(K(tx, ty), { key: K(tx, ty), tx, ty, bytes, nb, sky, dir: 'tiles/b2/' });
+      stats.b2 = i2.tiles.length;
+    } catch (e) { /* not published (yet) */ }
+  }
+  // world rects [x0, z0, x1, z1] of the Towns tiles overlapping a rectangle (WorldTiles leaves those to Towns)
+  function rectsIn(x0, z0, x1, z1) {
+    const out = [];
+    for (let ty = Math.floor((z0 - Z0) / TILE); ty <= Math.floor((z1 - Z0) / TILE); ty++) for (let tx = Math.floor((x0 - X0) / TILE); tx <= Math.floor((x1 - X0) / TILE); tx++)
+      if (index.has(K(tx, ty))) out.push([X0 + tx * TILE, Z0 + ty * TILE, X0 + (tx + 1) * TILE, Z0 + (ty + 1) * TILE]);
+    return out;
+  }
   async function init(c) {
     ctx = Object.assign({ groundY: () => 0, trackDist: () => 1e9, ll2w: Geo.ll2w, stationList: [] }, c || {});
     stationW = (ctx.stationList || []).map(s => s.x !== undefined ? s : ctx.ll2w(s.lat, s.lon));
     const idx = await getJson(DIR + 'index.json', 0);
     if (!idx || idx.version !== 3) throw new Error('towns: unexpected index version');
     for (const [tx, ty, bytes, nb, sky] of idx.tiles) index.set(K(tx, ty), { key: K(tx, ty), tx, ty, bytes, nb, sky });
+    await readB2();
     facadeTex = makeFacadeArray(); skyMat = makeBldMat(skyU);
     buildVariants();
     for (const k of ['broad', 'conifer', 'palm', 'euc']) { TREEG[k] = treeGeo(k, false); TREEG_LO[k] = treeGeo(k, true); TREEG[k].userData.shared = TREEG_LO[k].userData.shared = true; }
@@ -1866,6 +1903,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality,
+  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

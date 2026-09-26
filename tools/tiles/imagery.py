@@ -134,22 +134,28 @@ def load_tile(L, tx, ty):
 
 
 # ------------------------------------------------------------------ bake
-def bake_L7(tx, ty, force=False):
-    """Bake img/7 and its img/8 children from one hi-res fetch."""
+def bake_L7(tx, ty, force=False, add_only=True):
+    """Bake img/7 and its img/8 children from one hi-res fetch. add_only: never rewrite a file that exists (an old L7
+    tile that gains L8 children keeps its own image, and old L8 children, already super-resolved to 1024 px, stay)."""
     p7 = path('img', 7, tx, ty, 'jpg')
     kids = [c for c in children(7, tx, ty) if exists(*c)]
     todo = force or not os.path.exists(p7) or any(not os.path.exists(path('img', *c, 'jpg')) for c in kids)
     if not todo:
         return 'skip'
+    keep = (lambda p: add_only and not force and os.path.exists(p))
     d = load_hires(7, tx, ty)
     if kids:
         f = d['full'] if d['px'] == 2048 else d['rgb']
         f1024 = _down(f, 1024) if f.shape[0] != 1024 else f
         for (cl, cx, cy) in kids:
+            pk = path('img', cl, cx, cy, 'jpg')
+            if keep(pk):
+                continue
             dx = cx - tx * 2; dy = cy - ty * 2
             crop = f1024[dy * 512:(dy + 1) * 512, dx * 512:(dx + 1) * 512]
-            _save_jpg(path('img', cl, cx, cy, 'jpg'), crop)
-    _save_jpg(p7, _down(d['rgb'], IMG))
+            _save_jpg(pk, crop)
+    if not keep(p7):
+        _save_jpg(p7, _down(d['rgb'], IMG))
     return 'ok'
 
 

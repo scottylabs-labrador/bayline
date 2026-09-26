@@ -1062,9 +1062,12 @@ const Flora = (() => {
         const hasTrees = !!tp || (idx && Array.isArray(idx.present) && idx.present.includes('t'));
         if (!list && (hasTrees || ctx.index) && idx.levels && idx.levels['7']) list = idx.levels['7'];   // an explicit ctx.index is taken as given
         if (list) index = new Set(list.map(([x, y]) => tkey(x, y)));
+        // the Bayline Metro north strip (negative rows; notes/bart/world.md): listed apart so old clients never load it
+        const nl = idx && idx.north && idx.north.complete && idx.north.levels && idx.north.levels['7'];
+        if (index && nl) for (const [x, y] of nl) index.add(tkey(x, y));
       } catch (e) { index = null; }
       if (typeof Stream !== 'undefined' && !suffix && new URLSearchParams(location.hash.slice(1)).get('t2') !== '0') {
-        try { const i2 = await Stream.json('tiles/t2/index.json', 1); t2 = new Set((i2.tiles || []).map(([x, y]) => tkey(x, y))); if (index) for (const k of t2) index.add(k); } catch (e) { t2 = null; }   // (t2 also plants the hills beyond the imagery tiles)
+        try { const i2 = await Stream.json('tiles/t2/index.json', 1); t2 = new Set((i2.tiles || []).concat(typeof Terrain !== 'undefined' && Terrain.north && i2.north || []).map(([x, y]) => tkey(x, y))); if (index) for (const k of t2) index.add(k); } catch (e) { t2 = null; }   // (t2 also plants the hills beyond the imagery tiles)
       }
       ready = true; dirty = true;
     })();
