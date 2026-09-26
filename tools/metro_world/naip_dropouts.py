@@ -32,10 +32,16 @@ def rgb_dropout(im):
 
 
 def nir_dropout(nir_im, rgb_im):
-    N = _blocks(nir_im, 'L'); R = _blocks(rgb_im, 'RGB')
-    nhi = np.percentile(N.transpose(0, 2, 1, 3, 4).reshape(G, G, -1), 98, axis=2)
-    rmean = R.mean((1, 3)).max(2)
-    return bool(((nhi < 3) & (rmean > 30)).any())
+    """dead NIR blocks where the RGB of the same box is bright, textured land (water is dark in NIR and smooth in RGB)"""
+    def blocks(im, mode):
+        im.draft(mode, (max(64, im.size[0] // 8), max(64, im.size[1] // 8)))
+        a = np.asarray(im.convert(mode).resize((256, 256))).astype(np.float32)
+        a = a[..., None] if a.ndim == 2 else a
+        n = 256 // G
+        return a.reshape(G, n, G, n, -1).transpose(0, 2, 1, 3, 4).reshape(G, G, n * n, -1)
+    N = blocks(nir_im, 'L'); R = blocks(rgb_im, 'RGB')
+    nhi = np.percentile(N[..., 0], 98, axis=2)
+    return bool(((nhi < 3) & (R[..., 1].mean(2) > 40) & (R[..., 1].std(2) > 7)).any())
 
 
 def check_rgb_bytes(b):
