@@ -6,24 +6,29 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Started 2026-09-26 00:30.** Stage 1 bake in progress (every BART corridor + the strip's L2-L5 roots).
+**Updated 2026-09-26 06:45.** All bakes are done except the last GPU pass (the new L8 tiles to 1024 px) and t2 (tree
+heights); PUBLISH READY is targeted for ~11:00-11:30 EDT.
 
-| step (stage 1, `BAYLINE_STAGE=bart1`) | state |
+| step | state |
 |---|---|
-| coverage: +992 L6, +1749 L7, +3003 L8 (502 / 811 / 1334 of them in the north strip), L2-L5 over the strip | done 00:42 |
-| OSM extract v3 (bbox to lat 38.095) for masks / trees | done 00:46 |
-| heights, imagery (NAIP, add-only) | done 01:18 (10 L6 tiles on the strip's top row retried 01:26) |
-| masks, tree crowns (t), `tiles/index.json` (with `north`) | done 02:21 (strip crowns re-run 02:41: a negative-seed bug) |
-| towns b2 (OSM extract with Caltrain + BART 3 km + the strip; bake) | done 02:40: 1692 new tiles + 127 replacing changed b tiles, 14.2 MB; 350 changed tiles held (pre-Metro lidar under them) |
-| GPU: L9 (3594 new tiles in 453 L7 parents), then new L8 -> 1024 px | L9 running (1926 written 02:51) |
-| lidar h9 (3002 L8 fetched), materials, t2 | lidar bake running (02:44), then materials, t2 |
-| NAIP band dropouts (see below): re-fetch + re-bake of the affected new tiles | running |
-| **stage 2** (`bart2`): the whole north strip at L6 + L7 (+522 L6, +3285 L7; NAIP prefetched 02:06-02:37) | imagery running (02:44), then masks, index |
+| stage 1 (`bart1`): every BART corridor: +992 L6, +1749 L7, +3003 L8 (502 / 811 / 1334 in the north strip), strip L2-L5 | baked + indexed 02:21 |
+| stage 2 (`bart2`): the whole north strip at L6 + L7 (+522 L6, +3285 L7) | baked + indexed 03:44 |
+| stage 3 (`bart3`): the East Bay hills L7 inside the old square (lat 37.55..37.8429, lon -122.25..-121.78: +121 L6, +1446 L7) | baked + indexed 04:40 |
+| masks, tree crowns (t) | done (with each stage) |
+| towns b2 | done 02:40: 1692 new tiles + 127 replacing changed b tiles (14.2 MB) |
+| lidar h9 (3003 new L8 tiles + L9 children) | done |
+| materials (the square's L7 + the strip within 3 km of BART) | done (stage-3 hills have none: they fall back to the photo guess) |
+| L9 super-resolution (3594 new tiles + the dropout top-up) | done 06:38 (index L9 6026 square + strip) |
+| L8 to 1024 px | running (~670 parents left; the GPU is shared with the other workstreams' captures) |
+| t2 tree heights (11.5k L7 tiles incl. the strip and the hills) | running (75 / 160 rows at 06:35) |
+| NAIP band dropouts: new tiles | repaired (99 tiles re-baked); 7 boxes the server kept returning broken are being re-fetched through a bypass |
+| NAIP band dropouts: **12 published tiles** + their L8 / L9 / mosaic descendants | replacements being staged (GPU) with a manifest |
 
-Runtime (branch `bart-world`): north-strip support in Terrain / Globe / WorldTiles / Towns (b2) / Flora / UI map / flight
-solids, committed; with the data not yet published everything renders exactly as before (checked: Marin from 2.5 km
-is pixel-identical to the baseline). Towns knows the East Bay regions 6-9 (house styles, palettes, roof tiles, lawns),
-used only by b2 tiles.
+**M3 blocker fixed (bart-world ebd8fba ... 44c7379):** MetroGround no longer disposes Towns / Flora. Terrain re-filters its
+loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched tiles keeping their meshes and photo
+textures until the swap; `Flora.adjust(rects, dy)` moves trees by the carve's height change and drops those in a
+structure's way, `Flora.reloadIn(rects)` for the teardown; `Terrain.reloadHeights(rect)` for the metro teardown
+(SIM switches to it). Before / after: `shots/world/m3_no_dispose_macarthur.jpg`.
 
 ## The big finding: the world ends at lat 37.8429
 
@@ -134,6 +139,27 @@ platform is at or below the bed. v0 profile vs the ground (main tracks, before t
   sediment-brown bays as land and ran ocean surf through them (white speckles). `tiles/globe/baywater.png` (44 KB, from OSM
   bay / strait / water polygons, 1024 px over lon -123.3..-120.9, lat 36.4..38.8) now marks them in the Bay frame as calm
   bay water with one uniform tone (`15_globe.js`, cache key bayline-globe-v4); old clients never load it.
+
+## Flight / production QA after the publish (lat, lon, altitude m, yaw rad (0 north, pi/2 east), pitch rad)
+
+Use `#auto&t=12:00&w=clear&ll=...` (and `#fly=c172,KCCR,32R,final` for Buchanan Field).
+
+| where | ll | look for |
+|---|---|---|
+| Marin edge from the Golden Gate (old square edge 37.8429) | 37.8000,-122.4700,2500,0.35,-0.30 | no seam across the Bay at 37.8429; Sausalito / Tiburon / Angel Island in Bayline imagery |
+| Tiburon low | 37.8600,-122.4400,500,-0.60,-0.15 | L7 imagery + OpenFreeMap buildings (WorldTiles keeps them in the strip) |
+| San Pablo Bay, the strip's north edge (38.0736) | 37.9900,-122.3800,3000,0.00,-0.35 | bay water tone continuous across 38.0736 (the Globe's bay water) |
+| Richmond | 37.9300,-122.3450,300,0.60,-0.35 | L8/L9 ground, b2 towns, trees |
+| Buchanan Field (Concord), final 32R | 37.9550,-122.0300,700,-0.72,-0.12 | runway on the Bayline ground, no holes, buildings solid |
+| Pittsburg / Bay Point, SR-4 | 38.0150,-121.9650,200,1.40,-0.20 | median and strip, Suisun Bay beyond |
+| Antioch | 37.9960,-121.8000,200,1.40,-0.18 | region-9 towns (tile roofs), dry lawns |
+| Orinda / SR-24 hills | 37.8765,-122.1950,160,1.20,-0.20 | t2 oak woodland on the hills, L8 along SR-24 |
+| Mt Diablo from Walnut Creek, 3 km | 37.8750,-122.1200,3000,1.30,-0.28 | no Globe imagery seams (the old view had one) |
+| Dublin, I-580 | 37.7000,-121.9400,200,1.55,-0.20 | median, L8 |
+| Milpitas | 37.4200,-121.8970,150,1.75,-0.25 | L8/L9 at grade, towns |
+| seam: Oakland AOI (old L8) meets the strip (new L8) at 37.8429, Rockridge | 37.8350,-122.2550,400,0.00,-0.45 | no step in imagery or ground at the tile boundary |
+| seam: Caltrain band (old) meets the BART band (new) near South San Francisco | 37.6550,-122.4200,600,1.57,-0.40 | continuous imagery; lidar ground continuous (new tiles fade to the old ones) |
+| seam: stage-3 hills meet the old L5/L6 ground near Castro Valley | 37.7200,-122.0500,1500,0.80,-0.30 | no visible LOD step |
 
 ## Requests / notes for other workstreams
 

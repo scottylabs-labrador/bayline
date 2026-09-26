@@ -896,6 +896,16 @@ const Terrain = (() => {
   });
   api.covers = (x, z) => (x >= X0 && x < X0 + SIZE && z >= Z0 && z < Z0 + SIZE) || North.contains(x, z);
   api.cutTest = null;           // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
+  // (Bayline Metro teardown) height tiles loaded over rect [x0, z0, x1, z1] load again (through the filters as they are
+  // now: an inert filter leaves them natural); a brief step down in detail there
+  api.reloadHeights = (rect) => {
+    for (const [k, r] of [...hrec]) {
+      if (r.state !== 2 || r.L < 5) continue;
+      const T = tileSize(r.L), x0 = X0 + r.x * T, z0 = Z0 + r.y * T;
+      if (rect && (x0 > rect[2] || x0 + T < rect[0] || z0 > rect[3] || z0 + T < rect[1])) continue;
+      if (r.tex) r.tex.dispose(); hrec.delete(k);
+    }
+  };
   api.cutUniforms = null;       // the fine cut level's uniforms (Under), used by the cut variant only
   // (Bayline Metro, world workstream) add a height filter (see heightFilters). Height tiles already loaded that overlap
   // rect [x0, z0, x1, z1] are filtered in place (their CPU heights and textures, a few ms each, spread over frames), so
@@ -916,8 +926,10 @@ const Terrain = (() => {
       step();
     });
   };
+  const hsum = (h) => { let a = 0; for (let i = 0; i < h.length; i += 7) a += h[i] * (1 + (i & 3)); return a; };
   function refilter(r, fn) {
-    const T = tileSize(r.L); if (!fn(r.L, X0 + r.x * T, Z0 + r.y * T, T, r.h)) return;
+    const T = tileSize(r.L), before = hsum(r.h), ret = fn(r.L, X0 + r.x * T, Z0 + r.y * T, T, r.h);
+    if (ret === false || (ret !== true && hsum(r.h) === before)) return;          // (a wrapped filter may not report)
     let mn = 1e9, mx = -1e9; for (let i = 0; i < r.h.length; i++) { const v = r.h[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
     r.mn = mn; r.mx = mx; r.base = mn;
     const hf = new Uint16Array(HS * HS); for (let i = 0; i < hf.length; i++) hf[i] = THREE.DataUtils.toHalfFloat(r.h[i] - r.base);

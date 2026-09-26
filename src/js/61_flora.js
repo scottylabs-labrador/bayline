@@ -1383,6 +1383,16 @@ const Flora = (() => {
     dirty = true; stats.adjusted = (stats.adjusted || 0) + moved; stats.dropped = (stats.dropped || 0) + dropped;
     return { moved, dropped };
   }
+  // the loaded tiles overlapping rects load again from their data (e.g. after drop filters went inert): only there
+  function reloadIn(rects) {
+    let n = 0;
+    for (const [k, t] of [...tiles]) {
+      const x0 = X0 + t.tx * T7, z0 = Z0 + t.ty * T7;
+      if (!rects.some(r => r[0] < x0 + T7 && r[2] > x0 && r[1] < z0 + T7 && r[3] > z0)) continue;
+      t.dead = true; if (t.state === 'ready') { stats.trees -= t.n; killFar(k); } tiles.delete(k); n++;
+    }
+    dirty = true; lastTileCheck = -1e9; return n;
+  }
   function dispose() {
     for (const t of tiles.values()) t.dead = true; tiles.clear(); stats.trees = 0;
     for (const m of [...nearMesh, ...midMesh, ...proxyMesh]) { m.count = 0; m.visible = false; }
@@ -1404,7 +1414,7 @@ const Flora = (() => {
     return out;
   }
   return {
-    addDrop, adjust, refreshIn: (rects) => adjust(rects, null),
+    addDrop, adjust, refreshIn: (rects) => adjust(rects, null), reloadIn,
     init, update, hasData, covers: hasData, setQuality, dispose, group, stats, KINDS, DIM, treesNear,
     get ready() { return ready; }, get quality() { return qName; }, get radii() { return { near: q.near, mid: q.mid, far: q.far, load: q.load }; },
     _geo: { near: geoNear, mid: geoMid }, _atlas: () => atlasTex, _nrm: () => nrmTex, _imp: () => impTex, _tiles: tiles, addTestTile,

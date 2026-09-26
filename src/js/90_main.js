@@ -91,14 +91,14 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   mpchip.addEventListener('click', () => { wantNet = !wantNet; if (typeof Net !== 'undefined') { if (wantNet) Net.connect(); else Net.disconnect(); } setMpText(); });
   if (typeof Net !== 'undefined' && wantNet) { safe('net', () => { Net.onStatus(() => setMpText()); Net.connect(); }); }
   setMpText();
-  function start(mode) {
+  function start(mode, opts) {
     if (started) return; started = true; World.started = true;
     safe('sound', () => { if (typeof Sound !== 'undefined') Sound.init(); });
     title.style.opacity = 0; setTimeout(() => { title.hidden = true; }, 500); hud.hidden = false;
     if (mode === 'fly') { if (typeof Flight !== 'undefined' && !Flight.active && !Flight.loading) FHud.setup(true); }
     else if (mode === 'ride') { const near = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; UI.openBoard(near.idx); UI.toast('Pick a departure to ride. The whole line runs live.', 5); }
     else if (mode === 'drive') { UI.openMissions('drive'); }
-    else if (mode === 'metro' && metroOn()) { MetroUI.openMap(); UI.toast('Bayline Metro: click a station to see its trains, a train to follow it. N reopens this map.', 7); }
+    else if (mode === 'metro' && metroOn()) MetroUI.front(opts || { action: 'map' });   // (the title card's metro section: ride, drive, map)
     else { if (Player.mode === 'heli') Player.setMode('chase'); UI.toast('Explore: 1–8 change the view · M map · B departures · J missions · H help', 7); }
   }
   document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => start(b.dataset.go)));
@@ -274,9 +274,9 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof GroundCover !== 'undefined' && GroundCover.setQuality) safe('groundcover', () => GroundCover.setQuality(T.post));
     if (typeof SunShade !== 'undefined') safe('sunshade', () => SunShade.setQuality(T.post));
     if (typeof ACModel !== 'undefined' && ACModel.setQuality) safe('acmodel', () => ACModel.setQuality(T.name));
-    if (typeof MetroKit !== 'undefined' && MetroKit.setQuality) safe('metrokit', () => MetroKit.setQuality(T.name));   // Bayline Metro cars follow the tier too
-    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled && MetroTrack.setQuality) safe('metrotrack', () => MetroTrack.setQuality(T.name));   // (guideway: Low = structures and rails only)
-    if (typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.setQuality) safe('metrostations', () => MetroStations.setQuality(T.name));   // (stations: Low = no escalator steps, near detail within 150 m, a quarter of the crowd, 4 lights)
+    if (typeof MetroKit !== 'undefined' && MetroKit.setQuality && metroOn()) Metro.guard('the train models', () => MetroKit.setQuality(T.name));   // Bayline Metro cars follow the tier too
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled && MetroTrack.setQuality && metroOn()) Metro.guard('the guideway', () => MetroTrack.setQuality(T.name));   // (guideway: Low = structures and rails only)
+    if (typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.setQuality && metroOn()) Metro.guard('the stations', () => MetroStations.setQuality(T.name));   // (stations: Low = no escalator steps, near detail within 150 m, a quarter of the crowd, 4 lights)
     if (metroOn()) MetroSim.setQuality(T.post);
     window.dispatchEvent(new Event('resize'));
     gfxUi();

@@ -10,9 +10,9 @@
 //   portal, cut-and-cover, bored, tube, aerial, bridge: untouched (infra cuts the openings with Under.addCut)
 //   platforms of ground-level stations (grade / embankment / median / trench): ground cut to the bed from the track
 //                                out to PLAT_W m on the platform side, over the platform's length + 5 m
-// Towns (the new tiles/b2 already do this at bake time; the older tiles/b near the lines need it at runtime): OSM
-// train_station buildings within 160 m of a BART station, canopies / sheds / garages within 22 m of an above-ground BART
-// track, and anything centred within 7 m of one are dropped (the stations and guideway draw those themselves).
+// Towns (tiles/b and tiles/b2 alike: b2 bakes only the Caltrain-era drops, so with the metro off every building is
+// there): OSM train_station buildings within 160 m of a BART station, canopies / sheds within 22 m of an above-ground
+// BART track, and anything centred within 7 m of one are dropped (the stations and guideway draw those themselves).
 //   MetroGround.stats      { segments, platforms, tiles, ms, dropped }
 //   MetroGround.carveAt(x, z, h)   the carved height for a natural height h (debug / QA)
 const MetroGround = (() => {
@@ -32,7 +32,9 @@ const MetroGround = (() => {
     if (b.kind === 6 && MetroNet.stationsNear(x, z, 160).length) drop = true;
     else {
       const n = MetroNet.nearest(x, z, 22);
-      if (n) { MetroNet.frame(n.track, n.s, fr); drop = !!ABOVE[fr.struct] && (n.dist < 7 || b.kind === 5 || b.kind === 6 || b.kind === 7); }
+      // anything centred within 7 m of an above-ground track; canopies / sheds / roofs (5) and station buildings (6)
+      // within 22 m (the guideway and stations draw their own); parking structures (7) only when in the way (7 m)
+      if (n) { MetroNet.frame(n.track, n.s, fr); drop = !!ABOVE[fr.struct] && (n.dist < 7 || b.kind === 5 || b.kind === 6); }
     }
     if (drop) stats.dropped++;
     return drop;
@@ -184,7 +186,7 @@ const MetroGround = (() => {
   function install() {
     if (installed || typeof MetroNet === 'undefined' || !MetroNet.tracks || !MetroNet.tracks.length || typeof Terrain === 'undefined' || !Terrain.addHeightFilter) return false;
     installed = true; build();
-    const R = affected(); stats.rects = R.length;
+    const R = rects = affected(); stats.rects = R.length;
     // what already stands near the lines is re-placed there only (no dispose: nothing elsewhere reloads or goes black):
     // trees first, by the carve's height change under each (computed on the ground before the carve), and the drop filter
     try { if (typeof Flora !== 'undefined' && Flora.adjust) { Flora.addDrop(dropTree); stats.flora = Flora.adjust(R, (x, z) => { const hn = Terrain.h(x, z); return carvePoint(x, z, hn) - hn; }); } } catch (e) { console.warn('MetroGround flora', e); }
@@ -203,7 +205,8 @@ const MetroGround = (() => {
       if (install()) clearInterval(t);
     }, 400);
   }
-  const api = { install, carveAt, carvePoint, stats, get installed() { return installed; } };
+  let rects = null;
+  const api = { install, carveAt, carvePoint, stats, get installed() { return installed; }, get rects() { return rects; } };
   if (typeof window !== 'undefined') (window.__baylineMods ||= {}).MetroGround = api;
   return api;
 })();
