@@ -262,7 +262,9 @@ const Player = (() => {
     const f = metroFloor(x, walk.y, z);
     if (f !== null) return f - walk.y < 0.6;
     if (walk.y < Terrain.h(x, z) - 2) return false;                 // underground, off the station's floors: earth or a tunnel wall
-    const g2 = groundAt(x, z); return g2 - walk.y < 0.6 && !Terrain.isWater(x, z) && !insideBuilding(x, z);
+    const g2 = groundAt(x, z);
+    if (metroFloor(walk.x, walk.y, walk.z) !== null && walk.y - g2 > 1.2) return false;   // never off a platform edge into a drop
+    return g2 - walk.y < 0.6 && !Terrain.isWater(x, z) && !insideBuilding(x, z);
   }
 
   // ---------- per-frame camera ----------

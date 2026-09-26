@@ -69,6 +69,17 @@ const MetroATC = (() => {
     return out;
   }
 
+  // behind a train: the code steps down one rung each time the head crosses into the next circuit toward it; to stay
+  // under the code, be at LADDER[k-1] by the time k clear circuits remain
+  function occTargets(C, out) {
+    out.length = 0; if (!C.ob) return out;
+    const d = C.ob.dist, c = Math.min(LADDER.length - 1, Math.floor(d / BLOCK));
+    for (let k = 1; k <= c; k++) out.push({ dist: Math.max(0, d - k * BLOCK - 10), v: LADDER[k - 1], why: 'train ahead' });
+    out.push({ dist: Math.max(0, d - 30), v: 0, why: 'train ahead' });
+    return out;
+  }
+  const OT = [];
+
   // ---------------------------------------------------------------- the drive run
   function nextStop(D) { const S = D.leg.stops; for (let k = 0; k < S.length; k++) if (S[k].ps > D.s + 4 && k > (run ? run.atK : -1)) return k; return -1; }
   function stopInfo() {
@@ -148,7 +159,7 @@ const MetroATC = (() => {
     }
     const inf = stopInfo(); let vt = C.code - 1.5 * MPH;
     for (const t of targetsAhead(D, 1600)) vt = Math.min(vt, Math.sqrt(Math.max(0, t.v - 1.5 * MPH) ** 2 + 2 * 0.75 * Math.max(0, t.dist - D.v * 1.6)));
-    if (C.ob) vt = Math.min(vt, Math.sqrt(2 * 0.75 * Math.max(0, C.ob.dist - 25 - D.v * 1.6)));
+    for (const t of occTargets(C, OT)) vt = Math.min(vt, Math.sqrt(Math.max(0, t.v - 1.5 * MPH) ** 2 + 2 * 0.75 * Math.max(0, t.dist - D.v * 1.6)));
     if (inf) { const d = inf.togo - 0.1; vt = Math.min(vt, d <= 0 ? 0 : Math.sqrt(2 * 0.9 * Math.max(0, d - D.v * 0.5)) + (d < 5 ? 0.15 : 0)); }
     const P = MetroSim.PERF[D.kind], e = vt - D.v, aDes = U.clamp(e * 0.55, -P.bFull, P.a0);
     const aMax = Math.min(P.a0, P.pw / Math.max(D.v, 0.5));
@@ -263,7 +274,7 @@ const MetroATC = (() => {
     // the next lower code ahead and the speed a service-brake curve allows now (what a careful operator drives to)
     let tgt = null, vAllow = C.code;
     for (const t of targetsAhead(D, 2000)) { const va = Math.sqrt(t.v * t.v + 2 * 0.8 * t.dist); if (va < vAllow) { vAllow = va; tgt = t; } }
-    if (C.ob) { const va = Math.sqrt(2 * 0.8 * Math.max(0, C.ob.dist - 30)); if (va < vAllow) { vAllow = va; tgt = { dist: C.ob.dist, v: 0, why: 'train ahead' }; } }
+    for (const t of occTargets(C, OT)) { const va = Math.sqrt(t.v * t.v + 2 * 0.8 * t.dist); if (va < vAllow) { vAllow = va; tgt = t; } }
     return { v: D.v, code: C.code, civil: C.civil, clear: C.clear, target: tgt, vAllow, mode: D.ato ? 'ATO' : 'MANUAL', notch: D.emergency ? 'EB' : notchText(D.lever), lever: D.lever,
       atc: D.penalty ? 'penalty' : run.atc.state, guide: guide(), reverse: !!D.reverse, doors: D.doors, next: inf, score: run.score, late: inf ? Env.time.sec - inf.sched : 0 };
   }
