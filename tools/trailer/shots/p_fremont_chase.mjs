@@ -1,5 +1,6 @@
 // P22, night: a drone chase along the Fremont line's aerial between San Leandro and Bay Fair at line speed (60 mph),
-// low off the lead car's right side, pacing it and slowly falling back along the lit windows, looking ahead up the
+// low off the lead car's left side (over the frontage road, not the warehouse roofs), pacing it and slowly falling back
+// along the lit windows, looking ahead up the
 // guideway into the East Bay's grid of lights. A deliberate 1.5 degree roll. 120 fps (the edit averages 4).
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
@@ -13,9 +14,9 @@ export default {
     return window.__dep; }`,
   prime: `() => { const B = window.__bayline; B.Env.setClock(window.__dep.t); B.MetroSim.setFocus(window.__dep.key); return window.__dep.line + ' to ' + window.__dep.dest + ' ' + window.__dep.v + ' m/s'; }`,
   before: `(t) => { const B = window.__bayline, M = window.__m, C = __cine; B.Env.camera.fov = ${FOV}; B.MetroSim.setFocus(window.__dep.key);
-    const P = M.pose(window.__dep.key, 0); if (P) C.put(M.rel(P, 2, 11, 5), M.rel(P, 120, 2, -2)); }`,
-  // the drone: low off the lead car's right side, pacing it and slowly falling back along the train, looking ahead up
+    const P = M.pose(window.__dep.key, 0); if (P) C.put(M.rel(P, -4, -11, 7), M.rel(P, 120, -2, -2)); }`,
+  // the drone: low off the lead car's left side, pacing it and slowly falling back along the train, looking ahead up
   // the guideway into the East Bay's lights; the lit windows stream past in the foreground; a 1.5 degree roll
   cam: `(t, cam) => { const C = __cine, M = window.__m, P = M.pose(window.__dep.key, 0); if (!P) return; const k = C.ease(t / 3.3);
-    C.aim(cam, M.rel(P, 4 - 16 * k, 10.5 - 1.5 * k, 5.2 - 0.8 * k), M.rel(P, 140, 1.5, -3), ${FOV}, 0.026); }`,
+    C.aim(cam, M.rel(P, -3 - 14 * k, -10.5 + 1.5 * k, 7.2 - 0.8 * k), M.rel(P, 140, -1.5, -3), ${FOV}, -0.026); }`,
 };
