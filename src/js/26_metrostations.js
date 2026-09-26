@@ -352,14 +352,58 @@ const MetroStations = (() => {
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
     if (typeof StationCrowds !== 'undefined') StationCrowds.update(dt, camPos, list);
-    sharedBuildings();
+    try { sharedBuildings(); } catch (e) { /* (cosmetic: never worth the metro) */ }
+    try { updateFar(); } catch (e) { /* (cosmetic) */ }
+  }
+  // ------------------------------------------------------------------------------------------------ far silhouettes
+  // Beyond the build radius an above-ground station is still a landmark (from the air the guideway reaches 11 km):
+  // one instanced box set for all of them (one draw call): the canopy block over the platforms in the station's roof
+  // colour and, for aerial stations, the deck slab under them. A station's boxes shrink to nothing while its real build
+  // is on screen; underground stations have none. Filled in as the background pass makes each station's plan.
+  let far = null; const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fs = new THREE.Vector3(), _fp = new THREE.Vector3(), _fy = new THREE.Vector3(0, 1, 0);
+  function updateFar() {
+    if (!far) {
+      const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
+      const mat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0 });
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length * 2); mesh.name = 'metrostations-far'; mesh.count = 0; mesh.frustumCulled = false;
+      mesh.castShadow = false; mesh.receiveShadow = true; group.add(mesh); far = { mesh, items: [], done: new Set() };
+      // (outdoor world for Under: never drawn while the camera is underground; its shader compiled in the background)
+      if (typeof Under !== 'undefined' && Under.enabled && Under.outdoor) try { Under.outdoor(mesh, true); } catch (e) {}
+      warmUp(mesh, () => {});
+    }
+    const F = far, mesh = F.mesh;
+    // new stations with a plan (one per frame)
+    for (const st of list) {
+      if (F.done.has(st.id) || !st.plan) continue; F.done.add(st.id);
+      if (st.parent || st.type === 'subway' || !st.plan.plats.length) break;
+      const pl = st.plan, p0 = pl.plats[0], yT = p0.yRail + (p0.ph || PLAT_H);
+      const u0 = Math.min(...pl.plats.map(p => p.u0)), u1 = Math.max(...pl.plats.map(p => p.u1)), um = (u0 + u1) / 2;
+      const vs = pl.tracks.map(t => trackV(pl, t, um)); const v0 = Math.min(...vs) - 7.5, v1 = Math.max(...vs) + 7.5;
+      const H = typeof StationHeroes !== 'undefined' ? StationHeroes.config(st.id) : {}, C = H.canopy || {};
+      const S = spineAt(pl, um + (C.off || 0), {}), vm = (v0 + v1) / 2, yaw = Math.atan2(-S.tz, S.tx);
+      const add = (len, w, y, h, col) => { if (mesh.count >= list.length * 2) return; const i = mesh.count++;
+        _fp.set(S.x + S.rx * vm, y, S.z + S.rz * vm); _fq.setFromAxisAngle(_fy, yaw); _fs.set(len, h, w); _fm.compose(_fp, _fq, _fs);
+        mesh.setMatrixAt(i, _fm); mesh.setColorAt(i, new THREE.Color(col).convertSRGBToLinear()); F.items.push({ st, i, m: _fm.clone() }); };
+      add(Math.min(u1 - u0, C.len || u1 - u0), v1 - v0 - 3, yT + 3.2, 0.7, C.top ?? 0x9a9690);
+      if (st.type === 'aerial') add(u1 - u0 + 14, v1 - v0 - 1, yT - 2.1, 2.0, 0xb3aea5);
+      mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      break;
+    }
+    // hidden while the real station is on screen
+    let dirty = false;
+    for (const it of F.items) { const show = !(it.st.root && it.st.root.userData.warm !== false) && it.st.dist < FAR_R;
+      if (show === it.shown) continue; it.shown = show; mesh.setMatrixAt(it.i, show ? it.m : _fm.makeScale(0, 0, 0)); dirty = true; }
+    if (dirty) mesh.instanceMatrix.needsUpdate = true;
   }
   // Millbrae is one intermodal building: the Caltrain-era depot's hall (Landmarks, 'depot:millbrae:hall', split off
   // only with the metro on) stands where BART's platform 3 and tracks are, so it is hidden while the BART station (which
   // draws the shared hall) is on screen, shown again when that station is dropped, and on a metro failure (teardown)
-  let depotHall = null, depotLook = 0;
+  let depotHall = null, depotLook = 0, depotTries = 0;
   function sharedBuildings() {
-    if (!depotHall) { if (--depotLook > 0) return; depotLook = 120; if (typeof Env === 'undefined') return;
+    if (!depotHall) {
+      // (looked for only while BART Millbrae is built, every 2 s, and given up after 30 tries: no Peninsula depot)
+      const mb = byId.MLBR; if (!mb || !mb.root) { depotTries = 0; return; } if (depotTries > 30) return;
+      if (--depotLook > 0) return; depotLook = 120; depotTries++; if (typeof Env === 'undefined') return;
       Env.scene.traverse(o => { if (!depotHall && o.name === 'depot:millbrae:hall') depotHall = o; });
       if (!depotHall) return;
       if (typeof Metro !== 'undefined' && Metro.onTeardown) Metro.onTeardown(() => { if (depotHall) depotHall.visible = true; }); }

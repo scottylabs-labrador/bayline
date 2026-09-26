@@ -30,7 +30,7 @@ const StationHeroes = (() => {
   const CFG = {
     // ---------------------------------------------------------------- San Francisco (Market St: Muni over BART)
     EMBR: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: TERR(0xb9b4aa, 3.0), wall: [0xe4e1da, K.CIRCLES, 3.2], wallUp: [0xd8d4cc, K.CIRCLES, 3.2], ceil: [0x4a4845, K.COFFER, 2.4],
-      cFloor: TERR(0xa8a296), cWall: BOARD(0x9d968a, 0.2), cCeil: [0x5a5854, K.GRATING, 0], light: [1.0, 0.93, 0.82], feature: ['circles'], hero: 1 },
+      cFloor: TERR(0xa8a296), cWall: BOARD(0x9d968a, 0.2), cCeil: [0x5a5854, K.GRATING, 0], light: [1.0, 0.93, 0.82], feature: ['circles'], canyon: true, hero: 1 },
     MONT: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7a3527), wall: [0xe8e6e0, K.PANEL, 1.6], wallUp: PAINT(0x3a3a3c), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
       cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome', benches: 'bullseye',
       cFloor: [0xd6ceb9, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0xe8e4dc, K.COFFER, 1.2], hero: 1 },
@@ -40,12 +40,12 @@ const StationHeroes = (() => {
     CIVC: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: MARB(0xdcdad4), wall: [0xe6e3dc, K.PANEL, 1.5], wallUp: PAINT(0x1c2c4a), ceil: [0xe9e7e2, K.PANEL, 0.15],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 0.9, depth: 0.5, col: 0x1a1a1b, kind: K.GRANITE }, cFloor: MARB(0xd6d3cc), cWall: BRICK(0x6e6358, 1), cCeil: [0xe2e0dc, K.PANEL, 0.15], hero: 1 },
     '16TH': { layout: 'island', type: 'subway', access: 'above', floor: QUARRY(0x8e3e2c), wall: TILE(0xeceae4, 0.152), wallUp: CONC(0x9b958a, 0), ceil: [0x8a857c, K.CONCRETE, 2.0],
-      cFloor: QUARRY(0x8e3e2c), cWall: [0xd9cfb8, K.CONCRETE, 0], cCeil: [0xb07a45, K.WOOD, 0.09], vault: 'ribs', mural: [0x2f5d8c, 0x7c8a3a, 0xa9b83e, 0x8a8d88], hero: 1 },
+      cFloor: QUARRY(0x8e3e2c), cWall: [0xd9cfb8, K.CONCRETE, 0], cCeil: [0xb07a45, K.WOOD, 0.09], vault: 'ribs', mural: [0x2f5d8c, 0x7c8a3a, 0xa9b83e, 0x8a8d88], wellWall: [0xa39c8f, K.CIRCLES, 2.6], hero: 1 },
     '24TH': { layout: 'island', type: 'subway', access: 'above', floor: QUARRY(0x8e3e2c), wall: TILE(0xeceae4, 0.152), wallUp: CONC(0x9b958a, 0), ceil: [0x8a857c, K.CONCRETE, 2.0],
-      cFloor: QUARRY(0x8e3e2c), cWall: [0xd9cfb8, K.CONCRETE, 0], cCeil: [0xb07a45, K.WOOD, 0.09], vault: 'ribs', mural: [0xd8b23a, 0x7a4a26, 0x5e3a22, 0x9a6b3c], hero: 1 },
+      cFloor: QUARRY(0x8e3e2c), cWall: [0xd9cfb8, K.CONCRETE, 0], cCeil: [0xb07a45, K.WOOD, 0.09], vault: 'ribs', mural: [0xd8b23a, 0x7a4a26, 0x5e3a22, 0x9a6b3c], wellWall: [0xa39c8f, K.CIRCLES, 2.6], hero: 1 },
     GLEN: { layout: 'island', type: 'subway', access: 'above', floor: [0x9a4a36, K.BRICK, 0], wall: BOARD(0x6d6760, 0.2), wallUp: BOARD(0x6d6760, 0.2), ceil: BOARD(0x5d5852, 0.2),
       cFloor: [0x9a4a36, K.BRICK, 0], cWall: BOARD(0x7a746c), daylight: true, arch: true, hero: 1 },
-    BALB: { layout: 'island', type: 'trench', access: 'above', floor: [0x8e4636, K.BRICK, 0], wall: FLUTE(0xa8a298, 0.35), canopy: { style: 'flat', len: 90, fascia: 0x9d978d, under: 0x8a857c, posts: { shape: 'rect', col: 0x9d978d, size: 0.45, spacing: 12, where: 'centre' } }, hero: 1 },
+    BALB: { layout: 'island', type: 'trench', access: 'above', floor: [0x8e4636, K.BRICK, 0], wall: FLUTE(0xa8a298, 0.35), canopy: { style: 'flat', len: 90, fascia: 0x9d978d, under: 0x8a857c, posts: { shape: 'rect', col: 0x9d978d, size: 0.45, spacing: 12, where: 'centre' } }, conduit: true, hero: 1 },
     DALY: { layout: 'island', type: 'aerial', access: 'below', floor: CONC(0xa39d91), bands: 0x8c4a33, canopy: { style: 'flat', len: 110, fascia: 0x2b2b2d, under: 0x3a3a3c, beams: true, posts: { shape: 'rect', col: 0x2b2b2d, size: 0.35, spacing: 9, where: 'centre' } }, ends: 'poles', hero: 1 },
     COLM: { layout: 'island', type: 'trench', access: 'bridge', floor: GRAN(0x9d958c, 0.6), bands: 0xc98f86, canopy: { style: 'gull', len: 120, top: 0xf3f3f1, under: 0xeeeeea, fascia: 0xf3f3f1, posts: { shape: 'round', col: 0xd99a8e, size: 0.6, spacing: 12, where: 'centre', capital: 0xf0efea } } },
     // ---------------------------------------------------------------- Peninsula and SFO
@@ -68,7 +68,7 @@ const StationHeroes = (() => {
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 1.2, depth: 1.2, col: 0x1f3570, kind: K.BRICK }, cFloor: [0xc8bca6, K.GRANITE, 0.4], cWall: [0x1f3570, K.BRICK, 1], cCeil: [0xecebe7, K.COFFER, 2.4], hero: 1 },
     MCAR: { layout: 'island', type: 'median', access: 'below', floor: CONC(0xa8a296), grid: 0x8c3f2e, canopy: { style: 'box', len: 95, off: 40, top: 0x3a2a22, under: 0x3a2a22, fascia: 0x3a2a22, span: 'all', posts: { shape: 'rect', col: 0x3a2a22, size: 0.4, spacing: 12, where: 'both' } }, hero: 1 },
     LAKE: { layout: 'island', type: 'subway', access: 'above', floor: TERR(0x9d8a82, 3.0), wall: [0xe8e2d6, K.CONCRETE, 0], band: 0xb3342b, wallUp: [0x3a3634, K.CONCRETE, 0], ceil: [0x4a4744, K.COFFER, 2.0],
-      cFloor: TERR(0x9d8a82), cWall: [0xb54a2a, K.MOSAIC, 0.03], skylights: true, hero: 1 },
+      cFloor: TERR(0x9d8a82), cWall: [0xb54a2a, K.MOSAIC, 0.03], skylights: true, bigCircles: true, hero: 1 },
     FTVL: { layout: 'side', type: 'aerial', access: 'below', floor: QUARRY(0x86412f), canopy: { style: 'shed', len: 100, top: 0x7a3f22, under: 0x5a3a2a, fascia: 0x3d2a20, tilt: true, posts: { shape: 'rect', col: 0x3d2a20, size: 0.3, spacing: 8, where: 'back' } },
       windscreen: 0x6b7a80, ends: 'wall', cCeil: [0xd96a1e, K.PANEL, 1.2], hero: 1 },
     COLS: { layout: 'island', type: 'aerial', access: 'below', floor: QUARRY(0x8a3a2a), canopy: { style: 'butterfly', len: 120, off: -25, top: 0x8f9396, under: 0xa2342a, fascia: 0x6f7377, posts: { shape: 'portal', col: 0xb5afa3, size: 0.6, spacing: 12, where: 'centre' } }, feature: ['oac'], hero: 1 },

@@ -20,5 +20,6 @@ new Promise(r => { const f = () => window.__bayline && __bayline.MetroSim && __b
     if (!on) break;                                                // (the metro failed: the tour is over; the shell script reports it)
   }
   const bad = out.filter(o => !o.ok || !o.on || !o.onFloor || !o.board);
-  return JSON.stringify({ stops: out.length, minutes: +((performance.now() - t0) / 60000).toFixed(1), metroOn: B.Metro.on, bad, out });
+  window.__tour = out;                                            // (every stop, for a closer look)
+  return JSON.stringify({ stops: out.length, minutes: +((performance.now() - t0) / 60000).toFixed(1), metroOn: B.Metro.on, bad, minFps: Math.min(...out.map(o => o.fps)) });
 });
