@@ -23,6 +23,10 @@ const MetroGuide = (() => {
     return [[-bw, -H], [-bw, -H + 0.011], [-0.028, -H + 0.022], [-ww, -H + 0.04], [-ww, -0.052], [-hw + 0.001, -0.041], [-hw, -0.012], [-hw + 0.009, -0.002], [-0.012, 0.0],
             [0.012, 0.0], [hw - 0.009, -0.002], [hw, -0.012], [hw - 0.001, -0.041], [ww, -0.052], [ww, -H + 0.04], [0.028, -H + 0.022], [bw, -H + 0.011], [bw, -H]]; })();
   const RAILC = RAIL.slice(0, -1).map((p, j) => j === 8 ? PAL.railTop : (j === 7 || j === 9) ? PAL.railSide : (j === 6 || j === 10) ? PAL.railSide : PAL.railRust);
+  // 1:40 inward cant [BFS 34 05 17]: the left rail (side -1) leans toward +l, the right rail toward -l (pivot: base centre)
+  const railCanted = (side) => { const a = -side * Math.atan(DIM.railCant), c = Math.cos(a), sn = Math.sin(a), H = DIM.railH;
+    return RAIL.map(([l, h]) => { const y = h + H; return [l * c - y * sn, l * sn + y * c - H]; }); };
+  const RAILS = { '-1': railCanted(-1), '1': railCanted(1) };
   // third (contact) rail: a steel tee on its side-less web, head up; coverboard above on brackets
   const T3 = DIM.third;
   const CONTACT = [[-0.07, -0.13], [-0.07, -0.118], [-0.012, -0.108], [-0.012, -0.03], [-T3.w / 2, -0.02], [-T3.w / 2, 0.0], [T3.w / 2, 0.0], [T3.w / 2, -0.02], [0.012, -0.03], [0.012, -0.108], [0.07, -0.118], [0.07, -0.13]];
@@ -182,57 +186,74 @@ const MetroGuide = (() => {
     return 1972;
   }
   const A = DIM.aerial;
-  // girder cross-section around its own track (level frame): trapezoidal box with cantilevered top flange
+  // girder cross-section around its own track (level frame): trapezoidal box, 1.22 m deep, 3.556 m deck with thin
+  // cantilevered flange tips [CLEMONS]
   function girderProfile(hD) {
-    const tw = A.girderTopW / 2, bw = A.girderBotW / 2, d = A.girderD;
-    return [[-tw, hD - 0.22], [-tw, hD], [tw, hD], [tw, hD - 0.22], [bw + 0.42, hD - 0.36], [bw, hD - d], [-bw, hD - d], [-bw - 0.42, hD - 0.36]];
+    const tw = A.girderTopW / 2, bw = A.girderBotW / 2, d = A.girderD, ft = A.flangeT;
+    return [[-tw, hD - ft], [-tw, hD], [tw, hD], [tw, hD - ft], [tw - 0.52, hD - ft - 0.1], [bw, hD - d], [-bw, hD - d], [-tw + 0.52, hD - ft - 0.1]];
+  }
+  // modern (2003+) style: one box for both tracks with barriers (lo..hi = track laterals)
+  function modernProfile(hD, lo, hi) {
+    const L = lo - 1.95, R2 = hi + 1.95, d = 2.1;
+    return [[L, hD - 0.3], [L, hD + 1.07], [L + 0.25, hD + 1.07], [L + 0.38, hD], [R2 - 0.38, hD], [R2 - 0.25, hD + 1.07], [R2, hD + 1.07], [R2, hD - 0.3], [R2 - 1.4, hD - 0.55], [R2 - 2.3, hD - d], [L + 2.3, hD - d], [L + 1.4, hD - 0.55]];
   }
   // column positions of an aerial run on a (primary) track: evenly spaced spans close to the typical span
   function spanJoints(run) {
-    const len = run.s1 - run.s0; const n = Math.max(1, Math.round(len / A.spanTyp)); const L = len / n; const out = [];
+    const len = run.s1 - run.s0; const era = run.era || 1972, sp = era >= 2003 ? 32 : A.spanTyp;
+    const n = Math.max(1, Math.round(len / sp)); const L = len / n; const out = [];
     for (let k = 0; k <= n; k++) out.push(run.s0 + k * L); return out;
   }
+  function runEra(ctx, run) { if (!run.era) { MT.frameAt(ctx.R, (run.s0 + run.s1) / 2, F2); run.era = eraAt(F2.x, F2.z); } return run.era; }
   function buildAerial(ctx, run, a, b, kind) {
-    const R = ctx.R, gb = ctx.B.infra, hD = -A.deckBelowTOR;
-    // girders: my own track's girder in spans (a 5 cm joint at each column), except inside station limits
+    const R = ctx.R, gb = ctx.B.infra, hD = -A.deckBelowTOR, era = runEra(ctx, run);
     let joints = spanJoints(run);
     const p0 = ctx.pairAt(R, (a + b) / 2);
-    if (p0 && !p0.primary) {               // follow the primary's joints (mapped onto my s through the pair bins)
+    if (p0 && !p0.primary) {               // follow the primary's joints (mapped onto my s)
       const R1 = p0.R2, runs1 = R1.runs.filter(r => r.type === run.type && r.s1 > p0.s2 - 800 && r.s0 < p0.s2 + 800);
-      const js = []; for (const r1 of runs1) for (const s1 of spanJoints(r1)) { MT.frameAt(R1, s1, F); const q = projectOn(R, F.x, F.z, (a + b) / 2); if (q !== null) js.push(q); }
+      const js = []; for (const r1 of runs1) { r1.era = r1.era || era; for (const s1 of spanJoints(r1)) { MT.frameAt(R1, s1, F); const q = projectOn(R, F.x, F.z, (a + b) / 2); if (q !== null) js.push(q); } }
       if (js.length) joints = js.sort((x, y) => x - y);
     }
     const spans = []; for (let k = 0; k + 1 < joints.length; k++) { const s0 = Math.max(a, joints[k] + 0.025), s1 = Math.min(b, joints[k + 1] - 0.025); if (s1 - s0 > 0.3) spans.push([s0, s1, joints[k] >= a - 0.01, joints[k + 1] <= b + 0.01]); }
-    const prof = girderProfile(hD);
-    for (const [s0, s1, capA, capB] of spans) {
-      const subs = ownedRanges(ctx, s0, s1, false); if (!subs.length) continue;
-      for (const [q0, q1] of subs) {
-        const ss = ctx.sampleS(R, q0, q1, 8, 2.5);
-        const rows = ctx.rowsAt(ctx, ss, 0, 0, false, (row, Fr) => { row.top = Fr.y + hD; row.gnd = -1e4; });
-        gb.wear = 0.7; gb.sweep(rows, prof, PAL.precast, { closed: true });
-        if (capA && q0 === subs[0][0]) gb.capProfile(rows[0], prof, PAL.precast, -1);
-        if (capB && q1 === subs[subs.length - 1][1]) gb.capProfile(rows[rows.length - 1], prof, PAL.precast, 1);
-        // parapet on the outer edge (away from the partner), deck-top plinth curb on the inner edge
-        const pp = ctx.pairAt(R, (q0 + q1) / 2), outer = pp ? (pp.lat > 0 ? -1 : 1) : 0;
-        for (const side of outer ? [outer] : [-1, 1]) {
-          const e = side * A.girderTopW / 2, t = A.parapetT, h = A.parapetH;
-          const pr = side < 0 ? [[e, hD], [e, hD + h], [e + t, hD + h], [e + t, hD + 0.05], [e + t + 0.08, hD]] : [[e - t - 0.08, hD], [e - t, hD + 0.05], [e - t, hD + h], [e, hD + h], [e, hD]];
-          gb.sweep(rows.map(r0 => Object.assign({}, r0, { top: r0.o[1] + hD + h })), pr, PAL.concreteLight);
-          // conduit and cable trough along the parapet's inner face
-          const cl = side * (A.girderTopW / 2 - t - 0.16);
-          gb.sweep(rows, side < 0 ? [[cl - 0.13, hD + 0.02], [cl - 0.13, hD + 0.22], [cl + 0.13, hD + 0.22], [cl + 0.13, hD + 0.02]] : [[cl - 0.13, hD + 0.02], [cl - 0.13, hD + 0.22], [cl + 0.13, hD + 0.22], [cl + 0.13, hD + 0.02]], PAL.concrete);
-        }
+    if (era >= 2003) {
+      // one wide box for both tracks, built by the primary (or an unpaired track)
+      for (const [s0, s1, capA, capB] of spans) for (const [q0, q1] of ownedRanges(ctx, s0, s1)) {
+        const ss = ctx.sampleS(R, q0, q1, 8, 2.5); const rows = []; let prof0 = null;
+        for (const s of ss) { MT.frameAt(R, s, F); const ln = lanes(ctx, s); const pr = modernProfile(hD, ln.lo, ln.hi); prof0 = prof0 || pr;
+          rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz], prof: pr.concat([pr[0]]), col: pr.map((p, k) => k === 3 ? PAL.deckTop : k >= 7 ? PAL.precast : PAL.concreteLight) }); }
+        gb.wear = 0.7; sweepVar(gb, rows.map(r0 => Object.assign(r0, { gnd: -1e4 })));
+        if (capA) gb.capProfile(rows[0], rows[0].prof.slice(0, -1), PAL.precast, -1); if (capB) gb.capProfile(rows[rows.length - 1], rows[rows.length - 1].prof.slice(0, -1), PAL.precast, 1);
         gb.wear = 0.5;
+      }
+    } else {
+      const prof = girderProfile(hD);
+      for (const [s0, s1, capA, capB] of spans) {
+        const subs = ownedRanges(ctx, s0, s1, false); if (!subs.length) continue;
+        for (const [q0, q1] of subs) {
+          const ss = ctx.sampleS(R, q0, q1, 8, 2.5);
+          const rows = ctx.rowsAt(ctx, ss, 0, 0, false, (row, Fr) => { row.top = Fr.y + hD; row.gnd = -1e4; });
+          gb.wear = 0.75; gb.sweep(rows, prof, PAL.precast, { closed: true });
+          if (capA && q0 === subs[0][0]) gb.capProfile(rows[0], prof, PAL.precast, -1);
+          if (capB && q1 === subs[subs.length - 1][1]) gb.capProfile(rows[rows.length - 1], prof, PAL.precast, 1);
+          // drainage channel on the girder centreline (a shallow dark groove between the plinths)
+          gb.sweep(rows, [[-0.09, hD + 0.004], [0.09, hD + 0.004]], PAL.concreteDark);
+          // the sunken walkway between the two girders of a pair (primary): a slab 0.25 m below the decks
+          const pp = ctx.pairAt(R, (q0 + q1) / 2);
+          if (pp && pp.primary) {
+            const w0 = Math.min(0, pp.lat) + A.girderTopW / 2 + 0.01, w1 = Math.max(0, pp.lat) - A.girderTopW / 2 - 0.01;
+            if (w1 - w0 > 0.2) { const yw = hD - A.walkDrop; gb.sweep(rows, [[w0, yw - 0.14], [w0, yw], [w1, yw], [w1, yw - 0.14]], PAL.concrete); }
+          }
+          gb.wear = 0.5;
+        }
       }
     }
     // columns + caps + bearings (shared: the primary, or an unpaired track), footings on the ground; none in stations
     for (const sj of joints) {
       if (sj < a - 0.01 || sj > b + 0.01) continue; if (ctx.inStation(R, sj, 2)) continue;
       if (!owns(ctx, sj)) continue;
-      column(ctx, sj, hD, kind);
+      column(ctx, sj, hD, kind, era);
     }
     // abutment where the aerial meets the ground at a run end (grade / embankment neighbours)
-    for (const [se, dir] of [[run.s0, -1], [run.s1, 1]]) if (se >= a - 0.01 && se <= b + 0.01 && owns(ctx, se) && !ctx.inStation(R, se, 5)) abutment(ctx, se, dir, hD);
+    for (const [se, dir] of [[run.s0, -1], [run.s1, 1]]) if (se >= a - 0.01 && se <= b + 0.01 && owns(ctx, se) && !ctx.inStation(R, se, 5)) abutment(ctx, se, dir, hD, era);
   }
   // s on track R nearest to world (x, z), searched around sHint (±1 km); null if farther than 12 m
   function projectOn(R, x, z, sHint) {
@@ -241,42 +262,53 @@ const MetroGuide = (() => {
     for (let i = i0; i <= i1; i++) { const ax = t.X[i], az = t.Z[i], dx = t.X[i + 1] - ax, dz = t.Z[i + 1] - az, L2 = dx * dx + dz * dz || 1e-9; const u = U.clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1); const d = (ax + dx * u - x) ** 2 + (az + dz * u - z) ** 2; if (d < bd) { bd = d; bs = (i + u) * st; } }
     return bs;
   }
-  function column(ctx, s, hD, kind) {
+  // a vertical prism along a closed horizontal profile (clockwise in (lateral, along)), from y0 to y1
+  function prism(gb, cx, cz, Lv, T, prof, y0, y1, C) {
+    const r = [-Lv[0], 0, -Lv[2]], u = [T[0], 0, T[2]];         // (r = up x along: the sweep's handedness)
+    gb.sweep([{ o: [cx, y0, cz], r, u, s: gb.s }, { o: [cx, y1, cz], r, u, s: gb.s }], prof, C, { closed: true });
+  }
+  const HEX = (() => { const rr = A.colD / 2 / Math.cos(Math.PI / 6), out = []; for (let k = 0; k < 6; k++) { const a = Math.PI / 2 - k * Math.PI / 3; out.push([Math.cos(a) * rr, Math.sin(a) * rr]); } return out; })();
+  function column(ctx, s, hD, kind, era) {
     const R = ctx.R, gb = ctx.B.infra; MT.frameAt(R, s, F); const ln = lanes(ctx, s);
     const mid = (ln.lo + ln.hi) / 2, half = (ln.hi - ln.lo) / 2;
     const T = [F.tx, 0, F.tz], Lv = [F.lx, 0, F.lz]; const tl = Math.hypot(T[0], T[2]) || 1; T[0] /= tl; T[2] /= tl;
     const cx = F.x + F.lx * mid - ctx.ox, cz = F.z + F.lz * mid - ctx.oz;
-    const soffit = F.y + hD - A.girderD - 0.06;                                       // girder bottom, bearing seat
+    const modern = era >= 2003, depth = modern ? 2.1 : A.girderD;
+    const soffit = F.y + hD - depth - 0.06;                                             // girder bottom, bearing seat
     const ground = MT.groundAt(cx + ctx.ox, cz + ctx.oz);
-    const era = eraAt(cx + ctx.ox, cz + ctx.oz);
     if (soffit - ground < 1.0) return;                                                 // too low for a column (fill instead)
-    // bearings under each girder
-    for (const l of half > 0.5 ? [ln.lo, ln.hi] : [0]) for (const dt of [-0.5, 0.5]) {
-      const bx = F.x + F.lx * l + T[0] * dt - ctx.ox, bz = F.z + F.lz * l + T[2] * dt - ctx.oz;
-      gb.box(bx, soffit + 0.03, bz, T, [0, 1, 0], Lv, 0.2, 0.05, 0.3, PAL.bearing);
-    }
-    // hammerhead cap: spans both girders, tapered underside (1970s); a straight cap on the newer eras
-    const capW = half + A.girderBotW / 2 + 0.55, capTop = soffit - 0.02, capD = A.capD, colR = A.colD / 2;
-    gb.top = capTop; gb.gnd = ground; gb.wear = 0.8;
+    gb.s = s; gb.wear = 0.8;
     const P = (lat, y, along) => [cx + Lv[0] * lat + T[0] * along, y, cz + Lv[2] * lat + T[2] * along];
-    const hw = 0.8;                                                                    // cap half-length along the track
-    const taper = era >= 2003 ? 0.25 : 0.55;
-    // cap as a swept 2D profile (lateral, height) extruded along T: top flat, ends vertical, underside sloping to the column
-    const capProf = [[-capW, capTop - capD * taper], [-capW, capTop], [capW, capTop], [capW, capTop - capD * taper], [colR + 0.25, capTop - capD], [-colR - 0.25, capTop - capD]];
-    const rowsCap = [-hw, hw].map(al => ({ o: P(0, 0, al), r: Lv, u: [0, 1, 0], t: T, s: s }));
-    gb.sweep(rowsCap, capProf, PAL.concrete, { closed: true }); gb.capProfile(rowsCap[0], capProf, PAL.concrete, -1); gb.capProfile(rowsCap[1], capProf, PAL.concrete, 1);
-    // column: round and slightly tapered (1970s), rectangular with chamfers (2000s+); footing mostly buried
-    const top = capTop - capD + 0.05, bot = ground - 0.6;
-    if (era >= 2003) {
-      const rows = [bot, top].map(y => ({ o: [cx, y, cz], r: Lv, u: T, t: [0, 1, 0], s }));
-      const w = colR * 1.05, c = 0.18; gb.sweep(rows.map(r0 => ({ o: r0.o, r: r0.r, u: r0.u, s })), [[-w, -w + c], [-w, w - c], [-w + c, w], [w - c, w], [w, w - c], [w, -w + c], [w - c, -w], [-w + c, -w]].map(p => [p[0], p[1]]), PAL.concreteLight, { closed: true, flip: true });
-    } else {
-      gb.cyl([cx, bot, cz], [cx, top, cz], colR * 1.08, colR, 24, PAL.concreteLight, false, false);
+    // bearings: elastomeric pads under each web of each girder, both sides of the deck joint
+    const girders = modern ? [0] : (half > 0.5 ? [ln.lo - mid, ln.hi - mid] : [0]);
+    for (const gl of girders) for (const w of modern ? [-2.2, 2.2] : [-0.55, 0.55]) for (const dt of [-0.42, 0.42]) {
+      const c = P(gl + w, soffit + 0.035, dt); gb.box(c[0], c[1], c[2], T, [0, 1, 0], Lv, 0.16, 0.035, 0.24, PAL.bearing);
     }
-    gb.box(cx, ground - 0.35, cz, T, [0, 1, 0], Lv, 1.6, 0.5, 1.6, PAL.concreteDark, 4);
+    // hammerhead cap: a T spanning both girders, deep over the column, tapering to its tips
+    const capW = modern ? half + 2.6 : half + A.girderBotW / 2 + 0.6, capTop = soffit - 0.0, capD = modern ? 1.8 : A.capD, hl = (modern ? 2.2 : A.capL) / 2;
+    const colR = A.colD / 2;
+    gb.top = capTop; gb.gnd = ground;
+    const capProf = modern ? [[-capW, capTop - capD * 0.6], [-capW, capTop], [capW, capTop], [capW, capTop - capD * 0.6], [capW - 0.8, capTop - capD], [-capW + 0.8, capTop - capD]]
+      : [[-capW, capTop - capD * 0.45], [-capW, capTop], [capW, capTop], [capW, capTop - capD * 0.45], [colR + 0.35, capTop - capD], [-colR - 0.35, capTop - capD]];
+    const rowsCap = [-hl, hl].map(al => ({ o: P(0, 0, al), r: Lv, u: [0, 1, 0], t: T, s }));
+    gb.sweep(rowsCap, capProf, PAL.concrete, { closed: true }); gb.capProfile(rowsCap[0], capProf, PAL.concrete, -1); gb.capProfile(rowsCap[1], capProf, PAL.concrete, 1);
+    // column: hexagonal 1.52 m (original) or a round-ended wall pier (modern); ~45 % of the originals carry a seismic
+    // retrofit steel jacket (1.8-2.4 m) [FLOR]; footing mostly buried
+    const top = capTop - capD + 0.05, bot = ground - 0.6;
+    const hsh = U.hash2(Math.round((cx + ctx.ox) * 0.7), Math.round((cz + ctx.oz) * 0.7));
+    if (modern) {
+      const w = 1.1, d = 0.8; const rr = []; for (let k = 0; k < 16; k++) { const a = Math.PI / 2 - k / 16 * Math.PI * 2; const ex = Math.cos(a) >= 0 ? w - d : -(w - d); rr.push([ex + Math.cos(a) * d, Math.sin(a) * d]); }
+      prism(gb, cx, cz, Lv, T, rr, bot, top, PAL.concreteLight);
+    } else if (hsh < 0.45) {
+      gb.cyl([cx, bot, cz], [cx, top - 0.05, cz], 0.98, 0.98, 28, PAL.jacket, false, false);
+      gb.cyl([cx, top - 0.05, cz], [cx, top + 0.02, cz], 0.98, 0.9, 28, PAL.jacket, false, true);
+    } else {
+      prism(gb, cx, cz, Lv, T, HEX, bot, top, PAL.concreteLight);
+    }
+    gb.box(cx, ground - 0.35, cz, T, [0, 1, 0], Lv, 1.7, 0.45, 1.7, PAL.concreteDark, 4);
     gb.top = 1e4; gb.gnd = -1e4; gb.wear = 0.5;
   }
-  function abutment(ctx, s, dir, hD) {
+  function abutment(ctx, s, dir, hD, era) {
     const R = ctx.R, gb = ctx.B.infra; MT.frameAt(R, s, F); const ln = lanes(ctx, s);
     const T = [F.tx, 0, F.tz]; const tl = Math.hypot(T[0], T[2]) || 1; T[0] /= tl; T[2] /= tl; const Lv = [F.lx, 0, F.lz];
     const mid = (ln.lo + ln.hi) / 2, w = (ln.hi - ln.lo) / 2 + A.girderTopW / 2 + 0.4;
@@ -297,9 +329,24 @@ const MetroGuide = (() => {
       case 'bridge': return buildBridge(ctx, run, a, b);
       case 'trench': return buildTrench(ctx, a, b);
       case 'median': return buildMedian(ctx, a, b);
-      case 'embankment': return buildBed(ctx, a, b, 'embankment');
-      default: return buildBed(ctx, a, b, 'grade');
+      default: {
+        // at grade / on embankment, except where the track runs well below the ground on both sides (portal approaches,
+        // cuttings): there a retained cut (U-section) holds the ground back instead of a skirt
+        for (const [s0, s1, deep] of cutRanges(ctx, a, b)) { if (deep) buildTrench(ctx, s0, s1); else buildBed(ctx, s0, s1, run.type === 'embankment' ? 'embankment' : 'grade'); }
+      }
     }
+  }
+  function cutRanges(ctx, a, b) {
+    const out = []; let cur = null; const step = 5;
+    for (let s = a; ; s = Math.min(b, s + step)) {
+      MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const gl = gRel(F, ln.lo - 5.5, -20, 20), gr = gRel(F, ln.hi + 5.5, -20, 20);
+      const deep = Math.min(gl, gr) > 0.55;                          // (the ballast toe is ~0.76 m below the rail)
+      if (!cur || cur[2] !== deep) { if (cur) cur[1] = s; cur = [s, s, deep]; out.push(cur); } else cur[1] = s;
+      if (s >= b) break;
+    }
+    // merge short flickers (< 15 m) into their neighbours
+    for (let i = 0; i < out.length; i++) if (out.length > 1 && out[i][1] - out[i][0] < 15) { const j = i > 0 ? i - 1 : i + 1; out[j][0] = Math.min(out[j][0], out[i][0]); out[j][1] = Math.max(out[j][1], out[i][1]); out.splice(i, 1); i = -1; }
+    return out;
   }
 
   // ------------------------------------------------------------------ detail layer: rails, plinths, third rail
@@ -313,14 +360,15 @@ const MetroGuide = (() => {
       if (under && typeof MetroTube !== 'undefined') gb.fix = MetroTube.fixFor(R, (a + b) / 2, run.type);
       // rails (banked frame), dense sampling for smooth curves
       const ss = ctx.sampleS(R, a, b, 6, 0.8);
-      for (const side of [-1, 1]) { const rows = ctx.rowsAt(ctx, ss, side * DIM.railC, 0, true); gb.wear = 0.4; gb.sweep(rows, RAIL, RAILC); }
+      for (const side of [-1, 1]) { const rows = ctx.rowsAt(ctx, ss, side * DIM.railC, 0, true); gb.wear = 0.4; gb.sweep(rows, RAILS[side], RAILC); }
       // plinths (DF structures) under each rail, broken every 4.6 m for drainage; ties are instanced
-      if (DF.has(run.type)) for (let q = Math.floor(a / 4.6) * 4.6; q < b; q += 4.6) {
-        const q0 = Math.max(a, q + 0.15), q1 = Math.min(b, q + 4.6 - 0.15); if (q1 - q0 < 0.4) continue;
+      const PL = run.type === 'aerial' || run.type === 'bridge' ? 22.5 : 9.14;       // plinths break at deck joints / every 30 ft
+      if (DF.has(run.type)) for (let q = Math.floor(a / PL) * PL; q < b; q += PL) {
+        const q0 = Math.max(a, q + 0.04), q1 = Math.min(b, q + PL - 0.04); if (q1 - q0 < 0.4) continue;
         if (ctx.inStation(R, (q0 + q1) / 2, -12)) continue;                 // (stations build their own trackway)
         const pss = ctx.sampleS(R, q0, q1, 4.6, 1.2);
         for (const side of [-1, 1]) {
-          const rows = ctx.rowsAt(ctx, pss, side * DIM.railC, 0, true), w = DIM.plinthW / 2, top = -DIM.railH - 0.03;
+          const rows = ctx.rowsAt(ctx, pss, side * DIM.railC, 0, true), w = DIM.plinthW / 2, top = -DIM.railH - 0.04;
           gb.wear = 0.6; gb.sweep(rows, [[-w, top - 0.35], [-w, top - 0.02], [-w + 0.03, top], [w - 0.03, top], [w, top - 0.02], [w, top - 0.35]], PAL.plinth);
           const cap = [[-w, top - 0.3], [-w, top], [w, top], [w, top - 0.3]]; gb.capProfile(rows[0], cap, PAL.plinth, -1); gb.capProfile(rows[rows.length - 1], cap, PAL.plinth, 1);
         }
@@ -344,41 +392,49 @@ const MetroGuide = (() => {
       const lat = pc.side * T3.lat;
       const rows = ctx.rowsAt(ctx, ss, lat, T3.top, true);
       // end approaches: the contact surface ramps down 7 cm over the last 1.5 m where the run starts/ends at a gap
-      const ramp = (row) => { const e = Math.min(row.s - ctx.R.len * 0 - a, b - row.s); const k = U.clamp(e / 1.5, 0, 1); row.o[1] -= (1 - k) * 0.07; };
+      const ramp = (row) => { const e = Math.min(row.s - a, b - row.s); const k = U.clamp(e / 3.5, 0, 1); row.o[1] -= (1 - k) * 0.076; };   // end approach: 3 in over ~3.5 m
       if (a <= 14.5 || pc.a > s0 + 1) rows.forEach(ramp); else if (b >= R.len - 14.5 || pc.b < s1 - 1) rows.forEach(ramp);
       gb.wear = 0.5; gb.sweep(rows, CONTACT, CONTACTC);
       // coverboard: a fibreglass board above the rail (clearance for the shoe), carried by brackets every insulator
-      const cw = T3.coverW, ch = T3.coverH;
-      gb.sweep(rows, pc.side > 0 ? [[-cw * 0.35, ch - 0.01], [-cw * 0.35, ch + 0.012], [cw * 0.65, ch + 0.012], [cw * 0.65, ch - 0.04]] : [[-cw * 0.65, ch - 0.04], [-cw * 0.65, ch + 0.012], [cw * 0.35, ch + 0.012], [cw * 0.35, ch - 0.01]], PAL.cover);
+      // coverboard: fibreglass, light grey, ~8 cm over the contact surface, reaching past the rail toward the track (the
+      // shoes slide under it) and turned down on the field side where its brackets hold it
+      const cw = T3.coverW, ch = 0.08;
+      gb.sweep(rows, pc.side > 0 ? [[-cw * 0.55, ch - 0.012], [-cw * 0.55, ch + 0.012], [cw * 0.45, ch + 0.012], [cw * 0.45, ch - 0.07]] : [[-cw * 0.45, ch - 0.07], [-cw * 0.45, ch + 0.012], [cw * 0.55, ch + 0.012], [cw * 0.55, ch - 0.012]], PAL.cover);
     }
   }
 
   // ------------------------------------------------------------------ far silhouettes
-  function far(ctx) {
-    const R = ctx.R, gb = ctx.B.infra;
-    for (const run of R.runs) {
-      if (run.s1 <= ctx.s0 || run.s0 >= ctx.s1) continue; if (!(run.type === 'aerial' || run.type === 'bridge' || run.type === 'embankment')) continue;
-      const a = Math.max(run.s0, ctx.s0), b = Math.min(run.s1, ctx.s1);
-      for (const [q0, q1] of ownedRanges(ctx, a, b)) {
-        const ss = []; for (let s = q0; s < q1; s += 20) ss.push(s); ss.push(q1);
-        if (run.type === 'embankment') {
-          const rows = ss.map(s => { MT.frameAt(R, s, F); const ln = lanes(ctx, s); const bp = bedProfile(F, ln.lo, ln.hi, 'embankment'); return { s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: [bp.prof[0], bp.prof[3], bp.prof[6], bp.prof[9]], col: [PAL.soil, PAL.ballast, PAL.soil] }; });
-          sweepVar(gb, rows); continue;
+  // (built per SUB m piece of the far chunk; aT.w = the piece index, which the far material hides where bodies show)
+  function far(ctx, SUB = 400) {
+    const R = ctx.R, gb = ctx.B.infra, nsub = Math.ceil((ctx.s1 - ctx.s0) / SUB);
+    for (let j = 0; j < nsub; j++) {
+      const p0 = ctx.s0 + j * SUB, p1 = Math.min(ctx.s1, p0 + SUB); gb.lg = j;
+      for (const run of R.runs) {
+        if (run.s1 <= p0 || run.s0 >= p1) continue; if (!(run.type === 'aerial' || run.type === 'bridge' || run.type === 'embankment')) continue;
+        const a = Math.max(run.s0, p0), b = Math.min(run.s1, p1);
+        for (const [q0, q1] of ownedRanges(ctx, a, b)) {
+          const ss = []; for (let s = q0; s < q1; s += 20) ss.push(s); ss.push(q1);
+          if (ss.length < 2) continue;
+          if (run.type === 'embankment') {
+            const rows = ss.map(s => { MT.frameAt(R, s, F); const ln = lanes(ctx, s); const bp = bedProfile(F, ln.lo, ln.hi, 'embankment'); return { s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: [bp.prof[0], bp.prof[3], bp.prof[6], bp.prof[9]], col: [PAL.soil, PAL.ballast, PAL.soil] }; });
+            sweepVar(gb, rows); continue;
+          }
+          const hD = -A.deckBelowTOR, era = runEra(ctx, run), dd = era >= 2003 ? 2.1 : A.girderD;
+          const rows = ss.map(s => { MT.frameAt(R, s, F); const ln = lanes(ctx, s); const l0 = ln.lo - A.girderTopW / 2, l1 = ln.hi + A.girderTopW / 2;
+            return { s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: [[l0, hD + 0.1], [l1, hD + 0.1], [l1 - 0.9, hD - dd], [l0 + 0.9, hD - dd], [l0, hD + 0.1]], col: [PAL.precast, PAL.precast, PAL.concreteDark, PAL.precast] }; });
+          sweepVar(gb, rows);
+          for (const sj of spanJoints(run)) { if (sj < q0 || sj > q1) continue; MT.frameAt(R, sj, F); const ln = lanes(ctx, sj); const mid = (ln.lo + ln.hi) / 2; const x = F.x + F.lx * mid, z = F.z + F.lz * mid; const g = MT.groundAt(x, z), top = F.y + hD - dd;
+            if (top - g > 1) gb.box(x - ctx.ox, (top + g) / 2, z - ctx.oz, [F.tx, 0, F.tz], [0, 1, 0], [F.lx, 0, F.lz], 0.7, (top - g) / 2, 0.7, PAL.concreteLight, 12); }
         }
-        const hD = -A.deckBelowTOR;
-        const rows = ss.map(s => { MT.frameAt(R, s, F); const ln = lanes(ctx, s); const l0 = ln.lo - A.girderTopW / 2, l1 = ln.hi + A.girderTopW / 2;
-          return { s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: [[l0, hD + A.parapetH], [l1, hD + A.parapetH], [l1 - 1.0, hD - A.girderD], [l0 + 1.0, hD - A.girderD], [l0, hD + A.parapetH]], col: [PAL.precast, PAL.precast, PAL.concreteDark, PAL.precast] }; });
-        sweepVar(gb, rows);
-        for (const sj of spanJoints(run)) { if (sj < q0 || sj > q1) continue; MT.frameAt(R, sj, F); const ln = lanes(ctx, sj); const mid = (ln.lo + ln.hi) / 2; const x = F.x + F.lx * mid, z = F.z + F.lz * mid; const g = MT.groundAt(x, z), top = F.y + hD - A.girderD;
-          if (top - g > 1) gb.box(x - ctx.ox, (top + g) / 2, z - ctx.oz, [F.tx, 0, F.tz], [0, 1, 0], [F.lx, 0, F.lz], 0.7, (top - g) / 2, 0.7, PAL.concreteLight, 12); }
       }
     }
+    gb.lg = -1;
   }
 
   // ------------------------------------------------------------------ instanced small parts around the camera
   // fastener pairs (DF), ties (ballast), third-rail insulators; rebuilt when the camera moves 12 m
   let inst = null; const lastC = new THREE.Vector3(1e9, 0, 0);
-  const _m4 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
+  const _m4 = new THREE.Matrix4(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _flip = new THREE.Matrix4().makeRotationY(Math.PI);   // (field side: turned, not mirrored)
   function fastenerGeo(full) {
     const gb = new GB(); const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];   // local: x along track, y up, z right (x × y = z)
     for (const sd of [-1, 1]) {
@@ -400,17 +456,25 @@ const MetroGuide = (() => {
     for (const sd of [-1, 1]) { const rc = sd * DIM.railC; gb.box(0, top + 0.004, rc, X, Y, Z, 0.09, 0.006, 0.09, PAL.pad); for (const bs of [-1, 1]) gb.box(0, top + 0.03, rc + bs * 0.1, X, Y, Z, 0.045, 0.03, 0.018, PAL.clip); }
     return gb.geometry();
   }
-  function insulGeo() {   // third-rail bracket: insulator pedestal under the rail, bracket arm up to the coverboard
+  // third-rail support (local: x along, y up, z outward/field side): light-grey porcelain insulator with sheds (229 mm)
+  // from the tie top to the rail's base, a clamp on the rail foot, and the coverboard bracket rising on the field side;
+  // on direct fixation a concrete pedestal lifts it from the deck [BFS 34 24 13]
+  function insulGeo(df) {
     const gb = new GB(); const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
-    gb.box(0, T3.top - 0.13 - 0.06, 0, X, Y, Z, 0.07, 0.06, 0.07, PAL.insul);
-    gb.box(0, T3.top - 0.13 - 0.14, 0, X, Y, Z, 0.1, 0.02, 0.12, PAL.fastener);
-    gb.box(0, T3.coverH / 2, 0.19, X, Y, Z, 0.025, T3.coverH / 2 + 0.12, 0.012, PAL.insul);
+    const base = T3.top - T3.h - T3.insH, topI = T3.top - T3.h;       // -0.188 .. +0.041
+    if (df) gb.box(0, (-A.deckBelowTOR + base) / 2, 0, X, Y, Z, 0.16, Math.max(0.01, (base + A.deckBelowTOR) / 2), 0.16, PAL.plinth, 4);
+    gb.box(0, base + 0.01, 0, X, Y, Z, 0.09, 0.01, 0.09, PAL.fastener);
+    gb.cyl([0, base + 0.02, 0], [0, topI - 0.03, 0], 0.055, 0.05, 10, PAL.insul, false, false);
+    for (const f of [0.28, 0.5, 0.72]) { const y = base + 0.02 + (topI - base - 0.05) * f; gb.cyl([0, y - 0.012, 0], [0, y + 0.012, 0], 0.085, 0.075, 12, PAL.insul, true, true); }
+    gb.box(0, topI - 0.015, 0, X, Y, Z, 0.07, 0.015, 0.085, PAL.fastener);
+    const zb = 0.16; gb.box(0, (base + T3.top + 0.09) / 2, zb, X, Y, Z, 0.025, (T3.top + 0.09 - base) / 2, 0.01, PAL.galvDark);
+    gb.box(0, T3.top + 0.085, zb - 0.05, X, Y, Z, 0.025, 0.008, 0.055, PAL.galvDark);
     return gb.geometry();
   }
   function ensureInst() {
     if (inst) return inst;
     const mk = (geo, max, shadow) => { const m = new THREE.InstancedMesh(geo, MATS.infra, max); m.count = 0; m.frustumCulled = false; m.castShadow = shadow; m.receiveShadow = true; MT.group.add(m); return m; };
-    inst = { fastFull: mk(fastenerGeo(true), 2400, true), fast: mk(fastenerGeo(false), 5000, false), tie: mk(tieGeo(), 3000, true), ins: mk(insulGeo(), 1200, true) };
+    inst = { fastFull: mk(fastenerGeo(true), 2400, true), fast: mk(fastenerGeo(false), 5000, false), tie: mk(tieGeo(), 3000, true), ins: mk(insulGeo(false), 900, true), insDF: mk(insulGeo(true), 900, true) };
     return inst;
   }
   function place(mesh, k, R, s, lat, full) {
@@ -421,7 +485,7 @@ const MetroGuide = (() => {
   function updateInstances(cam, TRACKS) {
     if (!MATS) return;
     if (cam.distanceToSquared(lastC) < 144) return; lastC.copy(cam);
-    const I = ensureInst(); let nF = 0, nFF = 0, nT = 0, nI = 0;
+    const I = ensureInst(); let nF = 0, nFF = 0, nT = 0, nI = 0, nD = 0;
     const near = MT.net ? MT.net.nearAll(cam.x, cam.z, 190) : [];
     for (const q of near) {
       const R = MT.trackOf(q.track); if (!R) continue;
@@ -437,14 +501,17 @@ const MetroGuide = (() => {
         }
       }
       // insulators every T3.insulator m along the third rail (same side logic as the rail itself)
-      for (let s = Math.ceil(Math.max(a, 14) / T3.insulator) * T3.insulator; s < Math.min(b, R.len - 14) && nI < 1200; s += T3.insulator) {
-        const sd = MT.thirdSide(R, s); place(I.ins, nI++, R, s, sd * T3.lat);
-        if (sd < 0) { I.ins.getMatrixAt(nI - 1, _m4); _m4.multiply(new THREE.Matrix4().makeScale(1, 1, -1)); I.ins.setMatrixAt(nI - 1, _m4); }
+      for (let s = Math.ceil(Math.max(a, 14) / T3.insulator) * T3.insulator; s < Math.min(b, R.len - 14); s += T3.insulator) {
+        if (Math.abs(s - q.s) > 150) continue;
+        const run = R.runs.find(r => s >= r.s0 && s < r.s1), df = !!run && DF.has(run.type), mesh = df ? I.insDF : I.ins;
+        const k = df ? nD++ : nI++; if (k >= 900) continue;
+        const sd = MT.thirdSide(R, s); place(mesh, k, R, s, sd * T3.lat);
+        if (sd < 0) { mesh.getMatrixAt(k, _m4); _m4.multiply(_flip); mesh.setMatrixAt(k, _m4); }
       }
     }
-    I.fastFull.count = nFF; I.fast.count = nF; I.tie.count = nT; I.ins.count = nI;
-    for (const m of [I.fastFull, I.fast, I.tie, I.ins]) m.instanceMatrix.needsUpdate = true;
-    MT.stats.inst = nFF + nF + nT + nI;
+    I.fastFull.count = nFF; I.fast.count = nF; I.tie.count = nT; I.ins.count = Math.min(nI, 900); I.insDF.count = Math.min(nD, 900);
+    for (const m of [I.fastFull, I.fast, I.tie, I.ins, I.insDF]) m.instanceMatrix.needsUpdate = true;
+    MT.stats.inst = nFF + nF + nT + nI + nD;
   }
 
   function init(o) { MATS = o.MATS; }

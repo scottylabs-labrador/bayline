@@ -149,6 +149,9 @@ const MetroStations = (() => {
   }
   function attach(st, res) {
     st.root = res.root; st.res = res; group.add(res.root);
+    // Under: a station without cells (aerial, at grade) is outdoor world: hidden with it while the camera is underground
+    // and no opening to the outdoors is in view; underground levels are cell groups (their visibility is Under's)
+    if (typeof Under !== 'undefined' && Under.enabled && !(res.cells && res.cells.length)) Under.outdoor(res.root, true);
     st.walk = res.walk || null;
     for (const c of res.cells || []) if (typeof Under !== 'undefined' && Under.addCell) try { Under.addCell(c.under); } catch (e) { console.warn('Under.addCell', e); }
     for (const p of res.portals || []) if (typeof Under !== 'undefined' && Under.addPortal) try { Under.addPortal(p); } catch (e) { console.warn('Under.addPortal', e); }
@@ -160,7 +163,9 @@ const MetroStations = (() => {
     if (!st.root) return;
     group.remove(st.root);
     st.root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
-    if (typeof Under !== 'undefined' && Under.remove && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {} }
+    if (typeof Under !== 'undefined' && Under.enabled && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {}
+      for (const p of st.res.portals || []) if (p.id) try { Under.remove(p.id); } catch (e) {} try { Under.outdoor(st.root, false); } catch (e) {} }
+    if (typeof MetroSigns !== 'undefined') { MetroSigns.freeBoards(st); MetroSigns.releaseAtlas(st); }
     st.root = null; st.res = null; st.walk = null; st.boards.clear(); st.state = 'idle'; stats.built--;
   }
   // build context shared with the type builders
@@ -175,6 +180,9 @@ const MetroStations = (() => {
   function init() {
     if (!enabled || initP) return initP;
     Env.scene.add(group);
+    // the stations group stays drawn underground (Under hides the outdoor world there); visibility inside it is per cell
+    // group (underground levels) and per outdoor station root (Under.outdoor)
+    if (typeof Under !== 'undefined' && Under.enabled && Under.keep) Under.keep(group);
     const waitNet = MetroNet.load();
     initP = waitNet.then(() => { net = true; stationRecords(); ready = true; if (typeof MetroSigns !== 'undefined') MetroSigns.init(N.lines(), list); })
       .catch(e => { console.warn('MetroStations: no network data', e); });
@@ -201,10 +209,11 @@ const MetroStations = (() => {
       const eff = Math.hypot(st.dist, alt);
       st.root.visible = eff < FAR_R;
       const r = st.res;
-      if (r && r.near) r.near.visible = eff < NEAR_R;
+      if (r && r.nears) { const nv = eff < NEAR_R; for (const g of r.nears) g.visible = nv; }
       if (r && r.update) r.update(dt, camPos, night);
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
+    if (typeof StationCrowds !== 'undefined') StationCrowds.update(dt, camPos, list);
   }
 
   // ------------------------------------------------------------------------------------------------ walk metadata
@@ -239,7 +248,9 @@ const MetroStations = (() => {
   }
   function spawnPoint(id, key) {
     const st = byId[id]; if (!st) return null; if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return null;
-    const p = pl.plats.find(q => q.key === String(key)) || pl.plats[0]; const u = (p.u0 + p.u1) / 2 + 12;
+    // key: a platform code ('1') or a GTFS platform id ('M20-1')
+    const k = String(key == null ? '' : key); const code = k.includes('-') ? k.split('-').pop() : k;
+    const p = pl.plats.find(q => q.gtfs === k || q.key === code) || pl.plats[0]; const u = (p.u0 + p.u1) / 2 + 12;
     const S = spineAt(pl, u, {}); const v = trackV(pl, p.t, u) + p.sideV * (EDGE + 2.2);
     return { x: S.x + S.rx * v, y: p.yRail + PLAT_H, z: S.z + S.rz * v, yaw: Math.atan2(-S.rx * p.sideV, -S.rz * p.sideV) };
   }
@@ -278,7 +289,14 @@ const MetroStations = (() => {
     if (st.state !== 'built') return { state: st.state, error: st.error || null };
     for (let i = 0; i < (o.settle || 70); i++) { B.stepFrame(1); await sleep(25); }
     let tris = 0; if (st.root) st.root.traverse(m => { if (m.isMesh && m.geometry.index) tris += m.geometry.index.count / 3 * (m.geometry.instanceCount || 1); });
-    return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null };
+    // perf: GPU cost (Post.profile, synced) and draw calls / triangles with the metro stations drawn and hidden
+    let perf = null;
+    if (o.perf && B.Post && B.Post.profile) {
+      const meas = () => { B.stepFrame(1); const st1 = Object.assign({}, B.Post.stats); const pr = B.Post.profile(10); return { calls: st1.calls, tris: st1.triangles, gpu: pr && pr.total, scene: pr && pr.scene }; };
+      const on = meas(); group.visible = false; const off = meas(); group.visible = true;
+      perf = { on, off, dCalls: on.calls - off.calls, dTris: on.tris - off.tris, dGpu: +(on.gpu - off.gpu).toFixed(2), pct: +(100 * (on.gpu - off.gpu) / Math.max(0.1, off.gpu)).toFixed(1) };
+    }
+    return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null, perf };
   }
 
   const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, get enabled() { return enabled; }, get ready() { return ready; },

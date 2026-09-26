@@ -1,0 +1,774 @@
+[
+ {
+  "id": "EMBR",
+  "name": "Embarcadero",
+  "structure": "subway",
+  "structure_notes": "Cut-and-cover box under Market St between Drumm and Beale, with three underground levels (fare mezzanine, Muni Metro, BART). The shell was built with the Market Street subway (construction began July 1967). It was fitted out later as an infill station and opened in May 1976, almost two years after Transbay service began. The box is 50 ft (15.2 m) wide, against 60 ft (18.3 m) at the other three Market St stations, because of adjacent buildings and the high water table. The BART level continues northeast into the Transbay Tube approach. The 1962 plan called for twin shield-driven tubes under The Embarcadero and the Ferry Building south wing.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "One BART island platform on the lowest level. GTFS: Platform 1 = NW track, southwest-bound to Daly City/SFO/Millbrae. Platform 2 = SE track, East Bay-bound. This is right-hand running."
+  },
+  "levels": {
+   "street_elev_m": 3.6,
+   "street_elev_note": "USGS 3DEP 1 m DEM at the GTFS station point (NAVD88)",
+   "L1_mezzanine": "Full-length fare mezzanine one level below the street: one Muni paid area in the middle, with a BART paid area at each end. The Muni platform can be seen from the mezzanine.",
+   "L2_muni": "Muni Metro island platform; only the centre portion is used.",
+   "L3_bart": "BART island platform.",
+   "bart_platform_depth_m": null,
+   "bart_platform_to_concourse_m_inferred": 11.3,
+   "inference_note": "De Staebler's 37 ft 'Wall Canyon' relief rises from the train platform to the concourse at the SW end wall. This suggests roughly 11 m or more from BART platform to concourse. It is an inference, not a measured depth."
+  },
+  "opened": 1976,
+  "opened_date": "1976-05-27 (BART); Muni 1980-02-18",
+  "architect": "Tallie B. Maule (BART chief architect) with Hertzka & Knowles; Parsons Brinckerhoff/Tudor/Bechtel",
+  "era": "1970s original-system (infill)",
+  "recognisable": "The platform walls are original white terrazzo, usually darkened by brake dust from the Transbay Tube (sandblasted clean in 2014). They carry William Mitchell's inscribed circle and part-circle reliefs, which streak past train-side. Stephen De Staebler's 37 ft coloured ceramic relief 'Wall Canyon' fills the SW end wall from platform up to concourse, partly hidden behind a stair. The mezzanine looks down onto the Muni platform and has a granite portrait of Tallie Maule; street entrances have glass-panelled canopies with Norie Sato's 'We Touch Here'.",
+  "entrances": "6 street entrances along Market. GTFS names: A1 Drumm (NE), A2 Davis (N), A3 Front (NW), B1 Spear (SE), B2 Main (S), B3 Fremont (SW). All 6 have new canopies: BART lists Drumm, Spear, Davis, Main, Pine, Beale, complete by 2026. Each canopy has a real-time display, a roll-down gate and LED lighting. There is also an unused underground entrance to 388 Market.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "levels.bart_platform_to_concourse_m_inferred": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Embarcadero_station",
+   "https://en.wikipedia.org/wiki/Market_Street_subway",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://www.bart.gov/about/planning/sfentrances",
+   "https://www.bart.gov/news/articles/2025/news20250203",
+   "https://www.sfgate.com/bayarea/article/Putting-the-art-in-BART-Mosaics-murals-and-2759708.php",
+   "https://www.eichlernetwork.com/article/how-bart-got-art?page=0,4",
+   "https://www.eichlernetwork.com/article/how-bart-got-art?page=0,5",
+   "https://archive.org/details/compositereportb1962pars",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.397037&y=37.792762&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "MONT",
+  "name": "Montgomery Street",
+  "structure": "subway",
+  "structure_notes": "Cut-and-cover under Market St between Montgomery and Sansome. It is a three-level Market Street subway station: concourse, then Muni Metro, then BART. From Sept 2021 the central part of the mezzanine was taken for a BART traction power substation, which went into use in 2026.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "BART island on the lowest level. GTFS: Platform 1 = NW track (southwest-bound to Daly City/SFO/Millbrae). Platform 2 = SE track (East Bay-bound)."
+  },
+  "levels": {
+   "street_elev_m": 9.7,
+   "L1_concourse": "Fare mezzanine one level below the street, with two Muni paid areas and two BART paid areas.",
+   "L2_muni": "Muni Metro island platform, long enough for double-berthing of two 2-car trains.",
+   "L3_bart": "BART island platform.",
+   "concourse_depth_m": null,
+   "muni_platform_depth_m": null,
+   "bart_platform_depth_m": null
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05 (BART); Muni 1980-02-18",
+  "architect": "Skidmore, Owings & Merrill",
+  "era": "1970s original system",
+  "recognisable": "The mezzanine ceilings are domed hexagonal 'bubble tiles', a Skidmore, Owings & Merrill (SOM) design shared with Powell. The long mezzanine under Market St has direct building entrances to One Sansome and 44 Montgomery. The street entrances were rebuilt in 2021–25 as glass-panelled canopies with artwork by Rosana Castrillo Diaz. No sourced description of the BART platform finishes was found.",
+  "entrances": "7 street entrances. GTFS names: A1 Market & Post (NW), A2 Market & Montgomery (NE), A3 Sutter, A4 Sansome, B1 598 Market (SW), B2 Market & 2nd (S), B3 575 Market (SE). There are underground entrances to One Sansome and 44 Montgomery. Six canopies: Sutter & Sansome, Sutter & Market N and S, 2nd & Market, Montgomery & Market, New Montgomery & Market.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Montgomery_Street_station",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://www.bart.gov/about/planning/sfentrances",
+   "https://www.bart.gov/news/articles/2025/news20250203",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.401587&y=37.789173&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "POWL",
+  "name": "Powell Street",
+  "structure": "subway",
+  "structure_notes": "Cut-and-cover under Market St between 4th and 5th streets. BART's 2015 plan gives the levels: concourse one level below the street, Muni second level below, BART platform on the lowest level, three levels below the street. A passage connects to the Central Subway's Union Square/Market Street station under Stockton St. Per the Central Subway SEIS, the Central Subway bores pass about 5–10 ft under the BART tunnels at 4th/Stockton. Sump pumps remove 100,000–500,000 gal/day of groundwater.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "BART island with 2 tracks. GTFS: Platform 1 = NW track (southwest-bound). Platform 2 = SE track (East Bay-bound)."
+  },
+  "levels": {
+   "street_elev_m": 9.7,
+   "street_elev_m_corrected_note": "see value below",
+   "street_elev_m_value": 11.4,
+   "L1_concourse": "One level below street. Hallidie Plaza, a sunken plaza 20 ft (6.1 m) below street level, forms the entrance at the cable-car turnaround.",
+   "concourse_depth_m_approx": 6.1,
+   "L2_muni": "Muni island platform, second level below street.",
+   "L3_bart": "BART island platform, third level below street.",
+   "bart_platform_depth_m": null
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05 (BART); Muni 1980-02-18",
+  "architect": "Skidmore, Owings & Merrill",
+  "era": "1970s original system",
+  "recognisable": "The mezzanine has the same 'bubble tile' domed hexagonal ceilings as Montgomery. Lobby ceiling domes sit over circular floor graphics, and the 2022 'Elysium' ceiling artwork shows an illuminated view of the buildings above. The sunken Hallidie Plaza has granite walls and herringbone brick next to the Powell cable-car turntable. The Muni escalators are lit cable-car yellow and burgundy, the BART platform floor is brick pavers, and the street canopies carry 'Your Turn' by Aaron De La Cruz.",
+  "entrances": "8 street entrances. GTFS names: A1 899 Market, A2 Market & Ellis, A3 Stockton St, A4 Market & 4th (NE), B1 Market & 5th, B2 Market & 5th (NE), B3 Market & 4th (S), B4 Market & 4th (SE). There is also the Hallidie Plaza entrance. The Stockton/Ellis entrance now links to the Central Subway (reopened Nov 2022). The two former San Francisco Centre mall entrances are closed/sealed (Jan 2026). A passage toward 3rd St/Yerba Buena was never completed. Canopies: 4th St, 5th St north, 5th St south, Ellis St.",
+  "platform_length_m": 208.8,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m_value": "medium",
+   "levels.concourse_depth_m_approx": "low",
+   "platform_length_m": "medium",
+   "opened": "high"
+  },
+  "platform_length_note": "BART's 2015 Powell Modernization Plan measures the BART platform at 685 ft (208.8 m) by 36 ft (11.0 m). The system standard is 700 ft.",
+  "sources": [
+   "https://en.wikipedia.org/wiki/Powell_Street_station",
+   "https://en.wikipedia.org/wiki/Hallidie_Plaza",
+   "https://www.bart.gov/sites/default/files/docs/Powell%20Station%20Modernization%20%28Final%202015%29.pdf",
+   "https://www.sfmta.com/sites/default/files/reports/2017/Central_Subway_Final_SEISSEIR_Volume_I_Part1.pdf",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://www.bart.gov/about/planning/sfentrances",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.407331&y=37.784606&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "CIVC",
+  "name": "Civic Center/UN Plaza",
+  "structure": "subway",
+  "structure_notes": "Cut-and-cover under Market St between 7th and 8th. It is a three-level Market Street subway station. Two extra BART platform staircases were added in 2020–21. The former passage and entrances west of 8th/Hyde were closed in 2016–18; the space became a traction power substation, in use from 2026.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "BART island with 2 tracks. GTFS: Platform 1 = NW track (southwest-bound). Platform 2 = SE track (East Bay-bound)."
+  },
+  "levels": {
+   "street_elev_m": 15.1,
+   "L1_concourse": "Mezzanine with two Muni and two BART paid areas and a bike station (2015). A long corridor links the 7th St and 8th St halves. The surface elevator is near the centre; the platform elevator is at the NE end.",
+   "L2_muni": "Muni island platform.",
+   "L3_bart": "BART island platform.",
+   "bart_platform_depth_m": null,
+   "excavation_depth_indicator_m": 22.9,
+   "indicator_note": "An isolated human burial was found about 75 ft (22.9 m) below ground during construction of the station (Central Subway SEIS). This only indicates excavation depth."
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05 (BART); Muni 1980-02-18",
+  "architect": "Reid & Tarics Associates",
+  "era": "1970s original system",
+  "recognisable": "One entrance is inside UN Plaza, next to Lawrence Halprin's granite-slab fountain (1975, fenced off since 1978) and the plaza's herringbone brick paving. The Market St entrances are glass-panelled canopies with Ron M. Saunders' 'Dragonfly Wing' ceiling art. No sourced description of the platform finishes was found.",
+  "entrances": "6 street entrances including UN Plaza. GTFS names: A2 Market & Hyde (SW), A3 1150 Market / UN Plaza stairs, A4 Market & 7th (NW), B2 Market & 8th (SE), B3 1150 Market, B4 Market & 7th (NE), plus the street elevator. Canopies are done at 7th north, 7th south, 8th south and between 7th and 8th; Hyde St is still to come.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "levels.excavation_depth_indicator_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Civic_Center/UN_Plaza_station",
+   "https://en.wikipedia.org/wiki/United_Nations_Plaza_(San_Francisco)",
+   "https://www.sfmta.com/sites/default/files/reports/2017/Central_Subway_Final_SEISSEIR_Volume_I_Part1.pdf",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://www.bart.gov/about/planning/sfentrances",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.413826&y=37.779408&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "16TH",
+  "name": "16th St Mission",
+  "structure": "subway",
+  "structure_notes": "Two-level underground station oriented north–south under Mission St at 16th St. The mezzanine is directly above the platform. BART's station plan says 'the concourse level is quite far beneath the street', but no figure is given.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "700 ft island platform on the lower level. GTFS: Platform 1 = west track (southbound). Platform 2 = east track (northbound, East Bay)."
+  },
+  "levels": {
+   "street_elev_m": 10.0,
+   "L1_mezzanine": "Vaulted for most of its length. The fare lobby is at the south end, under the 16th/Mission intersection. Train-control rooms are at the south end; a traction substation sits above the tracks at the north end.",
+   "L2_platform": "Island platform, reached by two stairs, one escalator, and an elevator at the far north end.",
+   "platform_depth_m": null
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05",
+  "architect": "Hertzka & Knowles",
+  "era": "1970s original system",
+  "recognisable": "The mezzanine has a barrel-vaulted ceiling broken by concrete arches and a hanging false ceiling of dark redwood slats with indirect light. The walls are unpainted concrete with Janet Bennett tilework in off-white, pale blue, drab olive green and turquoise. William Mitchell's deep-relief cast-concrete walls line the stair and escalator entries. The SW plaza has Victor Mario Zaballa's hummingbird railings, Sances and Galvez's 'Future Roads' tile mural and a 40 ft 'Youth Rights' tile mosaic.",
+  "entrances": "Two plaza entrances with stairs and escalators, at the NE and SW corners of 16th & Mission; the surface elevator is in the NE plaza. GTFS: A (SW), B (NE), Elevator.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/16th_Street_Mission_station",
+   "https://www.bart.gov/sites/default/files/docs/16thStreetCSP.pdf",
+   "https://www.sfgate.com/bayarea/article/Putting-the-art-in-BART-Mosaics-murals-and-2759708.php",
+   "https://www.eichlernetwork.com/article/how-bart-got-art?page=0,4",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.419704&y=37.765173&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "24TH",
+  "name": "24th St Mission",
+  "structure": "subway",
+  "structure_notes": "Two-level underground station under Mission St at 24th St. Its design is nearly identical to 16th St Mission (same architects).",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "700 ft island platform on the lower level. GTFS: Platform 1 = west track (southbound). Platform 2 = east track (northbound)."
+  },
+  "levels": {
+   "street_elev_m": 22.4,
+   "L1_mezzanine": "Vaulted for most of its length, with the fare lobby at the south end under the intersection.",
+   "L2_platform": "Island platform, reached by two stairs, one escalator, and an elevator at the north end.",
+   "platform_depth_m": null
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05",
+  "architect": "Hertzka & Knowles",
+  "era": "1970s original system",
+  "recognisable": "A twin of 16th St: vaulted concrete mezzanine and William Mitchell's concrete high reliefs along the stair and escalator entries. The Janet Bennett tiles here are yellow and three shades of brown in a serpentine pattern, meant as a nod to the Mission's Latin American culture. Street access is through the NE and SW corner plazas; the SW plaza was rebuilt in 2013–14.",
+  "entrances": "Two plazas (NE and SW corners of 24th & Mission) with stairs and escalators; the surface elevator is at the NE plaza. GTFS: A (SW), B (NE), Elevator.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/24th_Street_Mission_station",
+   "https://www.eichlernetwork.com/article/how-bart-got-art?page=0,4",
+   "https://www.sfgate.com/bayarea/article/Putting-the-art-in-BART-Mosaics-murals-and-2759708.php",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.418468&y=37.752419&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "GLEN",
+  "name": "Glen Park",
+  "structure": "subway",
+  "structure_notes": "The underground platform level lies beneath a partly above-ground Brutalist concourse building at Diamond & Bosworth. It was the first partially above-ground station on the SF line, next to San Jose Ave and I-280. The Muni J line's San Jose/Glen Park stop is nearby.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "Island platform. GTFS: Platform 1 = NW track (southwest-bound to Balboa Park). Platform 2 = SE track (northbound)."
+  },
+  "levels": {
+   "street_elev_m": 51.6,
+   "concourse": "At plaza level, under a butterfly roof with skylights. As built, ticketing was outside, so the whole mezzanine was a paid area.",
+   "platform_depth_below_concourse_m": 18.3,
+   "depth_note": "The NRHP nomination says the platform is 60 ft below the concourse. Architectural Record (1974) says the full 60 ft height of the structure is visible at the escalator wells and calls it 'one of the deepest on the system'. The nomination also calls the platform 'a story-and-a-half underground', which conflicts.",
+   "platform_level_dims": "52 ft (15.8 m) wide by 700 ft (213 m) long (NRHP)."
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05",
+  "architect": "Ernest Born with Corlett & Spackman; landscape by Douglas Baylis",
+  "era": "1970s original system (Brutalist; nominated to the National Register of Historic Places, NRHP, in 2019)",
+  "recognisable": "A board-formed concrete Brutalist building with a light steel pergola-like butterfly roof and skylights, and a steep channel-glass canopy over the entrance. The daylit concourse has Born's marble mural (31 sheets of white, green, grey and burnt-sienna Italian marble), and daylight pours down the 60 ft escalator well. The platform is crypt-like: Montana slate panels on the track walls, a white marble floor, white Vermont granite benches, coloured stripes painted on the transverse beams, and vertical slits admitting light.",
+  "entrances": "One main entrance (GTFS 'Main Entrance') from the plaza at Diamond & Bosworth. The plaza has olive trees and a granite obelisk inscribed 'GLEN PARK 1972', with a lower plaza on the Diamond St side and a 53-space lot.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "levels.platform_depth_below_concourse_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Glen_Park_station",
+   "https://commissions.sfplanning.org/hpcpackets/2019-012704CRV.pdf",
+   "https://www.usmodernist.org/AR/AR-1974-11.pdf",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.433515&y=37.733235&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "BALB",
+  "name": "Balboa Park",
+  "structure": "trench",
+  "structure_notes": "A 700 ft island platform below grade on the west side of the Balboa Park complex, beside the I-280 cut. The northern third and a short south-end section are in an open trench; the rest lies under Geneva Ave and the headhouse (reinforced concrete box). A planned bus deck over the platform was dropped late in design, so both platform ends are open to sky and air. The Eastside Connector (2018) extended the headhouse north over part of the open platform.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "GTFS: Platform 1 = west track (southbound to Daly City/SFO/Millbrae). Platform 2 = east track (northbound). Cross-platform transfers between southbound lines are recommended here."
+  },
+  "levels": {
+   "street_elev_m": 74.6,
+   "mezzanine": "Fare control is below street level in a mezzanine over the middle of the platform. Architectural Record (1974) calls it 'a true mezzanine'.",
+   "platform": "Below the mezzanine, partly open trench.",
+   "platform_depth_m": null
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05 (BART); Muni service 1979",
+  "architect": "Ernest Born with Corlett & Spackman; landscape by Douglas Baylis",
+  "era": "1970s original system (Brutalist)",
+  "recognisable": "Brutalist and half-indoor, half-outdoor, with daylight at both platform ends. The track walls are precast concrete panels in five patterns repeated eight times. A single overhead conduit over the platform edge carries power, lighting, sign and communications lines. The mezzanine shows exposed concrete columns and beams, with the east wall open and a full-width glazed screen at the escalator end; Muni light-rail loops and the Geneva/Green yards surround the station.",
+  "entrances": "Main entrance on the north side of Geneva Ave. Others: the south side via an underpass, and San Jose Ave via the Muni entrance. The Westside Walkway ramp (2011) runs from Ocean Ave to north-end fare gates. There is an elevator on the north side of Geneva, and the Eastside Connector (2018) links to the Muni platforms. GTFS: A1/B1/B3 Geneva Ave, B2 elevator, A2/B4 I-280 (John F Foran Fwy) ramp.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Balboa_Park_station",
+   "https://www.usmodernist.org/AR/AR-1974-11.pdf",
+   "https://www.bart.gov/sites/default/files/docs/BalboaParkCSPpartC.pdf",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.447457&y=37.721747&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "DALY",
+  "name": "Daly City",
+  "structure": "aerial",
+  "structure_notes": "Elevated three-track station just south of the SF city limit, beside I-280 and SR-1. It was planned elevated in 1962; an underground station with a yard was briefly considered, then dropped in 1966 for cost. Station and garage were seismically retrofitted 2008–10. The Daly City Turnback (1984–88) added tail tracks and crossovers south of the station; BART also cites several switches north of the platform as a choke point.",
+  "tracks": 3,
+  "platforms": {
+   "count": 2,
+   "type": "1 side + 1 island",
+   "detail": "West to east: side platform on the west track, west track, centre track, island platform, east track. Since the 10 Aug 2026 schedule change (BART release, GTFS): Platform 3 = west side platform, alight-only for terminating Blue/Green trains, which then run out of service to the yard. Platform 1 = centre track (island west face), southbound Red/Yellow through trains to SFO/Millbrae. Platform 2 = east track (island east face), all SF/East Bay-bound trains, including Blue/Green starting from the yard. Before Aug 2026, terminating trains reversed on the centre track and southbound through trains used the west track. A footbridge between the platforms is at the north end."
+  },
+  "levels": {
+   "street_elev_m": 80.4,
+   "street_elev_note": "Ground under the station (bare-earth DEM).",
+   "fare_lobby": "At ground level below the platforms, which is the BART aerial-station pattern.",
+   "platform_height_above_ground_m": null
+  },
+  "opened": 1973,
+  "opened_date": "1973-11-05",
+  "architect": "Gerald McCue & Associates",
+  "era": "1970s original system",
+  "recognisable": "A long concrete aerial station with a separate west side platform and a central island under a platform canopy, linked by a footbridge at the north end. A large parking garage (1975), bus plazas, and a 1990s pedestrian tunnel under John Daly Blvd surround it next to the I-280/SR-1 interchange.",
+  "entrances": "GTFS: A (John Daly Blvd / Junipero Serra Blvd), East Parking Lot, B (De Long St / St Charles Ave). There is also a pedestrian underpass under John Daly Blvd to the outer lots.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Daly_City_station",
+   "https://www.bart.gov/news/articles/2026/news20260709",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://commons.wikimedia.org/wiki/File:Footbridge_at_Daly_City_station,_March_2018.JPG",
+   "https://en.wikipedia.org/wiki/Colma_station",
+   "http://libraryarchives.metro.net/DPGTL/bart/1961-parsons-engineering-report-to-sf-bart-district.pdf",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.468908&y=37.706259&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "COLM",
+  "name": "Colma",
+  "structure": "trench",
+  "structure_notes": "Open-cut station in a small valley shared with BART's Daly City Yard. The yard (1984–88) reuses the Southern Pacific (SP) Ocean View Branch right-of-way. The station was added in 1996 as the first stage of the SFO extension. Its five-level garage (1,400 spaces) was built on air rights over the yard, with a footbridge over the yard tracks to a surface lot. The line continues south in a cut-and-cover subway toward South San Francisco.",
+  "tracks": 3,
+  "platforms": {
+   "count": 2,
+   "type": "1 island + 1 side",
+   "detail": "Island platform between the two eastern tracks; side platform on the western track. Only the two eastern tracks carry revenue service. GTFS: Platform 1 = middle track (southbound). Platform 2 = east track (northbound). The western side platform is unused."
+  },
+  "levels": {
+   "street_elev_m": 48.3,
+   "street_elev_note": "The DEM point may fall in the cut.",
+   "mezzanine": "Fare mezzanine above the platforms, linking the garage (west) and the east entrance.",
+   "platform_depth_m": null
+  },
+  "opened": 1996,
+  "opened_date": "1996-02-24",
+  "architect": null,
+  "era": "1990s extension",
+  "recognisable": "An open-cut three-track station with a disused western side platform (grass grows on it) and a fare mezzanine spanning above the tracks. The five-level garage sits over the Daly City Yard, and the yard with its turntable is visible alongside.",
+  "entrances": "GTFS: West entrance (to the parking garage), East entrance.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "low",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Colma_station",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://commons.wikimedia.org/wiki/Category:Colma_station",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.466157&y=37.684635&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "SSAN",
+  "name": "South San Francisco",
+  "structure": "subway",
+  "structure_notes": "Covered below-grade station built in subway within the former SP San Bruno branch right-of-way, between Mission Rd and El Camino Real. Planning documents call it 'Hickey Station'. Critic John King describes a deep platform with narrow light slots cut into the concrete walls.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "GTFS: Platform 1 = west track (southbound). Platform 2 = east track (northbound)."
+  },
+  "levels": {
+   "street_elev_m": 23.4,
+   "concourse": "East and West concourses above the platform. A long diagonal escalator runs down to the platform.",
+   "platform_depth_m": null
+  },
+  "opened": 2003,
+  "opened_date": "2003-06-22",
+  "architect": null,
+  "era": "2003 SFO extension",
+  "recognisable": "The entrance building has a billowing metal roof meant as a homage to San Bruno Mountain. Narrow windows cut into the concrete walls send thin streams of daylight to the deep platform, reached by a long, open diagonal escalator. The art is 16 'animated' murals of historic local photos layered on glass panels, by Jeff Northam and Rufus Seder.",
+  "entrances": "GTFS: East Concourse and West Concourse entrances, with a large parking garage and east and west busways.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/South_San_Francisco_station_(BART)",
+   "http://www.sfgate.com/bayarea/article/SURPRISES-AWAIT-RIDERS-AT-NEW-BART-STATIONS-2607266.php",
+   "https://www.sfgate.com/bayarea/article/Putting-the-art-in-BART-Mosaics-murals-and-2759708.php",
+   "https://archive.org/details/bartsanfrancisc1996oakl_2",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.444211&y=37.664462&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "SBRN",
+  "name": "San Bruno",
+  "structure": "trench",
+  "structure_notes": "Island platform about 25 ft (7.6 m) below ground in a cut-and-cover/open-cut box beside Tanforan. Wikipedia lists it as 'open cut'; the 1996 environmental study (FEIS) calls it 'subway cut and cover'. The roof covers the platform and tracks in the central area but is deliberately cut away toward the platform ends, leaving large openings to the sky. The line reaches the station in a retained cut from the north and continues south in subway under Huntington Ave.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "GTFS: Platform 1 = west track (southbound, SFO/Millbrae). Platform 2 = east track (northbound)."
+  },
+  "levels": {
+   "street_elev_m": 11.1,
+   "street_elev_note": "The DEM point may be affected by the cut or roof.",
+   "concourse": "Entrance/fare concourse above the platform.",
+   "platform_depth_m": 7.6
+  },
+  "opened": 2003,
+  "opened_date": "2003-06-22",
+  "architect": "Greg Roja (conceptual architect)",
+  "era": "2003 SFO extension",
+  "recognisable": "The outside is an undulating thin box of metal panels and glass. On the platform, great stretches of roof are missing toward the ends, so riders stand in a dark cut open to the sky (and the rain). Two stained-glass windows are by Gordon Huether and Christine Stone. Dorothea Lange and Paul Kitagaki Jr. photos and the Tanforan memorial (a bronze of the Mochida sisters) mark the WWII assembly centre site.",
+  "entrances": "GTFS: Huntington Ave entrance, and Plaza / Shopping Center (Tanforan) entrance. The garage has SamTrans bus bays on its ground level.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "low",
+   "levels.platform_depth_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/San_Bruno_station_(BART)",
+   "http://www.sfgate.com/bayarea/article/SURPRISES-AWAIT-RIDERS-AT-NEW-BART-STATIONS-2607266.php",
+   "https://www.sfgate.com/bayarea/article/Putting-the-art-in-BART-Mosaics-murals-and-2759708.php",
+   "https://archive.org/details/bartsanfrancisc1996oakl_0",
+   "https://archive.org/details/bartsanfrancisc1996oakl_2",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.416326&y=37.637730&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "SFIA",
+  "name": "San Francisco International Airport",
+  "structure": "aerial",
+  "structure_notes": "Elevated stub-end terminal about 100 ft (30.5 m) wide by 900 ft (274 m) long, on the NW side of the terminal complex. The west half is beside Garage G; the east end joins the north end of the International Terminal. Trains arrive on an elevated wye from the W-Line; per the 1996 FEIS the aerial structure crosses US-101 about 50 ft above grade. Crossovers west of the station let trains from either leg use any track. The SF Airport Commission built the station ($200M).",
+  "tracks": 3,
+  "platforms": {
+   "count": 2,
+   "type": "island",
+   "detail": "North to south: north track, north island, middle track, south island, south track. GTFS (Aug 2026): Platform 1 = north track, Yellow Line trains ending and starting here (to/from Antioch). Platform 2 = middle track, Red Line trains that reverse here in both directions (Richmond ↔ Millbrae via SFO), plus the evening Yellow SFO–Millbrae shuttle. Platform 3 = south track, no scheduled service. The middle track was unused, with platform edges blocked, until about 2020; it reopened in April 2022 so the north island serves all trains."
+  },
+  "levels": {
+   "street_elev_m": 2.3,
+   "street_elev_note": "Ground under the structure.",
+   "bart_level": "Roughly at International Terminal departures/ticketing level (Level 3). The GTFS entrance is 'International Terminal, Level 3'.",
+   "airtrain_level": "The AirTrain Garage G/BART station is one level above the BART station over its west half. BART faregates are at the AirTrain level and at the east end (terminal).",
+   "platform_height_above_ground_m": null
+  },
+  "opened": 2003,
+  "opened_date": "2003-06-22 (AirTrain Feb 2003)",
+  "architect": null,
+  "era": "2003 SFO extension",
+  "recognisable": "A long, angular shell of grey metal and concrete folded into a wing of the International Terminal, with AirTrain running directly above. Ned Kahn's 'Wind Portal' is a cylindrical opening (16 ft radius, 10 1/3 ft high) between BART and AirTrain. It is lined with 200,000 loose 1-inch stainless-steel discs that ripple in train-induced air around the stairs and escalators.",
+  "entrances": "East end: into the International Terminal departures level (Level 3). West: up through Wind Portal to the AirTrain Garage G station and Garage G footbridge. There is no BART parking.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/San_Francisco_International_Airport_station",
+   "https://en.wikipedia.org/wiki/AirTrain_(San_Francisco_International_Airport)",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "http://www.sfgate.com/bayarea/article/SURPRISES-AWAIT-RIDERS-AT-NEW-BART-STATIONS-2607266.php",
+   "https://archive.org/details/bartsanfrancisc1996oakl_2",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.391954&y=37.616091&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "MLBR",
+  "name": "Millbrae",
+  "structure": "surface",
+  "structure_notes": "At-grade intermodal terminal (2003) with 5 tracks and 3 platforms at ground level. The fare concourse is on a mezzanine above, about 29 ft (8.8 m) up per John King. Caltrain is on the west side and BART on the east. A 2,200-space garage east of the station has direct mezzanine access. BART tail tracks run south of the station.",
+  "tracks": 3,
+  "caltrain_tracks": 2,
+  "platforms": {
+   "count": 3,
+   "type": "Caltrain side + shared Caltrain/BART island + BART island",
+   "detail": "West to east (track numbers per Wikipedia layout; BART Platform 3 per GTFS): Caltrain southbound side platform, track 5 (Caltrain SB), track 4 (Caltrain NB), shared island, track 3 (BART west), BART island, track 1 (BART east). Track 2 (BART middle) sits between track 3 and the BART island, which serves tracks 2 and 1. The shared island's west face serves Caltrain NB and its east face BART track 3 (Platform 3), with BART faregates between the two for a cross-platform northbound transfer. Only Platform 3 has regular service: all Red and Yellow trains end and start there (GTFS). The middle and east tracks and their island are used for train storage. South of the Millbrae Ave bridge, Caltrain's northbound track splits into a passing loop and its platform extends and curves to serve it."
+  },
+  "levels": {
+   "street_elev_m": 4.6,
+   "tracks_platforms": "At grade.",
+   "concourse_height_above_ground_m": 8.8,
+   "concourse_note": "Riders go up to the concourse, through the gates, and back down."
+  },
+  "opened": 2003,
+  "opened_date": "2003-06-22 (modern station); site served since 1863–64",
+  "architect": "VBN Associates (design architects Eli Naor and Rolando Barlon)",
+  "era": "2003 SFO extension",
+  "recognisable": "A big wing-like roof of Teflon-coated fiberglass on slender steel columns floats over the raised concourse. On the BART platform, six bronze figures by Scott Donahue emerge from concrete blocks, each representing an era of local history, alongside 42 terrazzo benches by Donna Billick. BART and Caltrain northbound share one island with BART faregates on it; the 1907 SP depot (a train museum) stands just south.",
+  "entrances": "Main entrance (GTFS). There is an east surface entrance with elevator and direct garage access from the concourse, plus a west-side Caltrain busway and lot.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "levels.concourse_height_above_ground_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Millbrae_station",
+   "https://en.wikipedia.org/wiki/Template:Millbrae_station",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "http://www.sfgate.com/bayarea/article/SURPRISES-AWAIT-RIDERS-AT-NEW-BART-STATIONS-2607266.php",
+   "https://www.sfgate.com/bayarea/article/Putting-the-art-in-BART-Mosaics-murals-and-2759708.php",
+   "https://archive.org/details/bartsanfrancisc1996oakl_2",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.386757&y=37.600237&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "WOAK",
+  "name": "West Oakland",
+  "structure": "aerial",
+  "structure_notes": "Elevated station in the block bounded by Chester St, 7th St, Mandela Pkwy and 5th St. It is on the M-Line aerial structure, 'elevated above 5th and 7th streets', between the Transbay Tube's east end and the Oakland Wye. Tracks run roughly east–west. Seismic retrofit 2009–11. Surface lots around it are being replaced by the Mandela Station development (construction began Sept 2026).",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "detail": "Two side platforms. GTFS: Platform 1 = north side, westbound to SF. Platform 2 = south side, eastbound to Oakland/East Bay."
+  },
+  "levels": {
+   "street_elev_m": 4.8,
+   "fare_lobby": "At street level, near the middle of the platforms. Each platform connects to it by 2 stairs, 1 escalator and 1 elevator.",
+   "platform_height_above_ground_m": null
+  },
+  "opened": 1974,
+  "opened_date": "1974-09-16 (named Oakland West until 1988)",
+  "architect": "Kitchen & Hunt",
+  "era": "1970s original system (last original station to open)",
+  "recognisable": "A plain two-side-platform concrete aerial station high above surface parking, the last stop before the Transbay Tube, with SF-bound trains on the north platform. The street-level fare lobby is tucked under the tracks at mid-platform. No sourced description of platform finishes was found.",
+  "entrances": "GTFS: North and South station entrances. Bus stops are on 7th St and Mandela Pkwy; the south busway closed in Sept 2026 for construction.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/West_Oakland_station",
+   "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.295151&y=37.804888&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "12TH",
+  "name": "12th St/Oakland City Center",
+  "structure": "subway",
+  "structure_notes": "Three-level station in the Broadway subway, under Broadway between 12th and 14th streets. Levels are the concourse, the upper platform (northbound) and the lower platform (southbound). It opened with one side platform per level, each with its track on the east side. The KE Track project (1980 to 17 Mar 1986) added track CX on the west side of the upper platform, making it an island. The 1962 plan describes a 'three-track, two-level subway in Broadway'.",
+  "tracks": 3,
+  "platforms": {
+   "count": 2,
+   "type": "upper island + lower side",
+   "detail": "Upper level (L2), island: east track C1 = Platform 1, Richmond-bound (Orange/Red); west track CX = Platform 3, Antioch-bound (Yellow). Lower level (L3), side platform west of track C2 = Platform 2, southbound (to SF/SFO/Millbrae and to Berryessa). Track and level facts are from Wikipedia; platform numbers and directions from GTFS. Platforms 1 and 2 have almost the same GTFS coordinates, i.e. they are stacked vertically."
+  },
+  "levels": {
+   "street_elev_m": 13.0,
+   "L1": "Concourse/mezzanine with ticket machines and faregates. The upper platform can be seen from the mezzanine.",
+   "L2": "Upper island platform (tracks CX and C1).",
+   "L3": "Lower side platform (track C2).",
+   "depths_m": null
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11 (rebuilt 1980–86)",
+  "architect": "Gerald McCue & Associates",
+  "era": "1970s original system",
+  "recognisable": "The walls are red brick, the colour that tells it apart from blue-brick 19th St. From the mezzanine you look down onto the upper island platform. Entrances carry Diana Pumpelly Bates' murals 'Coming and Going from Sunup to Sundown', and her stainless-steel 'Their Eyes Were Watching God' panel stands on Broadway.",
+  "entrances": "8 entrances: two at 12th St, three at 13th St, two at 14th St (one from Frank H. Ogawa Plaza), and one from the sunken Oakland City Center plaza. Surface elevators are at Ogawa Plaza and the SW 12th St entrance; the platform elevator is at the south end. A passage to the Central Building is disused.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/12th_Street_Oakland_City_Center_station",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://archive.org/details/compositereportb1962pars",
+   "https://www.sfgate.com/bayarea/article/Putting-the-art-in-BART-Mosaics-murals-and-2759708.php",
+   "https://commons.wikimedia.org/wiki/File:12th_Street_station_island_platform_from_mezzanine,_October_2017.jpg",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.271630&y=37.803482&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "19TH",
+  "name": "19th St Oakland",
+  "structure": "subway",
+  "structure_notes": "Three-level station under Broadway between 17th and 20th streets. It has the same history as 12th St: side platforms at first, then the KE Track project (1980–86) added west track CX on the upper level. BART's 2013 memo mentions a possible 4th track by full build-out of the station box. A 2019–23 modernization merged the paid areas, added a north platform elevator and reopened restrooms.",
+  "tracks": 3,
+  "platforms": {
+   "count": 2,
+   "type": "upper island + lower side",
+   "detail": "Upper level: Platform 1 = east side (track C1), Richmond-bound. Platform 3 = west side (track CX), Antioch-bound. There is a timed cross-platform transfer between northbound Orange and Yellow here. Lower level: Platform 2 (track C2), southbound to Fremont/Berryessa, Millbrae and SFO. Sources: BART 2013 memo and GTFS."
+  },
+  "levels": {
+   "street_elev_m": 7.7,
+   "L1": "Concourse (formerly three separate paid areas).",
+   "L2": "Upper island platform.",
+   "L3": "Lower side platform.",
+   "vertical_links": "At each booth, a spiral double-flight stair serves both platform levels and a single-flight stair serves the upper level. Escalator P7 links the upper and lower platforms; platform elevators are at both ends.",
+   "depths_m": null
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11 (rebuilt 1980–86; renovated 2019–23)",
+  "architect": "Gerald McCue & Associates",
+  "era": "1970s original system",
+  "recognisable": "The walls are blue brick, in contrast to red-brick 12th St. BART's first glass entrance canopy (2015) is at the NE corner of 20th & Broadway. At the Telegraph Ave entrance, Dan Corson's colour-shifting 'Shifting Topographies' sculpture (fire-damaged 2020) sits beside coloured-glass vent-shaft panels, and the Uptown Transit Center bus shelters line 20th St above.",
+  "entrances": "6 entrances: two each at 20th, 19th and 17th streets, one via an alley to Telegraph Ave. There is a surface elevator near 17th St on the east side of Broadway and a direct entrance to 1970 Broadway; a 130-space valet bike station is across Broadway.",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/19th_Street_Oakland_station",
+   "https://www.bart.gov/sites/default/files/docs/19th%20Street%20Data%20Collection%20and%20Assessment%20Memo%20(Revised).pdf",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://archive.org/details/compositereportb1962pars",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.268758&y=37.808078&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "LAKE",
+  "name": "Lake Merritt",
+  "structure": "subway",
+  "structure_notes": "Underground station east of downtown Oakland, with entrances on Oak St between 8th and 9th. The island platform is two levels below ground with the fare mezzanine above. It was built with the six-storey BART Administration Building on top, which was dismantled in 2009–10, and sits next to the Operations Control Center. Seismic retrofit 2009; station-area housing construction is under way since 2024–25.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "detail": "GTFS: Platform 1 = SW track, southbound to Fruitvale (Blue/Green/Orange to Dublin, Berryessa and Union City). Platform 2 = NE track, northbound to West Oakland/SF (Blue/Green) and to 12th St/Richmond (Orange)."
+  },
+  "levels": {
+   "street_elev_m": 10.0,
+   "L1": "Fare mezzanine.",
+   "L2": "Island platform, two levels below ground.",
+   "platform_depth_m": null
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Yuill-Thornton, Warner & Levikov",
+  "era": "1970s original system",
+  "recognisable": "Walls are sheathed in chunky Byzantine-style tile by Alfonso Pardiñas in rough reds, off-whites and blacks, with huge black tile circles and red tile arrows. A sunken oval courtyard (former fountain) beside the fare lobby is lined with William Mitchell's reliefs of mystical birds and sea life. Portholes in the reliefs once looked into BART's control centre and are now closed.",
+  "entrances": "4 entrances from Oak St between 8th and 9th. GTFS names: A1 NE (Chinatown), A2 SE 9th & Oak, B1 NW 8th & Oak (Jack London Sq), B2 SW 8th St (Laney College).",
+  "platform_length_m": null,
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "levels.street_elev_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Lake_Merritt_station",
+   "https://www.eichlernetwork.com/article/how-bart-got-art?page=0,3",
+   "https://www.eichlernetwork.com/article/how-bart-got-art?page=0,4",
+   "https://www.bart.gov/dev/schedules/google_transit.zip",
+   "https://epqs.nationalmap.gov/v1/json?x=-122.265247&y=37.797322&units=Meters&wkid=4326"
+  ]
+ },
+ {
+  "id": "_notes",
+  "platform_edge_height": {
+   "value_in": 39,
+   "tolerance_in": 0.5,
+   "value_m": 0.991,
+   "definition": "Height from the plane of the tops of the two running rails to the top of the platform edge.",
+   "source": "BART Facilities Standards (BFS) R3.2.3 (May 2025), Section 34 05 17 'Common Work Result for Trackway', Table 2 'Other Track Construction Tolerances' (Station Platform Vertical Alignment 39 in ± 1/2 in): https://www.bart.gov/sites/default/files/2025-09/Standard_Specificatios_3_2_3.pdf",
+   "corroboration": "The 1996 BART–SFO Extension Final EIS/EIR (FEIS) Vol. II, Response 72.426, gives a design platform '28 feet wide, 700 feet long, and 3 feet 3 inches above the top-of-rail elevation': https://archive.org/details/bartsanfrancisc1996oakl_0",
+   "conf": "high"
+  },
+  "platform_edge_horizontal": {
+   "gauge_line_to_platform_edge_in": 30.625,
+   "tolerance": "-1/2 in, +0 in",
+   "value_m": 0.778,
+   "derived_track_centre_to_edge_m": 1.616,
+   "derivation": "Half of the 66 in gauge (33 in) plus 30 5/8 in. The centre-to-edge value is derived, not published.",
+   "source": "BFS R3.2.3, Section 34 05 17, Table 2",
+   "conf": "high (derived value medium)"
+  },
+  "other_trackwork_constants": {
+   "track_gauge_in": 66,
+   "third_rail_gauge_line_to_centre_in": 26,
+   "third_rail_top_above_top_of_rail_in": 6.75,
+   "source": "BFS R3.2.3, Section 34 05 17, Table 2",
+   "conf": "high"
+  },
+  "car_floor_height": {
+   "value_in": 39,
+   "value_m": 0.991,
+   "basis": "Level boarding. The 1961 Parsons Brinckerhoff–Tudor–Bechtel (PBTB) engineering report says 'Platforms at the car-floor level are designed to accommodate a train approximately 700-feet long'. The 39 in floor height comes from the Wikipedia rolling-stock infobox for the A/B cars (no citation there); no primary vehicle specification was found.",
+   "sources": [
+    "http://libraryarchives.metro.net/DPGTL/bart/1961-parsons-engineering-report-to-sf-bart-district.pdf",
+    "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit_rolling_stock"
+   ],
+   "conf": "medium"
+  },
+  "standard_platform_length": "700 ft (213 m), sized for a 10-car, about 700 ft train (1961 report; Wikipedia). The Powell BART platform is measured at 685 ft by 36 ft in BART's 2015 plan.",
+  "platform_numbering_and_running": "From BART GTFS stops.txt and stop_times.txt (feed version 72, including the 10 Aug 2026 schedule). On the SF trunk and M/W lines, Platform 1 = southbound or southwest-bound (to Daly City/SFO/Millbrae) and Platform 2 = East Bay-bound. At West Oakland, Platform 1 = westbound (north side). In the Broadway subway, Platform 1 = Richmond-bound (upper east), Platform 3 = Antioch-bound (upper west), Platform 2 = southbound (lower). Platform coordinates at every double-track station checked are consistent with right-hand running.",
+  "daly_city_2026": "Since 10 Aug 2026, terminating Blue/Green trains use west Platform 3 (alight only, then to the yard), southbound through trains use centre Platform 1, and all SF-bound trains use east Platform 2. Before that, terminating trains reversed on the centre track. Sources: https://www.bart.gov/news/articles/2026/news20260709 and https://en.wikipedia.org/wiki/Daly_City_station.",
+  "market_street_common": "The four shared stations each have a concourse (L1), a Muni Metro island (L2) and a BART island (L3), with no direct Muni–BART platform connection. BART says 22 escalators run from street to concourse and 18 from concourse to platforms across the four stations (https://www.bart.gov/news/articles/2020/news20200123-0). The Muni level was built with very long platforms so it could later take BART-length trains. Numeric depths for the concourse, Muni and BART levels were not found in any accessible primary source and are left null. Approximate indicators: Powell's Hallidie Plaza (concourse access) is 20 ft below street; Embarcadero's 37 ft relief runs from BART platform to concourse; excavation at Civic Center reached about 75 ft.",
+  "original_aerial_surface_station_type_1961": "The 1961 PBTB report planned aerial and surface stations with roofs over about half the platform length, on concrete columns carrying precast prestressed roof slabs. Aerial stations have stairs and escalators from the ground floor to the platform; subway stations from the mezzanine to the platform. This describes the planning intent; the as-built stations vary.",
+  "street_elevation_method": "street_elev_m values are USGS 3DEP 1 m bare-earth ground elevations (NAVD88, metres) from the EPQS API at the BART GTFS station coordinates. They approximate street or ground level. At trench stations (COLM, SBRN) the point may sit in the cut, so confidence is lower.",
+  "unresolved": "Not found in accessible sources: numeric platform depths for EMBR/MONT/POWL/CIVC/16TH/24TH/BALB/COLM/SSAN/12TH/19TH/LAKE; aerial platform heights for DALY/WOAK/SFIA; architects for COLM/SSAN/SFIA; platform-level finishes for MONT, CIVC, WOAK and DALY.",
+  "research_limits": "The WebSearch quota for this session was used up before this research began. All facts come from direct fetches: Wikipedia raw text, bart.gov pages and PDFs, BART GTFS, archive.org documents, usmodernist.org (Architectural Record 1974), SF Planning, SFMTA, SFGate, Eichler Network and USGS EPQS. No files were written."
+ }
+]
