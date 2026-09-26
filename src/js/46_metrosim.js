@@ -658,14 +658,14 @@ const MetroSim = (() => {
   // physics of the driven train: traction / brake demand from the lever, jerk-limited, grade and resistance, doors
   function driveStep(D, h) {
     const P = PERF[D.kind], v = D.v, doorsClosed = D.doors < 0.01;
-    let tDem = (D.lever > 0 && !D.emergency && !D.penalty && doorsClosed) ? tractA(P, v) * D.lever : 0;
+    let tDem = (D.lever > 0 && !D.emergency && !D.penalty && !(D.atcBrake > 0) && doorsClosed) ? tractA(P, v) * D.lever : 0;   // (ATC braking cuts propulsion)
     if (D.reverse && v > 2.2) tDem = 0;
     let bDem = D.lever < 0 ? -D.lever * P.bFull : 0;
     if (D.atcBrake) bDem = Math.max(bDem, D.atcBrake);
     if (D.penalty) bDem = Math.max(bDem, P.bFull);
     if (!doorsClosed && v < 0.5) bDem = Math.max(bDem, 0.5);
     const step = (cur, dem, r) => cur + clamp(dem - cur, -r * h, r * h);
-    D.tract = (D.penalty || D.emergency) ? 0 : step(D.tract, tDem, 1.1);
+    D.tract = (D.penalty || D.emergency || D.atcBrake > 0) ? 0 : step(D.tract, tDem, 1.1);
     D.brk = D.emergency ? step(D.brk, P.bEm, 4.0) : step(D.brk, bDem, 1.4);
     D.leg.path.at(D.s, F0); const grade = (F0.ty || 0) * (D.reverse ? -1 : 1);
     let vn = v + (D.tract - 9.81 * grade - resist(P, v)) * h - D.brk * h; if (vn < 0) vn = 0;
@@ -687,11 +687,18 @@ const MetroSim = (() => {
   }
 
   // ---------------------------------------------------------------- multiplayer: other people's driven metro trains
+  // Presence key (the relay's `trip` field, <= 12 chars of [A-Za-z0-9_-]): '<GTFS trip id>[y]-<leg index>' ('y' = the
+  // previous service day's trip, still running after midnight); `s` = the head's position along that leg (m).
+  function netKey(tr) { const p = tr.plan, l = tr.leg; return p && l ? String(p.trip.id) + (p.dayOff ? 'y' : '') + '-' + l.idx : ''; }
+  function resolveNet(key) {
+    const m = /^([A-Za-z0-9_]+?)(y?)-(\d+)$/.exec(key || ''); if (!m) return null;
+    const p = planById.get('M:' + m[1] + (m[2] ? '@y' : '')); if (!p) return null; const leg = p.legs[+m[3]]; return leg ? { plan: p, leg } : null;
+  }
   function netOthers(t) {
     if (typeof Net === 'undefined') return;
     for (const o of Net.others()) {
       if (o.modeName !== 'mdrive') continue;
-      const tr = running.find(r => r.trip && r.trip.id === o.trip && !r.driven);
+      const tr = running.find(r => !r.driven && netKey(r) === o.trip);
       if (tr) { tr.s = o.s; tr.v = Math.abs(o.speed); tr.remote = o; }
     }
   }
@@ -751,7 +758,7 @@ const MetroSim = (() => {
   const api = { enabled, init, update, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
-    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH,
+    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH, netKey, resolveNet,
     get plans() { return plans; }, get busTrips() { return busTrips; }, busTodayList: () => busToday, get stats() { return stats; }, get net() { return MN; },
     legState, legAt, getRun, runAt, smoothTimes, envelope, timeOf, MPath, legPath,
     replan: () => replan(true) };

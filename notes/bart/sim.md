@@ -96,19 +96,32 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
 
 ## Server change needed (lead deploys)
 
-`server/mp.py` accepts modes 0..7. Metro presence needs 0..9:
+`server/mp.py` accepts modes 0..7. Metro presence needs 0..9 (8 `mride`: riding a metro car, x/y/z car-local, car = car
+index; 9 `mdrive`: driving a metro train). Nothing else changes: the train identity is in the `trip` field and `s` is a
+plain position, so the clamp (-1000..250000) and the float32 snapshot are fine.
 
 ```diff
 -        mode = int(_num(data[1], 0, 7))
 +        mode = int(_num(data[1], 0, 9))
 ```
-and advertise it in the hello so clients can send the new modes (the client falls back to `walk` otherwise):
+and advertise it in the hello (the client sends 8/9 only to a relay that says v >= 2; to an older relay it sends
+`walk` at the player's world position instead, so nobody gets closed with 4009):
 ```diff
 -        await ws.send(json.dumps({"t": "hi", "v": 1, "id": p.id, ...
 +        await ws.send(json.dumps({"t": "hi", "v": 2, "id": p.id, ...
 ```
-(docstring: `mode int 0..9 (... 8 mride: riding a Bayline Metro car, x/y/z car-local, s = leg*100000 + head position;
-9 mdrive: driving a metro train)`). No other change: record size, rates and caps are unchanged.
+
+Presence encoding (answering the lead, 2026-09-26 02:00): `trip` = `MetroSim.netKey(train)` = `<GTFS trip id>[y]-<leg
+index>` (e.g. `1965631-1`, `1965118y-0`; `y` = the previous service day's trip still running after midnight; the leg
+index counts the runtime's legs of that trip: vehicle legs split at reversals), at most 12 chars of `[A-Za-z0-9_-]`
+(trip ids are 7 digits). Every client resolves it the same way from the timetable (`MetroSim.resolveNet`). `s` = the
+head's position along that leg in metres (legs are < 100 km).
+
+Old clients (main's 80_net.js) and modes 8/9: they don't break. `MODE_NAMES[mode] || 'menu'` turns 8/9 into `menu`;
+main's avatars and Sim skip `menu`. One cosmetic effect on tabs still running the old page: main's live map
+(66_ui.js drawMap) draws `menu` players as a dot at (x, z), and for metro players x/z are car-local, so a stray dot and
+callsign appear near the world origin (Mountain View) until that tab reloads. The snapshot is shared by all clients and
+clients don't announce a version, so the relay can't map it per client; I'd accept it (it disappears on reload).
 
 ## nginx for live mode (lead deploys)
 

@@ -190,7 +190,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       for (const o of Net.others()) {
         if (o.modeName === 'drive' || o.modeName === 'cab' || o.modeName === 'menu' || o.modeName === 'map' || o.modeName === 'air' || o.modeName === 'mdrive') continue;
         let x = o.x, y = o.y, z = o.z;
-        if (o.modeName === 'ride' || o.modeName === 'mride') { const L = o.modeName === 'mride' ? (typeof MetroSim !== 'undefined' && MetroSim.ready ? MetroSim.running : []) : Sim.running; const tr = L.find(r => r.trip && r.trip.id === o.trip); if (!tr || !tr.entry) continue; const car = tr.entry.consist.cars[o.car]; if (!car) continue; v.set(o.x, o.y, o.z); car.group.localToWorld(v); x = v.x; y = v.y; z = v.z; }
+        if (o.modeName === 'ride' || o.modeName === 'mride') { const tr = o.modeName === 'mride' ? (typeof MetroSim !== 'undefined' && MetroSim.ready ? MetroSim.running.find(r => MetroSim.netKey(r) === o.trip) : null) : Sim.running.find(r => r.trip.id === o.trip); if (!tr || !tr.entry) continue; const car = tr.entry.consist.cars[o.car]; if (!car) continue; v.set(o.x, o.y, o.z); car.group.localToWorld(v); x = v.x; y = v.y; z = v.z; }
         else if (o.modeName === 'fly') y -= 1.6; else if (o.modeName === 'walk') y -= 1.62;
         if (Math.hypot(x - Env.camera.position.x, z - Env.camera.position.z) > 1500) continue;
         const a = get(n++, o); a.root.visible = true; a.root.position.set(x, y, z); a.mesh.visible = o.modeName !== 'fly';
@@ -318,7 +318,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Sim.update(dt, camP);
     if (typeof MetroSim !== 'undefined' && MetroSim.enabled) safeFrame('metro', () => MetroSim.update(dt, camP));
     Game.update(Env.time.paused ? 0 : dt * Env.time.scale);
-    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) safeFrame('metro-game', () => { MetroATC.update(Env.time.paused ? 0 : dt * Env.time.scale); MetroPlay.update(dt); });
+    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) safeFrame('metro-game', () => { MetroATC.update(Env.time.paused ? 0 : dt * Env.time.scale); MetroPlay.update(dt); MetroMissions.update(); });
     if (!(typeof Flight !== 'undefined' && Flight.active && safeFrameR('flight', () => Flight.update(dt)))) Player.update(dt);
     // capture mode: the shot's camera, placed before the world picks its detail (terrain LOD and culling, streaming) for it
     if (capture.on && capture.cam) safeFrame('capture-cam', () => { capture.cam(capture.t, Env.camera, dt); Env.camera.updateMatrixWorld(); });

@@ -73,9 +73,10 @@ const UI = (() => {
   function openMissions(filter) {
     closeAll();
     const L = Game.missionList().filter(m => !filter || m.kind === filter || filter === 'all');
-    el.mlist.innerHTML = L.map((m, i) => `<button class="m" data-i="${i}"><b>${m.title}</b><small>${m.sub}</small><div style="margin-top:6px"><span class="tag ${m.kind === 'drive' ? 'E' : m.kind === 'commute' ? 'Lim' : 'SC'}">${m.kind.toUpperCase()}</span></div></button>`).join('')
+    const L2 = filter === 'drive' ? L.concat(Game.missionList().filter(m => m.kind === 'metro' && m.drive)) : L;
+    el.mlist.innerHTML = L2.map((m, i) => `<button class="m" data-i="${i}"><b>${m.title}</b><small>${m.sub}</small><div style="margin-top:6px"><span class="tag ${m.kind === 'drive' ? 'E' : m.kind === 'commute' ? 'Lim' : m.kind === 'metro' ? 'W' : 'SC'}">${m.tag || m.kind.toUpperCase()}</span></div></button>`).join('')
       + `<button class="m" data-free="1"><b>Any train</b><small>Pick any departure from any station's board. Shift+click to drive it.</small></button>`;
-    el.mlist.querySelectorAll('.m').forEach(b => b.addEventListener('click', () => { closeAll(); if (b.dataset.free) { const st = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; openBoard(st.idx); return; } Game.startMission(L[+b.dataset.i]); }));
+    el.mlist.querySelectorAll('.m').forEach(b => b.addEventListener('click', () => { closeAll(); if (b.dataset.free) { const st = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; openBoard(st.idx); return; } Game.startMission(L2[+b.dataset.i]); }));
     el.missions.hidden = false; Player.releaseLock();
   }
   function showResult(r) {

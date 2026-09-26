@@ -141,13 +141,12 @@ const MetroPlay = (() => {
   }
 
   // ---------------------------------------------------------------- multiplayer presence
-  // modes: 'mride' (in a metro car: car-local position), 'mdrive' (driving: s = leg index * 100000 + head position)
+  // modes: 'mride' (in a metro car: car-local position), 'mdrive' (driving); trip = MetroSim.netKey (trip + leg), s = head
   function netState(tr, mode, ob, look, c) {
     if (!tr) return { mode: 'walk', trip: '', s: 0, car: -1, x: c.position.x, y: c.position.y, z: c.position.z, yaw: look.yaw, speed: 0 };
-    const legK = tr.leg ? tr.leg.idx : 0, s = legK * 100000 + tr.s;
-    const w = { wx: c.position.x, wy: c.position.y, wz: c.position.z };   // (world position: the fallback for an older relay)
-    if (mode === 'onboard') return { mode: 'mride', trip: tr.trip.id, s, car: ob.car, x: ob.x, y: ob.y, z: ob.z, yaw: look.yaw, speed: tr.v, ...w };
-    return { mode: tr.driven ? 'mdrive' : 'mride', trip: tr.trip.id, s, car: tr.dir ? 0 : 99, x: 0, y: 0, z: 0, yaw: 0, speed: tr.v, ...w };
+    const key = MetroSim.netKey(tr), w = { wx: c.position.x, wy: c.position.y, wz: c.position.z };   // (world position: the fallback for an older relay)
+    if (mode === 'onboard') return { mode: 'mride', trip: key, s: tr.s, car: ob.car, x: ob.x, y: ob.y, z: ob.z, yaw: look.yaw, speed: tr.v, ...w };
+    return { mode: tr.driven ? 'mdrive' : 'mride', trip: key, s: tr.s, car: tr.dir ? 0 : 99, x: 0, y: 0, z: 0, yaw: 0, speed: tr.v, ...w };
   }
   function update(dt) { if (on() && !strips) buildStrips(); }
 

@@ -131,15 +131,21 @@ const MetroUI = (() => {
   }
 
   // ---------------------------------------------------------------- schematic layout (our own diagram, octilinear)
-  const SCH = { RICH: [10, 0.2, 'l'], DELN: [11, 1.2, 'l'], PLZA: [12, 2.2, 'l'], NBRK: [13, 3.2, 'l'], DBRK: [14, 4.2, 'l'], ASHB: [14, 5.4, 'l'], MCAR: [14, 6.8, 'l'],
-    '19TH': [14, 8.2, 'r'], '12TH': [14, 9.4, 'r'], WOAK: [11.6, 11.8, 'a'], LAKE: [14, 11.8, 'r'], EMBR: [9.2, 11.8, 'a'], MONT: [8.2, 12.8, 'r'], POWL: [7.2, 13.8, 'r'],
-    CIVC: [6.2, 14.8, 'r'], '16TH': [6.2, 16.2, 'r'], '24TH': [6.2, 17.6, 'r'], GLEN: [6.2, 19.0, 'r'], BALB: [6.2, 20.4, 'r'], DALY: [6.2, 21.8, 'r'], COLM: [6.2, 23.2, 'r'],
-    SSAN: [6.2, 24.6, 'r'], SBRN: [6.2, 26.0, 'r'], SFIA: [4.8, 27.4, 'l'], MLBR: [6.2, 28.8, 'r'],
-    FTVL: [15.2, 13.0, 'r'], COLS: [16.4, 14.2, 'r'], OAKL: [15.0, 15.6, 'l'], SANL: [17.6, 15.4, 'r'], BAYF: [18.8, 16.6, 'l'], HAYW: [18.8, 18.0, 'r'], SHAY: [18.8, 19.4, 'r'],
-    UCTY: [18.8, 20.8, 'r'], FRMT: [18.8, 22.2, 'r'], WARM: [18.8, 23.6, 'r'], MLPT: [18.8, 25.0, 'r'], BERY: [18.8, 26.4, 'r'],
-    CAST: [20.4, 16.6, 'b'], WDUB: [22.0, 16.6, 'a'], DUBL: [23.6, 16.6, 'b'],
-    ROCK: [15.2, 5.6, 'a'], ORIN: [16.6, 5.6, 'b'], LAFY: [18.0, 5.6, 'a'], WCRK: [19.4, 5.6, 'b'], PHIL: [20.4, 4.6, 'r'], CONC: [21.4, 3.6, 'r'], NCON: [22.4, 2.6, 'a'],
-    PITT: [23.8, 2.6, 'b'], PCTR: [25.2, 2.6, 'a'], ANTC: [26.6, 2.6, 'b'] };
+  const SCH = {
+    // Richmond branch (NW of MacArthur), the Oakland core, the wye
+    RICH: [12.0, 1.0, 'l'], DELN: [12.8, 1.8, 'l'], PLZA: [13.6, 2.6, 'l'], NBRK: [14.4, 3.4, 'l'], DBRK: [15.2, 4.2, 'l'], ASHB: [16.0, 5.0, 'l'],
+    MCAR: [16.0, 6.0, 'l'], '19TH': [16.0, 7.0, 'r'], '12TH': [16.0, 8.0, 'r'], WOAK: [14.4, 9.6, 'b'], LAKE: [16.0, 9.6, 'r'],
+    // San Francisco and the Peninsula
+    EMBR: [11.6, 9.6, 'a'], MONT: [10.8, 10.4, 'r'], POWL: [10.0, 11.2, 'r'], CIVC: [9.2, 12.0, 'r'], '16TH': [8.4, 12.8, 'r'], '24TH': [7.6, 13.6, 'r'],
+    GLEN: [6.8, 14.4, 'r'], BALB: [6.0, 15.2, 'r'], DALY: [5.2, 16.0, 'r'], COLM: [5.2, 16.9, 'r'], SSAN: [5.2, 17.8, 'r'], SBRN: [5.2, 18.7, 'r'],
+    SFIA: [4.3, 19.6, 'l'], MLBR: [5.2, 20.5, 'r'],
+    // East Bay south, the airport connector, Dublin
+    FTVL: [16.8, 10.4, 'r'], COLS: [17.6, 11.2, 'r'], OAKL: [16.8, 12.0, 'l'], SANL: [18.4, 12.0, 'r'], BAYF: [19.2, 12.8, 'l'],
+    HAYW: [19.2, 13.7, 'r'], SHAY: [19.2, 14.6, 'r'], UCTY: [19.2, 15.5, 'r'], FRMT: [19.2, 16.4, 'r'], WARM: [19.2, 17.3, 'r'], MLPT: [19.2, 18.2, 'r'], BERY: [19.2, 19.1, 'r'],
+    CAST: [20.6, 12.8, 'b'], WDUB: [22.0, 12.8, 'a'], DUBL: [23.4, 12.8, 'b'],
+    // Concord line and the Antioch shuttle
+    ROCK: [17.0, 5.0, 'a'], ORIN: [18.2, 5.0, 'b'], LAFY: [19.4, 5.0, 'a'], WCRK: [20.6, 5.0, 'b'], PHIL: [21.4, 4.2, 'r'], CONC: [22.2, 3.4, 'r'],
+    NCON: [23.0, 2.6, 'a'], PITT: [24.2, 2.6, 'b'], PCTR: [25.4, 2.6, 'a'], ANTC: [26.6, 2.6, 'b'] };
   // line segments (unordered station pairs) from the timetable's patterns; the order of strands on a shared segment
   let segs = null;                                           // key 'A|B' -> { a, b, lines: [...] }
   function buildSegs() {
@@ -156,7 +162,7 @@ const MetroUI = (() => {
   }
 
   // ---------------------------------------------------------------- the map (both views share pan/zoom)
-  const map = { view: 'schematic', cx: 15, cz: 14, scale: 30, drag: null, sel: null, hover: null, geo: { cx: 0, cz: 0, scale: 0.012 }, sch: { cx: 15, cz: 14.5, scale: 30 } };
+  const map = { view: 'schematic', drag: null, sel: null, hover: null, geo: { cx: 0, cz: 0, scale: 0.012 }, sch: { cx: 15.45, cz: 10.75, scale: 30 } };
   function setView(v) {
     map.view = v; el.mview.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   }
@@ -327,7 +333,7 @@ const MetroUI = (() => {
     build(); if (!on()) return;
     if (typeof UI !== 'undefined') UI.closeAll(); closeAll(); el.sys.hidden = false; if (typeof Player !== 'undefined') Player.releaseLock();
     const c = el.msysc, r = c.getBoundingClientRect(); c.width = Math.max(200, r.width * devicePixelRatio); c.height = Math.max(200, r.height * devicePixelRatio);
-    if (!map.opened) { map.opened = true; map.sch.scale = Math.min(c.width / 26, c.height / 30); map.sch.cx = 15.5; map.sch.cz = 14.5; const cp = Env.camera.position; map.geo.cx = cp.x; map.geo.cz = cp.z; map.geo.scale = Math.min(c.width / 70000, c.height / 60000); }
+    if (!map.opened) { map.opened = true; map.sch.scale = Math.min(c.width / 24.5, c.height / 21.5); map.sch.cx = 15.45; map.sch.cz = 10.75; const cp = Env.camera.position; map.geo.cx = cp.x; map.geo.cz = cp.z; map.geo.scale = Math.min(c.width / 70000, c.height / 60000); }
     if (opts.view) setView(opts.view);
     if (ready()) { renderLines(); const ms = MetroSim.nearestStation(Env.camera.position, 1500); if (!map.sel && ms) map.sel = { st: ms }; renderSide(); }
   }
@@ -483,4 +489,64 @@ const MetroUI = (() => {
   const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
   return api;
+})();
+
+// Bayline Metro missions (J menu, #metro=1): drive runs under ATC, a cross-system commute through the Millbrae transfer,
+// and rides on the two odd vehicles (the Antioch shuttle, the airport cable train). Game.missionList() appends these;
+// Game.startMission() hands kind 'metro' back here.
+const MetroMissions = (() => {
+  const on = () => typeof MetroSim !== 'undefined' && MetroSim.enabled && MetroSim.ready;
+  let active = null;
+  // the next departure from `from` whose next stop is `to` (or whose later stops include it), BART vehicles only
+  function nextRun(from, to, after) {
+    const t0 = after !== undefined ? after : Env.time.sec;
+    for (const ev of MetroSim.arrivals(from, t0 + 45, 120)) { const S = ev.leg.stops; if (ev.leg.kind !== 'bart' || ev.k >= S.length - 1) continue; if (S.slice(ev.k + 1).some(s => s.st === to)) return ev; }
+    return null;
+  }
+  function list() {
+    if (!on()) return [];
+    return [
+      { id: 'm-tube', kind: 'metro', tag: 'METRO DRIVE', title: 'Under the Bay', sub: 'West Oakland to Embarcadero through the Transbay Tube, 135 ft under the water. Then Market Street.', drive: ['WOAK', 'EMBR'] },
+      { id: 'm-market', kind: 'metro', tag: 'METRO DRIVE', title: 'Market Street', sub: 'Embarcadero to Civic Center in manual: four stations, four berths, 90 seconds apart.', drive: ['EMBR', 'CIVC'], manual: true },
+      { id: 'm-hills', kind: 'metro', tag: 'METRO DRIVE', title: 'Berkeley Hills Tunnel', sub: 'Orinda to Rockridge: three miles of tunnel, then the freeway median at 70 mph.', drive: ['ORIN', 'ROCK'] },
+      { id: 'm-sfo', kind: 'metro', tag: 'METRO DRIVE', title: 'Airport Reversal', sub: 'San Bruno into SFO, change ends (Q), and on to Millbrae.', drive: ['SBRN', 'MLBR'] },
+      { id: 'm-commute', kind: 'metro', tag: 'COMMUTE', title: 'Commuter: The Millbrae Connection', sub: 'Embarcadero to Palo Alto by 9:15 AM: the metro to Millbrae, then change to the Peninsula line.', commute: { from: 'EMBR', to: 'palo_alto', start: 7 * 3600 + 55 * 60, deadline: 9 * 3600 + 15 * 60 } },
+      { id: 'm-oak', kind: 'metro', tag: 'RIDE', title: 'The Cable Train', sub: 'Coliseum to the Oakland Airport on the cable-hauled people mover, 30 mph over the flats.', ride: ['COLS', 'OAKL'] },
+      { id: 'm-antioch', kind: 'metro', tag: 'RIDE', title: 'The Antioch Shuttle', sub: 'Cross the platform at Pittsburg / Bay Point to the diesel shuttle, down the SR-4 median to Antioch.', ride: ['PITT', 'ANTC'] },
+    ];
+  }
+  function start(m) {
+    active = null;
+    if (m.drive) {
+      const ev = nextRun(m.drive[0], m.drive[1]); if (!ev) { UI.toast('No suitable train in the timetable today'); return; }
+      active = { m, kind: 'drive' }; MetroATC.start(ev.plan, { station: m.drive[0], manual: !!m.manual, mission: active, title: m.title });
+    } else if (m.commute) {
+      const c = m.commute; Env.setClock(c.start); Env.time.scale = 1; MetroPlay.teleport(c.from);
+      const pen = typeof Stations !== 'undefined' ? Stations.list.find(s => s.id === c.to) : null;
+      active = { m, kind: 'commute', target: pen, deadline: c.deadline, t0: Env.time.sec };
+      UI.toast(`${m.title}: get to ${pen ? pen.name : c.to} by ${Env.clockText(c.deadline)}. B for trains, N for the map; at Millbrae press E by the metro platform to change.`, 8);
+    } else if (m.ride) {
+      const ev = MetroSim.arrivals(m.ride[0], Env.time.sec + 60, 60).find(e => e.k < e.leg.stops.length - 1 && e.leg.stops.slice(e.k + 1).some(s => s.st === m.ride[1]) && (m.ride[0] !== 'PITT' || e.leg.kind === 'dmu' || e.leg.stops[e.k].st === 'PITT-T'))
+        || MetroSim.arrivals(m.ride[0] === 'PITT' ? 'PITT-T' : m.ride[0], Env.time.sec + 60, 60).find(e => e.k < e.leg.stops.length - 1 && e.leg.stops.slice(e.k + 1).some(s => s.st === m.ride[1]));
+      if (!ev) { UI.toast('No suitable train in the timetable today'); return; }
+      active = { m, kind: 'ride', to: m.ride[1], t0: Env.time.sec }; MetroUI.ride(ev);
+    }
+  }
+  function done(mission, ok) { if (active && mission === active) active = null; }
+  function update() {
+    if (!active || !on()) return;
+    const p = Env.camera.position, t = Env.time.sec;
+    if (active.kind === 'commute' && active.target) {
+      const d = Math.hypot(active.target.x - p.x, active.target.z - p.z);
+      if (d < 160 && Player.mode === 'walk') { const early = active.deadline - t, m = active.m; active = null;
+        UI.showResult({ kicker: 'Commute', title: early >= 0 ? 'Made the meeting' : 'Late…', score: Math.max(0, Math.round(600 + early / 2)), grade: early > 600 ? 'A' : early >= 0 ? 'B' : 'F',
+          lines: [early >= 0 ? `Arrived with ${Math.round(early / 60)} min to spare.` : `Arrived ${Math.round(-early / 60)} min late.`, 'Metro to Millbrae, then the Peninsula line: the same connection real commuters make.'] }); }
+      else if (t > active.deadline + 1800) { active = null; UI.toast('Mission failed: too late'); }
+    } else if (active.kind === 'ride') {
+      const tr = Player.focusTrain();
+      if (tr && tr.metro && Player.mode === 'onboard' && tr.stationId === active.to && tr.phase !== 'run') { const mins = (t - active.t0) / 60, m = active.m; active = null;
+        UI.showResult({ kicker: 'Ride', title: 'You made it', score: 300, grade: 'A', lines: [`${m.title}: ${Math.round(mins)} minutes from the platform to ${MetroSim.stName(m.ride[1])}.`] }); }
+    }
+  }
+  return { list, start, done, update, get active() { return active; } };
 })();

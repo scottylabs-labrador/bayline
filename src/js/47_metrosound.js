@@ -143,7 +143,8 @@ const MetroSound = (() => {
     for (const ev of MetroSim.arrivals(ms.id, now, 8)) {
       const inf = MetroSim.eventInfo(ev), eta = ev.leg.stops[ev.k].tArr - now, plat = inf.platform || '';
       const who = `${NUM[inf.cars] || inf.cars} car ${inf.dest} train`;
-      if (eta > 100 && eta < 130) say(ev.plan.key + ':2m:' + ms.id, `The next ${inf.dest} train, a ${NUM[inf.cars] || inf.cars} car ${MetroSim.lineName(inf.line)} train, arrives in two minutes${plat ? ' on platform ' + plat : ''}.`);
+      const cw = NUM[inf.cars] || String(inf.cars), art = /^(eight|eleven|8|11)/.test(cw) ? 'an' : 'a';
+      if (eta > 100 && eta < 130) say(ev.plan.key + ':2m:' + ms.id, `The next ${inf.dest} train, ${art} ${cw} car ${MetroSim.lineName(inf.line)} train, arrives in two minutes${plat ? ' on platform ' + plat : ''}.`);
       if (eta > 14 && eta < 32) say(ev.plan.key + ':now:' + ms.id, `${who[0].toUpperCase() + who.slice(1)} now approaching${plat ? ' platform ' + plat : ''}.`);
     }
   }
