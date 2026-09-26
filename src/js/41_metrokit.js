@@ -1,4 +1,4 @@
-// MetroKit — Bayline Metro rolling stock (trains workstream). See notes/bart/trains.md for the API, the research behind
+// MetroKit: Bayline Metro rolling stock (trains workstream). See notes/bart/trains.md for the API, the research behind
 // every dimension, and measured costs.
 //   'bart' : "Fleet of the Future"-type D (cab) and E (no cab) cars, 2..10 cars in valid orders.
 //   'dmu'  : the Antioch shuttle (Stadler GTW 2/6-like articulated DMU, 42_metrokit_dmu.js).

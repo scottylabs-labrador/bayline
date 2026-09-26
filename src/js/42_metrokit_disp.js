@@ -62,12 +62,12 @@
       g.fillStyle = '#3c3b6e'; g.fillRect(x0, y0, fw * 0.4, fh * 7 / 13); g.fillStyle = '#ffffff';
       for (let r = 0; r < 5; r++) for (let c = 0; c < 6; c++) { g.beginPath(); g.arc(x0 + fw * 0.4 * (c + 0.5) / 6, y0 + fh * 7 / 13 * (r + 0.5) / 5, 2.2, 0, 7); g.fill(); } });
     cell('emergency', 1400, 600, 384, 192, (w, h) => { g.fillStyle = '#c8202a'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.font = `800 40px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText('EMERGENCY', w / 2, 52); g.font = `600 26px ${FONT}`; g.fillText('Door release · Intercom', w / 2, 104); g.fillText('Use only in an emergency', w / 2, 146); });
+      g.fillText('EMERGENCY', w / 2, 52); g.font = `600 26px ${FONT}`; g.fillText('Door release \u00b7 Intercom', w / 2, 104); g.fillText('Use only in an emergency', w / 2, 146); });
     cell('standClear', 1408, 256, 640, 96, (w, h) => { g.fillStyle = '#f2c230'; g.fillRect(0, 0, w, h); g.fillStyle = '#1b1b1b'; g.font = `800 40px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('PLEASE STAND CLEAR OF THE DOORS', w / 2, h / 2 + 2); });
     cell('noLean', 1408, 352, 192, 192, (w, h) => { sq('#ffffff')(w, h); g.strokeStyle = '#c8202a'; g.lineWidth = 14; g.beginPath(); g.arc(96, 96, 70, 0, 7); g.stroke();
       g.fillStyle = '#1b1b1b'; g.beginPath(); g.arc(80, 58, 13, 0, 7); g.fill(); g.lineWidth = 12; g.strokeStyle = '#1b1b1b'; g.beginPath(); g.moveTo(84, 76); g.lineTo(104, 126); g.lineTo(94, 150); g.moveTo(100, 112); g.lineTo(128, 100); g.stroke();
       g.strokeStyle = '#c8202a'; g.lineWidth = 14; g.beginPath(); g.moveTo(46, 46); g.lineTo(146, 146); g.stroke(); });
-    cell('unofficial', 1600, 352, 448, 64, (w, h) => { g.fillStyle = '#23272d'; g.font = `600 22px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('BAYLINE METRO · UNOFFICIAL · BUILT FOR THE BAY', w / 2, h / 2); });
+    cell('unofficial', 1600, 352, 448, 64, (w, h) => { g.fillStyle = '#23272d'; g.font = `600 22px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('BAYLINE METRO \u00b7 UNOFFICIAL \u00b7 BUILT FOR THE BAY', w / 2, h / 2); });
     // interior posters (end walls): "Are you prepared?" style safety panels and a line map, and ad panels
     const poster = (name, x, y, w, h, fn) => cell(name, x, y, w, h, fn);
     poster('posterSafety', 0, 560, 320, 448, (w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.fillStyle = '#c8202a'; g.fillRect(0, 0, w, 64);
@@ -83,7 +83,7 @@
       g.fillStyle = '#fff'; g.font = `800 34px ${FONT}`; g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.fillText(t1, 18, h - 96); g.font = `500 20px ${FONT}`; g.fillText(t2, 18, h - 62);
       mark(g, 18, 18, 44); }));
     // floor arrows / "keep clear" at doors, the car's plate by the end door
-    cell('plate', 1600, 416, 256, 96, (w, h) => { g.fillStyle = '#d5d8da'; g.fillRect(0, 0, w, h); g.fillStyle = '#1b1b1b'; g.font = `700 22px ${FONT}`; g.textAlign = 'left'; g.fillText('BAYLINE METRO', 14, 34); g.font = `500 18px ${FONT}`; g.fillText('Built 2019 · Car type D/E', 14, 66); });
+    cell('plate', 1600, 416, 256, 96, (w, h) => { g.fillStyle = '#d5d8da'; g.fillRect(0, 0, w, h); g.fillStyle = '#1b1b1b'; g.font = `700 22px ${FONT}`; g.textAlign = 'left'; g.fillText('BAYLINE METRO', 14, 34); g.font = `500 18px ${FONT}`; g.fillText('Built 2019 \u00b7 Car type D/E', 14, 66); });
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.premultiplyAlpha = false;
     t.userData.canvas = c; _atlas = t; return t;
   }
@@ -117,7 +117,7 @@
     g.textAlign = 'left'; g.fillStyle = '#5b6168'; g.font = `600 30px ${FONT}`; g.fillText(s.arriving ? 'Arriving at' : 'Next stop', 28, 124);
     g.fillStyle = '#16181b'; g.font = `800 76px ${FONT}`;
     const ns = String(s.nextStop || ''), tw = g.measureText(ns).width; g.save(); g.translate(28, 196); g.scale(Math.min(1, (W - 56) / Math.max(tw, 1)), 1); g.fillText(ns, 0, 0); g.restore();
-    if (s.doors) { g.fillStyle = '#1b86c8'; g.font = `700 30px ${FONT}`; g.fillText((s.doors === 'left' ? '◀ ' : '') + 'Doors open on the ' + s.doors + (s.doors === 'right' ? ' ▶' : ''), 28, 262); }
+    if (s.doors) { g.fillStyle = '#1b86c8'; g.font = `700 30px ${FONT}`; g.fillText((s.doors === 'left' ? '\u25c0 ' : '') + 'Doors open on the ' + s.doors + (s.doors === 'right' ? ' \u25b6' : ''), 28, 262); }
     if (s.transfer) { g.fillStyle = '#5b6168'; g.font = `600 26px ${FONT}`; g.fillText('Transfer: ' + s.transfer, 28, 304); }
     g.fillStyle = '#1d2227'; g.fillRect(0, 330, W, 4);
     drawStripMap(g, 0, 336, W, H - 336, { stops: s.stops, color: col, index: s.index });
@@ -165,7 +165,7 @@
     for (let i = 0; i < n; i++) { const x = hw + 20 + i * cw; g.fillStyle = '#16232d'; g.fillRect(x + 2, 92, cw - 4, 34); g.strokeStyle = '#3a5870'; g.strokeRect(x + 2, 92, cw - 4, 34);
       g.fillStyle = doors.startsWith('closed') ? '#2f8f4e' : '#c23a3a'; for (let k = 0; k < 3; k++) g.fillRect(x + 2 + (k + 0.5) * (cw - 4) / 3 - 3, 118, 6, 6); }
     g.fillStyle = '#9fb3c1'; g.font = `600 18px ${FONT}`; g.fillText('NEXT STOP', hw + 20, 166);
-    g.fillStyle = '#f5f1e6'; g.font = `800 34px ${FONT}`; g.fillText(String(s.nextStop || '—').slice(0, 24), hw + 20, 204);
+    g.fillStyle = '#f5f1e6'; g.font = `800 34px ${FONT}`; g.fillText(String(s.nextStop || '\u2014').slice(0, 24), hw + 20, 204);
     g.fillStyle = '#f2c230'; g.font = `700 30px ${FONT}`; g.fillText(s.distFt != null ? (s.distFt > 5000 ? (s.distFt / 5280).toFixed(1) + ' mi' : Math.round(s.distFt) + ' ft') : '', hw + 20, 246);
     g.fillStyle = '#9fb3c1'; g.font = `600 18px ${FONT}`; g.fillText('BRAKE', hw + 20, 296); g.fillText('LINE', hw + 220, 296);
     const br = clamp(s.brake || 0, 0, 1); g.fillStyle = '#18222b'; g.fillRect(hw + 20, 306, 170, 18); g.fillStyle = '#f2b132'; g.fillRect(hw + 20, 306, 170 * br, 18);
