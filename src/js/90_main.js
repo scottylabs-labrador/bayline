@@ -16,6 +16,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     await step(0.5, 'Building stations…');
     Stations.init();
     TrackGeo.init();
+    // Bayline Metro guideway, tunnels and the underground engine (infra; #metro=1 only)
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled) safe('metrotrack', () => MetroTrack.init());
     await step(0.58, 'Reading the timetable…');
     await Sim.init();
     const keepOut = (x, z) => { const L = World.landmarks; if (!L) return false; for (const l of L.list) { const r = l.radius || 0; if (r > 0 && Math.abs(x - l.x) < r && Math.abs(z - l.z) < r && Math.hypot(x - l.x, z - l.z) < r) return true; } return false; };
@@ -316,6 +318,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof WorldTiles !== 'undefined' && World.started) safeFrame('worldtiles', () => WorldTiles.update(Env.camera));
     if (typeof Precip !== 'undefined' && World.started) safeFrame('precip', () => Precip.update(dt));
     if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
+    if (bay && typeof MetroTrack !== 'undefined' && MetroTrack.enabled) safeFrame('metrotrack', () => MetroTrack.update(cp, dt));
     if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
     if (bay && World.air) safeFrame('air', () => World.air.update(dt, envArg));
@@ -333,11 +336,16 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Avatars.update();
     if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
+    // underground (Bayline Metro): the camera's cell, portal visibility, the under map, interior exposure
+    if (typeof Under !== 'undefined' && Under.enabled) safeFrame('under', () => Under.update(Env.camera));
     draw(dt);
   }
   function draw(dt) {
+    const U2 = typeof Under !== 'undefined' && Under.enabled ? Under : null;   // (cells nobody sees and, deep underground, the outdoors: not drawn)
+    if (U2) safeFrame('under-pre', () => U2.preRender());
     if (typeof Post !== 'undefined' && Post.render && Post.enabled !== false && !postBroken) { try { Post.render(dt); } catch (e) { postBroken = true; console.error('post', e); Env.renderer.setRenderTarget(null); Env.renderer.render(Env.scene, Env.camera); } }
     else Env.renderer.render(Env.scene, Env.camera);
+    if (U2) U2.postRender();
   }
   // capture: let the world catch up with the camera without advancing time (level of detail, tile requests and the
   // incremental builders run; nothing moves), then draw the frame again. Resolves with what was still loading.
@@ -361,6 +369,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   const errs = {}; function safeFrame(name, f) { if (errs[name] > 3) return; try { f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); } }
   function safeFrameR(name, f) { if (errs[name] > 20) return false; try { return f(); } catch (e) { errs[name] = (errs[name] || 0) + 1; console.error(name, e); return false; } }
   window.__bayline = { capture, stepFrame, Post: typeof Post !== 'undefined' ? Post : null, FMap: typeof FMap !== 'undefined' ? FMap : null, Landmarks: typeof Landmarks !== 'undefined' ? Landmarks : null, FMissions: typeof FMissions !== "undefined" ? FMissions : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Env, Sim, Player, Track, Terrain, Stations, TrackGeo, Game, UI, World, start, Stream, Flight: typeof Flight !== 'undefined' ? Flight : null, Traffic: typeof Traffic !== 'undefined' ? Traffic : null, WorldTiles: typeof WorldTiles !== 'undefined' ? WorldTiles : null, Weather: typeof Weather !== 'undefined' ? Weather : null, Sky: typeof Sky !== 'undefined' ? Sky : null, FHud: typeof FHud !== 'undefined' ? FHud : null, AIRCRAFT: typeof AIRCRAFT !== 'undefined' ? AIRCRAFT : null, FDM: typeof FDM !== 'undefined' ? FDM : null, ACModel: typeof ACModel !== 'undefined' ? ACModel : null, Globe: typeof Globe !== 'undefined' ? Globe : null, Airports: typeof Airports !== 'undefined' ? Airports : null, Sound: typeof Sound !== 'undefined' ? Sound : null, Net: typeof Net !== 'undefined' ? Net : null,
+    Under: typeof Under !== 'undefined' ? Under : null, MetroTrack: typeof MetroTrack !== 'undefined' ? MetroTrack : null, MetroNet: typeof MetroNet !== 'undefined' ? MetroNet : null,
     Flora: typeof Flora !== 'undefined' ? Flora : null, GroundCover: typeof GroundCover !== 'undefined' ? GroundCover : null, Towns: typeof Towns !== 'undefined' ? Towns : null, Precip: typeof Precip !== 'undefined' ? Precip : null, FVfx: typeof FVfx !== 'undefined' ? FVfx : null, Post: typeof Post !== 'undefined' ? Post : null, Gfx: typeof Gfx !== 'undefined' ? Gfx : null, SunShade: typeof SunShade !== 'undefined' ? SunShade : null };
   requestAnimationFrame(frame);
 })();

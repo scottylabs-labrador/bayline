@@ -376,8 +376,11 @@ const Terrain = (() => {
     if (!matDummy) { matDummy = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType); matDummy.minFilter = matDummy.magFilter = THREE.NearestFilter; matDummy.needsUpdate = true; }
     return matDummy;
   }
-  function makeMaterial() {
-    const u = {
+  // cut: the variant used by nodes over underground openings (Bayline Metro, 24_metrounder.js; Terrain.cutTest is null
+  // without #metro=1): fragments inside an underground volume or above a cut floor are discarded (portals, trench wells,
+  // station entrances). It shares the node's uniforms (u), so a node switches between the two for free.
+  function makeMaterial(cut, uShared) {
+    const u = uShared || {
       hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
       iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 }, iSize: { value: 512 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
@@ -387,7 +390,8 @@ const Terrain = (() => {
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
-    m.customProgramCacheKey = () => 'bayline-terrain-v5';
+    if (cut) m.defines = { BL_CUT: 1 };
+    m.customProgramCacheKey = () => cut ? 'bayline-terrain-v5-cut' : 'bayline-terrain-v5';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
@@ -480,6 +484,9 @@ const Terrain = (() => {
           // (xy) and the unresolved slope variance inside the pixel footprint (z)
 `)
         .replace('#include <color_fragment>', `#include <color_fragment>
+          #ifdef BL_CUT
+          if (blUnder(vW).w > 0.5) discard;
+          #endif
           {
             // ---- normal from the height data (per pixel) ----
             vec2 tc = (hUV.xy + vUV * hUV.zw) * hTC.x + hTC.y; float e = hInfo.z;
@@ -675,7 +682,7 @@ const Terrain = (() => {
   }
   function getNode(i) {
     let n = nodes[i];
-    if (!n) { const mat = makeMaterial(); const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.matrixAutoUpdate = false; group.add(mesh); n = nodes[i] = { mesh, mat, u: mat.userData.u }; }
+    if (!n) { const mat = makeMaterial(); const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.matrixAutoUpdate = false; group.add(mesh); n = nodes[i] = { mesh, mat, u: mat.userData.u, matCut: null }; }
     return n;
   }
 
@@ -718,6 +725,11 @@ const Terrain = (() => {
       const [L, x, y, d] = sel[i]; const n = getNode(i); const T = tileSize(L); const u = n.u;
       n.mesh.visible = true;
       const g = fine && L > LH && geoFine ? geoFine : geo; if (n.mesh.geometry !== g) n.mesh.geometry = g;
+      if (api.cutTest) {                   // (Bayline Metro: openings in the ground over tunnels and stations)
+        const cut = api.cutTest(X0 + x * T, Z0 + y * T, X0 + (x + 1) * T, Z0 + (y + 1) * T);
+        if (cut && !n.matCut) n.matCut = makeMaterial(true, n.u);
+        const want = cut ? n.matCut : n.mat; if (n.mesh.material !== want) n.mesh.material = want;
+      }
       n.mesh.matrix.makeScale(T, 1, T); n.mesh.matrix.setPosition(X0 + (x + 0.5) * T, 0, Z0 + (y + 0.5) * T); n.mesh.matrixWorldNeedsUpdate = true;
       const prio = 2 + Math.min(40, d / 800) + (L < 3 ? -2 : 0);
       if (index) { // request this node's own data (the quadtree only visits nodes that exist)
@@ -840,9 +852,11 @@ const Terrain = (() => {
   const isWater = (x, z) => maskAt(x, z, 0) > 0.5;
   const urbanAt = (x, z) => { const v = maskAt(x, z, 1); return v; };
   function setTownFade() {}
-  return { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, materialAt, update, setTownFade, setFine, lodFactor, stats, group,
+  const api = { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, materialAt, update, setTownFade, setFine, lodFactor, stats, group,
     groundDetail: groundDetailTexture, GROUND_TILE: GTILE, waveTexture, WATER_GLSL,
     get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH },
     get HMAX() { return HMAX; }, get materials() { return mat ? { tiles: mat.size, loaded: [...matRec.values()].filter(r => r.state === 2).length } : null; }, get lidar() { return h9 ? { tiles8: h9[8].size, tiles9: h9[9].size, attribution: h9.attribution } : null; },
-    get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; } };
+    get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; },
+    cutTest: null };            // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
+  return api;
 })();
