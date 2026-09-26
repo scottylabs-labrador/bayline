@@ -314,7 +314,7 @@ const Globe = (() => {
             float s0 = 0.045, sg = max(s0, fp * 0.45);                                  // energy-conserving lamp footprint
             float lamp = exp(-dot(f, f) / (2.0 * sg * sg)) * (s0 * s0) / (sg * sg) * step(1.0 - L * 0.85, gh1(cell + 3.3));
             vec3 warm = mix(vec3(1.0, 0.6, 0.28), vec3(1.0, 0.84, 0.62), gh1(cell + 1.7));
-            vec3 glow = warm * pow(L, 1.4) * 0.075, pts = warm * (lamp * (0.6 + L) * 2.4 + L * 0.01);
+            vec3 glow = warm * pow(L, 1.4) * 0.075 * night, pts = warm * (lamp * (0.6 + L) * 2.4 + L * 0.01);   // (glow: dimmer at dusk, like the terrain's)
             totalEmissiveRadiance += mix(pts, glow, smoothstep(0.35, 0.9, fp)) * night * (1.0 - gGWater);
           }`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = gGRough;')

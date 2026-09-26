@@ -690,11 +690,22 @@ const Terrain = (() => {
             // so the points average out (no white sparkle) when many fall inside one pixel
             float gl = mk.g;
             float fwl = fwidth(vW.x) + fwidth(vW.z);
-            float pts = smoothstep(0.86, 0.98, th(floor(vW.xz / 11.0))) * smoothstep(0.2, 0.7, gl);
-            float ptsAvg = 0.07 * smoothstep(0.2, 0.7, gl);                                  // mean of the point field
+            // lamp density: rises with the street mask (gamma: dense districts glow, sparse streets less) and varies by
+            // neighbourhood (~300 m), so from the air the lights read as clusters instead of one flat wash
+            float den = pow(smoothstep(0.2, 0.9, gl), 1.6) * (0.55 + 0.9 * wtn(vW.xz / 300.0 + 17.0));
+            float pts = smoothstep(0.86, 0.98, th(floor(vW.xz / 11.0))) * den;
+            float ptsAvg = 0.07 * den;                                                       // mean of the point field
             pts = mix(pts, ptsAvg, smoothstep(3.0, 11.0, fwl));
-            vec3 lamp = mix(vec3(1.0, 0.62, 0.3), vec3(0.95, 0.9, 0.82), step(0.55, th(floor(vW.xz / 180.0))));   // sodium / LED districts
-            gEmis = lamp * (pow(gl, 1.8) * 0.16 + pts * 1.1) * night * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
+            // the lights come up late in the dusk (full at night as before) and warmer while the sky is still bright
+            float nk = smoothstep(0.2, 0.9, night);
+            // sodium / LED districts, blended smoothly (a hard 180 m checkerboard read as flat patches from the air)
+            vec3 lamp = mix(vec3(1.0, 0.62, 0.3), vec3(0.95, 0.9, 0.82), smoothstep(0.35, 0.75, wtn(vW.xz / 420.0)));
+            lamp = mix(lamp, vec3(1.0, 0.58, 0.26), (1.0 - nk) * 0.5);
+            // the haze only over dense lit areas (threshold + gamma; dense districts as before): sparse street networks no
+            // longer paint whole hillsides yellow
+            float haze = pow(smoothstep(0.25, 0.95, gl), 2.2) * 0.15;
+            float far = 1.0 - 0.25 * smoothstep(8.0, 40.0, fwl);                          // (a little dimmer where a pixel spans a block)
+            gEmis = lamp * (haze + pts * 1.1) * nk * far * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
             diffuseColor.rgb = col;
             gN = nW;
           }`)
