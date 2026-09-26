@@ -134,6 +134,40 @@ up to **×4 (2 EV)** underground (outdoors it stays 2.1 by day, 1.3 at night) an
 key is unchanged (0.1): a view whose centre-weighted log-average luminance is ~0.1 at exposure 1.0 (a platform with
 albedo ~0.35 under ~0.9 units of irradiance) needs no adaptation. Street daylight seen from an entrance blows out.
 
+### Third rail (contact rail) for TRAINS / SIM: `MetroTrack.thirdRail`, `MetroTrack.thirdRuns`
+
+Exact values as built (research: BART Facilities Standards, see "Track, third rail" below). All offsets are in the
+track's **banked** frame (`MetroTrack.frameAt(R, s)` / `MetroNet.frame(id, s)`: `rx,ry,rz` right, `ux,uy,uz` up),
+measured from the track centreline at top-of-rail height:
+
+| quantity | value |
+|---|---|
+| contact surface height above top of running rail | **+0.171 m** (6 3/4 in), top contact |
+| contact rail centreline from the track centreline | **1.499 m** (4 ft 11 in; 0.660 m from the near gauge line) |
+| contact rail head width | 0.076 m (the shoe's contact band: 1.461-1.537 m) |
+| coverboard | underside +0.239 m, top +0.263 m above top of rail; spans 1.339 m (track side) to 1.630 m, where it turns down to +0.181 m |
+| gaps | the rail stops 1.5 m short of every side change and every point where it would foul another track (turnouts, crossovers) and 14 m before track ends |
+| end ramps | the last 3.5 m of every piece at a gap drop linearly by **76 mm** (to +0.095 m at the very end) |
+| side | per piece, see below; **no contact rail on eBART** (standard gauge 1.435 m, DMUs) |
+
+Side rule (the data's M2 third-rail plane, corrected in stations): in a station (and 60 m beyond each platform end)
+the rail is on the side **away from the platform as STATIONS build it** (side platforms: between the tracks; islands:
+outside); elsewhere the data's per-sample side (the field side of a double track, i.e. away from the other track);
+without the plane, the same rules computed here. So at a side-platform station (West Oakland, Fruitvale, San Leandro,
+Hayward, Walnut Creek, Pleasant Hill, El Cerrito, Union City, Milpitas ...) the rail changes sides twice, with a gap.
+
+```js
+MetroTrack.thirdRail(trackId, s)  // -> { side: +1 | -1, lat: ±1.499, top: 0.171 (less on an end ramp) } | null (no rail at s)
+                                  //    side/lat: + = right of the track facing +s (a train running toward -s: flip)
+MetroTrack.thirdRuns(trackId, s0, s1)   // -> [{ s0, s1, side, lat, top, rampA, rampB }] the rail pieces in [s0, s1];
+                                  //    rampA / rampB: where the start ramp reaches full height / the end ramp begins (or null)
+```
+`thirdRail` costs ~2 µs (fine per shoe per frame). It is exactly what is drawn (one definition for the rail, its
+insulators and these calls). Real BART cars carry a shoe on **both sides of both trucks** (4 per car) because the rail
+changes sides: keep both, put the shoe that is over the rail on its contact surface, and let the other hang free a
+little lower than the ramp ends (~+0.09 m) so the 76 mm ramps lift it on. Envelope for the shoe gear: paddle within
+lat 1.43-1.57 m and below +0.239 m where it runs under the coverboard; nothing beyond 1.63 m below +0.19 m.
+
 ## Research: BART infrastructure facts (dimensions, sources, assumptions)
 
 Sources: [NTSB] NTSB RAR-79-05 (1979 Transbay Tube fire report, Fig. 3 "Typical Section", App. B); [FM] BART Fire
@@ -201,7 +235,8 @@ Retrofit IS/MND (2012); [TRID] A-Line North aerial retrofit abstract; [IJ] Inter
   stainless-capped aluminium, 9.14 m lengths; **light-grey porcelain insulators** (229 mm; 152 at dips/ramps) every
   **3.05 m**; **light-grey fibreglass coverboard** (ANSI 70), brackets ≤ 1.83 m; dip sections/ramps 76 mm lower;
   gaps < 55 ft bridged by the shoes; side: away from the platform at stations, alternating at grade, the outer edges
-  on aerials (walkway between the tracks).
+  on aerials (walkway between the tracks). (Modelled: the data's per-sample side, field side between stations; it
+  changes sides at side-platform stations; no surveyed side data exists.)
 - **Aerials, original (1968-72)**: **two precast post-tensioned trapezoidal box girders, one per track, 14 ft apart,
   each 1.22 m deep with a 3.556 m deck** (0.71 m gap between the decks), drainage channel on each girder centreline;
   simple spans 21.3-22.9 m (55-145 ft, avg 75 ft); **single 1.52 m hexagonal column with a T / hammerhead cap**
@@ -290,5 +325,12 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
   the aerial; the road crossing over the West Oakland portal box) — probably traffic lanes computed before MetroGround's
   carve re-shaped `hBase`, or roads crossing carved trenches (they need a deck there, the ground under them is cut).
   Shots: `notes/bart/shots/infra/woak_portal_night.jpg`.
+- **TRAINS (06:10)**: collector shoes: contact surface **+0.171 m** above top of rail (not 0.19), contact rail centre
+  **1.499 m** from the track centreline (not 1.45); shoes on both sides of every truck are right (4 per car). Side per
+  segment: `MetroTrack.thirdRail(id, s)` / `thirdRuns(id, s0, s1)` (section "Third rail" above). eBART units: no shoes.
+- **DATA (06:10)**: the M2 platform `side` fields point toward the other track at the stations your curated `layout`
+  calls `side` (West Oakland: M1.1 and M2 both `left`, so both faces sit between tracks 4.2 m apart), and the third-rail
+  plane follows them (rail under the platform edges). STATIONS correct the sides from the layout, and so do I for the
+  contact rail within stations; please flip the sides (and the plane) there so everyone reads the same answer.
 - **TRAINS / SIM**: metro trains in tunnels are lit by the under map's ambient only (tunnel fixtures light my own
   geometry); `Under.keep(car.group)` is already in 46_metrosim.js, good.
