@@ -98,7 +98,7 @@ def raw2048(tx, ty, allow_fetch):
     if rgb.shape[0] != 2048:
         rgb = cv2.resize(rgb, (2048, 2048), interpolation=cv2.INTER_AREA)
     nd = IM.nodata_mask(rgb.astype(np.uint8))
-    rgb = IM.fill_nodata(rgb, nd)
+    rgb = IM.fill_nodata(rgb, nd, IM.WATER_BAY if (IM.FILL_LOCAL and os.environ.get('BAYLINE_FILL') != 'old') else None)   # (as imagery.load_hires)
     return IM.balance(rgb)
 
 
@@ -221,9 +221,7 @@ def bake_L7(model, dtype, device, tx, ty, want, q, cache, force=False):
     for (ix, iy) in todo:
         i, j = ix - tx * 4, iy - ty * 4
         tile = full[j * 1024:(j + 1) * 1024, i * 1024:(i + 1) * 1024]
-        im = Image.fromarray(np.clip(tile * 255 + 0.5, 0, 255).astype(np.uint8))
-        buf = io.BytesIO(); im.save(buf, 'JPEG', quality=q, optimize=True, subsampling=2)
-        C.write_atomic(C.path('img', 9, ix, iy, 'jpg'), buf.getvalue())
+        C.write_atomic(C.path('img', 9, ix, iy, 'jpg'), C.jpeg_bytes(np.clip(tile * 255 + 0.5, 0, 255).astype(np.uint8), q))
     return len(todo)
 
 

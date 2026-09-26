@@ -507,6 +507,7 @@ const Post = (() => {
       compMat.uniforms.uExpo.value = Env.state.exposure || 1; compMat.uniforms.uAOHalf.value.set(1 / rtAO[0].width, 1 / rtAO[0].height); compMat.uniforms.uFogTexel.value.set(1.2 / rtFog.width, 1.2 / rtFog.height);
       pass(compMat, rtHDR);
       const exposure = (Env.state.exposure || 1) * debug.expo, night = U.uNight.value;
+      const nightB = under.on ? U.lerp(night, 0.35, under.depth) : night;   // (underground, day and night look the same: bloom / threshold fixed)
       // 5. eye adaptation (two 1x1 passes)
       lumMat.uniforms.tSrc.value = rtHDR.texture; lumMat.uniforms.uExpo.value = exposure;
       lumMat.uniforms.uJit.value.set((frame * 0.618034) % 1, (frame * 0.754878) % 1); pass(lumMat, rtLum);
@@ -517,7 +518,7 @@ const Post = (() => {
       pass(adaptMat, rtAE[ai]); const tAE = rtAE[ai].texture;
       // 6. bloom
       brightMat.uniforms.tSrc.value = rtHDR.texture; brightMat.uniforms.tAE.value = tAE; brightMat.uniforms.uExposure.value = exposure; brightMat.uniforms.uTexel.value.set(1 / W, 1 / H);
-      brightMat.uniforms.uThreshold.value = U.lerp(1.15, 0.8, night); pass(brightMat, down[0]);
+      brightMat.uniforms.uThreshold.value = U.lerp(1.15, 0.8, nightB); pass(brightMat, down[0]);
       for (let i = 1; i < down.length; i++) { downMat.uniforms.tSrc.value = down[i - 1].texture; downMat.uniforms.uTexel.value.set(1 / down[i - 1].width, 1 / down[i - 1].height); pass(downMat, down[i]); }
       for (let i = up.length - 1; i >= 0; i--) {
         const src = i === up.length - 1 ? down[i + 1] : up[i + 1];
@@ -527,9 +528,9 @@ const Post = (() => {
       // 7. tone map + grade -> screen (or LDR for FXAA)
       const fu = finalMat.uniforms;
       fu.tHDR.value = rtHDR.texture; fu.tAE.value = tAE; fu.tBloom.value = (up[0] || down[0]).texture; fu.uExposure.value = exposure;
-      fu.uBloom.value = U.lerp(0.045, 0.11, night) / Math.max(1, down.length - 2); fu.uGrain.value = Q.grain;
+      fu.uBloom.value = U.lerp(0.045, 0.11, nightB) / Math.max(1, down.length - 2); fu.uGrain.value = Q.grain;
       fu.uGrade.value = under.on ? 1 - 0.8 * under.depth : 1;          // (no cool sky-blue shadow toning deep underground)
-      const eDeg = Env.state.sunEl / U.DEG, golden = U.smooth(22, 4, eDeg) * (1 - U.smooth(1, -6, eDeg));
+      const eDeg = Env.state.sunEl / U.DEG, golden = U.smooth(22, 4, eDeg) * (1 - U.smooth(1, -6, eDeg)) * (under.on ? 1 - under.depth : 1);   // (no golden-hour tint underground)
       fu.uTint.value.set(1 + 0.03 * golden, 1, 1 - 0.035 * golden);
       if (Q.fxaa) { pass(finalMat, rtLDR); fxaaMat.uniforms.tSrc.value = rtLDR.texture; fxaaMat.uniforms.uTexel.value.set(1 / W, 1 / H); pass(fxaaMat, null); }
       else pass(finalMat, null);

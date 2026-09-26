@@ -59,9 +59,13 @@ if (MOBILE) { await send('Emulation.setTouchEmulationEnabled', { enabled: true, 
   await send('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' }); }
 // start near the first view's station so its surroundings stream first
 const ll = await (async () => { try { const j = JSON.parse(readFileSync(resolve('data/pub/v2/metro/network.json'), 'utf8')); const s = j.stations.find(x => x.id === first.id); return s ? `${s.lat.toFixed(5)},${s.lon.toFixed(5)},150,0.8,-0.4` : ''; } catch { return ''; } })();
-const url = `${base}#auto&metro=1&t=${first.t || '17:30'}${ll ? '&ll=' + ll : ''}${hashExtra ? '&' + hashExtra : ''}`;
+// (--rawhash: the hash exactly as given, e.g. "auto&t=09:10&at=millbrae&metro=0")
+const RAW = opt('rawhash', null);
+const url = RAW ? `${base}#${RAW}` : `${base}#auto&metro=1&t=${first.t || '17:30'}${ll ? '&ll=' + ll : ''}${hashExtra ? '&' + hashExtra : ''}`;
 await send('Page.navigate', { url });
-const ready = await ev(`new Promise(r => { const t0 = Date.now(); const iv = setInterval(() => { const B = window.__bayline; if (B && B.MetroStations && B.MetroStations.ready) { clearInterval(iv); r(true); } if (Date.now() - t0 > 90000) { clearInterval(iv); r(false); } }, 300); })`, 120000);
+// (--ready world: wait for the world instead of the metro stations, for #metro=0 comparisons)
+const READY = opt('ready', 'metro') === 'world' ? 'B && B.World && B.World.started' : 'B && B.MetroStations && B.MetroStations.ready';
+const ready = await ev(`new Promise(r => { const t0 = Date.now(); const iv = setInterval(() => { const B = window.__bayline; if (${READY}) { clearInterval(iv); r(true); } if (Date.now() - t0 > 90000) { clearInterval(iv); r(false); } }, 300); })`, 120000);
 if (!ready) { console.error('page not ready'); cleanup(); process.exit(4); }
 const results = [];
 for (const v of views) {

@@ -56,9 +56,10 @@ const MetroTrack = (() => {
     lamp: P(0xfff1d6, 0.3, 0, 5), lampNight: P(0xffd9a8, 0.3, 0, 6), lampHousing: P(0x3a3c3f, 0.5, 0.4, 0),
     signBlue: P(0x1d4e89, 0.4, 0.1, 0), signWhite: P(0xe8e8e2, 0.45, 0, 0), yellow: P(0xd9ad22, 0.5, 0.05, 0), black: P(0x151617, 0.6, 0.1, 0),
     fence: P(0x8b9094, 0.45, 0.6, 7), bearing: P(0x202020, 0.8, 0, 9), steel: P(0x4a4d50, 0.55, 0.55, 0),
-    steelRing: P(0x55595c, 0.62, 0.55, 11), exitSign: P(0x2fb35a, 0.4, 0, 5), blueLamp: P(0x3a6cff, 0.3, 0, 5),
+    steelRing: P(0x5f6366, 0.66, 0.25, 11),           // (painted liner plates: mostly diffuse, so the lamps light them)
+    exitSign: P(0x2fb35a, 0.4, 0, 5), blueLamp: P(0x3a6cff, 0.3, 0, 5),
     doorYellow: P(0xe0b21e, 0.5, 0.2, 0), jacket: P(0x9a9d9e, 0.5, 0.55, 7), blueSign: P(0x1f4f8f, 0.4, 0.1, 0),
-    railMid: P(0x6a5a4e, 0.6, 0.5, 11), railMidTop: P(0xc8ccd0, 0.2, 0.9, 12),       // simple rails beyond the detail ring
+    railMid: P(0x6a5a4e, 0.6, 0.5, 21), railMidTop: P(0xc8ccd0, 0.2, 0.9, 22),       // simple rails beyond the detail ring
     frog: P(0x6a5a50, 0.62, 0.6, 2), steelGreen: P(0x3b4a3e, 0.55, 0.35, 0), tie: P(0xa29e95, 0.9, 0, 1),
   };
 
@@ -317,11 +318,11 @@ const MetroTrack = (() => {
             vec3 an = abs(vWn); float fw = fwidth(vWp.x) + fwidth(vWp.y) + fwidth(vWp.z);
             float dcam = distance(vWp, cameraPosition);
             #ifndef BL_FAR
-            // rails: the detail layer's (kinds 2 / 3: rails, third rail, frogs) near, the body layer's simple rails (11 / 12)
+            // rails: the detail layer's (kinds 2 / 3: rails, third rail, frogs) near, the body layer's simple rails (21 / 22)
             // beyond uRailSwitch; a dithered 16 m band, so neither pops nor both draw
             { float dth = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 16.0;
               if ((kind == 2.0 || kind == 3.0) && dcam > uRailSwitch + dth) discard;
-              if (kind == 11.0 || kind == 12.0) { if (dcam < uRailSwitch + dth) discard; kind -= 9.0; gKind = kind; } }
+              if (kind == 21.0 || kind == 22.0) { if (dcam < uRailSwitch + dth) discard; kind -= 19.0; gKind = kind; } }
             #endif
             #ifndef BL_FAR
             if (kind == 1.0 || kind == 10.0) {                      // concrete
@@ -774,7 +775,7 @@ const MetroTrack = (() => {
     // DETAIL: rails, plinths, third rail
     for (const ch of gather('detail', camPos)) {
       if (ch.failed > 2) continue; const d = ch.d;
-      if (d < R_DETAIL && !ch.g && !ch.job) schedule(ch, detailJob(ch), 60);
+      if (d < R_DETAIL && !ch.g && !ch.job) schedule(ch, detailJob(ch), 0);
       if (ch.g) { ch.g.visible = d < R_DETAIL * 1.15; if (ch.g.visible) nDet++; }
     }
     const T2 = performance.now();
@@ -791,12 +792,14 @@ const MetroTrack = (() => {
         if (ch.g.visible) nFar++;
       }
     }
-    for (const j of jobs) j.d = j.ch.d + (j.ch.layer === 'detail' ? 60 : j.ch.layer === 'far' ? 500 + j.ch.d * 0.3 : 0);
+    for (const j of jobs) j.d = j.ch.d + (j.ch.layer === 'detail' ? 0 : j.ch.layer === 'far' ? 500 + j.ch.d * 0.3 : 0);
     const T3 = performance.now();
     // dispose what fell out of each ring (with some hysteresis)
+    // (at most 3 chunks a frame: disposing geometry and unregistering cells is not free)
+    let nDisp = 0;
     for (const layer of ['detail', 'body', 'far']) {
       const lim = LAYERS[layer].R * LAYERS[layer].keep, near = nearSets[layer];
-      for (const ch of [...built[layer]]) { const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
+      for (const ch of built[layer]) { if (nDisp >= 3) break; const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; nDisp++; } }
     }
     const T4 = performance.now();
     runJobs();

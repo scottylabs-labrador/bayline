@@ -1708,12 +1708,17 @@ const Landmarks = (() => {
       signPlane(grp, name, 'modern', 26, 2.4, -8, 8.3, 12.55); signPlane(grp, name, 'modern', 22, 2, 0, 8.3, -12.55, Math.PI);
     },
     millbrae(k, grp, name) {                     // 1999 intermodal station: glass hall under a big vaulted steel roof
-      k.box('glass', 0x7d98a8, 64, 9, 26, 0, 0, 0); k.box('solid', 0xcfcac0, 64, 1, 26, 0, 9, 0);
-      k.vault('metal', 0xb9c0c6, 76, 17, 0, 10, 0, 0, 0.42, 16);
-      for (const sd of [-1, 1]) for (let i = -3; i <= 3; i++) k.box('paint', 0x9aa2a8, 0.5, 10, 0.5, i * 11, 0, sd * 13.5);
-      k.box('solid', 0xb8b3a8, 20, 14, 12, 42, 0, 8); k.box('glass', 0x6f8a9a, 12, 12, 0.3, 42, 1, 1.9);
+      // (Bayline Metro on: the hall, its roof, columns, annex and name signs are their own group 'depot:millbrae:hall'
+      // (it stands where BART's platform 3 and tracks are), which the metro stations hide while they draw the shared
+      // intermodal hall and show again if the metro fails; with the metro off the kit is built exactly as before)
+      const apart = typeof Metro !== 'undefined' && Metro.on, kh = apart ? new Kit() : k, hall = apart ? new THREE.Group() : grp;
+      kh.box('glass', 0x7d98a8, 64, 9, 26, 0, 0, 0); kh.box('solid', 0xcfcac0, 64, 1, 26, 0, 9, 0);
+      kh.vault('metal', 0xb9c0c6, 76, 17, 0, 10, 0, 0, 0.42, 16);
+      for (const sd of [-1, 1]) for (let i = -3; i <= 3; i++) kh.box('paint', 0x9aa2a8, 0.5, 10, 0.5, i * 11, 0, sd * 13.5);
+      kh.box('solid', 0xb8b3a8, 20, 14, 12, 42, 0, 8); kh.box('glass', 0x6f8a9a, 12, 12, 0.3, 42, 1, 1.9);
       for (let i = 0; i < 6; i++) platformLamp(k, -30 + i * 12, -16);
-      signPlane(grp, name, 'modern', 16, 1.8, 0, 7, -13.2, Math.PI); signPlane(grp, name, 'modern', 16, 1.8, 0, 7, 13.2);
+      signPlane(hall, name, 'modern', 16, 1.8, 0, 7, -13.2, Math.PI); signPlane(hall, name, 'modern', 16, 1.8, 0, 7, 13.2);
+      if (apart) { hall.name = 'depot:millbrae:hall'; kh.toGroup(hall, { name: 'depot-millbrae' }); grp.add(hall); k.tris += kh.tris; }
     },
     burlingame(k, grp, name) {                   // 1894: first Mission Revival building in California
       const st = 0xefe3c8, tile = 0xb5654a;

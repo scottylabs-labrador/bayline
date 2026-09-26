@@ -54,7 +54,7 @@ def quadrants(bb, px, band, dest):
     except Exception as ex:
         print('quadrants failed', os.path.basename(dest), ex, flush=True)
         return None
-    buf = io.BytesIO(); out.save(buf, 'JPEG', quality=92); data = buf.getvalue()
+    data = C.jpeg_bytes(np.asarray(out.convert('RGB')), 92)            # (checked encode: see common.jpeg_bytes)
     if not fetch._rgb_ok(data):
         return None
     C.write_atomic(dest, data)

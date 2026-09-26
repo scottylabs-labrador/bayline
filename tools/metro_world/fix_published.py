@@ -21,7 +21,9 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, 'tools')); sys.path.insert(0, HERE)
+os.environ['BAYLINE_FILL'] = 'old'                             # (published tiles were baked with the old no-data fill)
 from tools.tiles import common as C, imagery as I, fetch   # noqa: E402
+I.FILL_LOCAL = False
 import importlib.util   # noqa: E402
 _spec = importlib.util.spec_from_file_location('sr', os.path.join(ROOT, 'tools', 'sr_tiles.py')); SR = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(SR)
 
@@ -49,8 +51,7 @@ def cur(L, x, y):
 
 def save(p, x01, q):
     C.ensure_dir(p)
-    im = Image.fromarray(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8)); buf = io.BytesIO()
-    im.save(buf, 'JPEG', quality=q, optimize=True, subsampling=2); C.write_atomic(p, buf.getvalue())
+    C.write_atomic(p, C.jpeg_bytes(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8), q))       # (checked encode)
 
 
 def load01(p, n=None):

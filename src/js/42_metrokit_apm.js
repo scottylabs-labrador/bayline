@@ -19,6 +19,12 @@
     return K.fotfProfile.profileFrom(dense, q);
   }
 
+  // the side panes of a car [x0, x1] (glass edges): a 1.52 m pitch along the band, none over the centre door
+  function panesOf(type) {
+    const xR = -A.LEN / 2 + 0.08, xF = type === 'end' ? A.LEN / 2 + 0.25 : A.LEN / 2 - 0.08, pitch = 1.52, out = [];
+    for (let x = xR + 0.3; x + pitch <= xF - 0.2; x += pitch) { if (Math.abs(x + pitch / 2) < A.DOOR_W + 0.1) continue; out.push([x + 0.03, x + pitch - 0.03]); }
+    return out;
+  }
   // type 'end' (nose at +X) or 'mid'
   function build(type, q) {
     K.decalAtlas(K.atlasRes());
@@ -28,9 +34,10 @@
     E.bone = 0; G.bone = 0;
     for (const s of [1, -1]) {
       // the glazing band as one hole with glass panes behind thin mullions; the doors in the middle
-      const panes = [], pitch = 1.52;
-      for (let x = xR + 0.3; x + pitch <= xF - 0.2; x += pitch) { if (Math.abs(x + pitch / 2) < A.DOOR_W + 0.1) continue; panes.push([x + 0.03, x + pitch - 0.03]); }
+      const panes = panesOf(type);
       const holes = [{ x0: -A.DOOR_W, x1: A.DOOR_W, t0: tAtY(P, A.FLOOR + 0.02), t1: tAtY(P, 2.62), r: 0.05 }];
+      // the panes are openings in the black band (with the cabin built the clear glass must show it, not the band)
+      for (const [a, b] of panes) holes.push({ x0: a + 0.05, x1: b - 0.05, t0: tAtY(P, A.BAND0 + 0.08), t1: tAtY(P, A.BAND1 - 0.08), r: 0.06 });
       const palAt = (xm, tm) => tm > tCant ? 'roof' : (tm > tB0 && tm < tB1 ? 'mask' : 'apmBody');
       K.sideGrid(E, P, s, xR, xF, 0, P.T, holes, palAt, 0, panes.flat(), [tB0, tB1, tCant]);
       for (const [a, b] of panes) { const o = K.rrXT(P, a + 0.05, b - 0.05, A.BAND0 + 0.08, A.BAND1 - 0.08, 0.06); K.fill(G, P, s, o, 0.002, 'lensClear'); }
@@ -112,9 +119,19 @@
   function interior(d, q) {
     const E = new MB(), G = new MB(), FY = A.FLOOR, x0 = -A.LEN / 2 + 0.2, x1 = A.LEN / 2 - (d.type === 'end' ? -0.1 : 0.2);
     E.pal('floor'); E.q4([x0, FY, 1.2], [x1, FY, 1.2], [x1, FY, -1.2], [x0, FY, -1.2]);
-    E.pal('ceil'); E.q4([x0, 2.85, -1.1], [x0, 2.85, 1.1], [x1, 2.85, 1.1], [x1, 2.85, -1.1]);
+    E.pal('ceil'); E.q4([x0, 2.85, -1.21], [x0, 2.85, 1.21], [x1, 2.85, 1.21], [x1, 2.85, -1.21]);
     E.pal('lightStrip'); for (const z of [-0.6, 0.6]) E.q4([x0 + 0.3, 2.845, z - 0.05], [x0 + 0.3, 2.845, z + 0.05], [x1 - 0.3, 2.845, z + 0.05], [x1 - 0.3, 2.845, z - 0.05]);
     for (const s of [1, -1]) { E.pal('wallInt'); E.q4(...(s > 0 ? [[x0, FY, 1.22], [x0, 1.25, 1.22], [x1, 1.25, 1.22], [x1, FY, 1.22]] : [[x1, FY, -1.22], [x1, 1.25, -1.22], [x0, 1.25, -1.22], [x0, FY, -1.22]])); }
+    // the window band's lining (white, as in the photos): the sill and the head strip along the car, the pillars
+    // between the panes and beside the door; flat, facing in
+    const zi = 1.21, yS0 = 1.25, yS1 = A.BAND0 + 0.13, yH0 = A.BAND1 - 0.13, yH1 = 2.86, face = (xa, xb, ya, yb, s) => {
+      if (xb - xa < 0.005) return; const z = s * zi;
+      E.q4(...(s > 0 ? [[xa, ya, z], [xa, yb, z], [xb, yb, z], [xb, ya, z]] : [[xb, ya, z], [xb, yb, z], [xa, yb, z], [xa, ya, z]])); };
+    const holes = panesOf(d.type).map(([a, b]) => [a + 0.05, b - 0.05]).concat([[-A.DOOR_W, A.DOOR_W]]).sort((p, q2) => p[0] - q2[0]);
+    for (const s of [1, -1]) {
+      E.pal('wallInt'); face(x0, x1, yS0, yS1, s); face(x0, x1, yH0, yH1, s);
+      E.pal('wallInt2'); let xa = x0; for (const [a, b] of holes) { face(xa, a, yS1, yH0, s); xa = b; } face(xa, x1, yS1, yH0, s);
+    }
     // longitudinal seats along both walls away from the doors, poles by the doors
     for (const s of [1, -1]) for (const [a, b] of [[x0 + 0.2, -1.1], [1.1, x1 - 0.3]]) { if (b - a < 1.0) continue; const n = Math.floor((b - a) / 0.515), W = n * 0.515, xm = (a + b) / 2;
       E.at(mul(tr(xm - s * W / 2, FY, s * 1.15), rotY(s > 0 ? Math.PI / 2 : -Math.PI / 2)), m => K.seatUnit(m, n, 'seatBlue', q, {})); }
@@ -123,6 +140,33 @@
     return { geo: E.geometry(), glass: G.geometry(), tris: E.I.length / 3 };
   }
 
+  // ------------------------------------------------------------------------------------------ baked LOD
+  // (42_metrokit_bake.js) the body with its door portal open behind the leaves, the end car's nose as fillet rings and
+  // a flat face, skirt cards, the head lamp discs
+  function lodBaked(d, level, bake) {
+    const E = new MB(), P = d.profile, L1 = level === 1, k = K.lodKit(E, bake), isEnd = d.type === 'end', R = A.NOSE_R;
+    const sec = L1 ? K.lodSection(P, [A.FLOOR + 0.02, A.BAND0, A.BAND1, 2.62, 2.95], 13) : K.lodSection(P, [A.BAND0, A.BAND1], 34);
+    const xR = -A.LEN / 2 + 0.08, xF = isEnd ? A.LEN / 2 + 0.25 : A.LEN / 2 - 0.08;
+    E.pal('baked'); E.bone = 0;
+    k.shell(sec, xR, xF, L1 ? [-A.DOOR_W, A.DOOR_W] : [], L1 ? (xm, ya, yb) => Math.min(ya, yb) >= A.FLOOR + 0.018 && Math.max(ya, yb) <= 2.622 && Math.abs(xm) < A.DOOR_W : null);
+    if (L1) for (const s of [1, -1]) for (const kk of [-1, 1]) { E.bone = BONE.leaf(s, kk); k.side(kk < 0 ? -A.DOOR_W : 0, kk < 0 ? 0 : A.DOOR_W, A.FLOOR + 0.03, 2.6, A.W + 0.004, s); }
+    E.bone = 0;
+    for (const s of [1, -1]) k.side(xR + 0.2, xF - 0.2, 0.0, A.SKIRT + 0.03, A.W - 0.12, s);
+    k.cap(sec, xR, -1);
+    if (!isEnd) k.cap(sec, xF, 1);
+    else {
+      const loop = K.lodLoop(sec), St = L1 ? 3 : 1, cols = St + 1, Pp = [], Nn = [], xf = xF + R * 1.4;
+      for (let i = 0; i < loop.length; i++) for (let j = 0; j <= St; j++) {
+        const a = (j / St) * Math.PI / 2, p = loop[i], off = R * (1 - Math.cos(a));
+        Pp.push([xF + R * Math.sin(a) * 1.4, p.y - p.ny * off, p.z - p.nz * off]); Nn.push([Math.sin(a), p.ny * Math.cos(a), p.nz * Math.cos(a)]);
+      }
+      for (let i = 0; i < loop.length - 1; i++) for (let j = 0; j < St; j++) { const q = [i * cols + j, i * cols + j + 1, (i + 1) * cols + j + 1, (i + 1) * cols + j]; k.quad(Pp[q[0]], Pp[q[1]], Pp[q[2]], Pp[q[3]], Nn[q[0]], Nn[q[1]], Nn[q[2]], Nn[q[3]]); }
+      const face = loop.map(p => [p.z - p.nz * R, p.y - p.ny * R]);
+      E.shape(face, [], (z, y) => ({ p: [xf, y, z], n: [1, 0, 0] }), (z, y) => { const t = bake.uv(3, xf, y, z); return [t[0], t[1]]; });
+      if (L1) { E.pal('headLamp'); for (const Lp of d.lamps) k.disc([xf + 0.012, Lp.p[1], Lp.p[2]], [1, 0, 0], 0.05, 10); }
+    }
+    return E.geometry();
+  }
   K.builders.apm = function (type, q) {
     const b = build(type, q), hb = A.WB / 2;
     const bones = []; for (let i = 0; i < BONE.N; i++) bones.push({ pivot: [0, 0, 0] });
@@ -138,7 +182,7 @@
       leaves, wipers: [], plugOut: 0.0, slide: 0.78,
       meta: { bogieOffsets: [3.1, -3.1], doors, floorRegions: [{ name: 'car', x0: -A.LEN / 2 + 0.3, x1: A.LEN / 2 - 0.3, z0: -1.1, z1: 1.1, y: A.FLOOR }], ramps: [], gangways: { front: null, rear: null }, seats, cabEye: null },
       imap: { rows: [[-A.LEN / 2 + 0.4, -1.1, 0, 3], [-A.LEN / 2 + 0.4, -1.1, 0, -3], [1.1, A.LEN / 2 - 0.5, 0, 3], [1.1, A.LEN / 2 - 0.5, 0, -3]], band: [0.55, 0.65, 0, 0],
-        win: [[-A.LEN / 2 + 0.35, -0.95, A.BAND0 + 0.05, A.BAND1 - 0.08], [0.95, A.LEN / 2 - 0.35, A.BAND0 + 0.05, A.BAND1 - 0.08]], doors: [[0, 0.8, 2.3, 0]], doorWin: [0.05, 0.72, 1.2, 2.2],
+        win: panesOf(type).map(([a, b]) => [a + 0.05, b - 0.05, A.BAND0 + 0.13, A.BAND1 - 0.13]), doors: [[0, 0.8, 2.3, 0]], doorWin: [0.05, 0.72, 1.2, 2.2],
         poles: [[-0.95, -0.5, 0.018, 2.85], [-0.95, 0.5, 0.018, 2.85], [0.95, -0.5, 0.018, 2.85], [0.95, 0.5, 0.018, 2.85]], rail: [2.3, 0.7, 0.016, 0], panels: [],
         standAll: [[-0.4, 0.3], [0.5, -0.25], [-2.2, 0.1], [2.4, -0.1], [0.1, 0.55], [-3.1, -0.2], [3.2, 0.25], [1.6, 0.4]], cab: null },
       openings: [1, -1].map(s => ({ x: 0, hw: A.DOOR_W, y0: A.FLOOR, y1: 2.58, z: A.W - 0.06, side: s, bone: 0 })),
@@ -147,6 +191,7 @@
     };
   };
   K.builders.apm.interior = (d, q) => interior(d, q);
+  K.builders.apm.lodBaked = (d, level, bake) => lodBaked(d, level, bake);
   K.builders.apm.lod = (d, level) => lod(d, level);
   K.builders.apm.consist = (n) => { n = Math.max(2, n || 3); const out = []; for (let i = 0; i < n; i++) out.push({ type: i === 0 || i === n - 1 ? 'end' : 'mid', flip: i === n - 1, number: String(21 + i) }); return out; };
 })();

@@ -68,6 +68,37 @@ def ensure_dir(p):
     os.makedirs(os.path.dirname(p), exist_ok=True)
 
 
+def jpeg_block_err(a, b, G=16):
+    """(max over GxG pixel blocks of the per-channel mean |a - b|, the number of blocks that decode pure green (green
+    >= 80 above red and blue on >= 90 % of the pixels) where the source has < 50 % such pixels: how a missing MCU decodes)"""
+    h, w = (a.shape[0] // G) * G, (a.shape[1] // G) * G
+    a, b = a[:h, :w], b[:h, :w]
+    d = np.abs(a.astype(np.int16) - b.astype(np.int16)).reshape(h // G, G, w // G, G, 3).mean((1, 3))
+    def green(x):
+        x = x.astype(np.int16)
+        return ((x[..., 1] - np.maximum(x[..., 0], x[..., 2])) >= 80).reshape(h // G, G, w // G, G).mean((1, 3))
+    ga, gb = green(a), green(b)
+    return float(d.max()), int(((ga >= 0.9) & (gb < 0.5)).sum())
+
+
+def jpeg_bytes(u8, q, subsampling=2, tries=6):
+    """Checked JPEG encode of an HxWx3 uint8 array. Pillow 10.1 / libjpeg-turbo 3.0.0 sometimes (deterministically, for
+    some inputs, optimize=True or not) writes a scan that ends early: the file still ends with EOI, macOS ImageIO shows it
+    fine, but libjpeg-turbo decoders (Chrome) draw the missing last MCU(s) as pure green 16 px squares. The bytes are
+    decoded and compared blockwise with the source; a gross block error re-encodes at the next lower quality."""
+    import io
+    from PIL import Image
+    im = Image.fromarray(u8)
+    for k in range(tries):
+        buf = io.BytesIO(); im.save(buf, 'JPEG', quality=q - k, optimize=True, subsampling=subsampling); b = buf.getvalue()
+        dec = np.asarray(Image.open(io.BytesIO(b)).convert('RGB'))
+        if dec.shape == u8.shape:
+            err, green = jpeg_block_err(dec, u8)
+            if err < 50 and not green:
+                return b
+    raise RuntimeError(f'JPEG encode check failed {u8.shape} q={q}')
+
+
 def write_atomic(p, data):
     ensure_dir(p)
     tmp = p + '.tmp'

@@ -27,7 +27,22 @@ const MetroStations = (() => {
   // (floor 0.36 ASSUMED, half width 1.30); edges leave the BART gap (76 mm, 3 in) or 50 mm where platform doors stand
   // minL: the shortest platform the data may give before it is taken as wrong; minHalf: the plan's least half length
   const VEH = { bart: { ph: PLAT_H, edge: EDGE, minL: 150, minHalf: 107 }, ebart: { ph: 0.635, edge: 1.549, minL: 110, minHalf: 62 }, oac: { ph: 0.36, edge: 1.35, minL: 30, minHalf: 22 } };
-  const BUILD_R = 1500, DROP_R = 2100, NEAR_R = 320, FAR_R = 9000;
+  const FAR_R = 9000;
+  // quality (90_main's applyTier -> setQuality(tier name)): Low builds only the simple structure near the camera (no
+  // animated escalator steps, the near detail within 150 m), a quarter of the crowd, 4 line lights per material, a
+  // half-size sign atlas, and builds and keeps stations over shorter distances; Medium 60 % of the crowd and 8 lights.
+  // A change of the detail level rebuilds the stations near the camera (nearest first).
+  const QT = { ultraplus: { detail: 2, crowd: 1, lights: 12, atlas: 1, buildR: 1500, dropR: 2100, nearR: 320 }, ultra: { detail: 2, crowd: 1, lights: 12, atlas: 1, buildR: 1500, dropR: 2100, nearR: 320 },
+    high: { detail: 2, crowd: 1, lights: 12, atlas: 1, buildR: 1500, dropR: 2100, nearR: 320 }, medium: { detail: 1, crowd: 0.6, lights: 8, atlas: 1, buildR: 1300, dropR: 1800, nearR: 250 },
+    low: { detail: 0, crowd: 0.25, lights: 4, atlas: 0.5, buildR: 900, dropR: 1300, nearR: 150 } };
+  const Q = Object.assign({ name: 'high' }, QT.high);
+  function setQuality(name) {
+    const q = QT[name] || QT.high; const redo = q.detail !== Q.detail || q.atlas !== Q.atlas; Object.assign(Q, q, { name: QT[name] ? name : 'high' });
+    try { if (typeof StationKit !== 'undefined' && StationKit.setLightCap) StationKit.setLightCap(Q.lights); } catch (e) {}
+    try { if (typeof MetroSigns !== 'undefined' && MetroSigns.setScale) MetroSigns.setScale(Q.atlas); } catch (e) {}
+    if (redo) for (const st of list) { if (st.root) drop(st); }
+    return Q;
+  }
   const stats = { built: 0, building: 0, jobsMs: 0, lastBuildMs: 0, tris: 0, calls: 0, koStations: 0, koZones: 0, koMs: 0, koCalls: 0, maxStepMs: 0, maxStepAt: '', slowSteps: [], maxFrameMs: 0, slowFrames: [], maxFootMs: 0 };
   const debug = { showAll: false }; const qa = { hidden: [] };
 
@@ -193,21 +208,63 @@ const MetroStations = (() => {
     });
     ready.catch(() => {}).then(streets).then(() => {
       const t0 = performance.now();
-      jobs.push({ name: st.id, st, gen: StationTypes.build(st, ctx()), done: (res) => { st.state = 'built'; stats.building--; stats.built++; stats.lastBuildMs = performance.now() - t0; attach(st, res); },
+      // (attaching is a job of its own, in steps: Under's cells, portals and cuts, the footprint, the shader compile)
+      jobs.push({ name: st.id, st, gen: StationTypes.build(st, ctx()), done: (res) => { jobs.unshift({ name: st.id + ':attach', st, gen: attachGen(st, res),
+          done: () => { st.state = 'built'; stats.building--; stats.built++; stats.lastBuildMs = performance.now() - t0; }, fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } }); },
         fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } });
     });
   }
-  function attach(st, res) {
-    st.root = res.root; st.res = res; group.add(res.root);
+  // compile an object's shaders in the background for the pass that will draw it: Post draws the scene into its HDR
+  // target (no tone mapping, linear output: other program keys than the screen's), so the programs are made with that
+  // target bound; done() once they are linked (KHR_parallel_shader_compile), or at once without compileAsync
+  function warmUp(obj, done) {
+    const R = Env.renderer; if (!R || !R.compileAsync) { done(); return; }
+    let prev = null;
+    try {
+      const rt = typeof Post !== 'undefined' && Post.enabled && Post.targets ? Post.targets.rtScene : null; prev = R.getRenderTarget();
+      if (rt) R.setRenderTarget(rt);
+      const pr = R.compileAsync(obj, Env.camera, Env.scene); R.setRenderTarget(prev); prev = null;
+      // (a time-out in case a program never reports ready: the station must not stay hidden, nor its disposal wait)
+      let fired = false; const once = () => { if (!fired) { fired = true; done(); } };
+      pr.then(once, once); setTimeout(once, 8000);
+    } catch (e) { if (prev !== null) try { R.setRenderTarget(prev); } catch (e2) {} done(); }
+  }
+  function* attachGen(st, res) {
+    st._phase = 'att:root'; st.root = res.root; st.res = res; group.add(res.root);
+    // shaders compile off the critical path (KHR_parallel_shader_compile) while the new station stays hidden; the
+    // programs are shared by every station (one key per material kind), so after the first station this resolves at
+    // once and no station ever compiles on the frame it appears (lead, M3 hitch budget)
+    // (per root: a station dropped and rebuilt meanwhile has a new root; a dropped root is disposed only once its
+    // compile has finished, or three's readiness poll reads a disposed material)
+    const root = res.root; root.userData.warm = false;
+    const live = () => st.res === res;                     // (dropped meanwhile: stop)
     // Under: a station without cells (aerial, at grade) is outdoor world: hidden with it while the camera is underground
     // and no opening to the outdoors is in view; underground levels are cell groups (their visibility is Under's)
     if (typeof Under !== 'undefined' && Under.enabled && !(res.cells && res.cells.length)) Under.outdoor(res.root, true);
     st.walk = res.walk || null;
-    for (const c of res.cells || []) if (typeof Under !== 'undefined' && Under.addCell) try { Under.addCell(c.under); } catch (e) { console.warn('Under.addCell', e); }
-    for (const p of res.portals || []) if (typeof Under !== 'undefined' && Under.addPortal) try { Under.addPortal(p); } catch (e) { console.warn('Under.addPortal', e); }
-    for (const c of res.cuts || []) if (typeof Under !== 'undefined' && Under.addCut) try { Under.addCut(c); } catch (e) { console.warn('Under.addCut', e); }
     for (const b of res.boards || []) st.boards.set(b.key, b);
     st.root.updateMatrixWorld(true);
+    yield; if (!live()) return; st._phase = 'att:cells';
+    // (a few cells per step: each is a footprint mesh in Under's map)
+    let nc = 0;
+    for (const c of res.cells || []) { if (typeof Under !== 'undefined' && Under.addCell) try { Under.addCell(c.under); } catch (e) { console.warn('Under.addCell', e); }
+      if (++nc % 4 === 0) { yield; if (!live()) return; } }
+    yield; if (!live()) return; st._phase = 'att:portals';
+    for (const p of res.portals || []) if (typeof Under !== 'undefined' && Under.addPortal) try { Under.addPortal(p); } catch (e) { console.warn('Under.addPortal', e); }
+    for (const c of res.cuts || []) if (typeof Under !== 'undefined' && Under.addCut) try { Under.addCut(c); } catch (e) { console.warn('Under.addCut', e); }
+    yield; if (!live()) return; st._phase = 'att:ground';
+    attachGround(st, res);
+    yield; if (!live()) return; st._phase = 'att:compile';
+    // (one material per step: compile() prepares every material of what it is given synchronously, and a program
+    // three has not seen yet costs its shader source and the driver calls: the first station of a session pays that)
+    const parts = [], seen = new Set();
+    root.traverse(o => { const m = o.material; if (!m || Array.isArray(m) || seen.has(m)) return; seen.add(m); parts.push(o); });
+    let left = parts.length;
+    const fin = () => { root.userData.warm = true; stats.warmed = (stats.warmed || 0) + 1; const f = root.userData.dropLater; if (f) { root.userData.dropLater = null; f(); } };
+    if (!left) { fin(); return; }
+    for (const c of parts) { warmUp(c, () => { if (--left === 0) fin(); }); yield; }
+  }
+  function attachGround(st, res) {
     if (res.footprint && res.footprint.pads) { const old = pads.filter(p => p.st === st.id); const nw = res.footprint.pads;
       if (old.length !== nw.length || nw.some((p, i) => Math.abs(p.y - old[i].y) > 0.05)) setPads(st, nw); }
     if (res.footprint && setFootprint(st, res.footprint)) {
@@ -217,7 +274,8 @@ const MetroStations = (() => {
   function drop(st) {
     if (!st.root) return;
     group.remove(st.root);
-    st.root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
+    const root = st.root, dispose = () => root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
+    if (root.userData.warm === false) root.userData.dropLater = dispose; else dispose();
     if (typeof Under !== 'undefined' && Under.enabled && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {}
       for (const p of st.res.portals || []) if (p.id) try { Under.remove(p.id); } catch (e) {} try { Under.outdoor(st.root, false); } catch (e) {} }
     if (typeof MetroSigns !== 'undefined') { MetroSigns.freeBoards(st); MetroSigns.releaseAtlas(st); }
@@ -227,7 +285,7 @@ const MetroStations = (() => {
   let CTX = null;
   function ctx() {
     if (CTX) return CTX;
-    CTX = { PLAT_H, EDGE, DU, spineAt, trackV, N, lines: N.lines(), renderer: Env.renderer, stationsList: list };
+    CTX = { PLAT_H, EDGE, DU, spineAt, trackV, N, lines: N.lines(), renderer: Env.renderer, stationsList: list, q: Q };
     return CTX;
   }
 
@@ -253,7 +311,11 @@ const MetroStations = (() => {
       if (typeof Terrain !== 'undefined' && Terrain.addHeightFilter) { Terrain.addHeightFilter(padFilter, [1e9, 1e9, 1e9, 1e9]); padsLive = true; }
       footPending = true;
       // the underground stations' environment map (a small PMREM, ~20 ms once) while the page is idle, not mid-build
-      const warm = () => { try { if (typeof StationKit !== 'undefined' && Env.renderer) StationKit.interiorEnv(Env.renderer); } catch (e) {} };
+      // (and the geometry builder's hot paths, so the first station's big buckets are not built by cold code)
+      const warm = () => { try { if (typeof StationKit !== 'undefined' && Env.renderer) StationKit.interiorEnv(Env.renderer); } catch (e) {}
+        try { const g = new StationKit.GB(), fr = []; for (let i = 0; i < 600; i++) fr.push({ x: i, z: 0, tx: 1, tz: 0, u: i });
+          for (let k = 0; k < 4; k++) g.sweep(fr, (i) => [[0, 0], [1, 0.2], [2, 0.1], [3, 0.4], [4, 0], [5, 0.3], [6, 0.1], [7, 0]]); const geo = g.build(); if (geo) geo.dispose(); } catch (e) {}
+        try { if (typeof MetroSigns !== 'undefined' && MetroSigns.warm) MetroSigns.warm(); } catch (e) {} };
       if (typeof requestIdleCallback !== 'undefined') requestIdleCallback(warm, { timeout: 8000 }); else setTimeout(warm, 3000);
       refreshWorld();
     })
@@ -273,8 +335,8 @@ const MetroStations = (() => {
     for (const st of list) {
       st.dist = Math.hypot(st.x - camPos.x, st.z - camPos.z);
       const eff = Math.hypot(st.dist, alt * 0.8);
-      if (st.state === 'idle' && eff < BUILD_R && eff < wd) { want = st; wd = eff; }
-      if (st.state === 'built' && eff > DROP_R) drop(st);
+      if (st.state === 'idle' && eff < Q.buildR && eff < wd) { want = st; wd = eff; }
+      if (st.state === 'built' && eff > Q.dropR) drop(st);
     }
     if (want && stats.building === 0) startBuild(want);
     runJobs(3.0);
@@ -283,13 +345,26 @@ const MetroStations = (() => {
     for (const st of list) {
       if (!st.root) continue;
       const eff = Math.hypot(st.dist, alt);
-      st.root.visible = eff < FAR_R;
+      st.root.visible = st.root.userData.warm !== false && eff < FAR_R;
       const r = st.res;
-      if (r && r.nears) { const nv = eff < NEAR_R; for (const g of r.nears) g.visible = nv; }
+      if (r && r.nears) { const nv = eff < Q.nearR; for (const g of r.nears) g.visible = nv; }
       if (r && r.update) r.update(dt, camPos, night);
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
     if (typeof StationCrowds !== 'undefined') StationCrowds.update(dt, camPos, list);
+    sharedBuildings();
+  }
+  // Millbrae is one intermodal building: the Caltrain-era depot's hall (Landmarks, 'depot:millbrae:hall', split off
+  // only with the metro on) stands where BART's platform 3 and tracks are, so it is hidden while the BART station (which
+  // draws the shared hall) is on screen, shown again when that station is dropped, and on a metro failure (teardown)
+  let depotHall = null, depotLook = 0;
+  function sharedBuildings() {
+    if (!depotHall) { if (--depotLook > 0) return; depotLook = 120; if (typeof Env === 'undefined') return;
+      Env.scene.traverse(o => { if (!depotHall && o.name === 'depot:millbrae:hall') depotHall = o; });
+      if (!depotHall) return;
+      if (typeof Metro !== 'undefined' && Metro.onTeardown) Metro.onTeardown(() => { if (depotHall) depotHall.visible = true; }); }
+    const st = byId.MLBR, show = !(st && st.root && st.root.userData.warm !== false && st.root.parent);
+    if (depotHall.visible !== show) depotHall.visible = show;
   }
 
   // ------------------------------------------------------------------------------------------------ walk metadata
@@ -537,9 +612,15 @@ const MetroStations = (() => {
     if (typeof Towns === 'undefined' || !Towns.materials || !Towns.materials.roadMat || typeof Under === 'undefined' || !Under.enabled) return;
     const m = Towns.materials.roadMat; if (m.userData.blCut) return; m.userData.blCut = true;
     const prev = m.onBeforeCompile, key = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
+    // (the terrain's own test when Under shares it: the fine cut level near the camera, so the streets open exactly
+    // where the ground does; the coarse under map's footprints are dilated and left a ragged band of bare ground
+    // between an entrance's collar and the sidewalk)
+    const fine = typeof Terrain !== 'undefined' && Terrain.cutUniforms;
+    if (fine) m.defines = Object.assign({}, m.defines || {}, { BL_CUT: 1 });
     m.onBeforeCompile = function (sh, r) { if (prev) prev.call(this, sh, r);
-      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', '#include <lights_fragment_begin>\nif ( blU.w > 0.5 ) discard;'); };
-    m.customProgramCacheKey = () => (key ? key() : '') + '|blcut';
+      if (fine) Object.assign(sh.uniforms, Terrain.cutUniforms);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', '#include <lights_fragment_begin>\n' + (fine ? 'if ( blUnderCut( blUW ) ) discard;' : 'if ( blU.w > 0.5 ) discard;')); };
+    m.customProgramCacheKey = () => (key ? key() : '') + (fine ? '|blcut2' : '|blcut');
     m.needsUpdate = true;
   }
   // once the stations are known: world pieces placed before (towns, trees, parked cars) are placed again with the
@@ -641,7 +722,7 @@ const MetroStations = (() => {
     return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null, perf };
   }
 
-  const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, get enabled() { return enabled; }, get ready() { return ready; },
+  const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, setQuality, quality: Q, warmUp, get enabled() { return enabled; }, get ready() { return ready; },
     keepOut, keepOutAny, dropBuilding, keepOutZones, KEEPOUT_PAD: PAD, get droppedBuildings() { return dropped; }, get worldRefresh() { return refresh; },
     makePlan, spineAt, trackV, net: N, PLAT_H, EDGE, VEH, jobs, shot, debug };
   // hooks: ride along with the Peninsula stations' init/update (no edits to the shared main loop; inert without #metro=1)

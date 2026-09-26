@@ -82,7 +82,8 @@
       E.box(Math.min(x0, x1), 0.7, -1.25, Math.max(x0, x1), 3.45, 1.25); }
     // bogies
     bogie(E, 0, D.BOG_A); bogie(E, 1, 0); bogie(E, 2, -D.BOG_A);
-    return { ext: E.geometry(), glass: G.geometry(), P, tris: (E.I.length + G.I.length) / 3 };
+    const overlay = E.extract(['numW']);                   // (the unit numbers: per car, over the baked LODs)
+    return { ext: E.geometry(), glass: G.geometry(), P, overlay, tris: (E.I.length + G.I.length) / 3 };
   }
   function capSection(E, P, x, dir) {
     const { sectionLoop } = K.fotfProfile, L = sectionLoop(P), pts = L.map(p => [p.z, p.y]);
@@ -125,12 +126,12 @@
   // ------------------------------------------------------------------------------------------ the GTW nose
   // Section closed by a 0.34 m fillet into a raked face (the top 0.5 m behind the bottom), a wide black glazed band with
   // one big windscreen, white cap below with the blue swoosh wrapping the lower corners, lamp clusters, dark apron.
+  // the GTW's raked cab: the windscreen leans back ~0.7 m from the waist to the roof, the chin juts a little
+  const rake = y => -0.72 * clamp((y - 1.5) / 2.1, 0, 1) ** 1.15 + 0.06 * clamp((1.3 - y) / 0.7, 0, 1);
+  const bulge = z => 0.12 * (1 - (z / 1.2) ** 2);
+  const faceX = (y, z) => D.NOSE_XC + D.NOSE_R + rake(y) + bulge(z);
   function nose(E, G, P, e) {
     const { sectionLoop } = K.fotfProfile, L = sectionLoop(P), n = L.length, A = 7, R = D.NOSE_R, xs = D.NOSE_XC;
-    // the GTW's raked cab: the windscreen leans back ~0.7 m from the waist to the roof, the chin juts a little
-    const rake = y => -0.72 * clamp((y - 1.5) / 2.1, 0, 1) ** 1.15 + 0.06 * clamp((1.3 - y) / 0.7, 0, 1);
-    const bulge = z => 0.12 * (1 - (z / 1.2) ** 2);
-    const faceX = (y, z) => xs + R + rake(y) + bulge(z);
     const X = x => e * x, Z = z => e * z;                   // (end car B is the mirror image)
     E.bone = e > 0 ? BONE.bodyA : BONE.bodyB; G.bone = E.bone;
     const Pp = [], Nn = [];
@@ -264,6 +265,52 @@
       doors: [[D.DOOR, D.PORTAL, D.LEAF_Y1, 0], [-D.DOOR, D.PORTAL, D.LEAF_Y1, 0]], doorWin: [0.06, 0.58, 1.3, 2.35], poles, rail: [0, 0, 0, 0], panels: [], standAll: stand, cab: null };
   }
 
+  // ------------------------------------------------------------------------------------------ baked LODs
+  // (42_metrokit_bake.js) the three bodies on their bones (so the LOD articulates too), door portals open behind the
+  // leaves, the raked noses as fillet rings and faces, the bellows, skirt cards; numbers, lamps and front signs on top
+  function lodBaked(d, level, bake) {
+    const E = new MB(), P = d.profile, L1 = level === 1, k = K.lodKit(E, bake), R = D.NOSE_R;
+    const sec = L1 ? K.lodSection(P, [D.FLOOR, 2.4, 2.58], 13) : K.lodSection(P, [2.4], 34), loop = K.lodLoop(sec);
+    E.pal('baked');
+    for (const e of [1, -1]) {
+      const body = e > 0 ? BONE.bodyA : BONE.bodyB, dc = e * D.DOOR, x0 = Math.min(e * D.END0, e * D.NOSE_XC), x1 = Math.max(e * D.END0, e * D.NOSE_XC);
+      E.bone = body;
+      k.shell(sec, x0, x1, L1 ? [dc - D.PORTAL, dc + D.PORTAL] : [], L1 ? (xm, ya, yb) => Math.min(ya, yb) >= D.FLOOR - 0.002 && Math.max(ya, yb) <= 2.582 && Math.abs(xm - dc) < D.PORTAL : null);
+      k.cap(sec, e * D.END0, -e);
+      for (const s of [1, -1]) k.side(Math.min(e * 3.2, e * 18.9), Math.max(e * 3.2, e * 18.9), 0.05, 0.42, 1.3, s);
+      if (L1) for (const s of [1, -1]) for (const kk of [-1, 1]) { E.bone = BONE.leaf(e, s, kk); k.side(kk < 0 ? dc - D.LEAF : dc, kk < 0 ? dc : dc + D.LEAF, D.LEAF_Y0, D.LEAF_Y1, D.W + 0.004, s); }
+      E.bone = body;
+      // the nose (mirrored for end car B: x -> e x, z -> e z)
+      const A = L1 ? 3 : 1, cols = A + 1, Pp = [], Nn = [];
+      for (let i = 0; i < loop.length; i++) for (let j = 0; j <= A; j++) {
+        const a = (j / A) * Math.PI / 2, p = loop[i], off = R * (1 - Math.cos(a)), w = 1 - Math.cos(a), y = p.y - p.ny * off, z = p.z - p.nz * off;
+        Pp.push([e * (D.NOSE_XC + R * Math.sin(a) + w * (rake(y) + bulge(z))), y, e * z]); Nn.push([e * Math.sin(a), p.ny * Math.cos(a), e * p.nz * Math.cos(a)]);
+      }
+      for (let i = 0; i < loop.length - 1; i++) for (let j = 0; j < A; j++) { const q = [i * cols + j, i * cols + j + 1, (i + 1) * cols + j + 1, (i + 1) * cols + j]; k.quad(Pp[q[0]], Pp[q[1]], Pp[q[2]], Pp[q[3]], Nn[q[0]], Nn[q[1]], Nn[q[2]], Nn[q[3]]); }
+      const fn = (y, z) => { const ex = 1e-3, dy = (faceX(y + ex, z) - faceX(y - ex, z)) / (2 * ex), dz = (faceX(y, z + ex) - faceX(y, z - ex)) / (2 * ex), l = Math.hypot(1, dy, dz); return [e / l, -dy / l, -e * dz / l]; };
+      const at = (z, y, off = 0) => { const nn = fn(y, z); return { p: [e * faceX(y, z) + nn[0] * off, y + nn[1] * off, e * z + nn[2] * off], n: nn }; };
+      const face = loop.map(p => [p.z - p.nz * R, p.y - p.ny * R]);
+      E.shape(L1 ? densify(face, 0.35) : face, [], (z, y) => at(z, y), (z, y) => { const q = at(z, y).p, t = bake.uv(e > 0 ? 3 : 4, q[0], q[1], q[2]); return [t[0], t[1]]; });
+      if (L1) {
+        for (const Lp of d.lamps) { if (Math.sign(Lp.p[0]) !== e) continue; const zz = e * Lp.p[2], f = at(zz, Lp.p[1], 0.012);
+          E.pal({ head: 'headLamp', headB: 'headLampB', tail: 'tailLamp', tailB: 'tailLampB' }[Lp.kind] || 'headLamp'); k.disc(f.p, f.n, Lp.kind.startsWith('head') ? 0.058 : 0.046, 10); }
+        E.pal('ledSign');
+        for (const g of d.signs) { const [ax, c, a0, a1] = g.a, [y0, y1, dir] = g.b; if (ax !== 0 || Math.sign(c) !== e) continue;
+          const u0 = dir > 0 ? 0 : 1, u1 = 1 - u0, V0 = 32 / 48, fx = z => at(e * z, (y0 + y1) / 2, 0.01).p[0], n = [e, 0, 0];
+          const ids = [[a0, y0, u0, V0], [a1, y0, u1, V0], [a1, y1, u1, 1], [a0, y1, u0, 1]].map(([z, y, u, v]) => E.v(fx(z), y, z, n[0], n[1], n[2], u, v)); E.quadA(ids[0], ids[1], ids[2], ids[3]); }
+        E.pal('baked');
+      }
+    }
+    // the power module and the bellows
+    E.bone = BONE.mod; k.shell(sec, -D.MOD, D.MOD, [], null); k.cap(sec, D.MOD, 1); k.cap(sec, -D.MOD, -1);
+    for (const s of [1, -1]) k.side(-D.MOD + 0.1, D.MOD - 0.1, 0.05, 0.42, 1.3, s);
+    for (const e of [1, -1]) { E.bone = e > 0 ? BONE.bodyA : BONE.bodyB; const xa = Math.min(e * D.MOD, e * D.END0), xb = Math.max(e * D.MOD, e * D.END0);
+      for (const s of [1, -1]) k.side(xa, xb, 0.7, 3.45, 1.25, s);
+      k.quad([xa, 3.45, -1.25], [xb, 3.45, -1.25], [xb, 3.45, 1.25], [xa, 3.45, 1.25], [0, 1, 0], [0, 1, 0], [0, 1, 0], [0, 1, 0]); }
+    if (L1) { E.bone = 0; E.paste(d.overlay, 0.012); }
+    return E.geometry();
+  }
+
   // ------------------------------------------------------------------------------------------ registration
   K.builders.dmu = function (type, q) {
     const b = build(type, q), hb = D.WB / 2;
@@ -280,7 +327,7 @@
         for (let i = 0; i < nb; i++) { const xb = la + 0.1 + i * 1.75; for (const s of [1, -1]) for (const z of [0.72, 1.23]) { seats.push({ x: xb + 0.33, y: D.FLOOR + 1.2, z: s * z, yaw: 0 }); seats.push({ x: xb + 1.62 - 0.33, y: D.FLOOR + 1.2, z: s * z, yaw: Math.PI }); } } } }
     floorRegions.push({ name: 'module', x0: -D.END0, x1: D.END0, z0: -0.38, z1: 0.38, y: D.FLOOR });
     return {
-      ext: b.ext, glass: b.glass, tris: b.tris, length: 2 * D.HL, width: 2 * D.W, height: D.ROOF + 0.3, profile: b.P,
+      ext: b.ext, glass: b.glass, tris: b.tris, length: 2 * D.HL, width: 2 * D.W, height: D.ROOF + 0.3, profile: b.P, overlay: b.overlay,
       sphere: new THREE.Sphere(new THREE.Vector3(0, 1.9, 0), 21.2),
       bones, boneIdx: { bogie: [BONE.bog[0], BONE.bog[2]], axlesOf: [[BONE.axle[0], BONE.axle[1]], [BONE.axle[4], BONE.axle[5]]] },
       bogieList: [{ bone: BONE.bog[0], pivot: [D.BOG_A, 0, 0], axles: [BONE.axle[0], BONE.axle[1]] }, { bone: BONE.bog[1], pivot: [0, 0, 0], axles: [BONE.axle[2], BONE.axle[3]] }, { bone: BONE.bog[2], pivot: [-D.BOG_A, 0, 0], axles: [BONE.axle[4], BONE.axle[5]] }],
@@ -295,6 +342,7 @@
     };
   };
   K.builders.dmu.interior = (d, q) => interior(d, q);
+  K.builders.dmu.lodBaked = (d, level, bake) => lodBaked(d, level, bake);
   K.builders.dmu.lod = (d, level) => lod(d, level);
   K.builders.dmu.consist = (n) => { const out = []; for (let i = 0; i < Math.max(1, n); i++) out.push({ type: 'GTW', flip: false, number: String(101 + i) }); return out; };
 })();

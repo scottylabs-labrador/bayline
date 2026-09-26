@@ -14,6 +14,8 @@ const StationKit = (() => {
   const PLAT_H = 0.991;              // platform top above top of rail (= car floor, level boarding; trains ws)
   const EDGE = 1.676;                // track centreline -> platform edge (car half-width 1.600 + 76 mm)
   const MAXL = 12;                   // line lights per material
+  let LCAP = MAXL;                   // quality: the first LCAP lights of each set are uploaded (Low: 4)
+  const setLightCap = (n) => { LCAP = Math.max(1, Math.min(MAXL, n | 0)); };
   const TAU = Math.PI * 2;
   const _c = new THREE.Color();
   // linear [r, g, b] from an sRGB hex (three's colour management converts)
@@ -241,7 +243,11 @@ const StationKit = (() => {
       g.setAttribute('aSurf', new THREE.BufferAttribute(this.S.slice(0, n * 4), 4));
       g.setAttribute('aExt', new THREE.BufferAttribute(this.E.slice(0, n * 4), 4, true));
       g.setIndex(new THREE.BufferAttribute(n < 65536 ? new Uint16Array(this.I.subarray(0, this.ni)) : this.I.slice(0, this.ni), 1));
-      g.computeBoundingSphere(); g.computeBoundingBox();
+      // bounds in one pass (three's computeBoundingSphere makes two over every vertex: a build step's worth on a big zone)
+      const P = this.P; let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+      for (let i = 0, m = n * 3; i < m; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1));
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), 0.5 * Math.hypot(x1 - x0, y1 - y0, z1 - z0));
       return g;
     }
     get tris() { return this.ni / 3; }
@@ -513,8 +519,8 @@ const StationKit = (() => {
       const u = mat.userData.sk; if (!u) return;
       // view matrix of this camera x the station root's world matrix
       _m4.multiplyMatrices(camera.matrixWorldInverse, root.matrixWorld); _n3.setFromMatrix4(_m4);
-      const L = this.lights; u.uLN.value = L.length;
-      for (let i = 0; i < L.length; i++) {
+      const L = this.lights, nL = Math.min(L.length, LCAP); u.uLN.value = nL;
+      for (let i = 0; i < nL; i++) {
         const l = L[i];
         _v.set(l.a[0], l.a[1], l.a[2]).applyMatrix4(_m4); u.uLA.value[i].set(_v.x, _v.y, _v.z, l.range || 30);
         _v.set(l.b[0], l.b[1], l.b[2]).applyMatrix4(_m4); u.uLB.value[i].set(_v.x, _v.y, _v.z, l.radius || 0.06);
@@ -558,5 +564,5 @@ const StationKit = (() => {
     return m;
   }
 
-  return { PLAT_H, EDGE, MAXL, K, GB, lin, mixc, scl, stationMat, glowMat, glassMat, LightSet, interiorEnv, PATTERN_GLSL, LIGHT_GLSL };
+  return { PLAT_H, EDGE, MAXL, K, GB, lin, mixc, scl, stationMat, glowMat, glassMat, LightSet, interiorEnv, PATTERN_GLSL, LIGHT_GLSL, setLightCap };
 })();
