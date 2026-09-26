@@ -7,6 +7,22 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## Status
 
+- **2026-09-26 05:00 — M2 progress** (all on `bart-infra`, merged with `bart` 23d1eb9):
+  - **Junctions v1** (open air): within 45 m of every MetroNet junction, coincident rails are drawn once (the switch
+    points), rail crossings get rail-bound manganese frog castings + guard rails (48 mm flangeway), switch machines stand
+    at the points, and the third rail gaps wherever it would foul another track (76 mm end ramps; insulators follow).
+  - **Underground junctions**: crossover chambers (a wide cut-and-cover box over each junction cluster where crossover or
+    diverging tracks run within 12 m: Market/Mission St double crossovers, Embarcadero, Berkeley, Milpitas, SFO/Millbrae,
+    Daly City tail), end walls with the continuing tunnels as openings; elsewhere (the Oakland Wye) tunnels are merged by
+    dropping triangles inside other tunnels' envelopes; tunnels of one junction cluster are one visibility unit.
+  - **Ground**: beds and trench walls follow the world workstream's MetroGround carve (ballast 2:1 slopes to the carved
+    ground, walls at 3.05 m cover its 3.0-3.9 m step; no terrain cuts at grade when the carve is active).
+  - **Right-of-way fences** at grade (2.13 m chain link + 3 barbed strands on outriggers), stochastic-transparency
+    fabric; **tie LOD** (full ties ≤ 70 m, flat ties to 320 m), nearest-first instance budgets.
+  - **Fine cut level** (0.25 m over 128 m around the camera) for the terrain cut test: sharp stair wells and portals.
+  - **Draw calls**: the primary of a pair builds both girders and its partner's rails; far pieces self-hide under
+    bodies. MacArthur (busiest view): all metro modules together 201 → 246 calls (+45); West Oakland +55.
+  - EMBR platform bug fixed (Under never culls a top-level ancestor of a registered cell group).
 - **2026-09-26 02:40 — M1 delivered on `bart-infra`** (merged with `bart` M1 integration):
   - `23_metrotrack.js` MetroTrack: streamed guideway over every MetroNet track (bart + ebart; the airport connector
     is left to its own module), three layers per track with their own chunk lengths (DETAIL 400 m ≤ 480 m, BODY 800 m
@@ -68,12 +84,17 @@ Under.addPortal({ id, a: cellId, b: cellId | null | 'auto', quad: [[x,y,z] x 4],
   // any planar convex quad, any winding, any slope (request 8): horizontal slab openings, vertical tunnel faces and
   // sloped escalator wells all work (visibility projects the 4 corners, clipped to the near plane).
   // b: null = outdoors; 'auto' = whatever cell contains `probe` (resolved every frame, so a station can stream in
-  // after my tunnel); unresolved 'auto' portals count as outdoors (safe: nothing is culled through them).
+  // after my tunnel); an unresolved 'auto' portal counts as outdoors (safe) unless it has `dead: true` (then as closed:
+  // my tunnel ends use that, since nothing is built beyond them).
 Under.addCut({ id, poly: [[x, z], ...], below: y })   // terrain above y inside poly is not drawn (request 7: `below` =
   // the well/trench floor; up to 256 vertices; no limit on the count, 64 alive at once is fine)
 Under.remove(id)          // a cell (and every portal that names it), a portal or a cut
 Under.cellAt(x, y, z)     // -> id | null (request 2): the cell whose poly contains (x, z) with floor <= y <= ceil
-Under.keep(obj)           // top-level objects that must keep drawing while the outdoor world is culled (metro trains)
+Under.keep(obj)           // top-level objects that must keep drawing while the outdoor world is culled (metro trains);
+                          // top-level ancestors of registered cell groups are kept automatically
+Under.cutAt(x, z, y)      // true where the ground at (x, z) is cut away above y or y is inside a cell: modules that place
+                          // things on the terrain (grass, trees, props) can skip those spots
+// addCell also takes zone: key | [keys]: cells sharing a key are one visibility unit (tunnels of a junction cluster)
 Under.state               // { cell, depth 0..1, outsideVisible, visible: Set<cellId>, daylight }
 ```
 
