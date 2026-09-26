@@ -111,6 +111,27 @@ const MetroSim = (() => {
     markCache.set(key, out); return out;
   }
   function stName0(id) { const s = stById.get(id); return s ? s.short : (NAMES_SHORT[id] || id); }
+  // which side of its track (facing +s: +1 right) a platform is on: the stations workstream's geometry when it is in the
+  // build (that is what is drawn, and what the doors must open onto), else MetroNet's platform data
+  const sideCache = new Map();
+  function platformSide(stationId, gtfs) {
+    const key = stationId + '|' + gtfs; if (sideCache.has(key)) return sideCache.get(key);
+    const S = MN.stationById[stationId], pf = S && (S.platforms || []).find(p => p.gtfs === gtfs); if (!pf) return 0;
+    let side = pf.side === 'right' ? 1 : -1, src = 'data';
+    if (typeof MetroStations !== 'undefined' && MetroStations.spawnPoint) {
+      try { const sp = MetroStations.spawnPoint(stationId, pf.code || String(gtfs).split('-')[1]);
+        const t = MN.byId[pf.track]; if (sp && t) { const q = MN.nearest(sp.x, sp.z, 12, (tt) => tt === t); if (q && Math.abs(q.lat) > 0.8) { side = q.lat > 0 ? 1 : -1; src = 'stations'; } } } catch (e) { /* keep the data side */ }
+    }
+    if (src === 'stations' || !(typeof MetroStations !== 'undefined')) sideCache.set(key, side);
+    return side;
+  }
+  // travel-relative side (+1: right, facing the direction of travel) of stop k of a leg
+  function stopSide(leg, k) {
+    const s = leg.stops[k]; if (!s) return 1; if (s.sideT && s.sideSrc) return s.sideT;
+    const q = leg.path.leg.locate(Math.max(0, s.ps - 2), LQ), side = platformSide(s.st, s.sid);
+    if (!side) return s.side || 1;
+    const t = side * q.sign; if (sideCache.has(s.st + '|' + s.sid)) { s.sideT = t; s.sideSrc = 1; } return t;
+  }
 
   // ---------------------------------------------------------------- runs: minimum-time profiles, capped to fill a time
   // A run is tabulated at n+1 points ds apart: v[i] (m/s) and t[i] (s since departure). Between points the train
@@ -661,7 +682,7 @@ const MetroSim = (() => {
     const st = S.stopK >= 0 ? l.stops[S.stopK] : null;
     tr.stationId = st ? st.st : null;
     // doors open on the platform side: travel-relative side from the platform data (default: right), then car-local
-    const trav = st && st.side ? (st.side > 0 ? 1 : -1) : 1;
+    const trav = st ? stopSide(l, S.stopK) : 1;
     tr.doorSide = (trav > 0) === (l.lead === 0) ? 'right' : 'left';
     tr.doorsOpen = S.doorT > 0.6;
   }
@@ -861,7 +882,7 @@ const MetroSim = (() => {
   const api = { enabled, init, update, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
-    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH, netKey, resolveNet,
+    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH, netKey, resolveNet, platformSide, stopSide,
     get plans() { return plans; }, get busTrips() { return busTrips; }, busTodayList: () => busToday, get stats() { return stats; }, get net() { return MN; },
     legState, legAt, getRun, runAt, smoothTimes, envelope, timeOf, MPath, legPath,
     replan: () => replan(true) };

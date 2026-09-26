@@ -108,7 +108,7 @@ const MetroATC = (() => {
     toast(`You have the ${MetroSim.lineName(L.line)} to ${MetroSim.stName(L.stops[L.stops.length - 1].st)}. ${D.ato ? 'ATO is on: at departure press W (doors close, the train goes).' : 'Manual: W for power once the doors are closed.'} A switches ATO / manual.`, 7);
     return run;
   }
-  function doorSideAt(L, k) { const st = L.stops[k]; const trav = st && st.side ? (st.side > 0 ? 1 : -1) : 1; return (trav > 0) === (L.lead === 0) ? 'right' : 'left'; }
+  function doorSideAt(L, k) { const trav = MetroSim.stopSide(L, k); return (trav > 0) === (L.lead === 0) ? 'right' : 'left'; }
   function end(completed, quiet) {
     if (!run) return; const r = run; run = null; MetroSim.stopDrive();
     if (quiet) return;
@@ -161,6 +161,7 @@ const MetroATC = (() => {
     for (const t of targetsAhead(D, 1600)) vt = Math.min(vt, Math.sqrt(Math.max(0, t.v - 1.5 * MPH) ** 2 + 2 * 0.75 * Math.max(0, t.dist - D.v * 1.6)));
     for (const t of occTargets(C, OT)) vt = Math.min(vt, Math.sqrt(Math.max(0, t.v - 1.5 * MPH) ** 2 + 2 * 0.75 * Math.max(0, t.dist - D.v * 1.6)));
     if (inf) { const d = inf.togo - 0.1; vt = Math.min(vt, d <= 0 ? 0 : Math.sqrt(2 * 0.9 * Math.max(0, d - D.v * 0.5)) + (d < 5 ? 0.15 : 0)); }
+    D.commanded = Math.max(0, vt);
     const P = MetroSim.PERF[D.kind], e = vt - D.v, aDes = U.clamp(e * 0.55, -P.bFull, P.a0);
     const aMax = Math.min(P.a0, P.pw / Math.max(D.v, 0.5));
     let want = aDes > 0.04 ? U.clamp(aDes / aMax, 0, 1) : aDes < -0.04 ? U.clamp(aDes / P.bFull, -1, 0) : 0, rate = 1.2;
@@ -282,7 +283,8 @@ const MetroATC = (() => {
   function cabDisplay(tr) {
     const D = MetroSim.drive, d = D && tr.driven ? dmi() : null;
     const S = tr.leg.stops, k = d && d.next ? d.next.k : tr.nextK, ns = S[k];
-    return { speedMph: tr.v / MPH, codeMph: d ? d.code / MPH : Math.min(70, tr.lim ? tr.lim / MPH : 70), mode: d ? d.mode : 'ATO', notch: d ? d.notch : '',
+    return { speedMph: tr.v / MPH, codeMph: d ? d.code / MPH : Math.min(70, tr.lim ? tr.lim / MPH : 70), commandedMph: D && tr.driven ? (D.ato ? (D.commanded || 0) : d.vAllow) / MPH : tr.v / MPH,
+      mode: d ? d.mode : 'ATO', notch: d ? d.notch : '',
       nextStop: ns ? MetroSim.stName(ns.st) : '', distFt: ns ? Math.max(0, ns.ps - tr.s) * 3.281 : 0, clock: Env.clockText(Env.time.sec), atc: d ? d.atc : 'ok',
       line: MetroSim.lineName(tr.line), color: MetroSim.lineColor(tr.line), destination: MetroSim.termName(tr) };
   }

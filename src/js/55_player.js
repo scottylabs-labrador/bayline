@@ -243,20 +243,25 @@ const Player = (() => {
   function moveWalk(dt) {
     const run = down('ShiftLeft', 'ShiftRight'); const sp = (run ? 5.2 : 1.6) * dt;
     const M = metroWalk();
-    let fx = 0, fz = 0; if (down('KeyW', 'ArrowUp')) fx += 1; if (down('KeyS', 'ArrowDown')) fx -= 1; if (down('KeyD', 'ArrowRight')) fz += 1; if (down('KeyA', 'ArrowLeft')) fz -= 1;
+    const holding = M && walk.hold && performance.now() < walk.hold && metroFloor(walk.x, walk.y, walk.z) === null;
+    let fx = 0, fz = 0; if (!holding) { if (down('KeyW', 'ArrowUp')) fx += 1; if (down('KeyS', 'ArrowDown')) fx -= 1; if (down('KeyD', 'ArrowRight')) fz += 1; if (down('KeyA', 'ArrowLeft')) fz -= 1; }
     if (fx || fz) { const n = Math.hypot(fx, fz); fx /= n; fz /= n;
       const c = Math.sin(look.yaw), s = -Math.cos(look.yaw);       // forward (x,z)
       const nx = walk.x + (fx * c - fz * s) * sp, nz = walk.z + (fx * s + fz * c) * sp;
       const ok = M ? okMetroStep : (x, z) => { const g2 = groundAt(x, z); return g2 - walk.y < 0.6 && !Terrain.isWater(x, z) && !insideBuilding(x, z); };
       if (ok(nx, nz)) { walk.x = nx; walk.z = nz; } else if (ok(nx, walk.z)) walk.x = nx; else if (ok(walk.x, nz)) walk.z = nz; }
     const mf = M ? metroFloor(walk.x, walk.y, walk.z) : null;
-    // below the street with no station floor here yet (a subway station still streaming in): hold, never pop up to the street
-    if (M && mf === null && walk.y < Terrain.h(walk.x, walk.z) - 2) { walk.vy = 0; return; }
+    if (mf !== null) walk.hold = 0;
+    // below the street with no station floor here yet (a subway station still streaming in), or just put on a platform
+    // whose floors haven't streamed in (an aerial station): hold, never pop up to the street or drop to it
+    if (M && mf === null && (walk.y < Terrain.h(walk.x, walk.z) - 2 || (walk.hold && performance.now() < walk.hold))) { walk.vy = 0; return; }
     const gy = mf !== null ? mf : groundAt(walk.x, walk.z);
     if (walk.y > gy + 0.05) { walk.vy -= 9.81 * dt; walk.y = Math.max(gy, walk.y + walk.vy * dt); } else { walk.vy = 0; walk.y = U.lerp(walk.y, gy, Math.min(1, dt * 12)); }
     if (down('Space') && walk.vy === 0 && Math.abs(walk.y - gy) < 0.1) walk.vy = 3.8, walk.y += 0.02;
   }
   // a walking step with Bayline Metro stations about: station floors and walls first, then the usual street rules
+  // standing on a metro station's floor (its platforms, concourses): the metro context wins over a nearby Peninsula station
+  const onMetroFloor = () => metroWalk() && metroFloor(walk.x, walk.y + 0.1, walk.z) !== null && Math.abs(metroFloor(walk.x, walk.y + 0.1, walk.z) - walk.y) < 0.4;
   function okMetroStep(x, z) {
     const S = floorSrc(); if (S && S.blocked && S.blocked(walk.x, walk.z, x, z, walk.y)) return false;
     const f = metroFloor(x, walk.y, z);
@@ -397,8 +402,8 @@ const Player = (() => {
         c.position.set(walk.x, walk.y + EYE, walk.z); worldLook(look.yaw, look.pitch);
         const hit = doorNearWorld(walk);
         if (hit) { prompt = 'Press <kbd>E</kbd> to board: ' + (hit.tr.metro ? MetroSim.lineName(hit.tr.line) + ' to ' + MetroSim.termName(hit.tr) : Sim.destText(hit.tr).replace(/\s+/g, ' ')); promptAction = () => board(hit); }
-        else { const ms = metroOn() ? MetroSim.nearestStation(walk, 160) : null, st = Stations.nearest(walk, 140);
-          if (ms && (!st || Math.hypot(ms.x - walk.x, ms.z - walk.z) < Math.hypot(st.x - walk.x, st.z - walk.z))) { prompt = typeof MetroPlay !== 'undefined' && MetroPlay.walkPrompt ? MetroPlay.walkPrompt(ms, walk) : 'Press <kbd>B</kbd> for ' + ms.short + ' trains'; if (typeof MetroPlay !== 'undefined' && MetroPlay.walkAction) promptAction = MetroPlay.walkAction(ms, walk); }
+        else { const ms = metroOn() ? MetroSim.nearestStation(walk, 260) : null, st = Stations.nearest(walk, 140);
+          if (ms && (onMetroFloor() || !st || Math.hypot(ms.x - walk.x, ms.z - walk.z) < Math.hypot(st.x - walk.x, st.z - walk.z))) { prompt = typeof MetroPlay !== 'undefined' && MetroPlay.walkPrompt ? MetroPlay.walkPrompt(ms, walk) : 'Press <kbd>B</kbd> for ' + ms.short + ' trains'; if (typeof MetroPlay !== 'undefined' && MetroPlay.walkAction) promptAction = MetroPlay.walkAction(ms, walk); }
           else if (st) { prompt = 'Press <kbd>B</kbd> for ' + st.name + ' departures';
             if (st.id === 'place_MLBR' && metroOn() && typeof MetroPlay !== 'undefined') { prompt += ' · <kbd>E</kbd> transfer to the metro'; promptAction = () => MetroPlay.toMetro(); } } }
         break;
@@ -469,7 +474,7 @@ const Player = (() => {
     if (typeof Globe !== 'undefined' && !Globe.frame.bay) return { mode: 'map', trip: '', s: 0, car: -1, x: 0, y: 0, z: 0, yaw: 0, speed: 0 };   // away from the Bay
     return { mode: mode === 'walk' ? 'walk' : 'fly', trip: '', s: 0, car: -1, x: c.position.x, y: c.position.y, z: c.position.z, yaw: look.yaw, speed: 0 };
   }
-  return { init, update, setMode, setFocus, interact, teleportToStation, focusTrain, state, on, releaseLock, trainBy, nearestAnyTrain, drivingKey, travelHeading, board, enterTrain,
+  return { init, update, setMode, setFocus, interact, teleportToStation, focusTrain, state, on, releaseLock, trainBy, nearestAnyTrain, drivingKey, travelHeading, board, enterTrain, onMetroFloor,
     get mode() { return mode; }, get focus() { return focus; }, get prompt() { return prompt; }, keys, down, orbit, look, walk, ob, fly,
     onboard: () => mode === 'onboard', inCab: () => mode === 'cab', leadCar, cars, groundAt };
 })();
