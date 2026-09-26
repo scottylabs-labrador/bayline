@@ -243,7 +243,9 @@
     E.pal('ceil'); E.q4([8.46, 3.13, 0.45], [8.46, 3.13, -0.45], [8.98, 3.13, -0.45], [8.98, 3.13, 0.45]);
     E.pal('wallInt2'); E.shape([[-0.45, FY], [0.45, FY], [0.45, 3.13], [-0.45, 3.13]], [[[-0.2, FY + 1.1], [-0.2, FY + 1.85], [0.2, FY + 1.85], [0.2, FY + 1.1]]], (z, y) => ({ p: [8.98, y, z], n: [-1, 0, 0] }));
     G.pal('lensClear'); G.shape([[-0.2, FY + 1.1], [0.2, FY + 1.1], [0.2, FY + 1.85], [-0.2, FY + 1.85]], [], (z, y) => ({ p: [8.985, y, z], n: [-1, 0, 0] }));
-    E.pal('seatFrame'); E.box(8.95, FY + 1.0, -0.36, 8.975, FY + 1.06, -0.27);
+    // (and its cab side: without it the door vanished seen from the cab, and the lit saloon showed through the nose)
+    E.pal('wallInt2'); E.shape([[-0.45, FY], [0.45, FY], [0.45, 3.13], [-0.45, 3.13]], [[[-0.2, FY + 1.1], [-0.2, FY + 1.85], [0.2, FY + 1.85], [0.2, FY + 1.1]]], (z, y) => ({ p: [8.99, y, z], n: [1, 0, 0] }));
+    E.pal('seatFrame'); E.box(8.95, FY + 1.0, -0.36, 8.975, FY + 1.06, -0.27); E.box(8.995, FY + 1.0, -0.36, 9.02, FY + 1.06, -0.27);
     // next-stop sign over the passage
     const S = K.SIGN.next; E.pal('bezel'); E.box(8.44, FY + 2.05, -0.5, 8.46, FY + 2.26, 0.5);
     E.pal('ledInt'); { const y0 = FY + 2.09, y1 = FY + 2.22, x = 8.438; const a = E.v(x, y0, 0.48, -1, 0, 0, 0, S[1]), b = E.v(x, y0, -0.48, -1, 0, 0, 1, S[1]), c = E.v(x, y1, -0.48, -1, 0, 0, 1, S[3]), dd = E.v(x, y1, 0.48, -1, 0, 0, 0, S[3]); E.quadA(a, b, c, dd); }

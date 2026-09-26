@@ -1559,9 +1559,10 @@ const MetroKit = (() => {
         const endState = e => { const side = e * (c.flip ? -1 : 1); if ((side > 0 && c !== first) || (side < 0 && c !== last)) return 0; return side === leadSide ? 1 : -1; };
         const A = endState(1), B = endState(-1);
         lv[G.interior] = L.interior * (0.8 + 0.2 * n);
-        lv[G.head] = A > 0 ? L.head * (6 + 16 * n) : 0; lv[G.headB] = B > 0 ? L.head * (6 + 16 * n) : 0;
-        lv[G.marker] = A > 0 ? L.head * (1.5 + 3 * n) : 0;
-        lv[G.tail] = A < 0 ? L.tail * (3 + 7 * n) : 0; lv[G.tailB] = B < 0 ? L.tail * (3 + 7 * n) : 0;
+        const lk = K.lookLamps === undefined ? 1 : K.lookLamps;                  // (a shot's lamp level, look({ lamps }))
+        lv[G.head] = A > 0 ? L.head * (6 + 16 * n) * lk : 0; lv[G.headB] = B > 0 ? L.head * (6 + 16 * n) * lk : 0;
+        lv[G.marker] = A > 0 ? L.head * (1.5 + 3 * n) * lk : 0;
+        lv[G.tail] = A < 0 ? L.tail * (3 + 7 * n) * lk : 0; lv[G.tailB] = B < 0 ? L.tail * (3 + 7 * n) * lk : 0;
         lv[G.bar] = A !== 0 ? (1.2 + 2.5 * n) : 0; c.S.mkBar.value = A < 0 ? 1 : 0;
         lv[G.sign] = L.signs * (0.8 + 0.4 * n);
         lv[G.cab] = K.lookCab !== undefined && K.lookCab >= 0 ? K.lookCab : L.cab;

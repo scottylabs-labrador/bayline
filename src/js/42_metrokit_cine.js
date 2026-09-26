@@ -6,7 +6,8 @@
 //    windscreen and cab windows. At night, with the outside dark, these reflections are what the windows show.
 //  - look(o): shot settings (trailer / promo modules; all optional, look(null) resets):
 //      lcd: the screens' brightness (1 = the game's), refl: the interior reflections' strength (1 = physical),
-//      cab: the D cab's light level (0..1; -1 = the runtime's), cinema: { ... } or null (below).
+//      cab: the D cab's light level (0..1; -1 = the runtime's), lamps: head / tail / marker lamp level (1 = the
+//      game's), glow: the lamp glow billboards' strength (1 = the game's), cinema: { ... } or null (below).
 //  - the cinema glass (shots only, look({ cinema })): the glazing of the car the camera is in becomes a lens-blurred
 //    view of the outside with rain on the glass in focus. The frame drawn so far (colour and depth) is grabbed just
 //    before this glass draws (it draws last); the outside is gathered over a disc whose size follows each sample's
@@ -307,12 +308,17 @@
     GU.mkCineC.value.x = c.refl; GU.mkCineC.value.y = c.focus; GU.mkCineC.value.w = c.tint; GU.mkCineD.value.y = c.dbg || 0;
   }
   function look(o) {
-    if (o === null) { MKG.mkLcdGain.value = 1; MKG.mkReflK.value = 1; K.lookCab = -1; cine = null; applyCine(); return look({}); }
+    if (o === null) { MKG.mkLcdGain.value = 1; MKG.mkReflK.value = 1; cine = null; applyCine(); return look({ cab: -1, lamps: 1, glow: 1 }); }
     if (o.lcd !== undefined) MKG.mkLcdGain.value = Math.max(0, +o.lcd || 0);
     if (o.refl !== undefined) MKG.mkReflK.value = Math.max(0, +o.refl || 0);
-    if (o.cab !== undefined) { K.lookCab = +o.cab; if (K.live) for (const c of K.live) if (c._applyLights) c._applyLights(); }
+    if (o.cab !== undefined || o.lamps !== undefined) {
+      if (o.cab !== undefined) K.lookCab = +o.cab;
+      if (o.lamps !== undefined) K.lookLamps = Math.max(0, +o.lamps || 0);
+      if (K.live) for (const c of K.live) if (c._applyLights) c._applyLights(); }
+    if (o.glow !== undefined && K.glowGain) K.glowGain.value = Math.max(0, +o.glow || 0);
     if (o.cinema !== undefined) { cine = o.cinema ? Object.assign({}, DEF, cine || {}, o.cinema) : null; applyCine(); }
-    return { lcd: MKG.mkLcdGain.value, refl: MKG.mkReflK.value, cab: K.lookCab === undefined ? -1 : K.lookCab, cinema: cine && Object.assign({}, cine) };
+    return { lcd: MKG.mkLcdGain.value, refl: MKG.mkReflK.value, cab: K.lookCab === undefined ? -1 : K.lookCab, lamps: K.lookLamps === undefined ? 1 : K.lookLamps,
+      glow: K.glowGain ? K.glowGain.value : 1, cinema: cine && Object.assign({}, cine) };
   }
   // per consist update: the car the camera is in (its interior drawn) gets the cinema glass while a cinema look is on
   const _inv = new THREE.Matrix4(), _c = new V3();
