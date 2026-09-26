@@ -6,6 +6,7 @@ Data (c) OpenStreetMap contributors, ODbL 1.0 — https://www.openstreetmap.org/
     pip install osmium                      # pyosmium
     python3 tools/fetch_osm.py              # downloads norcal-latest.osm.pbf if missing (~650 MB), extracts, keeps the PBF
     python3 tools/fetch_osm.py --delete-pbf # delete the PBF afterwards
+    python3 tools/fetch_osm.py --metro      # Bayline Metro: + every BART corridor (3 km) and the north strip -> v3_*.pkl
 
 Coverage ("towns v2", see SPEC_v2.md): everything within 3 km of the rail line or 1.5 km of a landmark (parsed from
 src/js/50_landmarks.js), plus all of San Francisco and the downtown San Jose core:
@@ -45,10 +46,19 @@ def landmarks():
         out.append((m.group(2), float(m.group(3)), float(m.group(4)), float(m.group(5))))
     return out
 
+METRO = '--metro' in sys.argv            # Bayline Metro (notes/bart/world.md): BART corridors + the north strip
+OUT_PREFIX = 'v3_' if METRO else 'v2_'
+
+def metro_lines():
+    """BART centrelines (world x, z) from the data workstream's network (tools/tiles/metro.py)."""
+    sys.path.insert(0, HERE)
+    from tiles import metro
+    return [l['xz'] for l in metro.lines()]
+
 def coverage_raster():
     """Boolean 'in coverage' raster over the world, 25 m cells."""
     from scipy import ndimage
-    x0, x1, z0, z1 = -46000.0, 58000.0, -50000.0, 54000.0
+    x0, x1, z0, z1 = -46000.0, 58000.0, (-75800.0 if METRO else -50000.0), 54000.0
     NX, NZ = int((x1 - x0) / CELL), int((z1 - z0) / CELL)
     seed = np.ones((NZ, NX), bool)
     def mark_line(P):
@@ -60,6 +70,9 @@ def coverage_raster():
                 if 0 <= i < NX and 0 <= j < NZ: seed[j, i] = False
     for key in ('mainline', 'southCounty'):
         mark_line([W(*p) for p in corr[key]['pts']])
+    if METRO:
+        for P in metro_lines():
+            mark_line([(float(x), float(z)) for x, z in P])
     d_line = ndimage.distance_transform_edt(seed).astype(np.float32) * CELL
     cov = d_line <= R_TRACK
     gx = x0 + (np.arange(NX) + 0.5) * CELL; gz = z0 + (np.arange(NZ) + 0.5) * CELL
@@ -151,7 +164,7 @@ def extract():
             rnd = lambda R: [[(round(x, 2), round(z, 2)) for x, z in r] for r in R]
             if bld: blds.append((key, pick(t, KEEP_B), rnd(outers), rnd(inners)))
             else: areas.append((key, pick(t, KEEP_A), rnd(outers)))
-    for name, obj in (('v2_buildings', blds), ('v2_roads', roads), ('v2_areas', areas), ('v2_points', points)):
+    for name, obj in ((OUT_PREFIX + 'buildings', blds), (OUT_PREFIX + 'roads', roads), (OUT_PREFIX + 'areas', areas), (OUT_PREFIX + 'points', points)):
         path = os.path.join(RAW, name + '.pkl')
         with open(path + '.part', 'wb') as f: pickle.dump(obj, f, protocol=5)
         os.replace(path + '.part', path)

@@ -62,7 +62,8 @@ const Flight = (() => {
       }
     }
     if (bay) { if (typeof Towns !== 'undefined' && Towns.buildingsAt) for (const b of Towns.buildingsAt(x, z, 220)) { if (b.height < 2.5) continue; let base = Terrain.h(b.x, b.z); const P = b.pts; for (let i = 0; i < P.length; i += 2) base = Math.min(base, Terrain.h(P[i], P[i + 1])); add(P, base + b.height); } }
-    else if (typeof WorldTiles !== 'undefined' && WorldTiles.buildingsNear) for (const b of WorldTiles.buildingsNear(x, z, 220)) add(b.pts, b.top);
+    // (outside the Bayline square, and in the Bayline Metro strip beyond the Towns tiles: OpenFreeMap buildings)
+    if ((!bay || !Globe.inSquare(x, z)) && typeof WorldTiles !== 'undefined' && WorldTiles.buildingsNear) for (const b of WorldTiles.buildingsNear(x, z, 220)) add(b.pts, b.top);
   }
 
   // ---------------------------------------------------------------- start / stop

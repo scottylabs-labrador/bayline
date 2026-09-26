@@ -33,7 +33,34 @@ def _trk():
     return _track_kd
 
 
-def region_of(lat):
+_bkd = None
+
+
+def _bart():
+    """KD-tree over the BART tracks where they are above ground (network.json; nothing over the subways): trees keep
+    clear of the guideway / track bed (Bayline Metro)."""
+    global _bkd
+    if _bkd is None:
+        from scipy.spatial import cKDTree
+        try:
+            from . import metro
+            P = [t['P'][~np.isin(t['struct'], list(metro.UNDER))][:, [0, 2]] for t in metro.network_tracks()]
+            P = np.concatenate([p for p in P if len(p)], 0)
+        except Exception:
+            P = np.array([[1e9, 1e9]])
+        _bkd = cKDTree(P)
+    return _bkd
+
+
+BART_CLEAR = 6.5          # m from a BART track centreline (+ half the crown): the bed / guideway envelope stays clear
+EB_NAMES = {6: 'eastbay', 7: 'southeast', 8: 'diablo', 9: 'delta'}
+
+
+def region_of(lat, lon=None):
+    if lon is not None:                     # East of the Bay (Bayline Metro tiles): tools/tiles/metro.ebay_region
+        from .metro import ebay_region
+        r = ebay_region(float(lat), float(lon))
+        if r is not None: return EB_NAMES[r]
     if lat > 37.708: return 'sf'
     if lat > 37.50: return 'north'
     if lat > 37.415: return 'mid'
@@ -50,7 +77,16 @@ MIX = {
     'southbay': [(7, 36), (0, 16), (4, 12), (6, 10), (1, 6), (3, 8), (8, 6), (2, 4), (5, 2)],
     'sj': [(7, 34), (4, 12), (0, 12), (3, 12), (8, 10), (6, 10), (2, 5), (1, 3), (5, 2)],
     'county': [(0, 34), (7, 30), (2, 10), (4, 10), (6, 6), (8, 4), (3, 3), (1, 3)],
+    # East of the Bay (new tiles only): Oakland/Berkeley street trees, oaks, redwoods and eucalyptus in the yards;
+    # Hayward-Fremont-Milpitas palms and planes; oak woodland behind the hills; Pittsburg/Antioch tract-street trees
+    'eastbay': [(7, 30), (0, 16), (1, 12), (2, 12), (4, 10), (6, 8), (3, 6), (8, 3), (5, 3)],
+    'southeast': [(7, 34), (4, 12), (0, 12), (3, 10), (8, 9), (6, 9), (2, 6), (1, 4), (5, 4)],
+    'diablo': [(0, 38), (7, 22), (4, 10), (6, 10), (1, 8), (2, 6), (5, 3), (3, 2), (8, 1)],
+    'delta': [(7, 36), (8, 12), (3, 10), (0, 12), (6, 10), (2, 8), (4, 8), (5, 4)],
 }
+HILL_EB = {'eastbay': [(0, 40), (2, 25), (6, 15), (1, 15), (5, 5)],          # Berkeley / Oakland hills: eucalyptus, pine, redwood
+           'diablo': [(0, 75), (6, 10), (4, 8), (2, 7)],                     # oak woodland
+           'delta': [(0, 70), (2, 15), (6, 15)], 'southeast': [(0, 70), (2, 12), (6, 10), (4, 8)]}
 HILL = [(0, 60), (2, 12), (1, 10), (6, 8), (4, 5), (5, 5)]
 
 
@@ -123,11 +159,14 @@ def detect(tx, ty):
     # track corridor clearance
     dtr, _ = _trk().query(np.stack([X, Z], 1), distance_upper_bound=200.0)
     keep = ~(dtr < 11.0 + r * 0.5)
+    dtb, _ = _bart().query(np.stack([X, Z], 1), distance_upper_bound=60.0)
+    keep &= ~(dtb < BART_CLEAR + r * 0.5)
     X, Z, r, mr, mg, mb, ml, cxm, czm = X[keep], Z[keep], r[keep], mr[keep], mg[keep], mb[keep], ml[keep], cxm[keep], czm[keep]
     if not len(X):
         return np.zeros(0, dtype=DT)
     # species
-    rng = np.random.default_rng((tx * 73856093) ^ (ty * 19349663) ^ 0x5eed)
+    rng = np.random.default_rng(((tx * 73856093) ^ (ty * 19349663) ^ 0x5eed) & 0xFFFFFFFFFFFFFFFF)   # (same seed as before for
+                                                                        # non-negative tiles; the north strip's rows are negative)
     lat, lon = w2ll(X, Z)
     elev = hgt[np.clip((czm / px_m).astype(int), 0, n - 1), np.clip((cxm / px_m).astype(int), 0, n - 1)]
     urban_lc = M_.raster_areas  # (unused; urban context from building density below)
@@ -146,23 +185,23 @@ def detect(tx, ty):
             if np.isfinite(dd) and t_k[jj] != 255:
                 kd_ = int(t_k[jj])
         if kd_ == 255:
-            reg = region_of(lat[i])
+            reg = region_of(lat[i], lon[i])
             sat = max(mr[i], mg[i], mb[i]) - min(mr[i], mg[i], mb[i])
             blueish = mb[i] > mg[i] * 0.93 and sat < 0.10
             dark = ml[i] < 62.0
             if elev[i] > 110 and bdens[i] < 0.08:
-                mix = list(HILL)
+                mix = list(HILL_EB.get(reg, HILL))
                 if reg in ('mid', 'north') and elev[i] > 180 and dark:
                     mix.append((1, 40))
             else:
                 mix = list(MIX[reg])
-                if bdens[i] < 0.02 and reg in ('mid', 'county', 'north'):
+                if bdens[i] < 0.02 and reg in ('mid', 'county', 'north', 'diablo', 'southeast', 'delta'):
                     mix.append((0, 30))
             if blueish and r[i] > 3.5:
                 mix.append((2, 55))
             if dark and 2.2 < r[i] < 6.5:
-                mix.append((1, 18) if reg in ('mid', 'north', 'sf') else (6, 14))
-            if r[i] < 2.8 and bdens[i] > 0.05 and reg in ('sj', 'southbay', 'sf'):
+                mix.append((1, 18) if reg in ('mid', 'north', 'sf', 'eastbay') else (6, 14))
+            if r[i] < 2.8 and bdens[i] > 0.05 and reg in ('sj', 'southbay', 'sf', 'southeast', 'delta'):
                 mix.append((3, 10)); mix.append((8, 10))
             kd_ = _pick(rng, mix)
         kinds[i] = kd_

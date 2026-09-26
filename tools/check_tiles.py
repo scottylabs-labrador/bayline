@@ -27,7 +27,7 @@ def validate(a):
                 continue
             import re
             allf = [f for f in os.listdir(d) if f.endswith('.' + ext)]
-            files = [f for f in allf if re.fullmatch(r'\d+_\d+\.' + ext, f)]
+            files = [f for f in allf if re.fullmatch(r'-?\d+_-?\d+\.' + ext, f)]       # (negative rows: the north strip)
             for f in allf:
                 if f not in files:
                     issues.append(f'{prod}/{L}/{f}: not a tile name (ignored; not written by the bake)')
