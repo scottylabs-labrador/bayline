@@ -438,7 +438,8 @@ const MetroTrack = (() => {
     for (let k = 1; k < out.length - 1; k++) if (out[k].s1 - out[k].s0 < 12 && out[k - 1].type === out[k + 1].type) { out[k - 1].s1 = out[k + 1].s1; out.splice(k, 2); k--; }
     return out;
   }
-  // pairing: per 10 m bin the nearest parallel track within 7.5 m (id, its s, lateral offset in my level frame, +right)
+  // pairing: per 10 m bin the nearest parallel track within 7.5 m at the same level (within 1.5 m; id, its s, lateral
+  // offset in my level frame, +right)
   const BIN = 10;
   function pairTracks() {
     const cell = 40, grid = new Map(), key = (i, j) => i * 100003 + j;
@@ -457,9 +458,10 @@ const MetroTrack = (() => {
               const uu = U.clamp(((F0.x - ax) * dx + (F0.z - az) * dz) / L2, 0, 1), px = ax + dx * uu, pz = az + dz * uu;
               const along = (px - F0.x) * F0.tx + (pz - F0.z) * F0.tz; if (Math.abs(along) > 1.5) continue;
               const par = Math.abs(dx * F0.tx + dz * F0.tz) / Math.sqrt(L2); if (par < 0.97) continue;
-              const lat = (px - F0.x) * F0.lx + (pz - F0.z) * F0.lz;
+              const lat = (px - F0.x) * F0.lx + (pz - F0.z) * F0.lz, dy = (t2.Y[jj] + (t2.Y[jj + 1] - t2.Y[jj]) * uu) - F0.y;
+              if (Math.abs(dy) > 3) continue;                                   // (stacked levels: 12th / 19th St, the Wye)
               if (Math.abs(lat) > 2.5 && Math.abs(lat) < Math.abs(nbl)) nbl = lat;
-              if (Math.abs(lat) < Math.abs(bl) && Math.abs(lat) > 2.5) { bl = lat; best = R2.k; bs = (jj + uu) * t2.step; bdy = (t2.Y[jj] + (t2.Y[jj + 1] - t2.Y[jj]) * uu) - F0.y; }
+              if (Math.abs(lat) < Math.abs(bl) && Math.abs(lat) > 2.5 && Math.abs(dy) < 1.5) { bl = lat; best = R2.k; bs = (jj + uu) * t2.step; bdy = dy; }
             }
           }
         }
