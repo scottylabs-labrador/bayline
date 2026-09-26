@@ -1366,6 +1366,9 @@ const StationTypes = (() => {
     // fare gate arrays between the paid middle (over the platform wells) and the unpaid ends, agent booths, TVMs
     const wells = T.ceilHoles.map(h => [h.u0, h.u1]);
     const paid0 = wells.length ? Math.min(...wells.map(w => w[0])) - 6 : uc - 20, paid1 = wells.length ? Math.max(...wells.map(w => w[1])) + 6 : uc + 20;
+    // (the transfer panel, hung inside each gate line where the station has transfers)
+    if ((T.st.data.transfers || []).length) for (const [ug, face] of [[Math.max(cu0 + 6, paid0), -1], [Math.min(cu1 - 6, paid1), 1]])
+      zC.signs.push({ u: ug - face * 4, v: (vl(ug) + vr(ug)) / 2, y: yCF + 2.7, yaw: T.yawAt(ug) + Math.PI / 2, w: 3.4, h: 0.64, region: 'info', both: true, T });
     for (const [ug, face] of [[Math.max(cu0 + 6, paid0), -1], [Math.min(cu1 - 6, paid1), 1]]) {
       const a = vl(ug), b = vr(ug); const width = b - a; const nG = U.clamp(Math.floor((width - 6) / 0.86), 4, 12);
       const arrW = nG * 0.86 + 0.6; const v0 = (a + b) / 2 - arrW / 2;
