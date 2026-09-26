@@ -216,6 +216,14 @@ Cost: `floorAt` is called about 4 times per frame and `blocked` once per attempt
 them cheap (a per-station spatial grid is plenty). Until `MetroStations` is in the build, `MetroPlay.floorAt/blocked`
 provide platform strips from MetroNet's platform extents (edge 1.68 m, 3.6–4.2 m wide, top 0.991 m above the rail).
 
+Going to a platform (`MetroPlay.teleport`, used by `#mst=`, boards, the system map, missions): the platform of the next
+train there (or the one asked for), a quarter of the way along from the end that train comes in at, on the platform's
+centreline (probing `floorAt` across the platform from the edge), at the stations' platform height, facing up the
+platform toward the arriving train (12° toward its track) with the focus on that train. If the station hasn't streamed
+in yet, the walker is placed on an estimate and held (no gravity, no walking) until its floors exist, then moved to
+the centreline. The metro context (HUD, prompts, the Peninsula strip) follows `Player.onMetroFloor()` (standing on a
+metro station floor), so the shared Millbrae platform reads as metro when you stand on the metro side.
+
 Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (yaw = heading, `atan2(dx, dz)`, like
 `Stations.spawnPoint`) for "go to this platform" from boards and the system map, and
 `MetroStations.setBoard(stationId, platformCode, rows)`: SIM pushes every 5 s for stations within 1.5 km of the camera,
@@ -258,7 +266,27 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
   - Stop marks: the runtime uses the platform extent's leaving end (−1 m) for the berth; M2 berth marks per train
     length will be used automatically if `platforms[].s0/s1` stay the platform extents (tell me if you add `berth`).
   - PITT-T has no station entry (no platform extent/side): fine, the runtime centres the train on the stop point there.
-- **TRAINS**: see the API expectations above; the cab display fields; please keep `bogieOffsets` in car metadata.
+  - **Platform sides disagree** at least at West Oakland: network.json says M10-1 / M10-2 are `left` of +s, but the
+    stations workstream's built platform (its `spawnPoint` and walk floors) is 3.9 m to the **right** of M10-1. The
+    runtime now takes each platform's side from the stations' geometry when `MetroStations` is in the build (that is
+    what's drawn, and the train doors must open onto it), else from network.json. DATA + STATIONS: please reconcile
+    (a side audit over all 50 stations: `MetroSim.platformSide(id, gtfs)` vs `platforms[].side`).
+- **TRAINS**
+  - MetroKit v0 is integrated: consists come from `MetroKit.createConsist(kind, { cars, seed, name })` (exact length),
+    posed with `MetroKit.poseOnTrack` (bogie yaw; for a train led by its last car the frame function runs backwards
+    along the path with the tangent and bank flipped), `setDestination({ line, color, text })`, `setNextStop`,
+    `setDoors`, `setLights`, `setNight`, `setLOD(0|1)` (my LOD 2 is only used for placeholders: MetroKit's LOD 2 hides
+    the car), `setInteriorVisible`, `speed`, `update`. Kinds MetroKit doesn't build yet (`dmu`, `apm` stubs) fall back
+    to my placeholders automatically, per kind.
+  - Far trains: when `MetroKit._k.createFarBatch` exists I route far trains through it (`begin / addCar(kind, 'D'|'E',
+    {x,y,z,yaw,pitch}, flip) / addLamp / end(night)`), per kind, with my own instanced batch as the fallback. Please
+    export it publicly (`MetroKit.createFarBatch`) when it lands; keep `42_metrokit_far.js` loading AFTER
+    `42_metrokit_fotf.js` if it touches `K.builders.bart` at load (build.py sorts by name: `_far` < `_fotf`; in my scratch
+    test that ordering threw a TypeError at load, which kills the whole app).
+  - Please add `consist.dispose()` (geometry is shared; the per-consist sign canvas / textures / materials): the pool
+    recycles consists of other lengths (6/8/10 cars) and drops them from the scene.
+  - Cab display: `setCab({ speedMph, codeMph (AUTHORIZED), commandedMph, mode: 'ATO'|'MANUAL', notch, atc, nextStop,
+    distFt, clock, line, color, destination })` would feed your VATC screen; I call it only if it exists.
 - **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above.
 
 ## Assumptions log

@@ -84,7 +84,7 @@ def build(tracks, parents, plats, plat_pos, raw_to_s, E, curated):
     out = {}
     for pid, (ti, sraw) in plat_pos.items():
         tr = tracks[ti]
-        if pid.startswith('C80-T'):
+        if pid in ('C80-T', 'E10-T'):
             sid = 'PITT-T'
             cx, cz = tr['pub']['x'][0], tr['pub']['z'][0]
             s_hint = raw_to_s(tr, sraw)
