@@ -124,19 +124,19 @@ and screenshot its piece in isolation, then integrate.
 
 ## 5. Workstreams, branches, worktrees, ports
 
-Integration branch **`bart`** (from `main`). Each workstream has its own branch **`bart/<name>`** and git
+Integration branch **`bart`** (from `main`). Each workstream has its own branch **`bart-<name>`** and git
 worktree **`.worktrees/bart-<name>`**, with `data/pub` and `data/raw` symlinked to the main checkout (shared data,
 so the data workstream's output is visible to all at once). Build with `BAYLINE_OUT=dist/<name>.html` and serve
 your worktree with `python3 tools/devserver.py <port>`:
 
 | workstream | branch | worktree | dev port |
 |---|---|---|---|
-| data (alignment, profile, stations meta, timetable, MetroNet) | `bart/data` | `.worktrees/bart-data` | 8131 |
-| world (imagery/lidar/buildings/trees along every line, terrain carve) | `bart/world` | `.worktrees/bart-world` | 8132 |
-| trains (MetroKit) | `bart/trains` | `.worktrees/bart-trains` | 8133 |
-| infra (guideway, tunnels, Tube, portals, underground engine support) | `bart/infra` | `.worktrees/bart-infra` | 8134 |
-| stations | `bart/stations` | `.worktrees/bart-stations` | 8135 |
-| sim (timetable runtime, gameplay, UI, audio, integration) | `bart/sim` | `.worktrees/bart-sim` | 8136 |
+| data (alignment, profile, stations meta, timetable, MetroNet) | `bart-data` | `.worktrees/bart-data` | 8131 |
+| world (imagery/lidar/buildings/trees along every line, terrain carve) | `bart-world` | `.worktrees/bart-world` | 8132 |
+| trains (MetroKit) | `bart-trains` | `.worktrees/bart-trains` | 8133 |
+| infra (guideway, tunnels, Tube, portals, underground engine support) | `bart-infra` | `.worktrees/bart-infra` | 8134 |
+| stations | `bart-stations` | `.worktrees/bart-stations` | 8135 |
+| sim (timetable runtime, gameplay, UI, audio, integration) | `bart-sim` | `.worktrees/bart-sim` | 8136 |
 
 Rules:
 - Commit early and often to your branch. Never push, never touch `main`, never deploy: the lead merges into
