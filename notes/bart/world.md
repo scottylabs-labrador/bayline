@@ -6,23 +6,21 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Updated 2026-09-26 09:50. The world is LIVE (lead published it to Sheltie at 08:51; Velroi following):** 56,327 tile
-files + 5 indexes (list below), the 49 NAIP-dropout replacements. Flight QA by the lead: Antioch, Concord, Pittsburg,
-Richmond, Lafayette, Orinda, Dublin, Milpitas detailed; the three seams invisible; the Marin rectangle gone.
+**Updated 2026-09-26 11:15. The world is LIVE** (Sheltie 08:51, Velroi after): 56,327 tile files + 5 indexes, the 49
+NAIP-dropout replacements (08:51) and the 269 JPEG replacements (10:11, both servers). Lead's flight QA: Antioch,
+Concord, Pittsburg, Richmond, Lafayette, Orinda, Dublin, Milpitas detailed; the three seams invisible; Marin fixed.
 
-| step | state |
+| item | state |
 |---|---|
-| stages 1-3 (corridors, the whole north strip at L2-L7, the East Bay hills L7) | published 08:51 |
-| stage-3 fill: 6 L7 tiles lost to NAIP dropouts at 04:00 | baked + indexed 07:46, published |
-| towns b2, lidar h9, materials, t2, L9 SR | published |
-| L8 to 1024 px: 1297 of 3003 new L8 published at 1024 px, **1706 at 512 px** | the 1024 px set is being made into `data/raw/tiles/sr_l8_stage` (SR READY ~12:30; manifest by `sr_manifest.py`) |
-| **JPEG scan tails** (Pillow 10.1's encoder, see Findings): 233 tiles with visible damage (111 pre-Metro + 122 new) | re-made from source into `data/raw/tiles/fix_jpeg` (FIX_JPEG READY ~10:30) |
-| water: San Pablo Bay patchwork / 38.07 line / Richardson Bay pale wedge (lead's flight QA) | `fix_water.py`: the strip's bay water re-toned to the Globe's bay tone; testing in a dev overlay (`dtest/`), then a replacement set after SR |
+| L8 to 1024 px: the 1706 L8 published at 512 px | `sr_l8.py` staged into `data/raw/tiles/sr_l8_stage` (OpenCV encoder), 301/518 parents at 11:00; paused for the lead's M3 GPU window; then `sr_manifest.py` -> SR READY |
+| JPEG scan tails (Pillow 10.1; see Findings) | 269 files re-made and published 10:11 (`fix_jpeg`); 90 broadly different mosaic parents left alone (lead) |
+| water: San Pablo Bay patchwork, the 38.07 line, the Sausalito / Richardson Bay wedge | `fix_water.py` (tone field + Richardson Bay box): L2-L7 staged (2,251 img + 42 m tiles, 104 MB, 41 of them pre-Metro in the 1.6 km band); L8/L9 after the SR set is published (their input is the 1024 px L8); then WATER READY. Shots: `shots/world/water_*_before_after.jpg` |
+| Globe ocean west of Marin (pale bands along lon -122.609) | `15_globe.js` fix on bart-world (a2d5bda, for M3.1): open sea = water whatever the photo's haze, non-bay water at least 15 m deep off the shore. Marin 8 km verified; Half Moon Bay / Peninsula / KLAX checks after the GPU window |
+| SF downtown plazas (STATIONS: Market & Post, entrance A1) | `fix_plaza.py`: lidar detail held at zero on paved ground in downtown SF (535 h9 tiles, max change 8.5 m at pits); in a dev overlay, visual check after the GPU window |
 | INFRA: buildings in tunnel mouths / open cuts | done (40bae4e) |
-| INFRA: trees / bushes / grass on cut ground (Daly City chamber, Market St entrances) | done (74ec930): Under.cutAt drops; Daly City 1 tree dropped, 0 left on cut ground; Powell 0 |
-| INFRA: traffic near BART | done (0bb0e39): no lanes on a ground-level BART track or across an open trench (West Oakland put cars on the rails); lanes re-stream after the carve; Towns.refresh keeps a tile's roads during the swap. The ~1 m float at Walnut Creek is the same with the carve off (outer lanes keep the centreline's height on cross slopes): not a metro regression |
-| INFRA: carve at the West Oakland approach | the terrain can't go below sea level (Terrain.h and the vertex shader clamp at 0 for open water): M1.1 3350-3400 / M2 32052-32097 and the Lake Merritt channel A1/A2 1520-1620 keep the ground at 0.0 m, 0.1-0.5 m above the rail; infra's `carvedAlong` cut covers exactly those (lead: nothing else needed). Elsewhere the carve is at rail - 1.2 as designed |
-| queued | SF downtown plazas (bare lidar ground at Market & Post): paving / lidar weight 0 under OSM pedestrian areas |
+| INFRA: trees / bushes / grass on cut ground | done (74ec930): Daly City 1 tree dropped, Powell 0 |
+| INFRA: traffic near BART | done (0bb0e39): no lanes on a ground-level track or across an open trench; Towns.refresh keeps roads during the swap. Walnut Creek float = pre-existing (same with the carve off) |
+| INFRA: carve at West Oakland / Milpitas | West Oakland + Lake Merritt channel: the terrain can't go below sea level (clamp for open water), infra's carvedAlong cut covers it. Milpitas (M3 profile): carve correct (rail - 1.22); the facets behind the walls are the terrain grid (one cell of slope behind the wall): proposed a ground-coloured coping on the walls' outer top (infra) |
 
 **M3 blocker fixed (bart-world ebd8fba ... 44c7379):** MetroGround no longer disposes Towns / Flora. Terrain re-filters its
 loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched tiles keeping their meshes and photo
