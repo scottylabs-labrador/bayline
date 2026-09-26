@@ -78,14 +78,28 @@ export const metro = `window.__m = window.__m || (() => {
     return Object.assign(brief(c), { t: +(c.tPass - lead).toFixed(2) });
   }
   // two trains past the place within gap s of each other (fa / fb: e.g. { heading: 90 } and { heading: 270 });
-  // the clock is set 'lead' s before the first of them gets there
+  // the clock is set 'lead' s before the first of them gets there (opt.mid: before the midpoint of their two passages)
   function meet(w, fa = {}, fb = {}, after = B.Env.time.sec, lead = 0, opt = {}) {
     const until = after + (opt.within || 4 * 3600), A = passes(w, fa, after, until), Bs = passes(w, fb, after, until), gap = opt.gap ?? 4;
     let best = null;
     for (const a of A) for (const b of Bs) { if (a.key === b.key) continue; const d = Math.abs(a.tPass - b.tPass); if (d > gap) continue;
-      const t0 = Math.min(a.tPass, b.tPass); if (!best || t0 < best.t0) best = { t0, a, b }; }
+      const t0 = opt.mid ? (a.tPass + b.tPass) / 2 : Math.min(a.tPass, b.tPass); if (!best || t0 < best.t0) best = { t0, a, b }; }
     if (!best) return null; if (opt.set !== false) setT(best.t0 - lead);
     return { t: +(best.t0 - lead).toFixed(2), a: brief(best.a), b: brief(best.b), gap: +Math.abs(best.a.tPass - best.b.tPass).toFixed(2) };
+  }
+  // where two trains pass each other along a stretch of track (both directions, any lines): samples the track every
+  // step m from s0 to s1 and reports each pair of opposite passages less than gap s apart at a sample (at the line's
+  // ~12-30 m/s that puts their meeting within ~step/2 of it): [{ t (their mid time), s, x, z, gap, a, b }], by time
+  function crossings(track, s0, s1, after, until, opt = {}) {
+    const T = typeof track === 'string' ? N().byId[track] : track, step = opt.step || 50, gap = opt.gap || 5, out = [], seen = new Set();
+    for (let s = s0; s <= s1; s += step) {
+      N().frame(T, s, F); const hd = (Math.atan2(F.tx, -F.tz) / D2R + 360) % 360, x = F.x, z = F.z;
+      const L = passes({ x, z }, Object.assign({}, opt.f || {}), after, until), up = [], dn = [];
+      for (const c of L) (Math.abs(((c.hdg - hd) % 360 + 540) % 360 - 180) < 90 ? up : dn).push(c);
+      for (const a of up) for (const b of dn) { const d = Math.abs(a.tPass - b.tPass); if (d > gap) continue; const k = a.key + '|' + b.key; if (seen.has(k)) continue; seen.add(k);
+        out.push({ t: +((a.tPass + b.tPass) / 2).toFixed(2), s, x, z, gap: +d.toFixed(2), a: brief(a), b: brief(b) }); }
+    }
+    return out.sort((p, q) => p.t - q.t);
   }
   // a train arriving at a station platform (platform: '2', a GTFS stop id 'M20-2', or null for any); the clock is set
   // 'lead' s before it stops (arr: head at its stop mark); returns { t, key, tArr, tDep, sid, line, dest, cars }
@@ -159,27 +173,31 @@ export const metro = `window.__m = window.__m || (() => {
   // the lead car's cab eye in the world (the cab ride view) and the direction it looks: { p, fwd, car } or null until posed
   function cab(k, dx = 0, dy = 0, dz = 0) {
     const tr = train(k), cs = tr && tr.entry && tr.entry.consist && tr.entry.consist.cars; if (!cs) return null;
-    const car = cs[tr.lead === 0 ? 0 : cs.length - 1], e = car && car.cabEye; if (!e) return null; const rear = tr.lead !== 0;
-    car.group.updateMatrixWorld(); const v = new THREE.Vector3(e[0] + (rear ? -0.22 - dx : 0.22 + dx), e[1] + 0.1 + dy, e[2] + dz).applyMatrix4(car.group.matrixWorld);
+    const car = cs[tr.lead === 0 ? 0 : cs.length - 1], e = car && car.cabEye; if (!e) return null; const rear = tr.lead !== 0;   // (dx forward, dy up, dz right, m)
+    car.group.updateMatrixWorld(); const v = new THREE.Vector3(e[0] + (rear ? -0.22 - dx : 0.22 + dx), e[1] + 0.1 + dy, e[2] + (rear ? -dz : dz)).applyMatrix4(car.group.matrixWorld);
     const f = new THREE.Vector3(rear ? -1 : 1, 0, 0).transformDirection(car.group.matrixWorld);
     return { p: { x: v.x, y: v.y, z: v.z }, fwd: { x: f.x, y: f.y, z: f.z }, car };
   }
   // ---------------- the service day
   // pin the date for the whole game (Env's date: the Peninsula and metro timetables' service day, weekday or weekend,
   // and the sun), keeping the clock; the metro replans now, the Peninsula on its next frame. ymd: '2026-09-29'
+  // the metro loads after the page's first frame (a few seconds): wait for its network and timetable (day() does too)
+  async function ready(ms = 60000) { const t0 = performance.now(); while (!(S() && S().ready && S().plans && S().plans.length)) { if (performance.now() - t0 > ms) throw new Error('the metro did not load'); await new Promise(r => setTimeout(r, 200)); } return true; }
   async function day(ymd, sec = B.Env.time.sec) {
+    await ready();
     const [y, m, d] = ymd.split('-').map(Number); B.Env.setClock(sec, new Date(Date.UTC(y, m - 1, d, 19)));   // (19 UTC: noon in the Bay, that date)
     if (S() && S().replan) S().replan();
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); await new Promise(r => setTimeout(r, 250));
     return B.Env.serviceDay();
   }
-  return { at, track, passes, pass, meet, arrive, depart, pair, pairs, train, focus, pick, pose, rel, ahead, cab, day, destOf };
+  return { ready, at, track, passes, pass, meet, crossings, arrive, depart, pair, pairs, train, focus, pick, pose, rel, ahead, cab, day, destOf };
 })();`;
 
 // self-installing one-liners (page-side function sources), like _lib's passClock: usable without installing `metro`
 const one = (name) => `(...a) => { ${metro}; return window.__m.${name}(...a); }`;
 export const mPass = one('pass');        // (where, f, after, lead, opt) -> { t, key, trip, line, dest, v, hdg, tPass } | null
-export const mMeet = one('meet');        // (where, fa, fb, after, lead, opt { gap }) -> { t, a, b, gap } | null
+export const mMeet = one('meet');        // (where, fa, fb, after, lead, opt { gap, mid }) -> { t, a, b, gap } | null
+export const mCross = one('crossings');  // (track, s0, s1, after, until, opt { step, gap, f }) -> [{ t, s, x, z, gap, a, b }]
 export const mArrive = one('arrive');    // (stationId, platform, after, lead, opt, f) -> { t, key, tArr, tDep, sid, line, dest } | null
 export const mDepart = one('depart');    // (stationId, platform, after, lead, opt, f) -> { t, key, tArr, tDep, ... } | null
 export const mPair = one('pair');        // (metroStation, penStation, after, minOverlap, opt { into, dir, margin }, f) -> { t, from, to, len, metro, pen } | null
@@ -187,4 +205,5 @@ export const mPairs = one('pairs');      // (metroStation, penStation, after, un
 export const mPick = one('pick');        // (lat, lon, opt) -> train | null
 export const mPose = one('pose');        // (train | key, car) -> { p, rail, fwd, right, up, v, s, head } | null
 export const mTrack = one('track');      // (where, r) -> nearest track frame | null
-export const mDay = one('day');          // (ymd) -> Promise<serviceDay>
+export const mDay = one('day');          // (ymd) -> Promise<serviceDay> (waits for the metro to load first)
+export const mReady = one('ready');      // () -> Promise (the metro's network and timetable loaded)

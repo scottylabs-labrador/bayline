@@ -781,7 +781,7 @@ const MetroUI = (() => {
     ({ whereText, subText, stationSub, atMetro, openMap, openBoard, ride, drive, front } = g); }
   // (QA) where a station is on screen in the open map, in CSS pixels
   function stationXY(id) { const c = el.msysc; if (!c || el.sys.hidden) return null; const p = stXY(id, c), r = c.getBoundingClientRect(); return p ? { x: r.left + p[0] / devicePixelRatio, y: r.top + p[1] / devicePixelRatio } : null; }
-  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, front, findStations, stationXY, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
+  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, front, findStations, stationXY, get mapState() { return map; }, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
   return api;
 })();
