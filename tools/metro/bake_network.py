@@ -21,6 +21,7 @@ from metro import profile as PR
 from metro import profile2 as PR2
 from metro import platforms as PL
 from metro import stations_curated as SC
+from metro import geomfix as GF
 from metro import stations_meta as SM
 
 STEP = 5.0                 # max sample spacing of the published polylines (m)
@@ -350,6 +351,7 @@ def main():
     tracks = build_tracks(G)
     for tr in tracks:
         densify(tr)
+    GF.fix_tube_spacing(tracks)
 
     # edge -> (track index, s_raw start, s_raw end) (edges are whole within a track)
     node_track = collections.defaultdict(list)       # osm node -> [(track idx, raw s)]
@@ -710,7 +712,10 @@ def main():
                 continue
             t, s0, s1 = g['members'][0]
             anchors['rel'].append(dict(track=t, s0=min(s0, s1), s1=max(s0, s1), rel=rel, w=w, station=g['station'], level=g['level']))
-    log(f'platform level groups: {len(groups)}, height anchors: {len(anchors["rel"])}')
+    for tr in tracks:
+        if tr.get('tube'):
+            anchors['points'].append(dict(track=tr['id'], s=tr['tube'][2], y=-25.9, w=300.0, why='SF vent structure: tracks at -25.9 m (NTSB RAR-79-05 via infra notes)'))
+    log(f'platform level groups: {len(groups)}, height anchors: {len(anchors["rel"])} + {len(anchors["points"])} points')
     roads = PR2.Roads()
     PR2.solve(out_tracks, junctions, groups, anchors, roads)
     PR2.finish(out_tracks)
