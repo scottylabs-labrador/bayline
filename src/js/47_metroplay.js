@@ -73,15 +73,19 @@ const MetroPlay = (() => {
     const sQ0 = sBerth !== null ? U.clamp(sBerth - dirS * 0.75 * L, s0 + 5, s1 - 5) : dirS > 0 ? s0 + 0.25 * (s1 - s0) : s1 - 0.25 * (s1 - s0);
     // the side and height of the platform as the stations workstream built it (what is drawn), else MetroNet's data
     const side = MetroSim.platformSide(id, p.gtfs) || (p.side === 'right' ? 1 : -1);
-    const spS = spawnFromStations(id, p.gtfs);
+    // the platform height: the stations' spawn point when it is by this track, else MetroNet's platform top (M2
+    // `platforms[].y`), else rail + 0.991 m (the airport connector's stations spawn point sits off its guideway)
+    const yData = typeof p.y === 'number' && isFinite(p.y) ? p.y : null;
+    let spS = spawnFromStations(id, p.gtfs); if (spS && (!MN.nearest(spS.x, spS.z, 9, (tt) => tt === t) || (yData !== null && Math.abs(spS.y - yData) > 1.5))) spS = null;
+    const yKnown = spS ? spS.y : yData;
     const hasFloors = typeof MetroStations !== 'undefined' && MetroStations.floorAt;
-    let sQ = sQ0, lat = 0, yPlat = spS ? spS.y : 0, ok = false;
-    const pick = hasFloors ? pickSpot(t, sQ0, s0, s1, side, dirS, spS ? spS.y : null) : null;
+    let sQ = sQ0, lat = 0, yPlat = yKnown !== null ? yKnown : 0, ok = false;
+    const pick = hasFloors ? pickSpot(t, sQ0, s0, s1, side, dirS, yKnown) : null;
     if (pick) { sQ = pick.s; lat = pick.lat; yPlat = pick.y; ok = true; }
     // the station hasn't streamed in yet (its floors appear within ~1.5 km of the camera): an estimate now, the platform's
     // centreline as soon as its floors exist (MetroPlay.update)
-    if (!ok) { MN.frame(t, sQ0, F); sQ = sQ0; lat = side * (EDGE + ((S.layout === 'island' || S.layout === 'split') ? 2.1 : 1.8)); if (!spS) yPlat = F.y + FLOOR;
-      pending = { t, s: sQ, s0, s1, dirS, side, y: yPlat, yKnown: !!spS, until: performance.now() + 15000 }; }
+    if (!ok) { MN.frame(t, sQ0, F); sQ = sQ0; lat = side * (EDGE + ((S.layout === 'island' || S.layout === 'split') ? 2.1 : 1.8)); if (yKnown === null) yPlat = F.y + FLOOR;
+      pending = { t, s: sQ, s0, s1, dirS, side, y: yPlat, yKnown: yKnown !== null, until: performance.now() + 15000 }; }
     MN.frame(t, sQ, F);
     const x = F.x + F.rx * lat, z = F.z + F.rz * lat;
     // heading: up the platform toward where the train comes from, 12 degrees toward its track

@@ -665,13 +665,23 @@ const MetroSim = (() => {
   let quality = 'high';
   // one far train through MetroKit's batch: D cars at the ends (the last one turned round), E cars between; lamps
   const FK = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 }, kitBad = new Set();
+  // car designs of a consist in physical order (car 0 at the consist's +X end): MetroKit's builder when it has a
+  // consist() (the GTW units, the Cable Liner end/mid cars), else BART's D ... E ... D with the last D turned round
+  const farSpec = new Map();
+  function farTypes(kind, n) {
+    const key = kind + '|' + n; let sp = farSpec.get(key); if (sp) return sp;
+    const K = typeof MetroKit !== 'undefined' && MetroKit._k, b = K && K.builders && K.builders[kind];
+    if (kind !== 'bart' && b && b.consist) { try { sp = b.consist(n).map(c => ({ type: c.type, flip: !!c.flip })); } catch (e) { sp = null; } }
+    if (!sp || sp.length !== n) { sp = []; for (let i = 0; i < n; i++) sp.push({ type: i === 0 || i === n - 1 ? 'D' : 'E', flip: i === n - 1 && n > 1 }); }
+    farSpec.set(key, sp); return sp;
+  }
   function farKit(tr, P, night) {
-    const n = tr.cars, path = tr.leg.path, kind = tr.kind === 'apm' ? 'apm' : tr.kind;
+    const n = tr.cars, path = tr.leg.path, kind = tr.kind, spec = farTypes(kind, n);
     for (let i = 0; i < n; i++) {
       const c = tr.s - (i + 0.5) * P.carLen; path.at(c, F1); const h = Math.hypot(F1.tx, F1.tz) || 1;
       // car i counted from the head; physical car index from car 0 depends on which end leads
-      const pi = tr.lead === 0 ? i : n - 1 - i, type = kind === 'bart' ? (pi === 0 || pi === n - 1 ? 'D' : 'E') : (pi === 0 || pi === n - 1 ? 'D' : 'E');
-      const flip = (pi === n - 1 && n > 1) !== (tr.lead !== 0);
+      const pi = tr.lead === 0 ? i : n - 1 - i, type = spec[pi].type;
+      const flip = spec[pi].flip !== (tr.lead !== 0);
       FK.x = F1.x; FK.y = F1.y; FK.z = F1.z; FK.yaw = Math.atan2(-F1.tz, F1.tx); FK.pitch = Math.atan2(F1.ty, h);
       try { kitFar.addCar(kind, type, FK, flip); } catch (e) { kitBad.add(tr.kind); return false; }   // (a kind MetroKit doesn't build yet: ours)
     }

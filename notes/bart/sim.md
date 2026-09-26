@@ -101,6 +101,19 @@ collide, live mode verified against the real feed. Earlier notes below still hol
 
 ## QA results
 
+### `bart` 4781c87 merged (round 3: MetroKit GTW DMU + Cable Liner APM, per-vehicle platforms, third rail), smoke test
+
+- All three vehicle kinds are MetroKit consists now (no placeholders): EMBR 5-car FOTF dwelling beside the walker;
+  `mst=PITT-T&mplat=E10-T`: the 1-unit Antioch Shuttle GTW at the eBART face, doors open, "Press E to board: Antioch
+  Shuttle to Antioch", passengers seated; `mst=OAKL`: the 3-car Cable Liner at the airport platform (y 10.8, on the
+  stations' floor). Far trains use MetroKit's per-builder car designs (`consist()` specs: GTW units, APM end/mid cars).
+- Missions: all seven start (drives in the cab incl. Airport Reversal; rides pick the GTW and the Cable Liner).
+- Ride flow: BALB → Daly City boarded, rode, alighted (y 92.87), announcements as before.
+- `mst=COLS&mplat=H10` (the connector's Coliseum platform): the walker ends in the parking lot at street level (y 3.82):
+  there is no stations walk floor at the data's platform height (16.75 m, track H1.1) and the stations' `spawnPoint`
+  for H10 is at street level; the runtime now ignores a spawn point more than 1.5 m off the data's platform height, holds
+  the walker there for 15 s, then gravity wins. Request to STATIONS below.
+
 ### M2 data + `bart` 62c83db merged (MetroKit v1), 2026-09-26 ~03:40–04:40, sim.html on bart-sim (Saturday timetable)
 
 What changed for M2: stops are berths (the runtime stops the head on `stops[].d`, i.e. `platforms[].berth`), the
@@ -370,6 +383,9 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
   ceiling, the street and its cars are seen from below and the outdoor world is not culled (shot:
   `notes/bart/shots/sim/m2_12th_lower.jpg`). Probably the stacked-station rebuild for M2's levels (12TH upper −3.8 /
   lower −13.7 rail) and/or the Under cells for the lower level. The upper level and the other five stations are fine.
+- **STATIONS**: the airport connector's Coliseum platform (`COLS` / `H10`, MetroNet track H1.1, platform top 16.75 m):
+  no walk floor there and `spawnPoint('COLS', 'H10')` returns a street-level point (y 3.82), so `#mst=COLS&mplat=H10`
+  and the Cable Train mission start in the parking lot (OAKL `H40` is fine).
 - **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above. Small one: the airport
   connector platforms (COLS `H10`, OAKL `H40`) return a `spawnPoint` more than 14 m from their MetroNet track (H1.1 /
   H1.2), so the side audit can't place them (the cable train's doors use the data side there).
