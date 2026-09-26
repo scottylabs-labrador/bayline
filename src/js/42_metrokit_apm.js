@@ -138,6 +138,7 @@
       leaves, wipers: [], plugOut: 0.0, slide: 0.78,
       meta: { bogieOffsets: [3.1, -3.1], doors, floorRegions: [{ name: 'car', x0: -A.LEN / 2 + 0.3, x1: A.LEN / 2 - 0.3, z0: -1.1, z1: 1.1, y: A.FLOOR }], ramps: [], gangways: { front: null, rear: null }, seats, cabEye: null },
       rows: [], halfW: 1.2, floorY: A.FLOOR, ceilY: 2.85, cabBox: new THREE.Vector4(-A.LEN / 2, A.LEN / 2 + 0.2, 1, 0), signs: [],
+      lamps: type === 'end' ? [1, -1].map(s => ({ p: [A.LEN / 2 + 0.25 + A.NOSE_R * 1.4 + 0.03, 0.72, s * 0.62], kind: 'head' })) : [],
     };
   };
   K.builders.apm.interior = (d, q) => interior(d, q);

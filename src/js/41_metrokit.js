@@ -31,8 +31,8 @@ const MetroKit = (() => {
     vinyl: 11, fabric: 12, plastic: 13, cast: 14, wheel: 15, coil: 16, lens: 17, led: 18, lcd: 19, decal: 20, topbar: 21, pole: 22,
     wall: 23, ceil: 24, mask: 25, glow: 26, aluDmu: 27, paintDmu: 28, apmBody: 29, num: 30, lodwin: 31 };
   // emissive light groups (per-car levels in mkLv[8])
-  const G = { none: 0, interior: 1, head: 2, tail: 3, marker: 4, bar: 5, doorR: 6, sign: 7, doorL: 8, cab: 9, idoorR: 10, idoorL: 11 };
-  const NLV = 12;
+  const G = { none: 0, interior: 1, head: 2, tail: 3, marker: 4, bar: 5, doorR: 6, sign: 7, doorL: 8, cab: 9, idoorR: 10, idoorL: 11, headB: 12, tailB: 13 };
+  const NLV = 16;
   const PAL = [], PI = Object.create(null), PALN = 256;
   function pal(name, hex, rough, metal, o = {}) {
     PI[name] = PAL.length;
@@ -72,6 +72,8 @@ const MetroKit = (() => {
   pal('reflector', '#e2e6ea', 0.06, 1, { eg: G.head, ew: 0.08 });
   pal('headLamp', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.head });
   pal('tailLamp', '#d0121c', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.tail });
+  pal('headLampB', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.headB });
+  pal('tailLampB', '#d0121c', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.tailB });
   pal('markerLamp', '#f4f1e8', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.marker });
   pal('topBar', '#1a1614', 0.1, 0, { cc: 1, pat: PAT.topbar, eg: G.bar });
   pal('doorLampR', '#d8141e', 0.1, 0, { cc: 1, eg: G.doorR, ew: 2 });
@@ -191,7 +193,7 @@ const MetroKit = (() => {
       mkAz = normalize(normalMatrix * (mkM * vec3(0.0, 0.0, 1.0))); }`;
   const MK_FRAG_HEAD = `
     uniform sampler2D mkPalA, mkPalB, mkPalC, mkPalD;
-    uniform float mkLv[12]; uniform float mkNight, mkAge, mkSeed, mkBar, mkHalfW, mkFloorY, mkCeilY;
+    uniform float mkLv[16]; uniform float mkNight, mkAge, mkSeed, mkBar, mkHalfW, mkFloorY, mkCeilY;
     uniform vec4 mkIndoor, mkLamp;
     uniform sampler2D mkSign, mkLcd, mkAtlas; uniform vec2 mkSignRes; uniform float mkNum[6];
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
@@ -654,7 +656,7 @@ const MetroKit = (() => {
   // mapping": floor, ceiling with its two light strips, far wall and windows, seat rows with occupants) with Fresnel
   // reflections of the environment on top; with the interior built it becomes clear, tinted glass.
   const GLASS_FRAG_HEAD = `
-    uniform vec3 mkCamO; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY; uniform float mkLv[12];
+    uniform vec3 mkCamO; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY; uniform float mkLv[16];
     uniform vec4 mkRows[24]; uniform float mkRowN; uniform vec4 mkCab;
     uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
     // LED signs behind the glass: plane (axis 0: x = c, 1: z = c), extent a0..a1 along the other horizontal axis,
@@ -813,6 +815,12 @@ const MetroKit = (() => {
       // camera position in car space for the glass (interior mapping), computed just before the glass draws
       const self = this;
       this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m); };
+      // lamp glow billboards (one instanced draw per lamp-carrying car, visible when lit at dusk / night / in tunnels)
+      this.glow = null;
+      if (d.lamps && d.lamps.length && K.makeGlow) {
+        const gl = K.makeGlow(d.lamps.length); d.lamps.forEach((L, i) => { gl.pos.array.set([L.p[0], L.p[1], L.p[2], L.kind === 'bar' ? 0.9 : 0.55], i * 4); });
+        gl.mesh.geometry.instanceCount = d.lamps.length; gl.pos.needsUpdate = true; gl.mesh.name = 'glow'; gl.mesh.visible = false; root.add(gl.mesh); this.glow = gl;
+      }
       this.lod = 0; this.int = null; this.intVisible = false;
       if (!d.bogieList) d.bogieList = d.boneIdx.bogie.map((bi, k) => ({ bone: bi, pivot: d.bones[bi].pivot, axles: d.boneIdx.axlesOf[k] }));
       this.wheelAng = 0; this.yaw = d.bogieList.map(() => 0); this.doorPos = [0, 0]; this.wiperAng = [0, 0]; this.dirty = true;
@@ -927,21 +935,32 @@ const MetroKit = (() => {
     setNight(n) { n = clamp(+n || 0, 0, 1); if (Math.abs(n - this.night) < 1e-3) return; this.night = n; this._applyLights(); }
     _applyLights() {
       const n = this.night, L = this.lights, cars = this.cars, first = cars[0], last = cars[cars.length - 1];
-      const leadCar = this.lead === 'rear' ? last : first, trailCar = this.lead === 'rear' ? first : last;
+      const leadSide = this.lead === 'rear' ? -1 : 1;         // the consist's leading side (+X front / -X rear)
       for (const c of cars) {
-        const lv = c.lv, isLead = c === leadCar, isTrail = c === trailCar;
-        // which end of this car is the consist's leading end? lamps are on the design's +X (cab) end
-        const cabLeads = isLead && ((this.lead === 'front') !== c.flip), cabTrails = isTrail && ((this.lead === 'front') === c.flip);
+        const lv = c.lv;
+        // an end of a design (+1 = its +X end, -1 = its -X end) is exposed if it faces out of the consist; it then leads
+        // or trails. (A cab car's lamps are at its +X end; the DMU carries lamps at both ends, the B lamps at -X.)
+        const endState = e => { const side = e * (c.flip ? -1 : 1); if ((side > 0 && c !== first) || (side < 0 && c !== last)) return 0; return side === leadSide ? 1 : -1; };
+        const A = endState(1), B = endState(-1);
         lv[G.interior] = L.interior * (0.55 + 0.45 * n);
-        lv[G.head] = cabLeads ? L.head * (6 + 16 * n) : 0;
-        lv[G.marker] = cabLeads ? L.head * (1.5 + 3 * n) : 0;
-        lv[G.tail] = cabTrails || (!c.design.meta.cabEye && (isTrail || isLead)) ? L.tail * (3 + 7 * n) : 0;
-        lv[G.bar] = (cabLeads || cabTrails) ? (1.2 + 2.5 * n) : 0;
-        c.S.mkBar.value = cabTrails ? 1 : 0;
+        lv[G.head] = A > 0 ? L.head * (6 + 16 * n) : 0; lv[G.headB] = B > 0 ? L.head * (6 + 16 * n) : 0;
+        lv[G.marker] = A > 0 ? L.head * (1.5 + 3 * n) : 0;
+        lv[G.tail] = A < 0 ? L.tail * (3 + 7 * n) : 0; lv[G.tailB] = B < 0 ? L.tail * (3 + 7 * n) : 0;
+        lv[G.bar] = A !== 0 ? (1.2 + 2.5 * n) : 0; c.S.mkBar.value = A < 0 ? 1 : 0;
         lv[G.sign] = L.signs * (0.8 + 0.4 * n);
         lv[G.cab] = L.cab;
-        c.S.mkNight.value = n;
-        c.S.mkIntOn.value = 1;
+        c.S.mkNight.value = n; c.S.mkIntOn.value = 1;
+        if (c.glow) {                                   // billboard colours follow the lamps' state; they matter at dusk and night
+          const C = c.glow.col.array, lamps = c.design.lamps, k = 0.25 + 0.75 * n; let any = false;
+          lamps.forEach((Lm, i) => {
+            const st = Lm.kind.endsWith('B') ? B : A, kind = Lm.kind.replace(/B$/, ''); let r = 0, g = 0, b = 0;
+            if (kind === 'head' && st > 0) { r = 3.0 * L.head; g = 2.9 * L.head; b = 2.6 * L.head; }
+            else if (kind === 'marker' && st > 0) { r = 1.6; g = 1.5; b = 1.3; }
+            else if (kind === 'tail' && st < 0) { r = 2.6 * L.tail; g = 0.1; b = 0.06; }
+            else if (kind === 'bar' && st !== 0) { if (st > 0) { r = 2.6; g = 1.1; b = 0.15; } else { r = 2.6; g = 0.1; b = 0.06; } }
+            C[i * 4] = r * k; C[i * 4 + 1] = g * k; C[i * 4 + 2] = b * k; if (r + g + b > 0) any = true; });
+          c.glow.col.needsUpdate = true; c.glow.mesh.visible = any && n > 0.04;
+        }
       }
       this._applyDoorLamps();
     }

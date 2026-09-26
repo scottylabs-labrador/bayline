@@ -158,8 +158,8 @@
     for (const s of [1, -1]) {
       const zc = s * 0.96, yc = 1.3, c = at(zc, yc, -0.02);
       E.pal('podBlack'); E.at(mul(tr(c.p[0], yc, c.p[2]), rotY(e > 0 ? 0 : Math.PI)), m => m.box(-0.02, -0.12, -0.18, 0.02, 0.12, 0.18));
-      E.pal('headLamp'); E.at(mul(tr(c.p[0], yc, c.p[2] - e * s * 0.07), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.015, 0, 0], [0.03, 0, 0], 0.075, 0.07, 16));
-      E.pal('tailLamp'); E.at(mul(tr(c.p[0], yc, c.p[2] + e * s * 0.1), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.015, 0, 0], [0.03, 0, 0], 0.05, 0.048, 14));
+      E.pal(e > 0 ? 'headLamp' : 'headLampB'); E.at(mul(tr(c.p[0], yc, c.p[2] - e * s * 0.07), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.015, 0, 0], [0.03, 0, 0], 0.075, 0.07, 16));
+      E.pal(e > 0 ? 'tailLamp' : 'tailLampB'); E.at(mul(tr(c.p[0], yc, c.p[2] + e * s * 0.1), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.015, 0, 0], [0.03, 0, 0], 0.05, 0.048, 14));
     }
     // dark apron under the face, anticlimbers, Scharfenberg coupler, destination sign behind the windscreen (in glass shader)
     E.pal('frame'); E.box(Math.min(X(xs), X(xs + R + 0.1)), 0.3, -1.35, Math.max(X(xs), X(xs + R + 0.1)), 0.93, 1.35);
@@ -271,7 +271,7 @@
       meta: { bogieOffsets: [D.BOG_A, -D.BOG_A], doors, floorRegions, ramps: [], gangways: { front: null, rear: null }, seats, cabEye: [D.CAB_BACK + 0.9, D.FLOOR + 1.9, 0.55] },
       rows: [], halfW: 1.36, floorY: D.FLOOR, ceilY: 3.0, cabBox: new THREE.Vector4(-D.CAB_BACK, D.CAB_BACK, 1, 0),
       signs: [{ a: [0, D.NOSE_XC + 0.08, -0.95, -0.35], b: [2.84, 2.96, -1] }, { a: [0, -(D.NOSE_XC + 0.08), 0.35, 0.95], b: [2.84, 2.96, 1] }],
-      lampPoints: null,
+      lamps: [1, -1].flatMap(e => [1, -1].flatMap(s => [{ p: [e * (D.NOSE_XC + 0.62), 1.3, e * s * 0.89], kind: e > 0 ? 'head' : 'headB' }, { p: [e * (D.NOSE_XC + 0.62), 1.3, e * s * 1.06], kind: e > 0 ? 'tail' : 'tailB' }])),
     };
   };
   K.builders.dmu.interior = (d, q) => interior(d, q);

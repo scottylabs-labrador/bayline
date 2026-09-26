@@ -782,6 +782,8 @@
       bones, boneIdx: { bogie: [1, 2], axlesOf: [[3, 4], [5, 6]], handle: isD ? BONE.handle : undefined }, leaves, wipers,
       meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye },
       units, rows, halfW: 1.47, floorY: F.FLOOR, ceilY: 3.12, signs: SIGNS(isD),
+      lamps: isD ? [[1.175, 1.96, 'head'], [1.08, 1.7, 'head'], [1.17, 0.99, 'tail'], [1.02, 0.97, 'marker']].flatMap(([z, y, k]) => [1, -1].map(s => ({ p: [faceX(y, s * z) + 0.03, y, s * z], kind: k })))
+        .concat([{ p: [10.3, 3.7, 0], kind: 'bar' }]) : [],
       cabBox: new THREE.Vector4(-(F.BODY - 1.0), isD ? F.CAB_BACK : F.BODY - 1.0, 0, 0),
     };
   };
