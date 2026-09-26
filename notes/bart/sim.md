@@ -61,9 +61,10 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
   Airport. The next station is Montgomery St." / "Now arriving at …, doors will open on the left. Transfer here …";
   platforms "The next Antioch train, a ten car Yellow Line train, arrives in two minutes on platform 2" / "Ten car
   Antioch train now approaching platform 2."
-- **Multiplayer**: presence modes `mride` (8, car-local) and `mdrive` (9, s = leg·100000 + head position); other
-  riders are drawn in their metro car; others' driven trains override the scheduled position. Works with the
-  current relay (see "Server change" below: until then metro players are sent as `walk` at their world position).
+- **Multiplayer**: presence modes `mride` (8, car-local) and `mdrive` (9); the train is identified in the `trip` field
+  (`<trip id>[y]-<leg>`, `MetroSim.netKey`) and `s` is the head's position along that leg; other riders are drawn in
+  their metro car; others' driven trains override the scheduled position. A relay older than hello v2 gets `walk` at
+  the player's world position instead (see "Server change").
 - **Live mode** (`MetroLive`): "Live positions" chip on the system map or `#mlive=1`. GTFS-RT trip updates via
   `/bartrt/tripupdate` (protobuf decoded in-page) → per-trip predicted times → the trip is replanned (the train snaps
   to its real position; boards show real minutes). Fallback without the proxy: the public departures API (CORS
