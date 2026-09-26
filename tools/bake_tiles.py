@@ -131,16 +131,17 @@ def step_imagery(a):
     mode = _load_mode()
     # L7 (+ L8 children)
     items = scope(7, a.region)
-    items.sort(key=lambda t: -int(any(C.exists(*c) for c in C.children(7, *t))))     # tiles with L8 first
-    run_pool(lambda t: I.bake_L7(*t, force=a.force), items, a.workers, 'imagery L7+L8')
+    # value order: the north strip (only the Globe draws it without these tiles), then tiles with L8 children
+    items.sort(key=lambda t: (-int(t[1] < 0), -int(any(C.exists(*c) for c in C.children(7, *t)))))
+    run_pool(lambda t: I.bake_L7(*t, force=a.force, add_only=not a.rewrite), items, a.workers, 'imagery L7+L8')
     for L in (6, 5, 4, 3, 2, 1, 0):
         items = scope(L, a.region)
         def one(t, L=L):
             k = f'{L}/{t[0]}_{t[1]}'
             want = 'mosaic' if (L <= 4 or not I.needs_direct(L, *t)) and I.can_mosaic(L, *t) else 'direct'
             p = C.path('img', L, *t, 'jpg')
-            if os.path.exists(p) and mode.get(k, want) == want and not a.force:
-                return None
+            if os.path.exists(p) and ((mode.get(k, want) == want or not a.rewrite) and not a.force):
+                return None          # (add-only: an old direct L5/L6 tile is never re-mosaicked in place)
             if want == 'mosaic':
                 I.bake_mosaic(L, *t, force=True)
             else:
@@ -172,7 +173,7 @@ def step_masks(a):
             k = f'm{L}/{t[0]}_{t[1]}'
             want = 'pool' if pooled else 'direct'
             p = C.path('m', L, *t, 'bin')
-            force = a.force or (os.path.exists(p) and mode.get(k, want) != want)
+            force = a.force or (a.rewrite and os.path.exists(p) and mode.get(k, want) != want)
             if os.path.exists(p) and not force:
                 continue
             mode[k] = want
@@ -196,38 +197,69 @@ def step_trees(a):
 
 
 def step_index(a):
+    """tiles/index.json. Square tiles in `levels` (always a superset of the previous index: nothing listed before is ever
+    dropped), north-strip tiles (ty < 0) under `north.levels` (old clients never read it). A tile is listed once all
+    its products exist (img, and h + m up to L7), so the index can be written after any partial bake. L9 (added by
+    tools/sr_tiles.py) and the size8/size9/sr notes are carried over from the previous index."""
     cov = C.coverage()
-    def have(prod, L, ext):
-        return sorted([list(t) for t in C.level_tiles(L) if os.path.exists(C.path(prod, L, *t, ext))], key=lambda c: (c[1], c[0]))
+    try:
+        prev = json.load(open(os.path.join(C.PUB, 'index.json')))
+    except Exception:
+        prev = {}
+    pl = prev.get('levels', {}); pn = (prev.get('north') or {}).get('levels', {})
+
+    def complete(L, t):
+        if not os.path.exists(C.path('img', L, *t, 'jpg')):
+            return False
+        return L > 7 or (os.path.exists(C.path('h', L, *t, 'bin')) and os.path.exists(C.path('m', L, *t, 'bin')))
+    key = lambda c: (c[1], c[0])
+    levels, north = {}, {}
+    for L in (6, 7, 8):
+        have = [t for t in cov[L] if complete(L, t)]
+        sq = {tuple(t) for t in pl.get(str(L), [])} | {t for t in have if t[1] >= 0}
+        nt = {tuple(t) for t in pn.get(str(L), [])} | {t for t in have if t[1] < 0}
+        levels[str(L)] = [list(t) for t in sorted(sq, key=key)]
+        if nt:
+            north[str(L)] = [list(t) for t in sorted(nt, key=key)]
+    if '9' in pl:
+        levels['9'] = pl['9']
+    if '9' in pn:
+        north['9'] = pn['9']
+    def have(prod, L, ext, tiles):
+        return sum(1 for t in tiles if os.path.exists(C.path(prod, L, *t, ext)))
     idx = {
         'version': 2,
         'world': {'X0': C.X0, 'Z0': C.Z0, 'SIZE': C.SIZE, 'levels': 9},
-        'levels': {str(L): [list(t) for t in cov[L]] for L in (6, 7, 8)},
+        'levels': levels,
         'products': {
             'img': {'levels': [0, 8], 'size': C.IMG, 'ext': 'jpg', 'path': 'tiles/img/{L}/{x}_{y}.jpg'},
             'h': {'levels': [0, 7], 'n': C.HN, 'path': 'tiles/h/{L}/{x}_{y}.bin', 'q': 'round((h+200)*16) uint16, MED zigzag residuals LE interleaved, zlib'},
             'm': {'levels': [0, 7], 'n': C.MN, 'path': 'tiles/m/{L}/{x}_{y}.bin', 'channels': 'R water, G night lights, B canopy, A landcover'},
             't': {'levels': [7, 7], 'path': 'tiles/t/7/{x}_{y}.bin', 'record': 'u16 x, u16 z, u8 r(0.1m), u8 h(0.25m), u8 kind, u8 tint'},
         },
-        'present': {p: {str(L): len(have(p, L, e)) for L in range(0, 9)} for p, e in (('img', 'jpg'), ('h', 'bin'), ('m', 'bin'), ('t', 'bin'))},
         'attribution': 'Imagery: USDA NAIP via USGS The National Map (public domain). Elevation: AWS Terrain Tiles (Mapzen; USGS 3DEP, NOAA and others). Map data (c) OpenStreetMap contributors, ODbL.',
     }
+    sqL = lambda L: C.level_tiles(L) if L <= 5 else [tuple(t) for t in levels.get(str(L), [])]
+    idx['present'] = {p: {str(L): have(p, L, e, [t for t in sqL(L) if t[1] >= 0]) for L in range(0, 9)}
+                      for p, e in (('img', 'jpg'), ('h', 'bin'), ('m', 'bin'), ('t', 'bin'))}
+    # the north strip: L2-L5 complete (declared only when every strip tile of those levels has img + h + m)
+    if C.north_enabled():
+        roots_ok = all(complete(L, t) for L in range(2, 6) for t in C.north_tiles(L))
+        if roots_ok or north:
+            idx['north'] = {'z0': C.NORTH_Z0, 'rows': 'ty = -1 .. -(2^L / 4) at level L >= 2 (lat 37.8429 .. 38.0736)',
+                            'complete': list(C.NORTH_COMPLETE) if roots_ok else None, 'levels': north}
     if a.region:
         idx['partial'] = a.region
     # keep what the GPU passes added (tools/sr_tiles.py: level 9; tools/sr_l8.py: 1024 px L8)
-    try:
-        prev = json.load(open(os.path.join(C.PUB, 'index.json')))
-        pimg = prev.get('products', {}).get('img', {})
-        if '9' in prev.get('levels', {}):
-            idx['levels']['9'] = prev['levels']['9']
-            idx['present']['img']['9'] = len(prev['levels']['9'])
-        for k in ('levels', 'size8', 'size9', 'sr'):
-            if k in pimg:
-                idx['products']['img'][k] = pimg[k]
-    except Exception:
-        pass
+    pimg = prev.get('products', {}).get('img', {})
+    if '9' in levels:
+        idx['present']['img']['9'] = len(levels['9'])
+    for k in ('levels', 'size8', 'size9', 'sr'):
+        if k in pimg:
+            idx['products']['img'][k] = pimg[k]
     C.write_atomic(os.path.join(C.PUB, 'index.json'), json.dumps(idx, separators=(',', ':')).encode())
-    C.log('index.json written;', {p: sum(v.values()) for p, v in idx['present'].items()})
+    C.log('index.json written;', {p: sum(v.values()) for p, v in idx['present'].items()},
+          'north:', {k: len(v) for k, v in north.items()}, 'roots complete' if idx.get('north', {}).get('complete') else '')
 
 
 STEPS = {'coverage': step_coverage, 'osm': step_osm, 'terrarium': step_terrarium, 'heights': step_heights, 'imagery': step_imagery,
@@ -243,6 +275,8 @@ def main():
     ap.add_argument('--cpu', type=int, default=max(2, (os.cpu_count() or 4) - 1))
     ap.add_argument('--force', action='store_true')
     ap.add_argument('--force-coarse', action='store_true')
+    ap.add_argument('--rewrite', action='store_true', help='old behaviour: re-mosaic / re-pool existing coarse tiles when '
+                    'their children change (rewrites published files in place; the default is add-only)')
     a = ap.parse_args()
     signal.signal(signal.SIGTERM, lambda *_: (fetch.STOP.set(), sys.exit(1)))
     steps = ALL if a.step == 'all' else [a.step]
