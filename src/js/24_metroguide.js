@@ -711,9 +711,9 @@ const MetroGuide = (() => {
     if (clear || low) { pend = null; if (inst) for (const m of Object.values(inst)) { m.count = 0; m.visible = false; } MT.stats.inst = 0; lastC.set(1e9, 0, 0); return; }
     if (pend) { placeSlice(); return; }
     if (cam.distanceToSquared(lastC) < 144) return; lastC.copy(cam);
-    const I = ensureInst(); let nI = 0, nD = 0;
+    const t0 = performance.now(), I = ensureInst(); let nI = 0, nD = 0, tIns = 0;
     cand.length = 0;
-    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, MID) : [];
+    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, MID) : []; const t1 = performance.now();
     for (const q of near) {
       const R = MT.trackOf(q.track); if (!R) continue;
       MT.frameAt(R, q.s, F); if (Math.abs(F.y - cam.y) > 60) continue;
@@ -723,7 +723,7 @@ const MetroGuide = (() => {
         for (let s = Math.ceil(Math.max(a, run.s0) / sp) * sp; s < Math.min(b, run.s1); s += sp) { const d = Math.hypot(s - q.s, q.dist); cand.push(d, s, R.k, df ? 1 : 0); }
       }
       // insulators every T3.insulator m along the third rail's pieces (lowered with the rail on its end ramps), within 150 m
-      const ia = Math.max(a, q.s - 150), ib = Math.min(b, q.s + 150);
+      const ia = Math.max(a, q.s - 150), ib = Math.min(b, q.s + 150); const ti = performance.now();
       if (ib > ia) for (const pc of thirdPieces(R, ia, ib)) {
         for (let s = Math.ceil((pc.a + 0.3) / T3.insulator) * T3.insulator; s < pc.b - 0.3; s += T3.insulator) {
           const run = R.runs.find(r => s >= r.s0 && s < r.s1), df = !!run && DF.has(run.type), mesh = df ? I.insDF : I.ins;
@@ -733,7 +733,9 @@ const MetroGuide = (() => {
           _m4.elements[13] -= thirdDrop(pc, s); mesh.setMatrixAt(k, _m4);
         }
       }
+      tIns += performance.now() - ti;
     }
+    MT.stats.instParts = [+(t1 - t0).toFixed(1), +(performance.now() - t1 - tIns).toFixed(1), +tIns.toFixed(1), near.length];
     I.ins.count = nI; I.insDF.count = nD; for (const m of [I.ins, I.insDF]) { m.instanceMatrix.needsUpdate = m.count > 0; m.visible = m.count > 0; }
     // nearest first (a bucket sort by the metre)
     const bk = []; for (let i = 0; i < cand.length; i += 4) { const k = Math.min(MID, cand[i] | 0); (bk[k] || (bk[k] = [])).push(i); }

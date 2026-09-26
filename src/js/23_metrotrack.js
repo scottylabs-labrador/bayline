@@ -726,7 +726,7 @@ const MetroTrack = (() => {
       if (!away) { away = true; disposeAll(); if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) MetroGuide.updateInstances(camPos, TRACKS, true); }
       stats.away = 1; stats.chunks = stats.far = stats.body = stats.detail = 0; stats.jobs = 0; stats.buildMs = 0; return;
     }
-    away = false; stats.away = 0;
+    away = false; stats.away = 0; const T0 = performance.now(), tb = stats.tb || (stats.tb = [0, 0, 0, 0, 0, 0]);
     // wetness follows the rain (dries slowly)
     const rain = typeof Precip !== 'undefined' && Precip.state && Precip.state.kind === 'rain' ? Precip.state.rate : 0;
     uWet.value = U.clamp(uWet.value + (rain > 0.05 ? dt / 40 : -dt / 900), 0, 1);
@@ -738,12 +738,14 @@ const MetroTrack = (() => {
         if (Terrain.hasDetail(b[0], b[2], b[3], b[5], 7)) schedule(ch, bodyJob(ch), 0); else if (!ch.ensured) { ch.ensured = true; Terrain.ensure(b[0], b[2], b[3], b[5], 2, 7); } }
       if (ch.g) { ch.g.visible = d < R_BODY * 1.08; if (ch.g.visible) nBody++; }
     }
+    const T1 = performance.now();
     // DETAIL: rails, plinths, third rail
     for (const ch of gather('detail', camPos)) {
       if (ch.failed > 2) continue; const d = ch.d;
       if (d < R_DETAIL && !ch.g && !ch.job) schedule(ch, detailJob(ch), 60);
       if (ch.g) { ch.g.visible = d < R_DETAIL * 1.15; if (ch.g.visible) nDet++; }
     }
+    const T2 = performance.now();
     // FAR: silhouettes of aerials, bridges, embankments; each 400 m piece hides where a body chunk shows
     const SUB = LAYERS.far.SUB, BC = LAYERS.body.CH;
     for (const ch of gather('far', camPos, farR)) {
@@ -758,14 +760,18 @@ const MetroTrack = (() => {
       }
     }
     for (const j of jobs) j.d = j.ch.d + (j.ch.layer === 'detail' ? 60 : j.ch.layer === 'far' ? 500 + j.ch.d * 0.3 : 0);
+    const T3 = performance.now();
     // dispose what fell out of each ring (with some hysteresis)
     for (const layer of ['detail', 'body', 'far']) {
       const lim = LAYERS[layer].R * LAYERS[layer].keep, near = nearSets[layer];
       for (const ch of [...built[layer]]) { const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
     }
+    const T4 = performance.now();
     runJobs();
+    const T5 = performance.now();
     if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) { const ti = performance.now(); try { MetroGuide.updateInstances(camPos, TRACKS); } catch (e) { if (!instErr) { instErr = true; console.warn('MetroTrack: instanced parts off', e); } } stats.instMs = Math.max(stats.instMs * 0.98, performance.now() - ti); }
     stats.chunks = nearSets.body.size + nearSets.detail.size + nearSets.far.size; stats.far = nFar; stats.body = nBody; stats.detail = nDet;
+    const T6 = performance.now(); tb[0] = T1 - T0; tb[1] = T2 - T1; tb[2] = T3 - T2; tb[3] = T4 - T3; tb[4] = T5 - T4; tb[5] = T6 - T5;   // (QA: this frame's body / detail / far / dispose / jobs / instances ms)
   }
 
   let instErr = false;
