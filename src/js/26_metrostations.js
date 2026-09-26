@@ -282,7 +282,14 @@ const MetroStations = (() => {
     if (st.state !== 'built') return { state: st.state, error: st.error || null };
     for (let i = 0; i < (o.settle || 70); i++) { B.stepFrame(1); await sleep(25); }
     let tris = 0; if (st.root) st.root.traverse(m => { if (m.isMesh && m.geometry.index) tris += m.geometry.index.count / 3 * (m.geometry.instanceCount || 1); });
-    return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null };
+    // perf: GPU cost (Post.profile, synced) and draw calls / triangles with the metro stations drawn and hidden
+    let perf = null;
+    if (o.perf && B.Post && B.Post.profile) {
+      const meas = () => { B.stepFrame(1); const st1 = Object.assign({}, B.Post.stats); const pr = B.Post.profile(10); return { calls: st1.calls, tris: st1.triangles, gpu: pr && pr.total, scene: pr && pr.scene }; };
+      const on = meas(); group.visible = false; const off = meas(); group.visible = true;
+      perf = { on, off, dCalls: on.calls - off.calls, dTris: on.tris - off.tris, dGpu: +(on.gpu - off.gpu).toFixed(2), pct: +(100 * (on.gpu - off.gpu) / Math.max(0.1, off.gpu)).toFixed(1) };
+    }
+    return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null, perf };
   }
 
   const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, get enabled() { return enabled; }, get ready() { return ready; },
