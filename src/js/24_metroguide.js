@@ -38,10 +38,10 @@ const MetroGuide = (() => {
   // shared structures (bed, walls, columns): built by the primary of a pair, or by an unpaired track
   function owns(ctx, s) { const p = ctx.pairAt(ctx.R, s); return !p || p.primary; }
   // s-ranges of [a, b] where I own the shared structure and am not inside a station's limits
-  function ownedRanges(ctx, a, b, needOwn = true) {
+  function ownedRanges(ctx, a, b, needOwn = true, keepStations = false) {
     const out = []; let cur = null;
     for (let s = a; s <= b + 1e-6; s += Math.max(1, Math.min(5, (b - a) / 2))) {
-      const ok = (!needOwn || owns(ctx, s)) && !ctx.inStation(ctx.R, s);
+      const ok = (!needOwn || owns(ctx, s)) && (keepStations || !ctx.inStation(ctx.R, s));
       if (ok) { if (!cur) cur = [s, s]; else cur[1] = s; } else if (cur) { out.push(cur); cur = null; }
       if (s >= b) break;
     }
@@ -461,42 +461,57 @@ const MetroGuide = (() => {
 
   // ------------------------------------------------------------------ detail layer: rails, plinths, third rail
   const DF = new Set(['aerial', 'bridge', 'trench', 'portal', 'cutcover', 'bored', 'tube']);
+  // the detail layer of a chunk: my own rails where I am unpaired or the primary of a pair, and my partner's rails on
+  // the paired pieces (so a pair's track detail is one draw call); the non-primary builds nothing on paired pieces
   function* detail(ctx) {
     const R = ctx.R, s0 = ctx.s0, s1 = ctx.s1;
     for (const run of R.runs) {
       if (run.s1 <= s0 || run.s0 >= s1) continue;
       const a = Math.max(run.s0, s0), b = Math.min(run.s1, s1); if (b - a < 0.05) continue;
-      const under = MT.UNDERGROUND.has(run.type), gb = under ? ctx.B.tunnel : ctx.B.infra;
-      if (under && typeof MetroTube !== 'undefined') gb.fix = MetroTube.fixFor(R, (a + b) / 2, run.type);
-      // rails (banked frame), dense sampling for smooth curves; near junctions a rail another track draws is skipped
-      const ss = ctx.sampleS(R, a, b, 6, 0.8);
-      const zoned = zonesOf(R).some(z => z[1] > a && z[0] < b);
-      for (const side of [-1, 1]) {
-        gb.wear = 0.4;
-        if (!zoned) { gb.sweep(ctx.rowsAt(ctx, ss, side * DIM.railC, 0, true), RAILS[side], RAILC); continue; }
-        const fine = []; for (const q of ss) { if (fine.length && inZone(R, q)) { const p0 = fine[fine.length - 1]; for (let t = p0 + 0.5; t < q - 0.25; t += 0.5) fine.push(t); } fine.push(q); }
-        let piece = [];
-        for (const q of fine) { if (inZone(R, q) && railDup(R, q, side)) { if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC); piece = []; } else piece.push(q); }
-        if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC);
-        yield;
-      }
-      if (zoned) for (const z of zonesOf(R)) { const za = Math.max(a, z[0]), zb = Math.min(b, z[1]); if (zb > za) { buildJunctionParts(ctx, gb, za, zb); yield; } }
-      // plinths (DF structures) under each rail, broken every 4.6 m for drainage; ties are instanced
-      const PL = run.type === 'aerial' || run.type === 'bridge' ? 22.5 : 9.14;       // plinths break at deck joints / every 30 ft
-      if (DF.has(run.type)) for (let q = Math.floor(a / PL) * PL; q < b; q += PL) {
-        const q0 = Math.max(a, q + 0.04), q1 = Math.min(b, q + PL - 0.04); if (q1 - q0 < 0.4) continue;
-        if (ctx.inStation(R, (q0 + q1) / 2, -12)) continue;                 // (stations build their own trackway)
-        const pss = ctx.sampleS(R, q0, q1, 4.6, 1.2);
-        for (const side of [-1, 1]) {
-          const rows = ctx.rowsAt(ctx, pss, side * DIM.railC, 0, true), w = DIM.plinthW / 2, top = -DIM.railH - 0.04;
-          gb.wear = 0.6; gb.sweep(rows, [[-w, top - 0.35], [-w, top - 0.02], [-w + 0.03, top], [w - 0.03, top], [w, top - 0.02], [w, top - 0.35]], PAL.plinth);
-          const cap = [[-w, top - 0.3], [-w, top], [w, top], [w, top - 0.3]]; gb.capProfile(rows[0], cap, PAL.plinth, -1); gb.capProfile(rows[rows.length - 1], cap, PAL.plinth, 1);
+      for (const [q0, q1] of ownedRanges(ctx, a, b, true, true)) {
+        yield* trackDetail(ctx, run, q0, q1);
+        const p = ctx.pairAt(R, (q0 + q1) / 2);
+        if (p && p.primary) {                                                 // the partner's piece: map my ends onto its s
+          const pa = ctx.pairAt(R, q0), pb = ctx.pairAt(R, q1); if (!pa || !pb) continue;
+          const Q = p.R2, qa = Math.max(0, Math.min(pa.s2, pb.s2)), qb = Math.min(Q.len, Math.max(pa.s2, pb.s2)); if (qb - qa < 0.5) continue;
+          const ctx2 = Object.assign({}, ctx, { R: Q });
+          for (const r2 of Q.runs) { if (r2.s1 <= qa || r2.s0 >= qb) continue; yield* trackDetail(ctx2, r2, Math.max(qa, r2.s0), Math.min(qb, r2.s1)); }
         }
       }
-      buildThird(ctx, gb, a, b);
-      gb.wear = 0.5;
+    }
+  }
+  function* trackDetail(ctx, run, a, b) {
+    const R = ctx.R;
+    const under = MT.UNDERGROUND.has(run.type), gb = under ? ctx.B.tunnel : ctx.B.infra;
+    if (under && typeof MetroTube !== 'undefined') gb.fix = MetroTube.fixFor(R, (a + b) / 2, run.type);
+    // rails (banked frame), dense sampling for smooth curves; near junctions a rail another track draws is skipped
+    const ss = ctx.sampleS(R, a, b, 6, 0.8);
+    const zoned = zonesOf(R).some(z => z[1] > a && z[0] < b);
+    for (const side of [-1, 1]) {
+      gb.wear = 0.4;
+      if (!zoned) { gb.sweep(ctx.rowsAt(ctx, ss, side * DIM.railC, 0, true), RAILS[side], RAILC); continue; }
+      const fine = []; for (const q of ss) { if (fine.length && inZone(R, q)) { const p0 = fine[fine.length - 1]; for (let t = p0 + 0.5; t < q - 0.25; t += 0.5) fine.push(t); } fine.push(q); }
+      let piece = [];
+      for (const q of fine) { if (inZone(R, q) && railDup(R, q, side)) { if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC); piece = []; } else piece.push(q); }
+      if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC);
       yield;
     }
+    if (zoned) for (const z of zonesOf(R)) { const za = Math.max(a, z[0]), zb = Math.min(b, z[1]); if (zb > za) { buildJunctionParts(ctx, gb, za, zb); yield; } }
+    // plinths (DF structures) under each rail, continuous, broken at deck joints / every 30 ft; ties are instanced
+    const PL = run.type === 'aerial' || run.type === 'bridge' ? 22.5 : 9.14;
+    if (DF.has(run.type)) for (let q = Math.floor(a / PL) * PL; q < b; q += PL) {
+      const q0 = Math.max(a, q + 0.04), q1 = Math.min(b, q + PL - 0.04); if (q1 - q0 < 0.4) continue;
+      if (ctx.inStation(R, (q0 + q1) / 2, -12)) continue;                 // (stations build their own trackway)
+      const pss = ctx.sampleS(R, q0, q1, 4.6, 1.2);
+      for (const side of [-1, 1]) {
+        const rows = ctx.rowsAt(ctx, pss, side * DIM.railC, 0, true), w = DIM.plinthW / 2, top = -DIM.railH - 0.04;
+        gb.wear = 0.6; gb.sweep(rows, [[-w, top - 0.35], [-w, top - 0.02], [-w + 0.03, top], [w - 0.03, top], [w, top - 0.02], [w, top - 0.35]], PAL.plinth);
+        const cap = [[-w, top - 0.3], [-w, top], [w, top], [w, top - 0.3]]; gb.capProfile(rows[0], cap, PAL.plinth, -1); gb.capProfile(rows[rows.length - 1], cap, PAL.plinth, 1);
+      }
+    }
+    buildThird(ctx, gb, a, b);
+    gb.wear = 0.5;
+    yield;
   }
   function buildThird(ctx, gb, a0, b0) {
     const R = ctx.R, s0 = Math.max(a0, 14), s1 = Math.min(b0, R.len - 14);

@@ -513,7 +513,7 @@ const MetroTrack = (() => {
   // ---------------------------------------------------------------- chunks, layers, jobs
   // Each layer cuts every track into its own chunk length: DETAIL 400 m (≤ 480 m away), BODY 800 m (≤ 2.7 km), FAR 2 km
   // (≤ 11 km; five 400 m sub-pieces that hide themselves, per mesh, where a BODY chunk is already drawn).
-  const LAYERS = { detail: { CH: 400, R: 480, keep: 1.35 }, body: { CH: 800, R: 2700, keep: 1.25 }, far: { CH: 2000, R: 11000, keep: 1.12, SUB: 400 } };
+  const LAYERS = { detail: { CH: 800, R: 480, keep: 1.35 }, body: { CH: 800, R: 2700, keep: 1.25 }, far: { CH: 2000, R: 11000, keep: 1.12, SUB: 400 } };
   const R_DETAIL = LAYERS.detail.R, R_BODY = LAYERS.body.R, R_FAR = LAYERS.far.R, CH = LAYERS.detail.CH, BUDGET = 3.2;
   const grids = { detail: new Map(), body: new Map(), far: new Map() }, CG = 1000;
   const built = { detail: new Set(), body: new Set(), far: new Set() };          // chunks with a group or a job
