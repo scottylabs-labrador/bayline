@@ -74,7 +74,11 @@ const Player = (() => {
   function cars(tr) { return tr && tr.entry ? tr.entry.consist.cars : null; }
   function leadCar(tr) { const cs = cars(tr); if (!cs) return null; return tr.dir ? cs[0] : cs[cs.length - 1]; }
   function setFocus(key) { focus = key; Sim.setFocus(key); }
-  function groundAt(x, z) {
+  // Bayline Metro (#metro=1 only): station floors are y-aware (stacked levels under the street), see notes/bart/sim.md
+  const metroWalk = () => typeof MetroSim !== 'undefined' && MetroSim.enabled && typeof MetroStations !== 'undefined' && !!MetroStations.floorAt;
+  function metroFloor(x, y, z) { if (y === undefined || !metroWalk()) return null; const f = MetroStations.floorAt(x, y, z); return typeof f === 'number' && isFinite(f) ? f : null; }
+  function groundAt(x, z, y) {
+    const mf = metroFloor(x, y, z); if (mf !== null) return mf;
     const ap = typeof Airports !== 'undefined' ? Airports.groundAt(x, z) : null;
     if (typeof Globe !== 'undefined' && !Globe.inBayline(x, z)) return Math.max(Globe.h(x, z), 0, ap ?? -1e9);   // the rest of the planet
     if (ap !== null) return Math.max(ap, Terrain.h(x, z));
@@ -121,7 +125,7 @@ const Player = (() => {
     if (m === 'orbit') { orbit.rel = false; fovTarget = 55; if (opts.target) { setFocus(null); orbit.tx = opts.target.x; orbit.ty = opts.target.y; orbit.tz = opts.target.z; } if (opts.dist) orbit.dist = opts.dist; }
     if (m === 'trackside') { ts.s = -1; }
     if (m === 'heli') { heli.ang = Math.random() * 6; fovTarget = 40; }
-    if (m === 'walk') { if (opts.pos) { walk.x = opts.pos.x; walk.z = opts.pos.z; walk.y = opts.pos.y; look.yaw = opts.pos.yaw !== undefined ? yawFromHeading(opts.pos.yaw) : look.yaw; look.pitch = 0; } else { const p = cam().position; walk.x = p.x; walk.z = p.z; walk.y = groundAt(p.x, p.z); } fovTarget = 68; }
+    if (m === 'walk') { if (opts.pos) { walk.x = opts.pos.x; walk.z = opts.pos.z; walk.y = opts.pos.y; look.yaw = opts.pos.yaw !== undefined ? yawFromHeading(opts.pos.yaw) : look.yaw; look.pitch = 0; } else { const p = cam().position; walk.x = p.x; walk.z = p.z; walk.y = groundAt(p.x, p.z, p.y - EYE); } fovTarget = 68; }
     if (m === 'fly') { const p = cam().position; fly.x = p.x; fly.y = Math.max(p.y, groundAt(p.x, p.z) + 3); fly.z = p.z; const d = cam().getWorldDirection(tmpV); look.yaw = Math.atan2(d.x, -d.z); look.pitch = Math.asin(U.clamp(d.y, -1, 1)); fovTarget = 62; }
     if (!needsLock()) releaseLock();
     emit('mode', m);
@@ -194,7 +198,7 @@ const Player = (() => {
   }
   function alight(tr, d) {
     const car = cars(tr)[ob.car]; tmpV.set(d.x, 0, d.side * (car.width / 2 + 1.1)); car.group.localToWorld(tmpV);
-    const y = groundAt(tmpV.x, tmpV.z); const hd = Math.atan2(tmpV.x - car.group.position.x, tmpV.z - car.group.position.z);
+    const y = groundAt(tmpV.x, tmpV.z, tmpV.y + 1.0); const hd = Math.atan2(tmpV.x - car.group.position.x, tmpV.z - car.group.position.z);   // (y hint: a metro platform is ~1 m above the rail)
     // face away from the train
     const n = Track.nearest(tmpV.x, tmpV.z, 50); let face = 0; if (n) { Track.frame(n.s, F); face = Math.atan2(F.rx * Math.sign(n.lat || 1), F.rz * Math.sign(n.lat || 1)); }
     ob.key = null; setMode('walk', { pos: { x: tmpV.x, y, z: tmpV.z, yaw: face } });
@@ -224,15 +228,27 @@ const Player = (() => {
   }
   function moveWalk(dt) {
     const run = down('ShiftLeft', 'ShiftRight'); const sp = (run ? 5.2 : 1.6) * dt;
+    const M = metroWalk();
     let fx = 0, fz = 0; if (down('KeyW', 'ArrowUp')) fx += 1; if (down('KeyS', 'ArrowDown')) fx -= 1; if (down('KeyD', 'ArrowRight')) fz += 1; if (down('KeyA', 'ArrowLeft')) fz -= 1;
     if (fx || fz) { const n = Math.hypot(fx, fz); fx /= n; fz /= n;
       const c = Math.sin(look.yaw), s = -Math.cos(look.yaw);       // forward (x,z)
       const nx = walk.x + (fx * c - fz * s) * sp, nz = walk.z + (fx * s + fz * c) * sp;
-      const ok = (x, z) => { const g2 = groundAt(x, z); return g2 - walk.y < 0.6 && !Terrain.isWater(x, z) && !insideBuilding(x, z); };
+      const ok = M ? okMetroStep : (x, z) => { const g2 = groundAt(x, z); return g2 - walk.y < 0.6 && !Terrain.isWater(x, z) && !insideBuilding(x, z); };
       if (ok(nx, nz)) { walk.x = nx; walk.z = nz; } else if (ok(nx, walk.z)) walk.x = nx; else if (ok(walk.x, nz)) walk.z = nz; }
-    const gy = groundAt(walk.x, walk.z);
+    const mf = M ? metroFloor(walk.x, walk.y, walk.z) : null;
+    // below the street with no station floor here yet (a subway station still streaming in): hold, never pop up to the street
+    if (M && mf === null && walk.y < Terrain.h(walk.x, walk.z) - 2) { walk.vy = 0; return; }
+    const gy = mf !== null ? mf : groundAt(walk.x, walk.z);
     if (walk.y > gy + 0.05) { walk.vy -= 9.81 * dt; walk.y = Math.max(gy, walk.y + walk.vy * dt); } else { walk.vy = 0; walk.y = U.lerp(walk.y, gy, Math.min(1, dt * 12)); }
     if (down('Space') && walk.vy === 0 && Math.abs(walk.y - gy) < 0.1) walk.vy = 3.8, walk.y += 0.02;
+  }
+  // a walking step with Bayline Metro stations about: station floors and walls first, then the usual street rules
+  function okMetroStep(x, z) {
+    if (MetroStations.blocked && MetroStations.blocked(walk.x, walk.z, x, z, walk.y)) return false;
+    const f = metroFloor(x, walk.y, z);
+    if (f !== null) return f - walk.y < 0.6;
+    if (walk.y < Terrain.h(x, z) - 2) return false;                 // underground, off the station's floors: earth or a tunnel wall
+    const g2 = groundAt(x, z); return g2 - walk.y < 0.6 && !Terrain.isWater(x, z) && !insideBuilding(x, z);
   }
 
   // ---------- per-frame camera ----------
