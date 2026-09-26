@@ -407,8 +407,11 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     for (const key of c.zone) { const zm = zoneMembers.get(key); if (!zm) continue;
       for (const o of zm) { if (o === cid) continue; const had = seen.get(o); if (had && contains(had, rect)) continue; seen.set(o, unionR(had, rect)); state.visible.add(o); if (depth < 24) walk(o, rect, cam, depth + 1); } }
   }
+  // (a time budget: a walk that runs past 4 ms stops, and every cell within 300 m is drawn instead: a superset, never a hole)
+  let visT0 = 0, visOver = false;
   function walk(cid, rect, cam, depth) {
     stats.walk++;
+    if (visOver || ((stats.walk & 31) === 0 && performance.now() - visT0 > 4)) { visOver = true; return; }
     enterZone(cid, rect, cam, depth);
     for (const p of adj.get(cid) || EMPTY) {
       const o = other(p, cid); if (o === cid) continue;
@@ -422,7 +425,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   }
   const FULL = [-1, -1, 1, 1];
   function visibility(cam) {
-    state.visible.clear(); seen.clear(); state.outsideVisible = false; stats.walk = 0;
+    state.visible.clear(); seen.clear(); state.outsideVisible = false; stats.walk = 0; visT0 = performance.now(); visOver = false;
     for (const l of adj.values()) l.length = 0;
     for (const l of zoneMembers.values()) l.length = 0;
     for (const c of cells.values()) if (c.zone) for (const key of c.zone) { let l = zoneMembers.get(key); if (!l) zoneMembers.set(key, l = []); l.push(c.id); }
@@ -446,6 +449,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
         seen.set(inner, unionR(had, rr)); state.visible.add(inner); walk(inner, rr, cam, 0);
       }
     }
+    if (visOver) { const cp2 = cam.position; for (const k of cells.values()) if (cp2.x > k.bb[0] - 300 && cp2.x < k.bb[2] + 300 && cp2.z > k.bb[1] - 300 && cp2.z < k.bb[3] + 300) state.visible.add(k.id); stats.visOver = (stats.visOver || 0) + 1; }
     stats.visCells = state.visible.size;
   }
 
