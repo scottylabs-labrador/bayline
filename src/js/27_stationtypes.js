@@ -481,6 +481,7 @@ const StationTypes = (() => {
     const underOn = typeof Under !== 'undefined' && Under.enabled;
     // with Under: the cell ambient (bounce light) is Under's, for every material in the volume; mine would add it twice
     if (underOn) for (const { mat, z } of matsToTick) if (z.under) z.lights.amb = [0, 0, 0];
+    const ents = (T.entrances || []).map(e => ({ wx: e.wx, wz: e.wz }));          // (so the update does not keep T alive)
     res.update = (dt, camPos, night) => {
       const expo = (typeof Env !== 'undefined' && Env.state.exposure) || 1;
       const underK = underOn ? 1 : 1.0 / expo;           // Under fixes the exposure underground (1.0, day and night)
@@ -489,11 +490,14 @@ const StationTypes = (() => {
       shared.glow.userData.k.value = under ? 5 * underK : 2.5 + 3 * night;
       // without the Under module: hide the underground levels while the camera is up in the street, away from entrances
       if (under && !underOn && !MetroStations.debug.showAll) {
-        const upTop = camPos.y > street - 0.8; let nearEnt = false; for (const e of T.entrances || []) if (Math.hypot(camPos.x - e.wx, camPos.z - e.wz) < 30) { nearEnt = true; break; }
+        const upTop = camPos.y > street - 0.8; let nearEnt = false; for (const e of ents) if (Math.hypot(camPos.x - e.wx, camPos.z - e.wz) < 30) { nearEnt = true; break; }
         const vis = !upTop || nearEnt;
         for (const k in res.zones) if (res.zones[k].under) { res.zones[k].group.visible = vis; res.zones[k].near.visible = vis; }
       }
     };
+    // the geometry builders' working arrays (capacity-doubled typed arrays, several MB a zone) are not needed once the
+    // meshes exist; the per-frame update keeps the zones (lights, flags) alive, so drop the builders from them
+    for (const z of zones) { z.m = z.d = null; z.signs = null; z.boards = null; }
     return res;
   }
 
