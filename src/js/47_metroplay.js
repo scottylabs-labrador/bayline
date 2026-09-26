@@ -245,6 +245,23 @@ const MetroPlay = (() => {
     return { mode: tr.driven ? 'mdrive' : 'mride', trip: key, s: tr.s, car: tr.dir ? 0 : 99, x: 0, y: 0, z: 0, yaw: 0, speed: tr.v, ...w };
   }
   function update(dt) { if (on() && !strips) buildStrips(); if (pending) settleSpawn(); if (watch) watchPlatform(); }
+  // the metro failed (Metro.fail): a player riding, driving or following a metro train, or standing in a station below
+  // the street, is put in the open air above where the camera is (flying), so nothing depends on the metro any more
+  function rescue() {
+    pending = null; watch = null;
+    if (typeof Player === 'undefined') return;
+    const key = typeof MetroSim !== 'undefined' ? MetroSim.focus : null, c = Env.camera.position;
+    const g = typeof Terrain !== 'undefined' ? Terrain.h(c.x, c.z) : 0;
+    const metroTrain = typeof key === 'string' && key.startsWith('M:');
+    const below = c.y < g - 1.5, onMetro = Player.mode === 'walk' && below;
+    if (!metroTrain && !onMetro) return;
+    try { Player.setFocus(null); } catch (e) { /* keep going */ }
+    if (below) c.y = g + 40;
+    try { Player.setMode('fly'); if (Player.fly) Player.fly.y = Math.max(Player.fly.y, g + 40); } catch (e) { /* keep going */ }
+    if (Player.walk) Player.walk.hold = 0;
+  }
+  if (typeof Metro !== 'undefined') Metro.onTeardown(rescue);
 
-  return { floorAt, blocked, platformSpot, teleport, spawnFromStations, tunnelCam, trackside, endOfLine, walkPrompt, walkAction, toPeninsula, toMetro, nearPeninsulaXfer, netState, update, XFER };
+  const api = { floorAt, blocked, platformSpot, teleport, spawnFromStations, tunnelCam, trackside, endOfLine, walkPrompt, walkAction, toPeninsula, toMetro, nearPeninsulaXfer, netState, update, XFER };
+  return typeof Metro !== 'undefined' ? Metro.guardAll(api, 'the metro player') : api;
 })();

@@ -16,7 +16,7 @@
 //   Under.addCut({ id, poly, below })   Under.remove(id)   Under.cellAt(x, y, z)   Under.keep(obj)   Under.state
 //   Under.update(camera) (per frame, after the camera is placed)   Under.preRender() / Under.postRender() (around draw)
 const Under = (() => {
-  const enabled = (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();
+  const enabled = typeof Metro !== 'undefined' ? Metro.on : (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();   // (the switch: 18_metro.js)
   const state = { cell: null, failsafe: null, depth: 0, outsideVisible: true, visible: new Set(), daylight: 1, exposure: 1.0, maxBoost: 4.0 };
   const stats = { cells: 0, portals: 0, cuts: 0, visCells: 0, mapDraws: 0, mapMs: 0, culled: 0, walk: 0 };
   if (!enabled) {
