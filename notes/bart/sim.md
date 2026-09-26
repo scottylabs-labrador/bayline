@@ -286,6 +286,11 @@ The data is © BART under its developer license (free, as-is; no BART marks in t
 
 ## M3.1 (2026-09-26, after M3 shipped with the metro on by default; bart-sim + bart b97272a, metro/ = promoted M2b)
 
+- **Final verification on the M3.1 build** (bart-sim 0d65b58 + bart b97272a, metro on by default, 12:14-13:00):
+  `qa_metro_quiet.js` 4/4; item 2 `qa_metro_peninsula.sh` (page default = metro on) 0 failed (drive 73 mph, completed,
+  score 440 A+; PTC; signal; the six Caltrain spots; flight); item 4 isolation 11/11; item 5 phones 9/9 on Low and
+  Medium; item 6 `qa_metro_front.sh` 0 failed (metro on, `#metro=0`, default, phone); item 7 MP 12/12; item 8 tour 55
+  stops in 10.7 min + 3 min `#auto`, metro on, no page or console errors.
 - **The new checks in a real browser** (item 1):
   - The keyboard drive (97d457e): `PASS keyboard drive: 73 mph max, the run completed (2 stops, 0 missed), score 390 (A)`
     (summary `{"maxMph":73,"done":true,"stops":2,"missed":0,"ontime":2,"errM":2.1,"score":390,"grade":"A",...}`).
