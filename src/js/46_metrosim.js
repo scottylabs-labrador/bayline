@@ -692,7 +692,7 @@ const MetroSim = (() => {
       const flip = spec[pi].flip !== (tr.lead !== 0);
       FK.x = F1.x; FK.y = F1.y; FK.z = F1.z; FK.yaw = Math.atan2(-F1.tz, F1.tx); FK.pitch = Math.atan2(F1.ty, h);
       if (MetroKit._k && MetroKit._k.builders && !MetroKit._k.builders[kind]) { kitBad.add(tr.kind); return false; }   // (a kind MetroKit doesn't build: ours)
-      kitFar.addCar(kind, type, FK, flip);
+      kitFar.addCar(kind, type, FK, flip, lineColor(tr.line === 'ebart' ? 'yellow' : tr.line));   // (the cab car's front sign glows in the line colour)
     }
     if (night > 0.05 && !tr.underground) { kitFar.addLamp(tr.x, tr.y + 1.4, tr.z, 'head'); path.at(tr.s - n * P.carLen, F1); kitFar.addLamp(F1.x, F1.y + 1.4, F1.z, 'tail'); }
     return true;
