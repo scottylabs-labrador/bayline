@@ -36,7 +36,7 @@ C = {
     'BALB': dict(type='trench', layout='island',
                  note='Island platform below grade beside the I-280 cut: open trench at both ends, covered by Geneva Ave '
                       'and the headhouse in the middle (A); the lidar sees the open-cut trackbed.', src=['A', 'LIDAR']),
-    'DALY': dict(type='aerial', layout='split', plat=7.0, w=20,
+    'DALY': dict(type='aerial', layout='split',             # no height prior: the typical-aerial guess (+7 m) was 5 m off what the approaches allow
                  note='Elevated 3-track station: west side platform (P3, terminating Blue/Green alight only since Aug 2026), '
                       'centre track (P1, southbound through) and east track (P2, SF-bound) share the island (A).', src=['A']),
     'COLM': dict(type='trench', layout='split',

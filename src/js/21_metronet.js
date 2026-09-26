@@ -10,7 +10,8 @@
 //   MetroNet.stationsNear(x, z, r)           -> [{station, dist}] nearest first
 //   MetroNet.inTunnelAt(x, y, z)             -> {kind:'tunnel'|'station', track, s, struct, station?} | null
 //   await MetroNet.loadTimetable()           MetroNet.servicesOn(ymd) / tripsOn(ymd) / trip(id)
-//   MetroNet.crossings(trackOrId, s0, s1)    -> [{s, kind, cls, rel, width, angle, name, dy}]   MetroNet.constants / yards
+//   await MetroNet.loadCrossings(); MetroNet.crossings(trackOrId, s0, s1) -> [{s, kind, cls, rel, width, angle, name, dy}]
+//   MetroNet.constants / yards / stations[i].aliases
 const MetroNet = (() => {
   const STRUCT = ['grade', 'aerial', 'bridge', 'embankment', 'trench', 'median', 'portal', 'cutcover', 'bored', 'tube'];
   const UNDER = new Uint8Array(16); UNDER[6] = 1; UNDER[7] = 1; UNDER[8] = 1; UNDER[9] = 1;   // portal + underground
@@ -224,7 +225,21 @@ const MetroNet = (() => {
   function tripsOn(ymd) { if (!ttJ) return []; const sv = new Set(servicesOn(ymd)); return ttJ.trips.filter(t => sv.has(t.svc)); }
   function trip(id) { return ttJ ? ttJ.byTrip[id] : null; }
 
-  // streets / railways / waterways crossing a track between s0 and s1 (network.json tracks[].crossings, M2b):
+  // crossings.json (M2b): loaded on demand by the builders that need it (not part of the boot download)
+  let crossP = null;
+  function loadCrossings(prio = 3) {
+    if (crossP) return crossP;
+    crossP = (async () => {
+      if (ready) await ready;
+      try {
+        const j = await getJSON(dir + 'crossings.json', prio);
+        for (const id in j.tracks) if (byId[id]) byId[id].crossings = j.tracks[id];
+      } catch (e) { /* older data without crossings.json: crossings() returns [] */ }
+      return api;
+    })();
+    return crossP;
+  }
+  // streets / railways / waterways crossing a track between s0 and s1 (after loadCrossings(); M2b):
   // [{s, kind: 'road'|'rail'|'water', cls (OSM highway/railway/waterway value), rel: 'over'|'under'|'level', width, angle, name,
   //   dy (top of rail minus the lidar ground there, m; null without lidar)}]
   function crossings(tr, s0 = -Infinity, s1 = Infinity) {
@@ -234,7 +249,7 @@ const MetroNet = (() => {
     return out;
   }
   const api = {
-    load, loadTimetable: timetable, frame, point, nearest, nearAll, stationsNear, inTunnelAt, pathFor, servicesOn, tripsOn, trip, crossings,
+    load, loadTimetable: timetable, loadCrossings, frame, point, nearest, nearAll, stationsNear, inTunnelAt, pathFor, servicesOn, tripsOn, trip, crossings,
     tracks, byId, stations, stationById, lines, lineById, patterns, junctions, STRUCT, UNDER, MPH, RAIL_CC,
     isUnderground: (code) => !!UNDER[code],
     get ready() { return !!net; }, get net() { return net; }, get timetableData() { return ttJ; },

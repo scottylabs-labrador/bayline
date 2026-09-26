@@ -8,7 +8,7 @@ where fine enough, else a USGS NAIP chip), profile plots per line, and unit-sani
     python3 tools/metro/validate.py timetable              # trips vs pattern paths: order, dwell, implied hop speeds
     python3 tools/metro/validate.py runtimes               # minimum run time per hop from the speed limits vs the schedule
 """
-import io, json, math, os, struct, sys, zlib
+import collections, io, json, math, os, struct, sys, zlib
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -44,6 +44,10 @@ SPOTS = {
     'rich': (37.9368, -122.3530, 420, 'Richmond terminal'),
     'frmt': (37.5575, -121.9766, 420, 'Fremont'),
     'curve_ssf': (37.6560, -122.4330, 600, 'curve south of South San Francisco'),
+    'ashb': (37.8531, -122.2698, 420, 'Ashby: island tracks spread to 11.1 m under Adeline St (M2b)'),
+    'wdub': (37.6997, -121.9290, 420, 'West Dublin/Pleasanton: median, the OSM "tunnel" is a road bridge (M2b)'),
+    'mlpt': (37.4103, -121.8912, 420, 'Milpitas: roofed U-trench, lidar floor through the openings (M2b)'),
+    'antc': (37.9954, -121.7804, 300, 'Antioch: eBART island (M2b)'),
 }
 
 
@@ -233,8 +237,12 @@ def profiles(net):
                 if s['d'] >= 0:
                     ax.axvline(s['d'] / 1000, color='#444', lw=0.5, alpha=0.5)
                     ax.text(s['d'] / 1000, ax.get_ylim()[1], s['station'], rotation=90, va='top', ha='right', fontsize=7)
-            gr = np.abs(np.gradient(ys, ds * 1000 + 1e-9 * np.arange(len(ds))))
-            ax.set_title(f"{p['id']} leg {li} ({L['sys']}): {L['length']/1000:.1f} km, top of rail {ys.min():.0f}…{ys.max():.0f} m, max grade {np.nanmax(gr[np.isfinite(gr)])*100:.1f} %", fontsize=10)
+            # grade over 25 m on a uniform 5 m grid (path joins repeat samples a metre apart)
+            order_ = np.argsort(ds, kind='stable'); dm_ = ds[order_] * 1000.0; ym_ = ys[order_]
+            ug_ = np.arange(dm_[0], dm_[-1], 5.0)
+            uy_ = np.interp(ug_, dm_, ym_)
+            gr = np.abs(uy_[5:] - uy_[:-5]) / 25.0 if len(uy_) > 5 else np.array([0.0])
+            ax.set_title(f"{p['id']} leg {li} ({L['sys']}): {L['length']/1000:.1f} km, top of rail {ys.min():.0f}…{ys.max():.0f} m (grades and curves: see validation.json)", fontsize=10)
             ax.set_xlabel('km along the path'); ax.set_ylabel('m above sea level')
             ax.legend(ncol=10, fontsize=7, loc='lower left')
             ax.grid(alpha=0.25)
@@ -350,8 +358,21 @@ def min_run(lim, d0, d1, train_len, acc=1.0, dec=1.0, ds=5.0):
 
 
 def check_runtimes(net):
+    """Minimum run per station hop (limits held over the train, 1.0 m/s2) vs the median scheduled hop over all weekday
+    trips (GTFS times are whole minutes, so single trips can be a minute short), with the restrictions that cost time."""
     tt = json.load(open(os.path.join(PUB, 'timetable.json')))
     P = {p['id']: p for p in net['patterns']}
+    byid = {t['id']: t for t in net['tracks']}
+    sched_all = collections.defaultdict(list)
+    for t in tt['trips']:
+        if not t['svc'].endswith('Weekday-015'):
+            continue
+        p = P[t['pat']]
+        for li, (L, lt) in enumerate(zip(p['legs'], t['legs'])):
+            for k in range(len(L['stops']) - 1):
+                a, b = L['stops'][k], L['stops'][k + 1]
+                if lt[2 * k + 2] - lt[2 * k + 1] > 0:
+                    sched_all[(a['station'], b['station'])].append(lt[2 * k + 2] - lt[2 * k + 1])
     worst = {}
     lims = {}
     for t in tt['trips']:
@@ -375,11 +396,28 @@ def check_runtimes(net):
                 if key in worst:
                     continue
                 mr = min_run(lim, a['d'], b['d'], tl)
-                worst[key] = (round(mr), sched, round(b['d'] - a['d']))
-    bad = sorted([(v[0] - v[1], k, v) for k, v in worst.items() if v[0] > v[1] + 5], reverse=True)
-    print(f'hops checked {len(worst)}; minimum run (1.0 m/s2 accel/brake, limits over the train length) > schedule + 5 s: {len(bad)}')
+                med = float(np.median(sched_all[key])) if sched_all.get(key) else sched
+                # restrictions below 70 mph on the way and what set them
+                rs = []
+                dd = 0.0
+                for tid, s0, s1 in L['path']:
+                    tr_ = byid[tid]
+                    n_ = max(1, int(abs(s1 - s0) / 5.0))
+                    prev = None
+                    for q in range(n_ + 1):
+                        dq = dd + abs(s1 - s0) * q / n_
+                        if a['d'] < dq < b['d']:
+                            i = min(tr_['n'] - 1, int(round((s0 + (s1 - s0) * q / n_) / tr_['step'])))
+                            v = int(tr_['VL'][i])
+                            if v < 70 and v != prev:
+                                rs.append(f'{v} mph on {tid} s={s0 + (s1 - s0) * q / n_:.0f}')
+                            prev = v
+                    dd += abs(s1 - s0)
+                worst[key] = (round(mr), sched, round(b['d'] - a['d']), med, min(sched_all.get(key, [sched])), rs)
+    bad = sorted([(v[0] - v[3], k, v) for k, v in worst.items() if v[0] > v[3] + 5], reverse=True)
+    print(f'hops checked {len(worst)}; minimum run (1.0 m/s2 accel/brake, limits over the train length) > median scheduled + 5 s: {len(bad)}')
     for d, k, v in bad[:25]:
-        print('  ', k, 'min', v[0], 's vs scheduled', v[1], 's over', v[2], 'm')
+        print('  ', k, 'min', v[0], 's vs scheduled median', int(v[3]), 's (shortest', v[4], 's) over', v[2], 'm; restrictions:', '; '.join(v[5][:6]) or 'none')
 
 
 if __name__ == '__main__':

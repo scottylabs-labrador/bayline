@@ -940,14 +940,23 @@ def write_tracks(tracks, links, junctions, stations, lines, pats, yards=()):
         p = tr['pub']
         segs = p['segments']
         tr_meta.append(dict(**h, length=round(float(p['s'][-1]), 2), gauge=1.435 if tr['sys'] != 'bart' else 1.676,
-                            station=tr.get('near_station'), structure=segs, prev=links[ti].get('prev'), next=links[ti].get('next'),
-                            crossings=tr.get('crossings', [])))
+                            station=tr.get('near_station'), structure=segs, prev=links[ti].get('prev'), next=links[ti].get('next')))
     net = dict(version=0, format='bayline-metro-network', frame='Bay frame: x=(lon+122.10)*88542.2 east, z=-(lat-37.40)*110985.1 south, y=m above sea level (top of rail)',
                generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), sources=SOURCES,
                structCodes=PR2.STRUCT_NAMES, tracksBin=dict(path=f'{PUB_DIR}/{bin_name}', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 5 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m), third-rail side (0 none, 1 left, 2 right); padded to 4 bytes'),
                constants=CONSTANTS, tracks=tr_meta, junctions=junctions, stations=stations, lines=lines, patterns=pats, yards=list(yards))
     size = write_json(os.path.join(PUB, 'network.json'), net)
     log(f'network.json {size/1e6:.2f} MB, tracks.bin {size_bin/1e6:.2f} MB ({len(raw)/1e6:.2f} MB raw), {len(tracks)} tracks')
+    # crossings in their own file, loaded on demand by the builders (keeps the boot download at the M2 size)
+    csize = write_json(os.path.join(PUB, 'crossings.json'), crossings_doc({tracks[ti]['id']: tracks[ti].get('crossings', []) for ti in order}))
+    log(f'crossings.json {csize/1e6:.2f} MB')
+
+
+def crossings_doc(by_track):
+    return dict(version=0, format='bayline-metro-crossings', generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'),
+                fields=['s', 'kind', 'class', 'rel', 'width', 'angle', 'name', 'dy'],
+                source='OpenStreetMap ways (c) OpenStreetMap contributors, ODbL 1.0; dy from the USGS 3DEP lidar',
+                tracks={k: v for k, v in by_track.items() if v})
 
 
 CONSTANTS = dict(

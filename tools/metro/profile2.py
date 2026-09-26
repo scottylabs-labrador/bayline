@@ -218,6 +218,7 @@ def classify(Sm, H, SRC, roads, zones=None):
             if (lo < -5).any() and (lo > 5).any() and (lo[lo < -5].max() > -45) and (lo[lo > 5].min() < 45):
                 median[g] = True
     underpass = []
+    holes = []
     for k, tr in enumerate(Sm.tracks):
         a, b = Sm.off[k], Sm.off[k + 1]
         c = np.full(b - a, S['grade'], np.uint8)
@@ -254,12 +255,22 @@ def classify(Sm, H, SRC, roads, zones=None):
                     nb = runs[idx - 1][2] if idx > 0 else runs[idx + 1][2]
                     if nb in OPEN:
                         c[p:q] = nb
-        # open gaps < 60 m between two covered runs are covered too (station lids, OSM tag gaps)
+        # open gaps < 60 m between two covered runs are covered too (station lids, OSM tag gaps), unless the lidar looks
+        # down into a cut there (>= 3 m below the covered ground either side: the openings of a roofed U-trench such as
+        # Milpitas, whose floor the lidar sees)
         runs = rle(c)
+        w20 = max(1, int(round(20 / L)))
         for idx, (p, q, cc) in enumerate(runs):
             if 0 < idx < len(runs) - 1 and cc in OPEN and (q - p) * L < 60 and runs[idx - 1][2] in (S['cutcover'], S['bored']) \
                     and runs[idx + 1][2] in (S['cutcover'], S['bored']):
-                c[p:q] = S['cutcover']
+                lid_ok = (SRC[a + p:a + q, C0] == 1).all()
+                g_gap = float(np.median(gc[p:q]))
+                g_nb = min(float(np.median(gc[max(runs[idx - 1][0], p - w20):p])), float(np.median(gc[q:min(runs[idx + 1][1], q + w20)])))
+                if lid_ok and g_gap < g_nb - 3.0:
+                    c[p:q] = S['trench']
+                    holes.append((tr['id'], round(p * L), round((q - p) * L), round(g_nb - g_gap, 1)))
+                else:
+                    c[p:q] = S['cutcover']
         # OSM "tunnels" that are only a road bridge over open track: the bare-earth lidar has no deck, so the ground over
         # the run is no higher than the track bed either side (West Dublin: 100 m under the I-680 ramps; Millbrae Ave).
         # They stay open track; tracks[].crossings records the road passing over.
@@ -291,6 +302,8 @@ def classify(Sm, H, SRC, roads, zones=None):
         code[a:b] = c
     if underpass:
         log(f'OSM tunnels that are road bridges over open track (no ground over them in the lidar): {underpass}')
+    if holes:
+        log(f'openings in covered runs where the lidar sees the cut floor (kept open): {holes}')
     if zones:
         for (k, i0, i1, cc) in zones:
             code[Sm.off[k] + i0:Sm.off[k] + i1] = cc
@@ -1146,7 +1159,7 @@ def validate(tracks, stations, junctions, platform_groups):
                 k = bad[int(ratio[bad].argmax())]
                 rep['vcurve'].append([t['id'], round(float((k + 1) * st), 1), round(float(1 / abs(d2[k])), 0), int(len(bad)), round(float(rmin[k]), 0)])
         g = p['g']; src = p.get('gsrc', np.ones(len(y)))
-        grob = ndimage.median_filter(g, size=13, mode='nearest') if len(g) > 13 else g     # overpass decks kept in bare earth
+        grob = ndimage.median_filter(g, size=25, mode='nearest') if len(g) > 25 else g     # overpass decks / berms kept in bare earth
         # the bare-earth lidar keeps some road decks: skip the track under every street/railway that crosses over it
         deck = np.zeros(len(y), bool)
         for c_ in t.get('crossings', []):
@@ -1170,11 +1183,16 @@ def validate(tracks, stations, junctions, platform_groups):
         # tunnel cover: ~6 m from top of rail to the street for a cut-and-cover box, ramping in from the OSM tunnel start
         # at 3 %/m like the solver (portal approaches / lids); flags what the solve could not meet
         und = np.isin(code, [S['portal'], S['cutcover'], S['bored'], S['tube']])
+        for (p_, q_, v_) in rle(und.astype(np.uint8)):
+            if v_ and (q_ - p_) * st < 60.0:
+                und[p_:q_] = False                      # lids / road decks over the track, not tunnels
         d_und = _run_dist(und, st)
         req = np.minimum(6.0, FACE_COVER + d_und * RAMP) - 0.5
         gsm = ndimage.gaussian_filter1d(g, max(1.0, 10.0 / st), mode='nearest')
         cv = np.where(und, gsm - y, 1e9)
-        bad = np.where(cv < req)[0]
+        badm = cv < req
+        badm &= np.convolve(badm.astype(int), np.ones(2, int), 'same') >= 2 if len(badm) > 2 else badm   # >= 2 samples in a row
+        bad = np.where(badm)[0]
         if len(bad):
             k = bad[int((cv[bad] - req[bad]).argmin())]
             rep['tunnel_shallow'].append([t['id'], round(float(k * st), 1), round(float(cv[k]), 2), int(len(bad))])
