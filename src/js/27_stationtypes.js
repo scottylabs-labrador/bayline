@@ -391,8 +391,10 @@ const StationTypes = (() => {
       for (const [ue, dir] of [[p.u0, -1], [p.u1, 1]]) {
         const f = frameAt(ue); const a = p.eL(ue), b = p.eR(ue); const g = p.zone.m.sk; g.mat(S.edgeFace[0], K.CONCRETE, 0);
         const pa = [f.x - f.tz * a, f.z + f.tx * a], pb = [f.x - f.tz * b, f.z + f.tx * b]; const yb = yP - p.ph - 0.6;
-        if (dir > 0) g.quad([pa[0], yb, pa[1]], [pb[0], yb, pb[1]], [pb[0], yP, pb[1]], [pa[0], yP, pa[1]], [a, yb, b, yb, b, yP, a, yP]);
-        else g.quad([pb[0], yb, pb[1]], [pa[0], yb, pa[1]], [pa[0], yP, pa[1]], [pb[0], yP, pb[1]], [b, yb, a, yb, a, yP, b, yP]);
+        // (facing out of the platform along the track: from the higher v to the lower at the +u end, (-v) x up = +u; they
+        // faced into the platform, culled from the track and the cab: a platform's end showed its hollow)
+        if (dir > 0) g.quad([pb[0], yb, pb[1]], [pa[0], yb, pa[1]], [pa[0], yP, pa[1]], [pb[0], yP, pb[1]], [b, yb, a, yb, a, yP, b, yP]);
+        else g.quad([pa[0], yb, pa[1]], [pb[0], yb, pb[1]], [pb[0], yP, pb[1]], [pa[0], yP, pa[1]], [a, yb, b, yb, b, yP, a, yP]);
       }
       yield;
       // walk: floor strips (minus the openings) + edge walls
@@ -1127,6 +1129,10 @@ const StationTypes = (() => {
     const pillW = (u) => style === 'pill' ? Math.sqrt(Math.max(0.02, 1 - Math.pow(2 * t01(u) - 1, 2))) : 1;
     const NA = style === 'flat' || style === 'box' || style === 'frames' || style === 'shed' ? 2 : 8;
     const vAt = (a, u) => { const va = vA(u), vb = vB(u), c = (va + vb) / 2, hw = (vb - va) / 2 * pillW(u); return c - hw + a * 2 * hw; };
+    // (a roof over every track is built once: MacArthur's two islands each built it, two coincident roofs with their
+    // posts, beams and doubled line lights; the one roof's lights now carry both)
+    const nShare = C.span === 'all' ? T.plats.length : 1, dupRoof = C.span === 'all' && T._allRoof; if (C.span === 'all') T._allRoof = true;
+    if (dupRoof) { yield* platformEnds(T, p, u0, u1); return; }
     if (style !== 'frames' || true) {
       // top surface (a from 0 to 1 = left to right: upward normals), underside (reversed), and the long edges' fascias
       g.sweep(fr, (i, f) => { const P = []; for (let k = 0; k <= NA; k++) { const a = k / NA; P.push([vAt(a, f.u), top(a, f.u), null, k < NA ? mTop : undefined]); } return P; });
@@ -1181,7 +1187,7 @@ const StationTypes = (() => {
       const v = (u) => vAt(a, u); const y = (u) => top(a, u) - thick - 0.04;
       z.m.glow.mat(LC); z.m.glow.sweep(fr, (i, f) => [[v(f.u) - 0.07, y(f.u)], [v(f.u) + 0.07, y(f.u)]], true);
       const f0 = T.frameAt(u0 + 1), f1 = T.frameAt(u1 - 1); const ym = y((u0 + u1) / 2);
-      z.lights.add({ a: [f0.x - f0.tz * v(u0 + 1), ym, f0.z + f0.tx * v(u0 + 1)], b: [f1.x - f1.tz * v(u1 - 1), ym, f1.z + f1.tx * v(u1 - 1)], color: LC.map(k => k * I), range: 22, radius: 0.07, dir: [0, -1, 0], focus: 1 });
+      z.lights.add({ a: [f0.x - f0.tz * v(u0 + 1), ym, f0.z + f0.tx * v(u0 + 1)], b: [f1.x - f1.tz * v(u1 - 1), ym, f1.z + f1.tx * v(u1 - 1)], color: LC.map(k => k * I * nShare), range: 22, radius: 0.07, dir: [0, -1, 0], focus: 1 });
     }
     // open ends beyond the roof
     yield* platformEnds(T, p, u0, u1);
@@ -2247,7 +2253,7 @@ const StationTypes = (() => {
     yield;
     // the fence on the face's edge (research: "turquoise fence down the middle" of the shared island), on its surface
     // 0.1 m in, the face's whole length, open at the steps and the landing: posts every 2.4 m, top and bottom rails,
-    // bars every 0.12 m
+    // bars every 0.15 m
     const gaps = X.opens.map(q => [q.u - 1.5, q.u + 1.5]); if (X.ramp) gaps.push([X.ramp.u - 0.9, X.ramp.u + 0.9]); gaps.sort((a, b) => a[0] - b[0]);
     const vR = (u) => X.face(u) - o * 0.1, segs = []; let a0 = X.uF0 + 0.6;
     for (const [g0, g1] of gaps) { if (g0 > a0 + 0.3) segs.push([a0, g0]); a0 = Math.max(a0, g1); } if (X.uF1 - 0.6 > a0 + 0.3) segs.push([a0, X.uF1 - 0.6]);
@@ -2255,8 +2261,10 @@ const StationTypes = (() => {
     fg.mat(0x2f9e98, K.PAINT, 0.2);
     for (const [a, b] of segs) { const n = Math.max(1, Math.ceil((b - a) / 2.4)), us = []; for (let k = 0; k <= n; k++) us.push(a + (b - a) * k / n);
       for (let k = 0; k < n; k++) { fg.tube(P3(us[k], FH), P3(us[k + 1], FH), 0.03, 6); fg.tube(P3(us[k], 0.1), P3(us[k + 1], 0.1), 0.02, 4);
-        for (let u = us[k] + 0.12; u < us[k + 1] - 0.06; u += 0.12) fg.tube(P3(u, 0.1), P3(u, FH), 0.009, 3);
-        addWall(walk, WUV(us[k], vR(us[k])), WUV(us[k + 1], vR(us[k + 1])), yP - 0.5, Math.max(X.y(us[k]), X.y(us[k + 1])) + 1.2); }
+        for (let u = us[k] + 0.15; u < us[k + 1] - 0.07; u += 0.15) fg.tube(P3(u, 0.1), P3(u, FH), 0.01, 3);
+        addWall(walk, WUV(us[k], vR(us[k])), WUV(us[k + 1], vR(us[k + 1])), yP - 0.5, Math.max(X.y(us[k]), X.y(us[k + 1])) + 1.2);
+        // (and the face's edge itself, so the strip's walkers do not step up onto the 10 cm in front of the fence)
+        addWall(walk, WUV(us[k], X.face(us[k]) + o * 0.02), WUV(us[k + 1], X.face(us[k + 1]) + o * 0.02), yP - 0.5, yP + 1.5); }
       for (const u of us) { const [x, y, zz] = P3(u, 0); fg.push().at(x, y, zz, T.yawAt(u)); fg.cbox(0, 0, 0, 0.07, FH + 0.04, 0.07); fg.pop(); } }
     yield;
     // steps at the openings: n risers from the strip to the face (the face's edge is the top step), treads 0.32 m with
