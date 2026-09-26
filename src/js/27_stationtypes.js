@@ -304,7 +304,8 @@ const StationTypes = (() => {
   // the base ground at that lift (Towns builds on it), never under the drawn ground
   // (8 cm proud of the Towns sidewalk: its ribbon interpolates the ground across the band differently from the
   // collar's grid, and at 3 cm the two surfaces crossed in a sawtooth of bare planting strip)
-  function headLift(T, pts) { let s = 0; for (const [u, v] of pts) s = Math.max(s, surfLift(T, u, v)); return s > 0 ? s + 0.08 : 0.035; }
+  // (the median of the ring: an entrance in a bare plaza beside a sidewalk sits on the plaza, not raised to the curb)
+  function headLift(T, pts) { const ls = pts.map(([u, v]) => surfLift(T, u, v)).sort((a, b) => a - b); const s = ls[Math.floor((ls.length - 1) / 2)]; return s > 0 ? s + 0.08 : 0.035; }
   // (on a sidewalk or plaza the collar follows the base ground as Towns does; the detail layer is held at zero under
   // Towns' surfaces, and following its lidar bumps folded the collar's grid under the sidewalk in a sawtooth)
   function surfY(T, u, v, lift) { const [x, z] = T.WUV(u, v); const b = Terrain.hBase(x, z) + lift; return lift > 0.06 ? b : Math.max(b, Terrain.h(x, z) + 0.035); }
@@ -1707,7 +1708,8 @@ const StationTypes = (() => {
   }
   function dedupeEntrances(list) {
     const out = [];
-    for (const e of list) { if (!isFinite(e.x) || !isFinite(e.z)) continue; const dup = out.find(o => Math.hypot(o.x - e.x, o.z - e.z) < 14); if (dup) { if (e.src === 'gtfs' && dup.src !== 'gtfs') Object.assign(dup, e); continue; } out.push(Object.assign({}, e)); }
+    // (20 m: the data carries some corners twice, e.g. Montgomery's NW corner 16.6 m apart; opposite corners are wider)
+    for (const e of list) { if (!isFinite(e.x) || !isFinite(e.z)) continue; const dup = out.find(o => Math.hypot(o.x - e.x, o.z - e.z) < 20); if (dup) { if (e.src === 'gtfs' && dup.src !== 'gtfs') Object.assign(dup, e); continue; } out.push(Object.assign({}, e)); }
     return out;
   }
   // station-local (x, z) -> (u, v) by projection onto the spine
