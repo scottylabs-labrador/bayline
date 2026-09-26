@@ -6,9 +6,13 @@ Files owned: `src/js/46_metrosim.js`, `src/js/47_metro*.js` (`metroatc`, `metrop
 (`55_player.js`, `66_ui.js`, `70_sound.js`, `80_net.js`, `90_main.js`, `tools/devserver.py`). Everything is behind `#metro=1`
 (`MetroSim.enabled`; the lead flips `DEFAULT_ON` in `46_metrosim.js` to ship it by default; `#metro=0` forces it off).
 
-## Status (2026-09-26 01:50)
+## Status (2026-09-26 04:00)
 
-Working on the real MetroNet v0 + timetable (merged from `bart`), with placeholder consists until MetroKit lands:
+On `bart` 1f54fd2 (M1 integration: MetroNet v0 + timetable, infra guideway + Under, stations for all 50, MetroKit v0)
+plus the lead's QA list done (platform spawns, metro HUD at stations); MetroKit v1 (bart-trains) verified in a scratch
+build. Latest round: platform spawns with an open view beside where the next train will stand, the views following
+the next train due on that platform, MetroNet berth marks, MetroKit v1 PIS/VATC feeds, system-map labels that never
+collide, live mode verified against the real feed. Earlier notes below still hold:
 
 - **Timetable runtime** (`MetroSim`): every trip of the service day (today + yesterday's after-midnight trips), per
   pattern leg (EMU / the Antioch DMU / the airport cable train), split again at reversals (SFO); 1,059 trips planned
@@ -24,7 +28,10 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
     St subway); where a run's minimum time exceeds the published time + 30 s, the dips on that run are lifted to the
     lowest floor that fits (2,037 runs on a weekday with v0 data). ATC uses the same floors.
   - Dwell by station (20 s standard, 30–35 s downtown/transfers, ×1.2 at the peaks), doors open 2.5 s after the stop,
-    close 3.5 s before departure; door side from the platform data (travel-relative).
+    close 3.5 s before departure; door side from the stations' built platform (else the platform data), travel-relative.
+  - Berths: the head stops on MetroNet's berth mark for its direction (`platforms[].berth['+' | '-']`, 2 m inside the
+    leaving end) when the data has one, else 1 m inside the platform's leaving end; reversals stop at the path's
+    reversal point.
   - Physical trains: legs that meet at a terminal on the same platform are one train (it waits and changes ends);
     reversals keep the train where it is (its tail becomes its head); a chain keeps one identity (`chainKey`) and one
     length, so you can stay aboard through a turnback. Other turns go via the tail track (the train leaves ~150 s
@@ -46,6 +53,9 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
   on the platform; the Millbrae transfer (E on the metro platform → Peninsula platform for the next departure; the
   metro board also lists Peninsula connections; the reverse via the metro board button); Tab/F follow metro trains.
   Walking uses `MetroStations.floorAt/blocked` when present, else a fallback platform floor from MetroNet extents.
+  Going to a platform (`#mst=`, boards, the map, missions) puts you on the stations' platform floor, on its centreline,
+  a quarter along from where the next train comes in, facing it; the views follow that train, and once it has left
+  (while you stay on that platform and haven't picked another train) the next one due there.
 - **UI** (`MetroUI`): title card "Bayline Metro" (opens the system map); system map (N): our own octilinear
   schematic with parallel strands per line, or geographic over the NAIP tiles, live trains (arrows in line colours),
   line filter, station search, click a station (next trains, go to platform, arrivals) or a train (follow, cab view,
@@ -90,7 +100,30 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
 
 ## QA results
 
-2026-09-26 ~02:40, on the M1 integration build (`bart` merged: infra guideway + Under, stations for all 50, world
+### 2026-09-26 ~03:10–04:00 (sim.html on bart-sim 1d20226; the sim date is Saturday 9/26, so the Saturday timetable)
+
+- **Platform spawns (the lead's list)**, `#auto&metro=1&t=08:07&mst=<ST>`: EMBR, MONT, WOAK, 12TH, MCAR, MLBR all put the
+  walker on the stations' platform floor (`y` = `MetroStations.floorAt`: EMBR −15.46, MONT −8.05, WOAK 12.01 (aerial),
+  12TH −3.33, MCAR 34.84, MLBR 4.91), `onMetroFloor` true, HUD "<Station> · Bayline Metro" + the focused metro train
+  ("Red Line to Millbrae · 6 cars · 0 mph · at Embarcadero"), never a Peninsula train; prompts "Press E to board: …"
+  beside an open door, "Press B for <station> trains", Millbrae adds "E transfer to the Peninsula line". First pass
+  faced the escalator bank on the Market St island platforms; the spot picker now checks a 2 m corridor 16 m ahead for
+  escalator/stair slopes below 5.2 m and walls, and stands beside where the next train will stop. Contact sheet:
+  `notes/bart/shots/sim/mst_platform_spawns.jpg`.
+- **Next-train follow**: WOAK 08:07, the dwelling Antioch train left; the views moved to the next train due on that
+  platform (Red Line to Richmond, 55 mph, next West Oakland) without input.
+- **Platform sides**: 105/105 platforms audited against the stations' geometry, 0 mismatches.
+- **Live mode** (real clock 00:05 PT, `#auto&metro=1&mlive=1&mmap=1`, dev proxy): source GTFS-RT, 25 trips matched,
+  24 of 27 running trains on predicted times, map chip "Live: 25 trains from real-time trip updates", no errors.
+- **System map**: schematic, geographic (opens on the whole system when you're far from it) and train graph, no label
+  collisions (`notes/bart/shots/sim/map_*.jpg`).
+- **MetroKit v1** (bart-trains 7dd7d47 copied into a scratch build, not committed): consists, far batch (18–20 far
+  trains through `createFarBatch`), ride flow boarded / rode / alighted on v1 car metadata; cab feeds below.
+- **Kinematics** (Saturday, every leg, 1 s steps, 2.9 M samples): 0 position jumps, 0 samples over the effective limit,
+  max 70.0 mph, mean |deviation| 6.3 s from the published times, worst 40 s, 0 early origin departures; 1,241 runs
+  needed lifted v0 limit floors.
+
+### 2026-09-26 ~02:40, on the M1 integration build (`bart` merged: infra guideway + Under, stations for all 50, world
 north strip; placeholder consists until MetroKit is on `bart`):
 
 - **Metro ride** (`qa_metro_ride.js`, Balboa Park board → Daly City): clicked a train on the arrivals board → on the
@@ -263,31 +296,25 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
     a no-op. (Example: GLEN→24TH has 20, 25, 30, 40 mph dips inside a straight subway.)
   - Reversal stops (SFO): the path reverses at the stop point (the station centre in v0), so a 10-car train stops with
     its head at mid-platform. Please put the reversal point at the platform's end (the bumper side) in M2 berth marks.
-  - Stop marks: the runtime uses the platform extent's leaving end (−1 m) for the berth; M2 berth marks per train
-    length will be used automatically if `platforms[].s0/s1` stay the platform extents (tell me if you add `berth`).
+  - Stop marks: `platforms[].berth['+' | '-']` is used (2026-09-26 02:33 data) for the head's stop point; per-length
+    marks (e.g. `berth: { '+': { 10: s, 8: s, … } }`) would be welcome if the real system stops shorter trains
+    elsewhere (the runtime takes a number today; tell me before changing the shape).
   - PITT-T has no station entry (no platform extent/side): fine, the runtime centres the train on the stop point there.
-  - **Platform sides disagree** at least at West Oakland: network.json says M10-1 / M10-2 are `left` of +s, but the
-    stations workstream's built platform (its `spawnPoint` and walk floors) is 3.9 m to the **right** of M10-1. The
-    runtime now takes each platform's side from the stations' geometry when `MetroStations` is in the build (that is
-    what's drawn, and the train doors must open onto it), else from network.json. DATA + STATIONS: please reconcile
-    (a side audit over all 50 stations: `MetroSim.platformSide(id, gtfs)` vs `platforms[].side`).
-- **TRAINS**
-  - MetroKit v0 is integrated: consists come from `MetroKit.createConsist(kind, { cars, seed, name })` (exact length),
-    posed with `MetroKit.poseOnTrack` (bogie yaw; for a train led by its last car the frame function runs backwards
-    along the path with the tangent and bank flipped), `setDestination({ line, color, text })`, `setNextStop`,
-    `setDoors`, `setLights`, `setNight`, `setLOD(0|1)` (my LOD 2 is only used for placeholders: MetroKit's LOD 2 hides
-    the car), `setInteriorVisible`, `speed`, `update`. Kinds MetroKit doesn't build yet (`dmu`, `apm` stubs) fall back
-    to my placeholders automatically, per kind.
-  - Far trains: when `MetroKit._k.createFarBatch` exists I route far trains through it (`begin / addCar(kind, 'D'|'E',
-    {x,y,z,yaw,pitch}, flip) / addLamp / end(night)`), per kind, with my own instanced batch as the fallback. Please
-    export it publicly (`MetroKit.createFarBatch`) when it lands; keep `42_metrokit_far.js` loading AFTER
-    `42_metrokit_fotf.js` if it touches `K.builders.bart` at load (build.py sorts by name: `_far` < `_fotf`; in my scratch
-    test that ordering threw a TypeError at load, which kills the whole app).
-  - Please add `consist.dispose()` (geometry is shared; the per-consist sign canvas / textures / materials): the pool
-    recycles consists of other lengths (6/8/10 cars) and drops them from the scene.
-  - Cab display: `setCab({ speedMph, codeMph (AUTHORIZED), commandedMph, mode: 'ATO'|'MANUAL', notch, atc, nextStop,
-    distFt, clock, line, color, destination })` would feed your VATC screen; I call it only if it exists.
-- **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above.
+  - Platform sides: resolved. Audit 2026-09-26 03:05 (`MetroStations.spawnPoint` vs `platforms[].side`, all 105
+    platforms): 0 mismatches. The runtime still takes the side from the stations' geometry when it is in the build.
+- **TRAINS** (MetroKit v1 is on `bart` since 62c83db and merged here; all earlier requests are answered)
+  - In use: `createConsist` (exact length), `poseOnTrack`, `setDestination({ line, color, text })`, `setNextStop`,
+    `setDoors`, `setLights`, `setNight`, `setLOD(0|1|2)` (2 beyond 700 m when the builder has `lod()`),
+    `setInteriorVisible`, `setDisplay` (PIS: line id, lineName, arriving, doors, transfer, stops, index, clock; redrawn
+    only on change), `setCab` (VATC: `atcCodeMph`, `targetMph`, numeric `effort`/`handle`/`brake`, doors, cars, alarm
+    via `atc`), `dispose()` on dropped consists, `createFarBatch` (+ `end(night, res)` with the drawing-buffer size),
+    per-car `standSpots` for standees when present.
+  - `dmu` / `apm`: still stubs on `bart`; the runtime falls back to placeholders per kind (near and far) and will use
+    MetroKit's GTW and Cable Liner as soon as those builders are on `bart` (nothing to change here: `cars` = GTW units /
+    APM cars as your notes say).
+- **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above. Small one: the airport
+  connector platforms (COLS `H10`, OAKL `H40`) return a `spawnPoint` more than 14 m from their MetroNet track (H1.1 /
+  H1.2), so the side audit can't place them (the cable train's doors use the data side there).
 
 ## Assumptions log
 

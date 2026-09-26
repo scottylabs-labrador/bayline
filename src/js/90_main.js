@@ -122,11 +122,11 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       if (isFinite(yw)) Player.look.yaw = yw; if (isFinite(pt)) Player.look.pitch = pt; }
   }
   if (hash.get('drive')) { const p = Sim.planById(hash.get('drive')); if (p) Game.startDrive(p, { auto: hash.has('autopilot') }); }
-  // Bayline Metro links (once the network has loaded): #mst=EMBR[&mplat=M16-1] a platform, #mdrive=<trip>[&mfrom=STN], #mmap=1|geo
+  // Bayline Metro links (once the network has loaded): #mst=EMBR[&mplat=M16-1] a platform, #mdrive=<trip>[&mfrom=STN], #mmap=1|geo|graph
   if (METRO) MetroSim.init().then(ok => { if (!ok) return;
     if (hash.get('mst')) MetroPlay.teleport(hash.get('mst'), hash.get('mplat') || undefined);
     if (hash.get('mdrive')) { const p = MetroSim.planFor(hash.get('mdrive')); if (p) MetroATC.start(p, { station: hash.get('mfrom') || undefined, manual: hash.has('manual') }); }
-    if (hash.get('mmap')) MetroUI.openMap({ view: hash.get('mmap') === 'geo' ? 'geo' : 'schematic' });
+    if (hash.get('mmap')) MetroUI.openMap({ view: ({ geo: 'geo', graph: 'graph' })[hash.get('mmap')] || 'schematic' });
     if (hash.get('mlive') === '1') MetroLive.setOn(true); });
   if (hash.get('fly') && typeof Flight !== 'undefined') { if (!started) start('explore'); Flight.fromHash(hash.get('fly')).catch(e => console.error('fly', e)); }
   if (hash.get('flyat') && typeof Flight !== 'undefined') { if (!started) start('explore'); Flight.fromFlyAt(hash.get('flyat')).catch(e => console.error('flyat', e)); }
@@ -232,7 +232,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     const alt = camP.y - Terrain.h(camP.x, camP.z);
     Sound.ambience({ city: urb * U.clamp(1 - alt / 400, 0, 1), bay: bay * U.clamp(1 - alt / 800, 0, 1), wind: U.clamp(0.15 + alt / 1500, 0, 1), rain: 0, night: U.uNight.value, crowd: Stations.nearest(camP, 120) ? 0.6 : 0 });
     const holdHorn = (D || Player.inCab() || (typeof MetroSim !== 'undefined' && MetroSim.enabled && MetroSim.drive)) && Player.down('Space'); Sound.horn(!!holdHorn);
-    Sound.bell(!!((D || Player.inCab()) && Player.down('KeyG')));
+    Sound.bell(!!((D || Player.inCab()) && Player.down('KeyG') && !(focus && focus.metro)));   // (metro trains have no bell)
   }
 
   // ---------- main loop ----------
