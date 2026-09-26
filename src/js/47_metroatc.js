@@ -115,7 +115,8 @@ const MetroATC = (() => {
     run = { plan, trip: plan.trip, k0, k: k0 + 1, atK: k0, state: 'dwell', score: 0, dwellT: 0, stopT: 0, mission: opts.mission || null, title: opts.title || '',
       stats: { stops: 0, ontime: 0, perfect: 0, errSum: 0, overs: 0, atcBrakes: 0, penalties: 0, harsh: 0, dist: 0, t0: Env.time.sec, missed: 0 }, warnT: 0, atc: { state: 'ok' }, log: [], announced: {} };
     Player.setFocus(D.key); Player.setMode('cab');
-    toast(`You have the ${MetroSim.lineName(L.line)} to ${MetroSim.stName(L.stops[L.stops.length - 1].st)}. ${D.ato ? 'ATO is on: at departure press W (doors close, the train goes).' : 'Manual: W for power once the doors are closed.'} A switches ATO / manual.`, 7);
+    let LL = L; while (LL.next) LL = LL.next;
+    toast(`You have the ${MetroSim.lineName(L.line)} to ${MetroSim.stName(LL.stops[LL.stops.length - 1].st)}. ${D.ato ? 'ATO is on: at departure press W (doors close, the train goes).' : 'Manual: W for power once the doors are closed.'} A switches ATO / manual.`, 7);
     return run;
   }
   function doorSideAt(L, k) { const trav = MetroSim.stopSide(L, k); return (trav > 0) === (L.lead === 0) ? 'right' : 'left'; }

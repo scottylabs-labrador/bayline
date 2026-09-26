@@ -405,7 +405,7 @@ const MetroUI = (() => {
     const now = Env.time.sec, rows = MetroSim.arrivals(stId, now, 40).filter(ev => !hidden.has(ev.leg.line)).slice(0, n);
     if (!rows.length) return `<div style="color:var(--ink-dim)">No more trains today.</div>`;
     return rows.map((ev, i) => { const inf = MetroSim.eventInfo(ev), m = Math.round((ev.t - now) / 60);
-      return `<div class="mrow ${cls}" data-ev="${i}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${inf.cars} car${inf.cars > 1 ? 's' : ''}${inf.platform ? ' · platform ' + esc(inf.platform) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('');
+      return `<div class="mrow ${cls}" data-ev="${i}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}${inf.platform ? ' · platform ' + esc(inf.platform) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('');
   }
   function renderSide() {
     const S = el.mside, h = map.sel;
@@ -421,7 +421,7 @@ const MetroUI = (() => {
       S.querySelectorAll('.mrow').forEach(r => r.addEventListener('click', (e) => { const ev = rows[+r.dataset.ev]; closeAll(); if (e.shiftKey) drive(ev); else ride(ev); }));
     } else if (h.tr) {
       const tr = MetroSim.trainByKey(h.tr.key) || h.tr, S2 = tr.leg.stops, ns = S2[tr.nextK];
-      S.innerHTML = `<div class="kicker">${esc(MetroSim.lineName(tr.line))}</div><h3>${esc(MetroSim.termName(tr))}</h3><div class="sub">${tr.cars}-car ${tr.kind === 'dmu' ? 'diesel shuttle' : tr.kind === 'apm' ? 'cable train' : 'train'} · ${Math.round(tr.v / MPH)} mph · ${tr.phase === 'run' ? 'next ' + esc(ns ? MetroSim.stName(ns.st) : '') : tr.stationId ? 'at ' + esc(MetroSim.stName(tr.stationId)) : ''}${tr.plan && tr.plan.live ? ' · live' : ''}</div>
+      S.innerHTML = `<div class="kicker">${esc(MetroSim.lineName(tr.line))}</div><h3>${esc(MetroSim.termName(tr))}</h3><div class="sub">${carsAdj(tr.cars, tr.kind)} ${tr.kind === 'dmu' ? 'diesel shuttle' : tr.kind === 'apm' ? 'cable train' : 'train'} · ${Math.round(tr.v / MPH)} mph · ${tr.phase === 'run' ? 'next ' + esc(ns ? MetroSim.stName(ns.st) : '') : tr.stationId ? 'at ' + esc(MetroSim.stName(tr.stationId)) : ''}${tr.plan && tr.plan.live ? ' · live' : ''}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px"><button class="btn primary" id="mfo">Follow</button><button class="btn" id="mcb">Cab view</button>${tr.kind === 'bart' ? '<button class="btn" id="mdr">Drive from the next stop</button>' : ''}</div>
         <div style="font-size:13px;color:var(--ink-dim)">${S2.slice(Math.max(0, tr.nextK || 0)).map(s => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span>${esc(MetroSim.stName(s.st))}</span><span style="font-family:var(--mono)">${Env.clockText(s.tArr)}</span></div>`).join('')}</div>`;
       $('mfo').onclick = () => { closeAll(); Player.setFocus(tr.key); Player.setMode('chase'); UI.toast('Following the ' + MetroSim.lineName(tr.line) + ' to ' + MetroSim.termName(tr), 4); };
@@ -471,7 +471,7 @@ const MetroUI = (() => {
     el.mbp.innerHTML = plats.map(p => { const evs = byPlat.get(p).filter(ev => !ev.last).slice(0, 6), first = evs[0];
       const led = first ? (() => { const inf = MetroSim.eventInfo(first), m = Math.round((first.t - now) / 60); return `${inf.cars} CAR ${inf.dest.toUpperCase()} ${m <= 0 ? 'NOW BOARDING' : m + ' MIN'}`; })() : 'NO TRAINS';
       return `<div class="plat"><h4>Platform ${esc(p || '·')}</h4><div class="led">${esc(led)}</div>${evs.map(ev => { list.push(ev); const inf = MetroSim.eventInfo(ev), m = Math.round((ev.t - now) / 60);
-        return `<div class="mrow" data-ev="${list.length - 1}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${inf.cars} car${inf.cars > 1 ? 's' : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('') || '<div style="color:var(--ink-dim)">No more trains today.</div>'}</div>`; }).join('');
+        return `<div class="mrow" data-ev="${list.length - 1}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('') || '<div style="color:var(--ink-dim)">No more trains today.</div>'}</div>`; }).join('');
     el.mbp.querySelectorAll('.mrow').forEach(r => r.addEventListener('click', (e) => { const ev = list[+r.dataset.ev]; closeAll(); if (e.shiftKey) drive(ev); else ride(ev); }));
     // connections: the Peninsula line at Millbrae, bus bridges today
     let conn = '';
@@ -500,7 +500,7 @@ const MetroUI = (() => {
     const now = Env.time.sec; if (ev.t - now > 100 || ev.t < now) Env.setClock(ev.t - 75); Env.time.scale = 1;
     MetroPlay.teleport(ev.leg.stops[ev.k].st, ev.sid);
     Player.setFocus(ev.leg.chainKey || ev.plan.key);
-    const inf = MetroSim.eventInfo(ev); UI.toast(`Wait for the ${inf.cars}-car ${MetroSim.lineName(inf.line)} train to ${inf.dest}; press E at an open door to board`, 6);
+    const inf = MetroSim.eventInfo(ev); UI.toast(`Wait for the ${carsAdj(inf.cars, inf.kind)} ${MetroSim.lineName(inf.line)} train to ${inf.dest}; press E at an open door to board`, 6);
   }
   function drive(ev) { if (ev.leg.kind !== 'bart') { UI.toast('That one drives itself: ride it instead'); ride(ev); return; } MetroATC.start(ev.plan, { station: ev.leg.stops[ev.k].st }); }
 
@@ -614,7 +614,10 @@ const MetroUI = (() => {
       const m = Math.max(0, Math.round((ev.t - now) / 60)); out.push(`${MetroSim.lineById.get(inf.line) ? MetroSim.lineById.get(inf.line).short : inf.line} to ${inf.dest} ${m ? m + ' min' : 'now'}`); if (out.length >= 3) break; }
     return out.length ? 'Next: ' + out.join(' · ') : 'No more trains today';
   }
-  function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK]; return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)} · ${tr.cars} cars · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
+  // train sizes: cars, or units for the Antioch shuttle (each a two-car articulated diesel)
+  function carsText(n, kind) { return kind === 'dmu' ? `${n} unit${n > 1 ? 's' : ''}` : `${n} car${n > 1 ? 's' : ''}`; }
+  function carsAdj(n, kind) { return kind === 'dmu' ? `${n}-unit` : `${n}-car`; }
+  function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK]; return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)} · ${carsText(tr.cars, tr.kind)} · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
 
   const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
@@ -630,7 +633,9 @@ const MetroMissions = (() => {
   // the next departure from `from` whose next stop is `to` (or whose later stops include it), BART vehicles only
   function nextRun(from, to, after) {
     const t0 = after !== undefined ? after : Env.time.sec;
-    for (const ev of MetroSim.arrivals(from, t0 + 45, 120)) { const S = ev.leg.stops; if (ev.leg.kind !== 'bart' || ev.k >= S.length - 1) continue; if (S.slice(ev.k + 1).some(s => s.st === to)) return ev; }
+    for (const ev of MetroSim.arrivals(from, t0 + 45, 120)) { const S = ev.leg.stops; if (ev.leg.kind !== 'bart' || ev.k >= S.length - 1) continue;
+      if (S.slice(ev.k + 1).some(s => s.st === to)) return ev;
+      for (let x = ev.leg.next; x; x = x.next) if (x.stops.some(s => s.st === to)) return ev; }   // (through a reversal: SFO)
     return null;
   }
   function list() {

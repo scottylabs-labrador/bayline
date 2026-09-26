@@ -487,11 +487,12 @@ const MetroSim = (() => {
   const pool = []; const POOLMAX = { bart: 9, dmu: 2, apm: 4 };
   function makeConsist(kind, cars, seed) {
     let c = null;
-    if (typeof MetroKit !== 'undefined' && MetroKit.createConsist) { try { c = MetroKit.createConsist(kind, { cars, seed, name: 'metro' }); } catch (e) { console.error('MetroKit', kind, e); c = null; } }
+    if (typeof MetroKit !== 'undefined' && MetroKit.createConsist && !kitNo.has(kind)) { try { c = MetroKit.createConsist(kind, { cars, seed, name: 'metro' }); } catch (e) { kitNo.add(kind); console.warn('MetroKit: no ' + kind + ' consists yet, placeholders for that kind (' + (e.message || e) + ')'); c = null; } }
     if (!c) c = Placeholder.create(kind, { cars });
     for (const car of c.cars) { car.group.rotation.order = 'YZX'; car.group.visible = false; Env.scene.add(car.group); if (typeof Under !== 'undefined' && Under.keep) Under.keep(car.group); }
     return { consist: c, kind, cars: c.cars.length, busy: false, key: '', dest: '', lod: -1, iv: null, shown: 0 };
   }
+  const kitNo = new Set();                              // vehicle kinds MetroKit doesn't build (yet): placeholders
   function dropConsist(e) {
     for (const car of e.consist.cars) { Env.scene.remove(car.group); if (typeof Under !== 'undefined' && Under.unkeep) Under.unkeep(car.group); }
     if (e.consist.dispose) try { e.consist.dispose(); } catch (err) { /* ignore */ }
