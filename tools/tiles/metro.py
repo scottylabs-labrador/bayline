@@ -75,13 +75,20 @@ def network_tracks():
     struct (n,) uint8 codes, cover (n,) uint8)] (see notes/bart-data.md)."""
     import zlib
     net = json.load(open(NETWORK))
-    buf = zlib.decompress(open(os.path.join(os.path.dirname(NETWORK), 'tracks.bin'), 'rb').read())
+    tb = net.get('tracksBin') or {}
+    pth = os.path.join(os.path.dirname(os.path.dirname(NETWORK)), tb['path']) if tb.get('path') else os.path.join(os.path.dirname(NETWORK), 'tracks.bin')
+    raw = open(pth, 'rb').read()
+    try:
+        buf = zlib.decompress(raw)
+    except zlib.error:
+        buf = raw
+    planes = 5 if 'third-rail' in tb.get('layout', '') else 4          # (struct, speed, cant, cover[, third-rail side])
     out = []
     for h in net['tracks']:
         n, off = h['n'], h['off']
         P = np.frombuffer(buf, '<f4', n * 3, off).reshape(n, 3).astype(np.float64)
-        A = np.frombuffer(buf, np.uint8, n * 4, off + n * 12)
-        out.append(dict(id=h['id'], sys=h['sys'], cls=h['cls'], step=h['step'], P=P, struct=A[:n].copy(), cover=A[3 * n:].copy()))
+        A = np.frombuffer(buf, np.uint8, n * planes, off + n * 12)
+        out.append(dict(id=h['id'], sys=h['sys'], cls=h['cls'], step=h['step'], P=P, struct=A[:n].copy(), cover=A[3 * n:4 * n].copy()))
     return out
 
 
