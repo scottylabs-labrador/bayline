@@ -13,9 +13,7 @@
 // API: MetroTrack.enabled, init(), update(camPos, dt), group, stats, DIM, PAL, GB (geometry builder), frameAt(track, s, o),
 //      pairAt(track, s) -> { t2, s2, lat } | null, limits(track) (station ranges: STATIONS builds the box/deck there).
 const MetroTrack = (() => {
-  // the metro flag: MetroSim's rule (46_metrosim.js): #metro=1 / #metro=0 in the hash decide, else the shipped default,
-  // which the page has to set before the metro modules load: window.BAYLINE_METRO_DEFAULT (false until M3 ships)
-  const enabled = (() => { try { const h = new URLSearchParams(location.hash.slice(1)); return h.has('metro') ? h.get('metro') !== '0' : window.BAYLINE_METRO_DEFAULT === true; } catch (e) { return false; } })();
+  const enabled = typeof Metro !== 'undefined' ? Metro.on : (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();   // (the switch: 18_metro.js)
   const group = new THREE.Group(); group.name = 'metro-infra';
   const stats = { chunks: 0, far: 0, body: 0, detail: 0, jobs: 0, buildMs: 0, tris: 0, inst: 0, away: 0, slow: [], instMs: 0 };
   if (!enabled) return { enabled: false, init() {}, update() {}, setQuality() {}, group, stats };
