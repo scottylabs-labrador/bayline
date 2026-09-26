@@ -75,6 +75,13 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   walls (the backs were culled until the navy backs arrived at 08:44, so the platforms' walls showed nothing, then
   blank navy slabs); the platform totems' platform-number signs and maps faced into their totems. All now face the
   room: 'Montgomery Street' with the mark and line bullets on every trackway wall and concourse wall.
+- **Footbridge walkways' glass and light strips** (found through a "white streak in the sky" in promo P12): the glass
+  panes and the ceiling light strip of every walkway segment were drawn with builders that did not take the segment's
+  frame, so they floated from the station's origin along its x axis (the walkways had no glass, and a bright bar hung
+  in the air near every footbridge station); now in the segment's frame, with a softly luminous ceiling at night.
+- **Platform furniture is solid** (benches, bins, totems, maps as walls in the walk data): walkers cannot pass through
+  them, and SIM's spawn pick (`#mst=`) keeps its line of sight clear of them (MacArthur's bin 1.5 m ahead). The crowd
+  never spawns within 2.5 m of the player, and no one is drawn within 0.8 m of the camera.
 - **MacArthur's roof from above**: its box canopy's top was the fascia's dark brown (read as a black slab from the
   air, promo P06); now a grey roof, the underside and fascia stay dark.
 - **Opening rims faced outward**: the walls round an opening in a slab (escalator wells through a platform or a

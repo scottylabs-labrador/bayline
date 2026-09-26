@@ -2283,7 +2283,9 @@ const StationTypes = (() => {
       // walkway segments: deck, floor, roof, sides (glass panels or a steel truss), lights; walk floors and walls
       for (const [a, b] of L.segs) {
         const len = Math.hypot(b[0] - a[0], b[1] - a[1]); if (len < 0.3) continue; const yaw = segYaw(a, b);
-        g.push().at(a[0], 0, a[1], yaw);
+        // (the glass and the glow have their own builders: each takes the segment's frame too; before, the panes and the
+        // light strip were drawn from the station's origin, not along the walkway)
+        const BL = [g, zC.m.glass, zC.m.glow]; for (const b of BL) b.push().at(a[0], 0, a[1], yaw);
         g.set(mDeck); g.box(-0.3, yCF - 0.7, -hw - 0.2, len + 0.3, yCF, hw + 0.2, 'y+');
         g.set(mFloor); g.quad([-0.3, yCF + 0.003, hw + 0.2], [len + 0.3, yCF + 0.003, hw + 0.2], [len + 0.3, yCF + 0.003, -hw - 0.2], [-0.3, yCF + 0.003, -hw - 0.2], [0, 0, len, 0, len, W, 0, W]);
         g.set(M(S.canopy || S.cCeil, { sky: 1 })); g.box(-0.4, yRoof, -hw - 0.45, len + 0.4, yRoof + 0.22, hw + 0.45, 'y-');
@@ -2305,9 +2307,11 @@ const StationTypes = (() => {
           for (const z of [-hw - 0.05, hw + 0.05]) { const y1 = style === 'box' ? yRoof - 0.9 : yCF + 2.4;
             zC.m.glass.quad([0, yCF + 0.05, z], [len, yCF + 0.05, z], [len, y1, z], [0, y1, z], [0, 0, 1, 0, 1, 1, 0, 1]); zC.m.glass.quad([len, yCF + 0.05, z], [0, yCF + 0.05, z], [0, y1, z], [len, y1, z], [0, 0, 1, 0, 1, 1, 0, 1]); }
         }
-        // line light under the roof
+        // line light under the roof, in a softly luminous ceiling (from outside at night the walkway reads as a lit tube,
+        // not a lone bright bar floating in the dark: promo P12)
         zC.m.glow.mat(LC); zC.m.glow.box(0.5, yRoof - 0.06, -0.1, len - 0.5, yRoof - 0.02, 0.1);
-        g.pop();
+        zC.m.glow.mat(LC.map(c => c * 0.16)); zC.m.glow.quad([0.2, yRoof - 0.01, hw + 0.3], [len - 0.2, yRoof - 0.01, hw + 0.3], [len - 0.2, yRoof - 0.01, -hw - 0.3], [0.2, yRoof - 0.01, -hw - 0.3], [0, 0, 1, 0, 1, 1, 0, 1]);
+        for (const b of BL) b.pop();
         const ca = Math.cos(yaw), sa = Math.sin(yaw);     // local +X = (cos, -sin), +Z = (sin, cos)
         const P = (x, z) => [a[0] + x * ca + z * sa, a[1] - x * sa + z * ca];
         if (zC.lights.lights.length < StationKit.MAXL) { const p0 = P(0.5, 0), p1 = P(len - 0.5, 0); zC.lights.add({ a: [p0[0], yRoof - 0.1, p0[1]], b: [p1[0], yRoof - 0.1, p1[1]], color: LC.map(c => c * 0.7), range: 10, radius: 0.08, dir: [0, -1, 0], focus: 1 }); }
@@ -2423,6 +2427,10 @@ const StationTypes = (() => {
   function* furnish(T) {
     const { zones, plats, place, frameAt, under } = T;
     const busy = (p, u, v, pad = 0.8) => T.occupied.some(o => o.p === p && u > o.u0 - pad && u < o.u1 + pad && v > o.v0 - pad && v < o.v1 + pad);
+    // furniture is solid to a walker, and its footprint is a wall in the walk data (the spawn's view check, SIM's
+    // pickSpot, keeps its line of sight clear of it: #mst=MCAR put a bin 1.5 m in front of the player)
+    const solid = (p, u, v, hu, hv, h) => { const q = [[u - hu, v - hv], [u + hu, v - hv], [u + hu, v + hv], [u - hu, v + hv]].map(([a, b]) => T.WUV(a, b));
+      for (let k = 0; k < 4; k++) addWall(T.walk, q[k], q[(k + 1) % 4], p.y - 0.5, p.y + h); };
     for (const p of plats) {
       const z = p.zone || zones[0], gd = z.d.sk, B = z.d;
       const island = p.kind === 'island';
@@ -2434,14 +2442,15 @@ const StationTypes = (() => {
         if (T.H.benches === 'bullseye' || T.H.benches === 'drum') {
           // round benches: terrazzo "bullseyes" (Montgomery, Powell) or precast concrete drums (Bay Fair, Orinda)
           const bull = T.H.benches === 'bullseye'; const r = bull ? 0.8 : 0.5;
+          solid(p, u, island ? cv(u) : backV(u) + (p.sideV > 0 ? -0.5 : 0.5), r, r, 0.46);
           place(gd, u, island ? cv(u) : backV(u) + (p.sideV > 0 ? -0.5 : 0.5), p.y, 0);
           if (bull) { gd.mat(0xcfc6b4, K.TERRAZZO, 0); gd.cyl(0, 0, 0, r, r, 0.46, 28, true); gd.mat(0x7a6f60, K.TERRAZZO, 0); gd.cyl(0, 0.46, 0, r * 0.62, r * 0.62, 0.006, 28, true); gd.mat(0xcfc6b4, K.TERRAZZO, 0); gd.cyl(0, 0.466, 0, r * 0.4, r * 0.4, 0.004, 28, true); }
           else { gd.mat(0xaaa59a, K.CONCRETE, 0); gd.cyl(0, 0, 0, r, r, 0.45, 22, true); }
           gd.pop();
         }
-        else if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); }
-        else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); }
-        if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); }
+        else if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); solid(p, u, cv(u), 1.3, 0.75, 0.5); }
+        else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); solid(p, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), 1.3, 0.4, 0.5); }
+        if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); solid(p, u + 4.5, island ? cv(u) : backV(u), 0.6, 0.3, 1.0); }
         const [bx, bz] = T.L2(u, island ? cv(u) : backV(u)); void bx; void bz;
       }
       // platform screen doors (the airport connector): a glass wall on the edge with a door pair every car length
@@ -2478,9 +2487,9 @@ const StationTypes = (() => {
       p.keys.forEach((key, k) => { const side = island ? (k === 0 ? -1 : 1) : (p.sideV > 0 ? -1 : 1); const v = (island ? cv(um) : backV(um)) + side * 0.12;
         z.signs.push({ u: um, v, y: p.y + 2.25, yaw: T.yawAt(um) + (side < 0 ? Math.PI : 0), w: 3.2, h: 0.4, region: 'p' + Math.min(4, Number(key) || (k + 1)), both: false, T });   // (faces out from the totem's side)
       });
-      place(gd, um, island ? cv(um) : backV(um), p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 3.3, 2.05, 0.2); gd.pop();
+      place(gd, um, island ? cv(um) : backV(um), p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 3.3, 2.05, 0.2); gd.pop(); solid(p, um, island ? cv(um) : backV(um), 1.65, 0.12, 2.05);
       let u2 = um + 30; while (busy(p, u2, cv(u2), 2) && u2 < p.u1 - 10) u2 += 6; const v2 = island ? cv(u2) : backV(u2);
-      place(gd, u2, v2, p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 2.5, 2.2, 0.16); gd.pop();
+      place(gd, u2, v2, p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 2.5, 2.2, 0.16); gd.pop(); solid(p, u2, v2, 1.25, 0.1, 2.2);
       z.signs.push({ u: u2, v: v2 - 0.09, y: p.y + 1.35, yaw: T.yawAt(u2) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T });
       z.signs.push({ u: u2, v: v2 + 0.09, y: p.y + 1.35, yaw: T.yawAt(u2), w: 2.4, h: 1.0, region: 'map', both: false, T });
       yield;
