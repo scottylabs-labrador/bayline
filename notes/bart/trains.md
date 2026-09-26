@@ -5,6 +5,12 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 
 ## Status
 
+- 2026-09-26 (M3.2, lead's promo item): **per-car LOD by apparent distance**. The 110 m LOD 0 radius now uses the
+  distance x tan(fov / 2) / tan(27.5 deg) of the camera that last drew the cars (never more than the real distance, so
+  game views are unchanged; the same rule as MetroSim's). In **capture mode** (`__bayline.capture.on`) every car within
+  an apparent 600 m draws LOD 0, including cars in consists the sim put at LOD 1 (LOD 2 stays). Checked on a 10-car
+  train (preview, `c._applyLod` with a test camera): 300 m at 55 deg: all LOD 1; 300 m at 11.4 deg (120 mm): all
+  LOD 0; 700 m at 11.4 deg: LOD 1; capture at 500 m: LOD 0, at 700 m: LOD 1; a LOD 2 request stays LOD 2.
 - 2026-09-26 (M3 polish round): **baked LODs** for all three vehicles: each design's full-detail exterior and its
   window impression are rendered once into an atlas and mapped onto new LOD 1 / LOD 2 meshes (~1.1k triangles, one
   draw per car): on Low (where LOD 1 is drawn at every distance) and for every car beyond 110 m the car now looks like

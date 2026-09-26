@@ -1222,8 +1222,11 @@ const MetroKit = (() => {
   // ------------------------------------------------------------------------------------------ runtime: Car
   const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _ax = new V3();
   const _one = new V3(1, 1, 1), _rpi = new THREE.Matrix4().makeRotationY(Math.PI);
-  const LOD0_R = 110;
-  const _I4 = new THREE.Matrix4();                                  // a car farther than this from the camera draws its LOD 1
+  // a car farther than LOD0_R from the camera draws its LOD 1; the distance is the apparent one under a long lens (see
+  // camLens), and in capture mode (trailer frames, where frame time doesn't matter) every car within LOD0_CAP of it
+  // draws LOD 0
+  const LOD0_R = 110, LOD0_CAP = 600, TAN_GAME = Math.tan(27.5 * Math.PI / 180);
+  const _I4 = new THREE.Matrix4();
   // body sway: roll f 0.8 Hz / damping / rad per g of unbalanced lateral acceleration; pitch per g of longitudinal
   // acceleration; bounce; roll centre height; track excitation amplitudes at 70 mph (rad, rad, m)
   const SWAY = { fr: 0.8, zr: 0.3, kr: 0.07, fp: 1.1, zp: 0.35, kp: 0.02, fb: 1.3, zb: 0.3, hrc: 0.9, exR: 0.0022, exP: 0.0007, exB: 0.006 };
@@ -1581,14 +1584,18 @@ const MetroKit = (() => {
       for (const c of this.cars) c.setInteriorVisible(best >= 0 && Math.abs(c.index - best) <= 1);
     }
     // LOD: the caller's level for the whole consist (the sim decides by the head's distance), refined per car by its own
-    // distance to the camera: a car beyond ~110 m draws LOD 1 even when its consist is at LOD 0 (a 10-car train is
-    // 213 m long, and from the air every car is that far). Re-evaluated every update (with hysteresis).
+    // apparent distance to the camera (the real one under a long lens: see camLens): a car beyond ~110 m draws LOD 1 even
+    // when its consist is at LOD 0 (a 10-car train is 213 m long, and from the air every car is that far). In capture
+    // mode every car within 600 m draws LOD 0, also when the caller asked for LOD 1 (offline, frame time doesn't
+    // matter). Re-evaluated every update (with hysteresis).
     setLOD(level) { this.lodReq = clamp(level | 0, 0, 2); this._applyLod(); }
+    _lodLive() { return this.lodReq === 0 || (this.lodReq === 1 && capturing()); }
     _applyLod() {
-      const base = this.lodReq === undefined ? 0 : this.lodReq, p = base === 0 ? camPos() : null;
+      const base = this.lodReq === undefined ? 0 : this.lodReq, cap = capturing(), p = base === 0 || (cap && base === 1) ? camPos() : null;
+      const k = p ? camLens() : 1, k2 = k * k, R = cap ? LOD0_CAP : LOD0_R;
       for (const c of this.cars) {
         let l = base;
-        if (p) { const g = c.group.position, d2 = (g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2, r = c.lod === 0 ? LOD0_R + 8 : LOD0_R - 8; if (d2 > r * r) l = 1; }
+        if (p) { const g = c.group.position, d2 = ((g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2) * k2, r = c.lod === 0 ? R + 8 : R - 8; l = d2 > r * r ? 1 : 0; }
         c.setLOD(l);
       }
     }
@@ -1657,7 +1664,7 @@ const MetroKit = (() => {
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
       MKG.mkWet.value = wetNow();
-      if (this.lodReq === 0) this._applyLod();
+      if (this._lodLive()) this._applyLod();
       if (this.intAllowed || this.intAuto) this._applyInt();
       if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
@@ -1813,13 +1820,20 @@ const MetroKit = (() => {
   }
   // the camera's world position (the interior policy needs it): the camera the cars were last drawn with (their glass
   // or LOD mesh notes it; that is the view, also when a capture camera stands in for the player's), else Env's camera
-  const _camW = new V3(); let _camT = -1e9;
+  const _camW = new V3(); let _camT = -1e9, _camTan = TAN_GAME;
   function camPos() {
     if (performance.now() - _camT < 400) return _camW;
-    const cam = typeof Env !== 'undefined' && Env.camera; if (cam) return _camW.copy(cam.position);
+    const cam = typeof Env !== 'undefined' && Env.camera; if (cam) { _camTan = camTan(cam); return _camW.copy(cam.position); }
     return null;
   }
-  K.noteCamera = cam => { _camW.setFromMatrixPosition(cam.matrixWorld); _camT = performance.now(); };
+  K.noteCamera = cam => { _camW.setFromMatrixPosition(cam.matrixWorld); _camTan = camTan(cam); _camT = performance.now(); };
+  // a long lens magnifies: distances for the level of detail are the apparent ones (the real distance x tan(fov / 2) /
+  // tan(55 deg / 2), the game's view; never more than the real one, so nothing changes at the game's field of view).
+  // A 120 mm trailer lens (vertical fov ~11 deg) makes a car 400 m away count as ~77 m. Same rule as MetroSim's
+  function camTan(cam) { return cam && cam.isPerspectiveCamera ? Math.tan(cam.fov * Math.PI / 360) / (cam.zoom || 1) : TAN_GAME; }
+  function camLens() { return Math.min(1, _camTan / TAN_GAME); }
+  // capture mode (tools/capture.mjs: frames stepped offline by the harness)
+  function capturing() { const B = typeof window !== 'undefined' && window.__bayline; return !!(B && B.capture && B.capture.on); }
 
   // wetness: an explicit value (setWet, previews), else infra's rain-driven wetness (MetroTrack.uWet: wets in ~40 s of
   // rain, dries in ~15 min), else dry
