@@ -5,6 +5,51 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## M3 gate (2026-09-26 08:30 EDT): items 2-4 done, Millbrae needs a Peninsula decision
+
+- **Item 2, performance (High, 1600x900, 17:30, M2b)**: the whole metro (stations + guideway + trains) adds
+  **+23 to +81 draw calls** in hero views (`tools/metro_calls.js`: every metro scene group hidden vs shown): EMBR
+  platform +50, MONT platform +40 / street +23, POWL +44, 12TH lower level +55, MCAR platform +56 / from the air +81,
+  WOAK lobby +42, SFIA +74, BALB +43, MLBR from the air +67 (0.6-1.2 M triangles, crowds included).
+  **Low tier** (`MetroStations.setQuality`, one guarded line in `applyTier`): no animated escalator steps, near
+  detail only within 150 m, a quarter of the crowd, 4 line lights per material, half-size sign atlas, build/keep
+  radii 900/1300 m (High 1500/2100); Medium: 60 % crowd, 8 lights. **Hitches**: every build step of every station
+  is now < 12 ms (tour of all 52 records; was up to 27 ms at the 12th/19th St entrances: the passage projected every
+  walk wall onto the spine); attaching is its own stepped job (Under cells four per step, portals, cuts, ground,
+  then one material's shaders per step). **Shaders**: a new station stays hidden while `renderer.compileAsync`
+  links its programs with Post's scene target bound (the HDR pass's program keys: no tone mapping, linear output),
+  one material per step; station programs are shared across stations (`stkit-v1` + variant); cold EMBR fly-in: the
+  frame the station appears compiles **0 programs** (was 3; `tools/metro_flyin.js`), fonts and the geometry builder
+  are warmed at idle. The frame maxima in that fly-in (up to 2-4 s at start) are world streaming on this shared GPU.
+- **Item 3, phones** (`metro_shots.mjs --mobile`: iPhone UA, DPR 2, touch, 390x844) at EMBR, MONT, 12TH, MCAR, SFIA
+  on Low and Medium: every station built, no console errors. Whole page (all workstreams), Low: JS heap 482-791 MB,
+  238-342 geometries, 156-395 textures, 56-79 programs, platform views 46-206 draw calls; stations alone 33-76 k
+  triangles each on Low. Medium: heap 353-713 MB, 136-352 textures, 56-84 programs.
+- **Item 4, clean console**: a tour of all 52 records (50 stations, the COLS/OAKL connector `COLS~OAC`, `PITT-T`
+  with the eBART face, ANTC's DMU island) with `--allconsole`: every station built, **0 console errors or warnings**.
+  Fixed on the way: three's compile readiness poll threw on a station dropped mid-compile (disposal now waits).
+- **Item 1, Millbrae (write-up)**:
+  - BART platform 3 now faces **west** (the data says right of W3, which puts it on storage track W-yd5 4.4 m east;
+    the platform guard moves it; DATA asked to set `left`). Research: platform 3 and Caltrain platform 4 (NB) are
+    one island (BART's own elevator notes), 16 m between the W3 and Caltrain NB centrelines here.
+  - **Blocking issue, Peninsula side**: the Caltrain-era depot kit (`Landmarks` 'millbrae', placed 41 m east of the
+    Caltrain track in `place_MLBR`) stands over BART: its 64 x 26 m glass hall spans station v -9 .. +21 m (W3 at 0,
+    W-yd5 at +4.4, W-yd3 at +16.4) and its annex sits over W-yd3, so BART trains run through its glass end walls and
+    both our platform positions (east before, west now) lie inside the hall. No z-fighting (no coplanar faces), but
+    it is wrong to look at. Proposal (lead's call, not done): under the metro the depot kit skips its glass hall,
+    annex, columns and vault (keeping its two platform lamp rows and signs, which are merged into the same meshes
+    today, so the kit needs a split), and STATIONS builds the shared hall: the steel vault over the Caltrain island
+    and BART platform 3, the mezzanine the footbridge already is. Alternative: move the depot west of the Caltrain
+    tracks (the real west plaza).
+  - Cross-platform transfer: not feasible without a Peninsula change: the Peninsula model gives Millbrae one 2.3 m
+    island between its two tracks (its fallback layout) and opens Caltrain doors onto it. Proposal: Caltrain NB =
+    the east face of the shared island (side `R`, ~12.6 m to the BART edge), SB = the west side platform; then our
+    platform 3 widens to meet it (one walking surface, two edge heights).
+  - Walk today: BART platform -> escalator/stair to the footbridge mezzanine (6.1 m) -> west walkway over the
+    Caltrain tracks -> west landing tower (6.9 m) to the west plaza; east walkway -> the main entrance tower (6.8 m).
+    Caltrain platforms, their boards and prompts untouched; keep-out never touches Peninsula station furniture or
+    landmarks (Towns OSM buildings only; SBRN's garage stays with the soft trench zones).
+
 ## Status (2026-09-26 06:45 EDT) — M2b re-verified (STATIONS M2b OK), M3 gate items under way
 
 - **M2b (`#metrodir=metro-next/`) re-verified**: all 51 stations + `COLS~OAC` build (audit: same flags as M2, all
