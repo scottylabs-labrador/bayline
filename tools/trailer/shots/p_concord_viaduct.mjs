@@ -10,7 +10,7 @@ export default {
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline, C = __cine;
     await M.day('2026-09-29', 18 * 3600 + 30 * 60); const N = B.MetroSim.net, F = {}, T = N.byId['C1'];
     const dia = C.ll(37.8816, -121.9142, 0), sm = { x: dia.x, y: 1173, z: dia.z }, cands = [];
-    for (const s of [29500, 30300, 30000]) for (const [d, h] of [[300, 28], [360, 33], [450, 38]]) { N.frame(T, s, F);
+    for (const s of [30300, 29500, 30000]) for (const [d, h] of [[450, 38], [360, 33], [300, 28]]) { N.frame(T, s, F);
       const ux = dia.x - F.x, uz = dia.z - F.z, ul = Math.hypot(ux, uz), c = { x: F.x - ux / ul * d, z: F.z - uz / ul * d }; c.y = C.ground(c.x, c.z) + h;
       cands.push(Object.assign(c, { s, tr: { x: F.x, y: F.y + 2.4, z: F.z }, u: { x: ux / ul, z: uz / ul } })); }
     window.__S = { cands, sm, T }; C.put(cands[0], sm);
@@ -18,8 +18,9 @@ export default {
   prime: `() => { const M = window.__m, S = window.__S, B = window.__bayline, C = __cine;
     let best = null; for (const c of S.cands) { const r = M.sight(c, M.trackPts(S.T, c.s, 70, 5, 2.2)); if (!best || r.clear > best.r.clear + 0.01) best = { c, r }; if (r.clear >= 0.99) break; }
     const c = best.c, el = (P) => Math.atan2(P.y - c.y, Math.hypot(P.x - c.x, P.z - c.z)), at = el(c.tr), as = el(S.sm);
-    // the lens: the span train..summit over 56% of the 2.39:1 band (which is 74% of the frame); the aim: the train 30% up the band
-    const span = as - at, vf = Math.min(16.4, Math.max(8.6, span / 0.56 / 0.74 * 180 / Math.PI)), band = vf * 0.74 * Math.PI / 180, aim = at + band * (0.5 - 0.3);
+    // the lens: the span train..summit over 46% of the 2.39:1 band (which is 74% of the frame); the aim: the train 42% up the band
+    // (its nearer cars sit lower: the viaduct crosses the view at an angle)
+    const span = as - at, vf = Math.min(16.4, Math.max(8.6, span / 0.46 / 0.74 * 180 / Math.PI)), band = vf * 0.74 * Math.PI / 180, aim = at + band * (0.5 - 0.42);
     const q = { x: c.x + c.u.x * 1000, y: c.y + Math.tan(aim) * 1000, z: c.z + c.u.z * 1000 }, px = -c.u.z, pz = c.u.x, dd = 16;
     window.__P = { vf, c0: { x: c.x - px * dd, y: c.y, z: c.z - pz * dd }, c1: { x: c.x + px * dd, y: c.y + 2, z: c.z + pz * dd }, q0: { x: q.x - px * dd, y: q.y, z: q.z - pz * dd }, q1: { x: q.x + px * dd, y: q.y + 2, z: q.z + pz * dd } };
     window.__dep = M.pass({ track: 'C1', s: c.s }, {}, 18 * 3600 + 33 * 60, 4.8, { focus: true });
