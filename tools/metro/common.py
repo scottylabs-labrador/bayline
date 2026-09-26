@@ -10,7 +10,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(HERE)
 ROOT = os.path.dirname(TOOLS)
 RAW = os.path.join(ROOT, 'data', 'raw', 'metro')
-PUB = os.environ.get('METRO_PUB') or os.path.join(ROOT, 'data', 'pub', 'v2', 'metro')   # METRO_PUB=.../metro-next for work-in-progress bakes
+# bakes write to the STAGING dir (metro-next); only tools/metro/promote.py writes the live metro/ that the servers publish
+# (production reads it: never bake into it directly). METRO_PUB overrides the staging dir.
+PUB = os.environ.get('METRO_PUB') or os.path.join(ROOT, 'data', 'pub', 'v2', 'metro-next')
 PUB_DIR = os.path.basename(PUB.rstrip('/'))                                            # 'metro' or 'metro-next' (relative to DATA)
 GTFS_DIR = os.path.join(RAW, 'gtfs')
 OSM_JSON = os.path.join(RAW, 'osm', 'bart_osm.json')
