@@ -243,7 +243,11 @@ const StationKit = (() => {
       g.setAttribute('aSurf', new THREE.BufferAttribute(this.S.slice(0, n * 4), 4));
       g.setAttribute('aExt', new THREE.BufferAttribute(this.E.slice(0, n * 4), 4, true));
       g.setIndex(new THREE.BufferAttribute(n < 65536 ? new Uint16Array(this.I.subarray(0, this.ni)) : this.I.slice(0, this.ni), 1));
-      g.computeBoundingSphere(); g.computeBoundingBox();
+      // bounds in one pass (three's computeBoundingSphere makes two over every vertex: a build step's worth on a big zone)
+      const P = this.P; let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+      for (let i = 0, m = n * 3; i < m; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+      g.boundingBox = new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1));
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), 0.5 * Math.hypot(x1 - x0, y1 - y0, z1 - z0));
       return g;
     }
     get tris() { return this.ni / 3; }

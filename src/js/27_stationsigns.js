@@ -88,6 +88,10 @@ const MetroSigns = (() => {
     info: [0, 832, 1024, 192],          // info panel (station name + lines + "Trains every few minutes")
   };
   const atlasCache = new Map();
+  // (idle warm-up: every weight of both faces rasterised once, and the system map's base drawn, so the first station's
+  // signs and boards are not where the fonts load)
+  function warm() { try { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const c = cv.getContext('2d');
+    for (const f of [FONT, FONTB]) for (const w of [500, 600, 700]) { c.font = `${w} 24px ${f}`; c.fillText('Bayline Metro 0123 ·', 0, 30); } } catch (e) {} }
   let SCALE = 1;                     // quality: Low draws the atlas at half size (the regions and UVs stay in AW x AH units)
   const setScale = (s) => { SCALE = s > 0 ? Math.min(1, s) : 1; };
   // (the atlas is drawn a few panels per step, so a station build never stalls a frame on it: stationAtlasGen; the
@@ -263,5 +267,5 @@ const MetroSigns = (() => {
     let n = 0; for (let k = 0; k < boards.length && n < 2; k++) { const b = boards[(redrawI + k) % boards.length]; if (b.dirty) { drawBoard(b); n++; } } redrawI = (redrawI + 1) % Math.max(1, boards.length);
   }
 
-  return { stationAtlasGen, setScale, NAVY, TEAL, WHITE, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, scheduledRows, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
+  return { stationAtlasGen, setScale, warm, NAVY, TEAL, WHITE, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, scheduledRows, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
 })();

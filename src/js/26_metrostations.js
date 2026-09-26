@@ -208,7 +208,9 @@ const MetroStations = (() => {
     });
     ready.catch(() => {}).then(streets).then(() => {
       const t0 = performance.now();
-      jobs.push({ name: st.id, st, gen: StationTypes.build(st, ctx()), done: (res) => { st.state = 'built'; stats.building--; stats.built++; stats.lastBuildMs = performance.now() - t0; attach(st, res); },
+      // (attaching is a job of its own, in steps: Under's cells, portals and cuts, the footprint, the shader compile)
+      jobs.push({ name: st.id, st, gen: StationTypes.build(st, ctx()), done: (res) => { jobs.unshift({ name: st.id + ':attach', st, gen: attachGen(st, res),
+          done: () => { st.state = 'built'; stats.building--; stats.built++; stats.lastBuildMs = performance.now() - t0; }, fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } }); },
         fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } });
     });
   }
@@ -227,24 +229,42 @@ const MetroStations = (() => {
       pr.then(once, once); setTimeout(once, 8000);
     } catch (e) { if (prev !== null) try { R.setRenderTarget(prev); } catch (e2) {} done(); }
   }
-  function attach(st, res) {
-    st.root = res.root; st.res = res; group.add(res.root);
+  function* attachGen(st, res) {
+    st._phase = 'att:root'; st.root = res.root; st.res = res; group.add(res.root);
     // shaders compile off the critical path (KHR_parallel_shader_compile) while the new station stays hidden; the
     // programs are shared by every station (one key per material kind), so after the first station this resolves at
     // once and no station ever compiles on the frame it appears (lead, M3 hitch budget)
     // (per root: a station dropped and rebuilt meanwhile has a new root; a dropped root is disposed only once its
     // compile has finished, or three's readiness poll reads a disposed material)
     const root = res.root; root.userData.warm = false;
-    warmUp(root, () => { root.userData.warm = true; stats.warmed = (stats.warmed || 0) + 1; const f = root.userData.dropLater; if (f) { root.userData.dropLater = null; f(); } });
+    const live = () => st.res === res;                     // (dropped meanwhile: stop)
     // Under: a station without cells (aerial, at grade) is outdoor world: hidden with it while the camera is underground
     // and no opening to the outdoors is in view; underground levels are cell groups (their visibility is Under's)
     if (typeof Under !== 'undefined' && Under.enabled && !(res.cells && res.cells.length)) Under.outdoor(res.root, true);
     st.walk = res.walk || null;
-    for (const c of res.cells || []) if (typeof Under !== 'undefined' && Under.addCell) try { Under.addCell(c.under); } catch (e) { console.warn('Under.addCell', e); }
-    for (const p of res.portals || []) if (typeof Under !== 'undefined' && Under.addPortal) try { Under.addPortal(p); } catch (e) { console.warn('Under.addPortal', e); }
-    for (const c of res.cuts || []) if (typeof Under !== 'undefined' && Under.addCut) try { Under.addCut(c); } catch (e) { console.warn('Under.addCut', e); }
     for (const b of res.boards || []) st.boards.set(b.key, b);
     st.root.updateMatrixWorld(true);
+    yield; if (!live()) return; st._phase = 'att:cells';
+    // (a few cells per step: each is a footprint mesh in Under's map)
+    let nc = 0;
+    for (const c of res.cells || []) { if (typeof Under !== 'undefined' && Under.addCell) try { Under.addCell(c.under); } catch (e) { console.warn('Under.addCell', e); }
+      if (++nc % 4 === 0) { yield; if (!live()) return; } }
+    yield; if (!live()) return; st._phase = 'att:portals';
+    for (const p of res.portals || []) if (typeof Under !== 'undefined' && Under.addPortal) try { Under.addPortal(p); } catch (e) { console.warn('Under.addPortal', e); }
+    for (const c of res.cuts || []) if (typeof Under !== 'undefined' && Under.addCut) try { Under.addCut(c); } catch (e) { console.warn('Under.addCut', e); }
+    yield; if (!live()) return; st._phase = 'att:ground';
+    attachGround(st, res);
+    yield; if (!live()) return; st._phase = 'att:compile';
+    // (one material per step: compile() prepares every material of what it is given synchronously, and a program
+    // three has not seen yet costs its shader source and the driver calls: the first station of a session pays that)
+    const parts = [], seen = new Set();
+    root.traverse(o => { const m = o.material; if (!m || Array.isArray(m) || seen.has(m)) return; seen.add(m); parts.push(o); });
+    let left = parts.length;
+    const fin = () => { root.userData.warm = true; stats.warmed = (stats.warmed || 0) + 1; const f = root.userData.dropLater; if (f) { root.userData.dropLater = null; f(); } };
+    if (!left) { fin(); return; }
+    for (const c of parts) { warmUp(c, () => { if (--left === 0) fin(); }); yield; }
+  }
+  function attachGround(st, res) {
     if (res.footprint && res.footprint.pads) { const old = pads.filter(p => p.st === st.id); const nw = res.footprint.pads;
       if (old.length !== nw.length || nw.some((p, i) => Math.abs(p.y - old[i].y) > 0.05)) setPads(st, nw); }
     if (res.footprint && setFootprint(st, res.footprint)) {
@@ -291,7 +311,11 @@ const MetroStations = (() => {
       if (typeof Terrain !== 'undefined' && Terrain.addHeightFilter) { Terrain.addHeightFilter(padFilter, [1e9, 1e9, 1e9, 1e9]); padsLive = true; }
       footPending = true;
       // the underground stations' environment map (a small PMREM, ~20 ms once) while the page is idle, not mid-build
-      const warm = () => { try { if (typeof StationKit !== 'undefined' && Env.renderer) StationKit.interiorEnv(Env.renderer); } catch (e) {} };
+      // (and the geometry builder's hot paths, so the first station's big buckets are not built by cold code)
+      const warm = () => { try { if (typeof StationKit !== 'undefined' && Env.renderer) StationKit.interiorEnv(Env.renderer); } catch (e) {}
+        try { const g = new StationKit.GB(), fr = []; for (let i = 0; i < 600; i++) fr.push({ x: i, z: 0, tx: 1, tz: 0, u: i });
+          for (let k = 0; k < 4; k++) g.sweep(fr, (i) => [[0, 0], [1, 0.2], [2, 0.1], [3, 0.4], [4, 0], [5, 0.3], [6, 0.1], [7, 0]]); const geo = g.build(); if (geo) geo.dispose(); } catch (e) {}
+        try { if (typeof MetroSigns !== 'undefined' && MetroSigns.warm) MetroSigns.warm(); } catch (e) {} };
       if (typeof requestIdleCallback !== 'undefined') requestIdleCallback(warm, { timeout: 8000 }); else setTimeout(warm, 3000);
       refreshWorld();
     })

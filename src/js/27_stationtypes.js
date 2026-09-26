@@ -447,21 +447,24 @@ const StationTypes = (() => {
       const grp = new THREE.Group(); grp.name = 'zone-' + z.name; root.add(grp); const grpN = new THREE.Group(); grpN.name = 'zone-' + z.name + '-near'; grp.add(grpN);
       res.zones[z.name] = { group: grp, near: grpN, under: z.under };
       const mk = (g, m, parent, shadow) => { const geo = g.build(); if (!geo) return null; const mesh = new THREE.Mesh(geo, m); mesh.castShadow = shadow && !z.under; mesh.receiveShadow = true; parent.add(mesh); if (m === mat) z.lights.bind(mesh, root); return mesh; };
-      mk(z.m.sk, mat, grp, true); yield; mk(z.d.sk, mat, grpN, true);
+      st._phase = 'fin:m:' + z.name; mk(z.m.sk, mat, grp, true); yield; st._phase = 'fin:d:' + z.name; mk(z.d.sk, mat, grpN, true);
       const gl1 = mk(z.m.glass, shared.glass, grp, false), gl2 = mk(z.d.glass, shared.glass, grpN, false); for (const g of [gl1, gl2]) if (g) g.renderOrder = 2;
-      mk(z.m.glow, shared.glow, grp, false); mk(z.d.glow, shared.glow, grpN, false);
+      mk(z.m.glow, shared.glow, grp, false); mk(z.d.glow, shared.glow, grpN, false); yield; st._phase = 'fin:signs:' + z.name;
       if (z.signs.length) { const sm = new THREE.MeshStandardMaterial({ map: atlas.tex, emissiveMap: atlas.tex, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.0 });
         signMats.push({ m: sm, z }); const geo = signGeometry(z.signs, atlas.rect); const m = new THREE.Mesh(geo, sm); m.receiveShadow = true; grpN.add(m); }
       for (const b of z.boards) { const bd = MetroSigns.newBoard(st, b.key); const m = new THREE.Mesh(b.geo, new THREE.MeshBasicMaterial({ map: bd.tex, toneMapped: false })); m.material.color.setScalar(1.6); grpN.add(m); res.boards.push(bd); b.mat = m.material; yield; }
       yield;
     }
+    yield; st._phase = 'fin:steps';
     if (T.esc.length && !(C.q && C.q.detail === 0)) { const m = SP.escSteps(T.esc); if (m) { (T.levels.length > 1 ? near : res.zones.plat.near).add(m); zP.lights.bind(m, root); } }
     res.nears = Object.values(res.zones).map(z => z.near);
     res.entrances = (T.entrances || []).map(e => ({ wx: e.wx, wz: e.wz, name: e.name }));
     // (the street entrances share one zone: their cells get no group, or Under would hide every shaft whenever one of
     // them is out of sight; the shafts are cheap and stay drawn with the station)
     for (const c of T.cells) if (res.zones[c.zone] && c.zone !== 'ent') c.under.group = res.zones[c.zone].group;
+    yield; st._phase = 'fin:walk';
     indexWalk(walk);
+    yield; st._phase = 'fin:crowd';
     // crowd zones (station-local via toLocal/toWorld): platforms with their faces and circulation, the concourse
     res.toWorld = (u, v) => WUV(u, v); res.toLocal = (u, v) => L2(u, v); res.yawAt = (u) => yawAt(u); res.origin = [OX, OZ];
     res.crowd = {
