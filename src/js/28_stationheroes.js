@@ -101,6 +101,9 @@ const StationHeroes = (() => {
     DELN: { layout: 'side', type: 'aerial', access: 'below', floor: [0xa4583c, K.TILE, 0.3], deck: FLUTE(0xd2cdc2, 0.3), canopy: { style: 'flat', len: 60, top: 0xd2cdc2, under: 0x3a3836, fascia: 0xd2cdc2, posts: { shape: 'rect', col: 0xd2cdc2, size: 0.4, spacing: 13, where: 'back' } }, ends: 'beam', towers: 0x46b6d6 },
     RICH: { layout: 'island', type: 'surface', access: 'below', floor: CONC(0xa39e94), canopy: { style: 'flat', len: 92, top: 0x3a3a3c, under: 0xc0552e, underKind: K.PAINT, fascia: 0x2e2e30, posts: { shape: 'rect', col: 0x8f8b84, size: 0.5, spacing: 10, where: 'centre' } }, ends: 'poles' },
   };
+  // the airport connector's own station at Coliseum (a separate build beside the BART station, +13 m, a white capsule
+  // roof over one track with platform screen doors): Oakland Airport's design
+  CFG['COLS~OAC'] = Object.assign({}, CFG.OAKL, { canopy: Object.assign({}, CFG.OAKL.canopy, { len: 56 }) });
   function config(id) { return CFG[id] || {}; }
   // style palette override: the era default with this station's entries on top
   function style(id, base) {

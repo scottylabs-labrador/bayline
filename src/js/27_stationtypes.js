@@ -44,7 +44,7 @@ const StationTypes = (() => {
     COLM: '1990s', SSAN: '2000s', SBRN: '2000s', SFIA: '2000s', MLBR: '2000s', WOAK: '1970s', '12TH': '1970s', '19TH': '1970s', MCAR: '1970s', ASHB: '1970s', DBRK: '1970s',
     NBRK: '1970s', PLZA: '1970s', DELN: '1970s', RICH: '1970s', ROCK: '1970s', ORIN: '1970s', LAFY: '1970s', WCRK: '1970s', PHIL: '1970s', CONC: '1970s', NCON: '1990s',
     PITT: '1990s', PCTR: '2010s', ANTC: '2010s', LAKE: '1970s', FTVL: '1970s', COLS: '1970s', SANL: '1970s', BAYF: '1970s', HAYW: '1970s', SHAY: '1970s', UCTY: '1970s',
-    FRMT: '1970s', WARM: '2010s', MLPT: '2020s', BERY: '2020s', CAST: '1990s', WDUB: '2010s', DUBL: '1990s', OAKL: '2010s' };
+    FRMT: '1970s', WARM: '2010s', MLPT: '2020s', BERY: '2020s', CAST: '1990s', WDUB: '2010s', DUBL: '1990s', OAKL: '2010s', 'COLS~OAC': '2010s' };
   function styleFor(st) {
     const era = ERA[st.id] || '1970s'; const under = st.type === 'subway';
     let S;
@@ -1599,6 +1599,20 @@ const StationTypes = (() => {
         else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); }
         if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); }
         const [bx, bz] = T.L2(u, island ? cv(u) : backV(u)); void bx; void bz;
+      }
+      // platform screen doors (the airport connector): a glass wall on the edge with a door pair every car length
+      if (T.H.screenDoors) for (const side of island ? [-1, 1] : [p.sideV > 0 ? -1 : 1]) {
+        const edge = (u) => side < 0 ? p.eL(u) + 0.25 : p.eR(u) - 0.25, pitch = 9.7, dw = 1.8;
+        for (let u = p.u0 + 1; u < p.u1 - 1; u += pitch) {
+          const ua = u, ub = Math.min(p.u1 - 1, u + pitch), um = (ua + ub) / 2;
+          for (const [a, b] of [[ua, um - dw / 2], [um + dw / 2, ub]]) { if (b - a < 0.2) continue; const fr2 = T.frames(a, b);
+            B.glass.sweep(fr2, (i, f) => [[edge(f.u), p.y + 0.05], [edge(f.u), p.y + 2.25]]); B.glass.sweep(fr2, (i, f) => [[edge(f.u), p.y + 0.05], [edge(f.u), p.y + 2.25]], true); }
+          // the door leaves (closed) in a stainless frame, the header with its lamp
+          place(gd, um, edge(um), p.y, 0); gd.mat(0xb9bec3, K.STEEL); gd.cbox(0, 2.25, 0, dw + 0.3, 0.35, 0.18); for (const x of [-dw / 2 - 0.05, dw / 2 + 0.05]) gd.cbox(x, 0, 0, 0.1, 2.25, 0.16); gd.pop();
+          T.placeB(B, um, edge(um), p.y, 0); B.glass.quad([-dw / 2, 0.05, 0], [dw / 2, 0.05, 0], [dw / 2, 2.2, 0], [-dw / 2, 2.2, 0], [0, 0, 1, 0, 1, 1, 0, 1]); B.glass.quad([dw / 2, 0.05, 0], [-dw / 2, 0.05, 0], [-dw / 2, 2.2, 0], [dw / 2, 2.2, 0], [0, 0, 1, 0, 1, 1, 0, 1]);
+          B.glow.mat(lin(0x40e080)); B.glow.box(-0.15, 2.3, -0.1, 0.15, 2.36, 0.1); T.popB(B);
+          const [x0, z0] = T.WUV(ua, edge(ua)), [x1, z1] = T.WUV(ub, edge(ub)); addWall(T.walk, [x0, z0], [x1, z1], p.y - 0.5, p.y + 2.3);
+        }
       }
       const ceil = under ? (p.level && p.level.k ? p.level.ceilY : T.ceilY) : p.y + 4.4;
       for (let u = p.u0 + 10; u < p.u1 - 5; u += 36) {

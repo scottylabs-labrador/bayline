@@ -135,8 +135,21 @@ const MetroStations = (() => {
       const r = { id: s.id, name: s.name, type: s.type, layout: s.layout, hero: !!s.hero, x: w.x, z: w.z, data: s, plan: null, state: 'idle', root: null, dist: 1e9,
         cells: [], lights: [], boards: new Map(), walk: null, lod: 0 };
       list.push(r); byId[s.id] = r;
+      // a BART station that also serves the airport connector (Coliseum): the connector's platform is its own
+      // station build beside it, '<ID>~OAC' (spawns, boards and limits for those platforms are routed to it)
+      const sysOf = (p) => { const t = MetroNet.byId[p.track]; return t ? t.sys : 'bart'; };
+      const P = (s.platforms || []).filter(p => p.track && MetroNet.byId[p.track]), oac = P.filter(p => sysOf(p) === 'oac');
+      if (oac.length && oac.length < P.length) {
+        const f = MetroNet.frame(oac[0].track, (oac[0].s0 + oac[0].s1) / 2, {});
+        const d = Object.assign({}, s, { id: s.id + '~OAC', platforms: oac, type: 'aerial', layout: 'side' });
+        const sub = { id: d.id, name: s.name, type: 'aerial', layout: 'side', hero: true, x: f ? f.x : w.x, z: f ? f.z : w.z, data: d, plan: null, state: 'idle', root: null, dist: 1e9,
+          cells: [], lights: [], boards: new Map(), walk: null, lod: 0, parent: r };
+        list.push(sub); byId[sub.id] = sub; r.oacSub = sub; r.oacKeys = new Set(oac.flatMap(p => [p.gtfs, p.code, String(p.code)].filter(Boolean)));
+      }
     }
   }
+  // the record that holds a platform (the connector's sub-station for its platforms)
+  const holder = (st, key) => st && st.oacSub && key != null && st.oacKeys.has(String(key)) ? st.oacSub : st;
 
   // ------------------------------------------------------------------------------------------------ jobs (time-sliced)
   const jobs = [];
@@ -292,7 +305,7 @@ const MetroStations = (() => {
     return false;
   }
   function spawnPoint(id, key) {
-    const st = byId[id]; if (!st) return null; if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return null;
+    const st = holder(byId[id], key); if (!st) return null; if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return null;
     if (!kdone.has(st.id)) footprintOf(st);          // (the builders' setup corrects the platform sides the data guessed)
     // key: a platform code ('1') or a GTFS platform id ('M20-1')
     const k = String(key == null ? '' : key); const code = k.includes('-') ? k.split('-').pop() : k;
@@ -301,11 +314,16 @@ const MetroStations = (() => {
     return { x: S.x + S.rx * v, y: p.yRail + (p.ph || PLAT_H), z: S.z + S.rz * v, yaw: Math.atan2(-S.rx * p.sideV, -S.rz * p.sideV) };
   }
   function limits(id) {
-    const st = byId[id]; if (!st) return []; if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return [];
+    const st0 = byId[id]; if (!st0) return [];
+    if (st0.oacSub && !String(id).includes('~')) return [...limits(id + '~OAC'), ...limits0(st0)];
+    return limits0(st0);
+  }
+  function limits0(st) {
+    if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return [];
     const L = st.res && st.res.limits ? st.res.limits : [pl.u0 + 28, pl.u1 - 28];
     return pl.tracks.map(t => { const i0 = Math.round((L[0] - pl.u0) / DU), i1 = Math.round((L[1] - pl.u0) / DU); const a = t.s[U.clamp(i0, 0, t.s.length - 1)], b = t.s[U.clamp(i1, 0, t.s.length - 1)]; return { track: t.id, s0: Math.min(a, b), s1: Math.max(a, b) }; });
   }
-  function setBoard(id, key, rows) { const st = byId[id]; if (!st) return; if (typeof MetroSigns !== 'undefined') MetroSigns.setBoard(st, String(key), rows); }
+  function setBoard(id, key, rows) { const st = holder(byId[id], key); if (!st) return; if (typeof MetroSigns !== 'undefined') MetroSigns.setBoard(st, String(key), rows); }
 
   // ------------------------------------------------------------------------------------------------ keep-out zones
   // Ground-level station footprints for the world's placers: Towns buildings and infill houses, trees, street lamps,

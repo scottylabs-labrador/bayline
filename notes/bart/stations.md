@@ -44,6 +44,10 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   over the main entrance so its walkway leaves square to the line. Walk floors/walls follow (checked with `floorAt`
   along a WDUB landing); walkway supports stand clear of the streets; keep-out kinds `bridge`/`column`/`landing`.
 - **Per-vehicle platforms**: eBART (Antioch DMU) and airport people-mover faces use TRAINS' floor heights and widths.
+- **Coliseum's airport-connector station** is built (it was left out of COLS): a separate record `COLS~OAC` beside the
+  BART station (the Oakland Airport design: white capsule roof, lobby under, **platform screen doors** on both
+  connector stations). `spawnPoint('COLS', '3' | its GTFS id)`, `setBoard('COLS', '3', …)` and `limits('COLS')`
+  route to it (limits now include the connector track H1.1).
 
 - **Keep-out zones (lead request, 02:10)**: every station's ground-level footprint is a keep-out zone for Towns
   buildings and infill houses, trees, grass, parked cars and moving traffic (API and hooks below). Verified at WOAK,
