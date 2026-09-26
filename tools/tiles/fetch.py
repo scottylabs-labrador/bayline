@@ -113,3 +113,13 @@ def rgb_dropout_array(a, G=16):
         if ((hi[..., c] < 6) & (mean[..., o].min(-1) > 40) & (std[..., o].min(-1) > 7)).any():
             return True
     return False
+
+
+def terrarium(z, x, y):
+    dest = os.path.join(RAW, 'terrarium', str(z), str(x), f'{y}.png')
+    return get_cached(TERRARIUM.format(z=z, x=x, y=y), dest, min_bytes=100, timeout=60)
+
+
+def usgs_tile(z, x, y):
+    dest = os.path.join(RAW, 'usgs', str(z), str(x), f'{y}.jpg')
+    return get_cached(USGS_TILE.format(z=z, x=x, y=y), dest, min_bytes=300, timeout=60)
