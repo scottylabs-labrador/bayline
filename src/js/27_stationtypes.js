@@ -450,7 +450,7 @@ const StationTypes = (() => {
     const env = under ? interiorEnv(C.renderer) : null;
     yield; st._phase = 'fin:res';
     const res = { root, near, walk, cells: T.cells, portals: T.portals, cuts: T.cuts, boards: [], limits: [boxU0, boxU1], zones: {}, update: null, footprint: footprintT(T),
-      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated, guard: st.plan.guard, plazas: T.trench ? T.trench.plazas : undefined, hall: T.mode === 'level' ? { dir: T.hallDir, uE: +(T.hallDir > 0 ? T.pu1 : T.pu0).toFixed(1), uH: +(T.hallDir > 0 ? T.boxU1 : T.boxU0).toFixed(1) } : undefined, underpass: T.upass ? { cu0: +T.cu0.toFixed(1), cu1: +T.cu1.toFixed(1), um: +T.upass.um.toFixed(1), sides: T.upass.sides.map(q => [q.west ? 'W' : 'E', q.kind, +q.L.toFixed(1), +q.rise.toFixed(2), q.side, +q.vM.toFixed(2), +q.vToe.toFixed(2)]) } : undefined, rotunda: (() => { const L = (T.landings || []).find(q => q.rotunda); return L ? { c: T.W2(...L.rotunda.c), R: L.rotunda.R, gy: L.gy, top: T.W2(...L.top), foot: T.W2(...L.foot) } : undefined; })(),
+      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated, guard: st.plan.guard, plazas: T.trench ? T.trench.plazas : undefined, bridge: T.ub0 !== undefined ? { a: T.W2(...T.L2(T.ub0, 0)), b: T.W2(...T.L2(T.ub1, 0)), yCF: T.yCF, vault: T.vault } : undefined, hall: T.mode === 'level' ? { dir: T.hallDir, uE: +(T.hallDir > 0 ? T.pu1 : T.pu0).toFixed(1), uH: +(T.hallDir > 0 ? T.boxU1 : T.boxU0).toFixed(1) } : undefined, underpass: T.upass ? { cu0: +T.cu0.toFixed(1), cu1: +T.cu1.toFixed(1), um: +T.upass.um.toFixed(1), sides: T.upass.sides.map(q => [q.west ? 'W' : 'E', q.kind, +q.L.toFixed(1), +q.rise.toFixed(2), q.side, +q.vM.toFixed(2), +q.vToe.toFixed(2)]) } : undefined, rotunda: (() => { const L = (T.landings || []).find(q => q.rotunda); return L ? { c: T.W2(...L.rotunda.c), R: L.rotunda.R, gy: L.gy, top: T.W2(...L.top), foot: T.W2(...L.foot) } : undefined; })(),
         landDbg: T.landDbg, landings: (T.landings || []).map(L => ({ foot: T.W2(...L.foot), top: T.W2(...L.top), dir: L.dir, rise: +L.rise.toFixed(2), gy: L.gy, segs: L.segs.length, name: L.name })), plats: plats.map(p => [p.kind, +p.u0.toFixed(1), +p.u1.toFixed(1), +(p.eR(uc) - p.eL(uc)).toFixed(2), (p.groups || []).map(g => [g.kinds.join('+'), +g.uFoot.toFixed(1), +g.uHead.toFixed(1), +g.vc.toFixed(1)])]),
         ceilHoles: (T.ceilHoles || []).map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)]), platHoles: plats.map(p => p.holes.map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)])) } };
     const shared = sharedMats();
@@ -893,8 +893,9 @@ const StationTypes = (() => {
         const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2], bx = p3[0] - p0[0], by = p3[1] - p0[1], bz = p3[2] - p0[2];
         const nx = ay * bz - az * by, nz = ax * by - ay * bx; const fr = T.frameAt(T.uc), rx = -fr.tz * into, rz = fr.tx * into;
         if (nx * rx + nz * rz >= 0) g.quad(p0, p1, p2, p3, uv); else g.quad(p3, p2, p1, p0, uv); };
-      for (let u = T.boxU0 + 14; u < T.boxU1 - 10; u += 18) {
-        if (!clear(u, 1.2)) { const ua0 = u + 9; if (!clear(ua0, 0.8)) continue; }
+      for (let u0 = T.boxU0 + 14; u0 < T.boxU1 - 10; u0 += 18) {
+        // (a circle a sign would overlap slides up to 7 m along the wall rather than being left out)
+        const u = [0, 4.5, -4.5, 7, -7].map(d => u0 + d).find(uu => uu > T.boxU0 + 8 && uu < T.boxU1 - 8 && clear(uu, 1.2)) ?? u0;
         if (clear(u, 1.2)) { g.mat(0x121212, K.PLAIN, 0.95);
         for (let k = 0; k < N; k++) { const a0 = 2 * Math.PI * k / N, a1 = 2 * Math.PI * (k + 1) / N, r0 = 0.05, r1 = 1.2;
           face(W(u + Math.cos(a0) * r0, yC + Math.sin(a0) * r0), W(u + Math.cos(a0) * r1, yC + Math.sin(a0) * r1), W(u + Math.cos(a1) * r1, yC + Math.sin(a1) * r1), W(u + Math.cos(a1) * r0, yC + Math.sin(a1) * r0), [0, 0, 1, 0, 1, 1, 0, 1]); } }
@@ -1579,8 +1580,8 @@ const StationTypes = (() => {
       zC.m.glow.mat(LC); zC.m.glow.sweep(frames(cu0 + 2, cu1 - 2), (i, f) => [[v - 0.12, yCC - 0.06], [v + 0.12, yCC - 0.06]], true);
     }
     // name panels on the concourse walls, maps
-    for (let u = cu0 + 10; u < cu1 - 8; u += 30) for (const side of [-1, 1]) { const v = edgeV(u, side) - side * 0.03; zC.signs.push({ u, v, y: yCF + 2.2, yaw: T.yawAt(u) + (side < 0 ? Math.PI : 0), w: 4.3, h: 0.8, region: 'name', both: false, T }); }
-    { const u = uc + 3; zC.signs.push({ u, v: vl(u) + 0.03, y: yCF + 1.5, yaw: T.yawAt(u) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T }); }
+    for (let u = cu0 + 10; u < cu1 - 8; u += 30) for (const side of [-1, 1]) { const v = edgeV(u, side) - side * 0.03; zC.signs.push({ u, v, y: yCF + 2.2, yaw: T.yawAt(u) + (side > 0 ? Math.PI : 0), w: 4.3, h: 0.8, region: 'name', both: false, T }); }
+    { const u = uc + 3; zC.signs.push({ u, v: vl(u) + 0.03, y: yCF + 1.5, yaw: T.yawAt(u), w: 2.4, h: 1.0, region: 'map', both: false, T }); }
     // cell: the concourse footprint
     const poly = []; for (const f of fr) { const v = vl(f.u) - 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); } for (let i = fr.length - 1; i >= 0; i--) { const f = fr[i]; const v = vr(f.u) + 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
     // (the cell stays half a metre under the lowest ground over it: the terrain drops fragments inside cell volumes)
@@ -2167,6 +2168,7 @@ const StationTypes = (() => {
         const lanes = [Track.lane(n.s, 0), Track.lane(n.s, 1)].map(toV); vNB = sv < 0 ? Math.max(...lanes) : Math.min(...lanes); } } catch (e) { /* fallbacks */ }
     const yTopM = T.yCF + 3.2, ys = Math.max(yTopM + 0.9, p3.y + 7.5), R = H.rise || 5, um = T.ub0 !== undefined ? (T.ub0 + T.ub1) / 2 : T.uc;
     const u0 = um - (H.len || 80) / 2, u1 = um + (H.len || 80) / 2;
+    T.vault = { a: T.W2(...L2(u0, (vWest + edge(um)) / 2)), b: T.W2(...L2(u1, (vWest + edge(um)) / 2)), ys, crown: ys + R, vWest, vEdge: edge(um) };      // (trailer shots)
     const vA = (u) => Math.min(vWest, edge(u) + sv * 1.2), vB = (u) => Math.max(vWest, edge(u) + sv * 1.2);   // the shell's two edges
     const N = 18, arch = (u, inner) => { const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, P = [];
       for (let k = 0; k <= N; k++) { const t = Math.PI * k / N, v = c - hw * Math.cos(t), y = ys + R * Math.sin(t) - (inner ? 0.18 : 0); P.push([v, y]); }
@@ -2379,7 +2381,7 @@ const StationTypes = (() => {
       // mullions (none across an opening), transom rings
       const yaw = -a0; const dm = dA(a0, aDoor) < hDoor - 1e-3, wm = dA(a0, aWalk) < hWalk - 1e-3;
       const mA = dm ? yDoor : L.gy + 0.04, mB = wm ? yBand : yT - 0.45;
-      g.push().at(A[0], 0, A[1], yaw); g.mat(colF, K.PAINT); g.cbox(0, mA, 0, 0.14, mB - mA, 0.1); g.pop();
+      if (i % 2 === 0 || dm || wm) { g.push().at(A[0], 0, A[1], yaw); g.mat(colF, K.PAINT); g.cbox(0, mA, 0, 0.09, mB - mA, 0.08); g.pop(); }   // (slim, every other pane)
       g.mat(colF, K.PAINT); for (const y of [yDoor, yBand]) if (!(y === yBand && wk)) g.tube([A[0], y, A[1]], [B[0], y, B[1]], 0.05, 5);
       // walk: the drum wall, open at the door, under the walkway only up to its deck
       if (!door) addWall(walk, W2(...A), W2(...B), L.gy - 1, wk ? yCF - 1.2 : yT);
@@ -2474,18 +2476,19 @@ const StationTypes = (() => {
       }
       let um = (p.u0 + p.u1) / 2 - 8; while (busy(p, um, cv(um), 2) && um > p.u0 + 10) um -= 6;
       p.keys.forEach((key, k) => { const side = island ? (k === 0 ? -1 : 1) : (p.sideV > 0 ? -1 : 1); const v = (island ? cv(um) : backV(um)) + side * 0.12;
-        z.signs.push({ u: um, v, y: p.y + 2.25, yaw: T.yawAt(um) + (side > 0 ? Math.PI : 0), w: 3.2, h: 0.4, region: 'p' + Math.min(4, Number(key) || (k + 1)), both: false, T });
+        z.signs.push({ u: um, v, y: p.y + 2.25, yaw: T.yawAt(um) + (side < 0 ? Math.PI : 0), w: 3.2, h: 0.4, region: 'p' + Math.min(4, Number(key) || (k + 1)), both: false, T });   // (faces out from the totem's side)
       });
       place(gd, um, island ? cv(um) : backV(um), p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 3.3, 2.05, 0.2); gd.pop();
       let u2 = um + 30; while (busy(p, u2, cv(u2), 2) && u2 < p.u1 - 10) u2 += 6; const v2 = island ? cv(u2) : backV(u2);
       place(gd, u2, v2, p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 2.5, 2.2, 0.16); gd.pop();
-      z.signs.push({ u: u2, v: v2 - 0.09, y: p.y + 1.35, yaw: T.yawAt(u2), w: 2.4, h: 1.0, region: 'map', both: false, T });
-      z.signs.push({ u: u2, v: v2 + 0.09, y: p.y + 1.35, yaw: T.yawAt(u2) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T });
+      z.signs.push({ u: u2, v: v2 - 0.09, y: p.y + 1.35, yaw: T.yawAt(u2) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T });
+      z.signs.push({ u: u2, v: v2 + 0.09, y: p.y + 1.35, yaw: T.yawAt(u2), w: 2.4, h: 1.0, region: 'map', both: false, T });
       yield;
     }
     if (under) for (const L of T.levels) for (const side of [-1, 1]) for (let u = T.pu0 + 12; u < T.pu1 - 8; u += 25) {
       const v = (T.levels.length > 1 ? L.edgeV : T.edgeV)(u, side) - side * 0.03;
-      L.zone.signs.push({ u, v, y: L.yT + 1.9, yaw: T.yawAt(u) + (side < 0 ? Math.PI : 0), w: 6.4, h: 1.2, region: 'name', both: false, T });
+      // (a one-sided sign with yaw = yawAt(u) faces +v: one on the +v wall turns to face the platform, yaw + PI)
+      L.zone.signs.push({ u, v, y: L.yT + 1.9, yaw: T.yawAt(u) + (side > 0 ? Math.PI : 0), w: 6.4, h: 1.2, region: 'name', both: false, T });
     }
   }
   // a display face on each side (normals +u and -u), 1.8 x 0.45 m, just proud of the housing

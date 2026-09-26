@@ -109,8 +109,10 @@ const StationCrowds = (() => {
       people.set(k++, lx, c.y, lz, c.yaw, c.state === 'wait' ? 0 : 1, c.ph, c.state === 'wait' ? undefined : c.speed);
     }
     people.count = k; people.update && people.update(dt);
+    // (trailer shots: a hook after the crowd is placed, before the frame is drawn: riders added or the crowd replaced)
+    if (api.after) try { api.after(people, dt, active); } catch (e) { console.warn('StationCrowds.after', e); }
   }
-  const api = { update, population, EXITS, get people() { return people; }, get active() { return active; } };
+  const api = { update, population, EXITS, get people() { return people; }, get active() { return active; }, after: null };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).StationCrowds = api;   // (QA, trailer shots)
   return api;
 })();
