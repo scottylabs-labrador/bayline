@@ -24,6 +24,33 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 - **Entrances**: the Towns ground opens with the terrain's own fine cut test (BL_CUT + `Terrain.cutUniforms`);
   collars on sidewalks follow the base ground 8 cm proud; Market St canopies stop short of a facade (Powell NE).
   The jagged dark band beside Powell's NE entrance is the building's shadow-map edge, not geometry.
+  An entrance's head level is the **median** of the paved surface round it (a stair in a bare plaza no longer stands
+  on a curb-high slab); entrances within 20 m are one (Montgomery's NW corner was built twice).
+- **Hero features**: Lake Merritt's matte black tile circles and red arrows on the trackway walls (between the wall
+  signs); 16th / 24th St wells in William Mitchell's relief concrete (circles pattern).
+- **Far silhouettes**: above-ground stations beyond the build radius draw as one instanced mesh (a canopy block in
+  the roof colour, a deck slab under aerial stations; hidden while the real station is on screen; outdoor for Under),
+  so a viaduct no longer runs through an empty gap where a station stands.
+- **Milpitas re-checked after INFRA's thin-cover fix** (bart 87c32c7, merged as 44de89b): no road opens; a CPU copy
+  of the fine cut test at road height along the 112 Towns roads within 350 m (6,220 points) finds none inside an
+  Under volume. It found one of mine instead: the cut-and-cover lid over the platforms (4.5 m of ground over the
+  rail) came through the terrain in patches from above. Now: lids merge into continuous covers (street crossings
+  overlapped the cut-and-cover run: doubled soffits, fascias 6 cm through the top); a **level thin cover is a paved
+  plaza** at ground level (the ground over it cut away, the paving 1 m past the cut and lifted over the highest ground
+  along its edges, a curb where it meets a street's deck; San Bruno's middle cover too), a cover on a slope stays under
+  its ground (Balboa Park); a cover's end over the open trench has a 1.05 m parapet (a wall for walkers); an exposed
+  lid top reads as paving. Milpitas' concourse is at **ground level** on that plaza (research: "a ground-level
+  concourse with below-ground boarding platforms"): a trench deep enough for a train under a deck at ground level
+  no longer lifts its mezzanine 6.2 m over the platform (4.3 m rise now)
+  (`shots/stations/mlpt_cover_before_after.jpg`, `mlpt_ground_concourse_air.jpg`).
+- **Warm Springs' entrance rotunda**: the east landing's stair and elevator stand in a round glass drum (17.6 m
+  across, up to the walkway's roof), its door toward the street, the walkway entering at the top, a flat round roof
+  (the station's white fascia, its honey wood soffit, downlights) and panes of coloured art glass on the upper level
+  that glow at night; the ground graded to its floor and kept clear (`shots/stations/warm_rotunda_day.jpg`,
+  `warm_rotunda_dusk.jpg`).
+- **Memory**: the geometry builders' working arrays are released once a station's meshes exist (every zone's
+  builders, several MB each, stayed alive through the update closure): about 4 MB per built station
+  (`metro_shots.mjs --gc` for exact heap numbers).
 
 ## Post-M3 backlog (first item, lead 09:00)
 
@@ -37,11 +64,21 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
    escalators from the mezzanine, the BART wells passing it behind glass; transfer panels already say "City light rail
    in the same station".
 3. **Signature pieces still missing**: SFO's Wind Portal (a 4.9 m radius drum of loose stainless discs around the
-   escalators up to the AirTrain level), Warm Springs' round glass entrance rotunda joined to the concourse by a
-   footbridge, Richmond's semicircular metal canopy over the west plaza, Lake Merritt's black tile circles and red
-   arrows, 16th/24th St William Mitchell reliefs along the escalator entries.
+   escalators up to the AirTrain level: needs an AirTrain level, which nobody models yet), Richmond's semicircular
+   metal canopy over the west plaza (goes with its underpass, item 5). Done: Warm Springs' rotunda, Lake Merritt's
+   circles and arrows, the 16th/24th St Mitchell reliefs.
+   Also seen: at Balboa Park the terrain slopes beside the cover carry the orthophoto's red platforms (MetroGround's
+   carve; pre-existing, only from the air).
 4. Minor surfaces seen from behind (`tools/metro_backfaces.js`, a few rays each): well-end faces at 12th/19th St, the
    shed canopy's end caps at SFO; low visibility, left for after the gate.
+5. **Richmond's underpass**: the real concourse is a pedestrian underpass under the tracks (the island is reached from
+   below, street entrances at both ends; research: "concourse ~-3 under the tracks"). Ours is a footbridge 6.2 m over
+   the platform with 11.7 m landing towers, because the platform is only 5.2 m over the ground at its middle and a
+   lobby under a deck needs 6.2 m. Plan: an `under` access mode for stations on a fill (MetroGround's 1:2 embankment):
+   a concrete box across the embankment at street level (ceiling rail - 1.2 m, ~2.9 m clear), headwalls and wing
+   walls where the fill slopes meet it, open approach cuts to the toe, escalators and stair down through the platform
+   body, fare gates in the box, the west plaza's semicircular canopy at its west mouth. The passage under the UP /
+   Amtrak tracks to the west plaza needs those tracks (not modelled): the west mouth would open beside them.
 
 ## M3 gate (2026-09-26 08:30 EDT): items 2-4 done, Millbrae shared hall done (09:40)
 
