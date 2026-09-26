@@ -146,7 +146,7 @@ const MetroSim = (() => {
     for (let i = 0; i < n; i++) { const a = Math.min(v[i], cap), b = Math.min(v[i + 1], cap); t += (a + b) > 1e-6 ? 2 * ds / (a + b) : 1e3; if (tOut) tOut[i + 1] = t; }
     return t;
   }
-  const minRunCache = new Map();
+  const minRunCache = new Map(), floorCache = new Map();
   function minRun(path, ps0, ps1, kind, cars, floor = 0) {
     const key = path.id + '|' + ps0.toFixed(1) + '|' + ps1.toFixed(1) + '|' + kind + '|' + cars + '|' + floor.toFixed(1);
     let r = minRunCache.get(key); if (r !== undefined) return r;
@@ -278,9 +278,12 @@ const MetroSim = (() => {
       let R = minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars), fl = 0;
       const Tp = (j + 1 === m - 1 ? S[j + 1].arr : S[j + 1].dep - dw[j + 1]) - S[j].dep + 30;
       if (R > Tp && Tp > 25) {
-        let lo = 0, hi = PERF[kind].vmax;
-        for (let q = 0; q < 12; q++) { const mid = (lo + hi) / 2; if (minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars, mid) > Tp) lo = mid; else hi = mid; }
-        fl = Math.round(hi * 10) / 10; R = minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars, fl); stats.relaxed++;
+        const fk = path.id + '|' + S[j].ps.toFixed(0) + '|' + S[j + 1].ps.toFixed(0) + '|' + l.cars + '|' + Math.floor(Tp / 5);
+        fl = floorCache.get(fk);
+        if (fl === undefined) { let lo = 0, hi = PERF[kind].vmax;
+          for (let q = 0; q < 12; q++) { const mid = (lo + hi) / 2; if (minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars, mid) > Tp) lo = mid; else hi = mid; }
+          fl = Math.round(hi * 10) / 10; floorCache.set(fk, fl); }
+        R = minRun(path, S[j].ps, S[j + 1].ps, kind, l.cars, fl); stats.relaxed++;
       }
       S[j].floor = fl; gap[j] = R + dw[j + 1];
     }

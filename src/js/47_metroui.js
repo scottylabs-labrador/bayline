@@ -468,9 +468,9 @@ const MetroUI = (() => {
     el.mrk.textContent = atSt ? (tr.doorsOpen ? 'Doors open' : 'Now at') : 'Next station';
     el.mrn.textContent = atSt ? MetroSim.stName(atSt.st) : ns ? MetroSim.stName(ns.st) : '—';
     el.mrs.innerHTML = `${Math.round(tr.v / MPH)}<small>mph</small>`;
-    const side = ns && ns.side ? ((ns.side > 0) === (tr.lead === 0) ? 'right' : 'left') : '';
+    const side = ns && ns.side ? (ns.side > 0 ? 'right' : 'left') : '';            // (as you face the direction of travel)
     el.mri.textContent = atSt ? (tr.dwellLeft > 0 ? `Departs in ${Math.max(0, Math.round(tr.dwellLeft))} s` : '') + (tr.phase === 'terminal' ? 'Last stop: everybody off' : '')
-      : ns ? `Arriving ${Env.clockText(ns.tArr)} · doors on the ${side === 'right' ? 'right' : 'left'} (facing forward)` : '';
+      : ns ? `Arriving ${Env.clockText(ns.tArr)}${side ? ' · doors open on the ' + side : ''}` : '';
     drawNextStops(el.mrline, tr);
   }
   // the car's next-stop screen, reduced to a strip: the next five stations on the line colour
