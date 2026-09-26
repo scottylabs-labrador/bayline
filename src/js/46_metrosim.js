@@ -771,8 +771,14 @@ const MetroSim = (() => {
       try { P.look(k, { kind: PAXKINDS[Math.floor(r() * PAXKINDS.length)], seed: Math.floor(r() * 1e6) }); } catch (err) { /* look is optional */ }
       P.sitAtEye(k, st.x, st.y, st.z, st.yaw); car._paxSeat[k] = si; k++;
     }
-    // standees: in the floor regions, away from the seats, facing across the car or along it
+    // standees: MetroKit's standing spots when the car has them (feet on the floor, by the poles and doors), else in the
+    // floor regions away from the seats, facing across the car or along it
     const stand = load >= 0.95 ? 14 + Math.floor(r() * 10) : load >= 0.7 ? 4 + Math.floor(r() * 6) : 0;
+    const SS = car.standSpots && car.standSpots.length ? car.standSpots.slice() : null;
+    if (SS) { for (let n = 0; n < stand && SS.length && k < P.max; n++) { const sp = SS.splice(Math.floor(r() * SS.length), 1)[0];
+        try { P.look(k, { kind: PAXKINDS[Math.floor(r() * PAXKINDS.length)], seed: Math.floor(r() * 1e6) }); } catch (err) { /* optional */ }
+        P.set(k, sp.x, sp.y, sp.z, sp.yaw !== undefined ? sp.yaw : r() * 6.28, 0, r() * 6.28); car._paxSeat[k] = -1; k++; }
+      P.count = k; P.update(0.1); return; }
     const R = car.floorRegions || [];
     for (let n = 0, tries = 0; n < stand && k < P.max && tries < stand * 8; tries++) {
       const reg = R[Math.floor(r() * R.length)]; if (!reg) break;
