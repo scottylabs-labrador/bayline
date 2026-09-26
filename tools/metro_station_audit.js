@@ -27,6 +27,7 @@ async (B, a) => {
       if (st.type === 'trench' && D < 2) flags.push('trench but platform not below street (D ' + D.toFixed(1) + ')');
     }
     if (i.rise && (i.rise < 1.5 || i.rise > 16)) flags.push('escalator rise ' + i.rise.toFixed(1));
+    if (i.guard && i.guard.length) row.guard = i.guard;
     row.flags = flags; out.push(row);
   }
   return out;

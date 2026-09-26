@@ -116,6 +116,11 @@ const StationTypes = (() => {
         p.sideV = (H.layout === 'side' ? -1 : 1) * Math.sign(dv);
       }
     }
+    // a face never stands over another track: where the data put a platform on the side of a storage or pocket track
+    // (Millbrae's platform 3 would face its storage track 4.4 m away; San Bruno's "island" lies between tracks 5 m
+    // apart) the face goes to the other side of its track when that side is clear, else it narrows to what fits
+    // (plan.guard lists what moved)
+    guardFaces(plan, tv, C);
     const faces = plan.plats.map(p => ({ p, e: (u) => tv(p.t, u) + p.sideV * (p.edge || EDGE) }));
     const plats = []; const used = new Set();
     for (let i = 0; i < faces.length; i++) {
@@ -141,7 +146,7 @@ const StationTypes = (() => {
         const yA = A.p.yRail + (A.p.ph || PH), yB = B.p.yRail + (B.p.ph || PH);
         plats.push({ kind: 'island', u0, u1, eL: Lf.e, eR: Rf.e, y: (yA + yB) / 2, ph: ((A.p.ph || PH) + (B.p.ph || PH)) / 2, keys: [Lf.p.key, Rf.p.key], faces: [Lf, Rf], tracks: [Lf.p.t, Rf.p.t], holes: [] });
       } else {
-        used.add(i); const w = under ? 5.2 : 6.5;
+        used.add(i); const w = Math.min(under ? 5.2 : 6.5, A.p.maxW || 99);
         const e = A.e; const sv = A.p.sideV;
         plats.push({ kind: 'side', u0: A.p.u0, u1: A.p.u1, eL: sv > 0 ? e : (u) => e(u) - w, eR: sv > 0 ? (u) => e(u) + w : e, y: A.p.yRail + (A.p.ph || PH), ph: A.p.ph || PH, keys: [A.p.key], faces: [A], sideV: sv, tracks: [A.p.t], holes: [] });
       }
@@ -198,6 +203,26 @@ const StationTypes = (() => {
     planCirculation(T);
     groundPlan(T);
     return T;
+  }
+  // the nearest other track centre on side sv of platform p's track over its length (same level: rail within 3 m)
+  function nbrDist(plan, p, sv, tv, C) {
+    const U0 = plan.spine[0].u; let d = 1e9;
+    for (let u = p.u0 + 4; u <= p.u1 - 4; u += 8) {
+      const i = Math.max(0, Math.min(plan.spine.length - 1, Math.round((u - U0) / C.DU))), tp = tv(p.t, u);
+      for (const t of plan.tracks) { if (t === p.t || Math.abs(t.y[i] - p.t.y[i]) > 3) continue; const dv = (tv(t, u) - tp) * sv; if (dv > 0.5) d = Math.min(d, dv); }
+      for (const o of plan.others || []) { const v = o.v[i]; if (!(v === v) || Math.abs(o.y[i] - p.t.y[i]) > 3) continue; const dv = (v - tp) * sv; if (dv > 0.5) d = Math.min(d, dv); }
+    }
+    return d;
+  }
+  function guardFaces(plan, tv, C) {
+    if (plan.guarded) return; plan.guarded = true; plan.guard = [];
+    for (const p of plan.plats) {
+      const e = p.edge || EDGE, env = 1.676 + 0.15, need = e + 2.5 + env;        // edge + the least platform + a train
+      const dS = nbrDist(plan, p, p.sideV, tv, C); if (dS >= need) { if (dS < e + 6.5 + env) p.maxW = dS - e - env; continue; }
+      const dO = nbrDist(plan, p, -p.sideV, tv, C);
+      if (dO >= need) { p.sideV = -p.sideV; p.flipped = true; if (dO < e + 6.5 + env) p.maxW = dO - e - env; plan.guard.push(`${p.gtfs || p.key}: to the other side of ${p.t.id} (a track ${dS.toFixed(1)} m away)`); }
+      else { p.maxW = Math.max(1.2, dS - e - env); plan.guard.push(`${p.gtfs || p.key}: narrowed to ${p.maxW.toFixed(1)} m`); }
+    }
   }
   // world roads ({ pts: [x, y, z, ...], width, lanes, bridge }) -> segments in station coordinates near the spine,
   // { u0, v0, u1, v1, hw } (hw: half the carriageway)
@@ -362,7 +387,7 @@ const StationTypes = (() => {
     const env = under ? interiorEnv(C.renderer) : null;
     yield;
     const res = { root, near, walk, cells: T.cells, portals: T.portals, cuts: T.cuts, boards: [], limits: [boxU0, boxU1], zones: {}, update: null, footprint: footprintT(T),
-      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated,
+      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated, guard: st.plan.guard,
         landDbg: T.landDbg, landings: (T.landings || []).map(L => ({ foot: T.W2(...L.foot), top: T.W2(...L.top), dir: L.dir, rise: +L.rise.toFixed(2), gy: L.gy, segs: L.segs.length, name: L.name })), plats: plats.map(p => [p.kind, +p.u0.toFixed(1), +p.u1.toFixed(1), +(p.eR(uc) - p.eL(uc)).toFixed(2), (p.groups || []).map(g => [g.kinds.join('+'), +g.uFoot.toFixed(1), +g.uHead.toFixed(1), +g.vc.toFixed(1)])]),
         ceilHoles: (T.ceilHoles || []).map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)]), platHoles: plats.map(p => p.holes.map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)])) } };
     const shared = sharedMats();
