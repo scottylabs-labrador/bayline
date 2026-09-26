@@ -1020,6 +1020,10 @@ const MetroKit = (() => {
 
   // ------------------------------------------------------------------------------------------ runtime: Car
   const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _ax = new V3();
+  const _one = new V3(1, 1, 1), _rpi = new THREE.Matrix4().makeRotationY(Math.PI);
+  // body sway: roll f 0.8 Hz / damping / rad per g of unbalanced lateral acceleration; pitch per g of longitudinal
+  // acceleration; bounce; roll centre height; track excitation amplitudes at 70 mph (rad, rad, m)
+  const SWAY = { fr: 0.8, zr: 0.3, kr: 0.07, fp: 1.1, zp: 0.35, kp: 0.02, fb: 1.3, zb: 0.3, hrc: 0.9, exR: 0.0022, exP: 0.0007, exB: 0.006 };
   class Car {
     constructor(consist, index, d, flip, number) {
       this.consist = consist; this.index = index; this.design = d; this.flip = flip; this.number = number;
@@ -1069,6 +1073,10 @@ const MetroKit = (() => {
         gl.mesh.geometry.instanceCount = d.lamps.length; gl.pos.needsUpdate = true; gl.mesh.name = 'glow'; gl.mesh.visible = false; root.add(gl.mesh); this.glow = gl;
       }
       this.lod = 0; this.int = null; this.intVisible = false;
+      // body sway on the secondary suspension (see _sway): roll / pitch / bounce and their rates, the base pose it rides on
+      this.sw = { r: 0, vr: 0, p: 0, vp: 0, b: 0, vb: 0, has: false, bp: new V3(), br: new THREE.Euler(0, 0, 0, 'YZX'), W: new Float64Array(6) };
+      this.swPh = U.hash2(this.index * 7 + 3, (U.hashStr(String(number)) % 9973)) * TAU; this.bogFix = new THREE.Matrix4(); this.swayOn = false;
+      this._kappa = 0; this._bank = 0;
       if (!d.bogieList) d.bogieList = d.boneIdx.bogie.map((bi, k) => ({ bone: bi, pivot: d.bones[bi].pivot, axles: d.boneIdx.axlesOf[k] }));
       this.wheelAng = 0; this.yaw = d.bogieList.map(() => 0); this.doorPos = [0, 0]; this.wiperAng = [0, 0]; this.dirty = true;
       if (d.bodyList) { this.bodySt = d.bodyList.map(() => ({ yaw: 0, dx: 0, dz: 0 })); this.bodyM = d.bodyList.map(() => new THREE.Matrix4()); this.bogOff = d.bogieList.map(() => [0, 0]); }
@@ -1087,6 +1095,7 @@ const MetroKit = (() => {
       // bogies: yaw about the pivot (plus the offset of an articulated unit's middle bogie), wheelsets spin inside them
       for (let b = 0; b < BL.length; b++) { const g = BL[b], pv = g.pivot, yaw = this.yaw[b], off = this.bogOff ? this.bogOff[b] : null;
         _m.makeTranslation(pv[0] + (off ? off[0] : 0), pv[1], pv[2] + (off ? off[1] : 0)).multiply(_m2.makeRotationY(yaw)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
+        if (this.swayOn) _m.premultiply(this.bogFix);            // the body sways on its springs, the bogies stay on the track
         _m.toArray(bm, g.bone * 16); this.bogM[b].copy(_m);
         for (const ai of g.axles) { const ap = B[ai].pivot;
           _m2.makeTranslation(ap[0], ap[1], ap[2]).multiply(_m3.makeRotationZ(-this.wheelAng)); _m2.multiply(_m3.makeTranslation(-ap[0], -ap[1], -ap[2]));
@@ -1113,6 +1122,42 @@ const MetroKit = (() => {
         _m.makeTranslation(pv[0], pv[1], pv[2]).multiply(_m2.makeRotationZ(-(this.handleA || 0) * 0.55)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2])); _m.toArray(bm, hb * 16); }
       if (this.skeleton.boneTexture) this.skeleton.boneTexture.needsUpdate = true;
       this.dirty = false;
+    }
+    // Body sway: the body rides its air springs. It rolls outward under the unbalanced lateral acceleration
+    // (v^2 k + g sin(bank): leaning into the curve when slow on cant), pitches under braking / traction, and rocks and
+    // bounces on track irregularities tied to the distance run (so their frequency rises with speed). One lightly
+    // damped spring per mode. Applied on top of the group's pose (whoever set it: poseOnTrack or the caller); the
+    // bogies (and wheels, shoes) are counter-transformed so they stay on the track. LOD 0 only, no allocations.
+    _sway(dt, v, aLong, odo, on) {
+      const g = this.group, s = this.sw, W = s.W, P = g.position, Rr = g.rotation;
+      if (!s.has || P.x !== W[0] || P.y !== W[1] || P.z !== W[2] || Rr.x !== W[3] || Rr.y !== W[4] || Rr.z !== W[5]) { s.bp.copy(P); s.br.copy(Rr); s.has = true; }
+      if (!on || this.lod !== 0) {
+        if (this.swayOn) { P.copy(s.bp); Rr.copy(s.br); this.swayOn = false; this.bogFix.identity(); this.dirty = true; s.r = s.vr = s.p = s.vp = s.b = s.vb = 0; }
+        W[0] = P.x; W[1] = P.y; W[2] = P.z; W[3] = Rr.x; W[4] = Rr.y; W[5] = Rr.z; return;
+      }
+      const SW = SWAY, q = Math.min(1, Math.abs(v) / 31), ph = this.swPh;
+      const aLat = v * v * this._kappa + 9.81 * Math.sin(this._bank);
+      if (q === 0 && Math.abs(aLat) < 1e-4 && Math.abs(aLong) < 1e-3 && Math.abs(s.r) + Math.abs(s.p) + Math.abs(s.b) + Math.abs(s.vr) + Math.abs(s.vp) + Math.abs(s.vb) < 1e-5) {
+        if (this.swayOn) { P.copy(s.bp); Rr.copy(s.br); this.swayOn = false; this.bogFix.identity(); this.dirty = true; }
+        s.r = s.vr = s.p = s.vp = s.b = s.vb = 0; W[0] = P.x; W[1] = P.y; W[2] = P.z; W[3] = Rr.x; W[4] = Rr.y; W[5] = Rr.z; return;
+      }
+      const n1 = Math.sin(odo * 0.37 + ph) + 0.6 * Math.sin(odo * 0.93 + 2.1 * ph) + 0.35 * Math.sin(odo * 2.31 + 3.7 * ph);
+      const n2 = Math.sin(odo * 0.51 + 1.3 * ph) + 0.5 * Math.sin(odo * 1.37 + 0.7 * ph);
+      const n3 = Math.sin(odo * 0.83 + 2.9 * ph) + 0.5 * Math.sin(odo * 1.91 + 1.1 * ph);
+      const rT = SW.kr * aLat / 9.81 + SW.exR * q * n1, pT = SW.kp * clamp(aLong, -3, 3) / 9.81 + SW.exP * q * n2, bT = SW.exB * q * n3;
+      // springs (semi-implicit Euler, stable for these rates at dt <= 0.1)
+      let w = TAU * SW.fr; s.vr += (-w * w * (s.r - rT) - 2 * SW.zr * w * s.vr) * dt; s.r += s.vr * dt;
+      w = TAU * SW.fp; s.vp += (-w * w * (s.p - pT) - 2 * SW.zp * w * s.vp) * dt; s.p += s.vp * dt;
+      w = TAU * SW.fb; s.vb += (-w * w * (s.b - bT) - 2 * SW.zb * w * s.vb) * dt; s.b += s.vb * dt;
+      // the swayed pose: roll about the roll centre (hrc above the rails), pitch, bounce; in the base frame
+      const r = s.r, hc = SW.hrc;
+      _m.makeRotationFromEuler(s.br); _ax.set(0, hc * (1 - Math.cos(r)) + s.b, -hc * Math.sin(r)).applyMatrix4(_m);
+      P.set(s.bp.x + _ax.x, s.bp.y + _ax.y, s.bp.z + _ax.z); Rr.set(s.br.x + r, s.br.y, s.br.z + s.p, 'YZX');
+      W[0] = P.x; W[1] = P.y; W[2] = P.z; W[3] = Rr.x; W[4] = Rr.y; W[5] = Rr.z;
+      // bogie fix = G'^-1 G (group space), conjugated into the design frame for a flipped car
+      _q.setFromEuler(s.br); _m2.compose(s.bp, _q, _one); _q.setFromEuler(Rr); _m3.compose(P, _q, _one).invert(); _m3.multiply(_m2);
+      if (this.flip) _m3.premultiply(_rpi).multiply(_rpi);
+      this.bogFix.copy(_m3); this.swayOn = true; this.dirty = true;
     }
     setInteriorVisible(v) {
       v = !!v; if (v === this.intVisible) return; this.intVisible = v;
@@ -1167,6 +1212,7 @@ const MetroKit = (() => {
       this.kind = kind; this.name = opts.name || ''; this.seed = (opts.seed >>> 0) || 0; this.speed = 0;
       this.night = 0; this.lights = { head: 1, tail: 1, interior: 1, cab: 1, signs: 1 }; this.lead = 'front';
       this.doorT = [0, 0]; this.doorGoal = [0, 0]; this.dest = null; this.onEvent = null; this._chime = [-1, -1];
+      this.sway = opts.sway !== false; this.odo = 0; this._v0 = 0; this._aL = 0;       // body sway on (c.sway = false: rigid)
       this.signTex = makeSignTexture(); this.atlasTex = K.decalAtlas ? K.decalAtlas() : null; this.lcdTex = null;
       this.glassClear = glassClearMaterial();
       // car list
@@ -1325,9 +1371,11 @@ const MetroKit = (() => {
       }
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
+      if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
         if (moved) { c.doorPos[0] = c.flip ? T[1] : T[0]; c.doorPos[1] = c.flip ? T[0] : T[1]; c.dirty = true; }
         if (spin !== 0) { c.wheelAng = (c.wheelAng + (c.flip ? -spin : spin)) % TAU; c.dirty = true; }
+        if (dt > 0) c._sway(dt, this.speed, this._aL, this.odo, this.sway);
         if (c.dirty && c.lod === 0) c._pose();
       }
     }
@@ -1396,6 +1444,7 @@ const MetroKit = (() => {
       const bank = ((_F.bank || 0) + (_R.bank || 0)) / 2;
       poseCar(car, _F, _R, bank);
       const yawBody = Math.atan2(-(_F.z - _R.z), _F.x - _R.x);
+      car._kappa = U.wrapAngle(Math.atan2(-_F.tz, _F.tx) - Math.atan2(-_R.tz, _R.tx)) / (bf - br); car._bank = bank;
       const yF = Math.atan2(-_F.tz, _F.tx) - yawBody, yR = Math.atan2(-_R.tz, _R.tx) - yawBody;
       // bogie 0 of the design sits at +X; a flipped car's design +X is at its rear
       const a = U.wrapAngle(car.flip ? yR : yF), b = U.wrapAngle(car.flip ? yF : yR), nb = car.yaw.length;

@@ -56,6 +56,12 @@ c.setCab({ speedMph, atcCodeMph | codeMph, targetMph, effort | notch, mode: 'ATO
            cars, destination, lineColor | color, alarm | atc: 'ok'|'warn'|'brake'|'penalty', handle })  // ~8 Hz redraw max
 c.setInteriorVisible(bool) / car.setInteriorVisible(bool)   // builds the interior lazily (cached per design)
 c.setLoad(f)                                 // 0 empty .. 1 crush: passengers seen through the windows (default 0.3)
+c.sway = true                                 // body sway on the air springs (default on; false = rigid body): roll
+                                             // 0.07 rad per g of unbalanced lateral acceleration (v^2 k + g sin(bank), k
+                                             // from the bogie tangents in poseOnTrack), pitch 0.02 rad/g under braking /
+                                             // traction, track-excited rock and bounce tied to distance run; applied on
+                                             // top of the group's pose in update(), bogies counter-transformed so they
+                                             // stay on the rails; cameras attached to the car (cabEye, seats) ride along
 c.setThirdRail(side, top = 0.171)            // previews without MetroTrack: contact rail on the consist's +Z (1) / -Z (-1)
                                              // side or none (0); poseOnTrack sets the shoes from MetroTrack by itself
 c.setLOD(0|1|2) / car.setLOD(level)          // 0 full, 1 one mesh per car, 2 a banded prism (built lazily)
