@@ -50,7 +50,8 @@ const Under = (() => {
   function stripRows(st) {
     const n = st.pts.length, below = st.below !== undefined ? st.below : 1.6, above = st.above !== undefined ? st.above : 6.5;
     const rows = [];
-    for (let i = 0; i < n; i++) { const p = st.pts[i]; rows.push({ x: p[0], y: p[1], z: p[2], floor: p[1] - below, ceil: p[1] + above, day: st.day ? st.day[i] : 0 }); }
+    // (aboveArr: a per-point ceiling above the point, e.g. a box under thin cover whose volume stops under the ground)
+    for (let i = 0; i < n; i++) { const p = st.pts[i], ab = st.aboveArr && isFinite(st.aboveArr[i]) ? st.aboveArr[i] : above; rows.push({ x: p[0], y: p[1], z: p[2], floor: p[1] - below, ceil: p[1] + ab, day: st.day ? st.day[i] : 0 }); }
     return rows;
   }
   function addCell(o) {

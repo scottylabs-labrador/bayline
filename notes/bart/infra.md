@@ -7,6 +7,19 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **09:10 thin cover (STATIONS' Milpitas report)**: a cut-and-cover box never pokes through the ground now. Per row,
+  the lowest drawn ground over the box (terrain or base surface with its roads, on the centreline and 0.35 m outside
+  both walls, the lowest within 10 m inside the box's own run) sets the ceiling: the normal 4.78 m above the rail where
+  it fits under a 0.55 m lid; else a lid flush under the ground with the ceiling following it (smoothly, row by row) to
+  no less than 3.5 m above the rail; and the cell's volume (under map) stops 0.5 m under the ground, beyond the map's
+  soft edge, so the terrain and the road ribbons over the box are never cut. Portal runs and the first / last 12 m of a
+  box behind a tunnel mouth keep full height (headwall and portal shell there). Chambers follow the same rule per row.
+  Milpitas on M2b (`#metrodir=metro-next/`, DATA's merged pieces: cutcover 3432-3682 and 3737-3852 on S1): the ground
+  and Montague's road over the box are intact (volume ceiling 0.55-2.1 m under the ground over the box's middle);
+  inside, the box reads normal. Other boxes this touches (thin cover found): Wye (K3.1 / K-main.6), Richmond (R2),
+  near MacArthur (R1), Daly City chambers, Berryessa (S1 ~7000); the Oakland box and the Berkeley subway are unchanged.
+  `MetroTrack.stats.thinBoxes` counts the thin cells built. Open (pre-existing, not from this change): inside the Daly
+  City chamber (jc279, M3 s ~1640) the side toward the M1.2 portal is open to daylight.
 - **08:40 wrap-up** (f4c0d47 on top of `bart` 4dfaca7): the portal visibility walk is time-budgeted (after 4 ms every
   cell within 300 m is drawn instead: a superset, never a hole; `Under.stats.visOver` counts it; one 30 ms walk was
   seen once on a Market St ride under load) and chunk disposal is capped at 3 per frame (a 10.7 ms dispose frame was
