@@ -40,7 +40,7 @@ def osm_features(E):
     return feats
 
 
-def extent_on_track(tr, cx, cz, feats, want_len=PLAT_LEN, maxlen=240.0):
+def extent_on_track(tr, cx, cz, feats, want_len=PLAT_LEN, maxlen=240.0, side_hint=0):
     """(s0, s1, side, lateral, n_pts, source) of the platform along published track tr near the point (cx, cz)."""
     p = tr['pub']
     X, Z, st = p['x'], p['z'], p['step']
@@ -70,6 +70,8 @@ def extent_on_track(tr, cx, cz, feats, want_len=PLAT_LEN, maxlen=240.0):
         # platform (beyond the other track) often has more OSM points, so a median over all points picks the wrong side
         near = np.abs(lats) < np.abs(lats).min() + 2.5
         side = 1 if np.median(lats[near]) > 0 else -1
+        if side_hint and (np.sign(lats) == side_hint).sum() >= 4:
+            side = side_hint
         on = np.sign(lats) == side
         a, b = np.percentile(ss[on], 1), np.percentile(ss[on], 99)
         if b - a > maxlen:                   # platform + ramps / adjacent features: keep 700 ft around the densest part
@@ -152,6 +154,35 @@ def build(tracks, parents, plats, plat_pos, raw_to_s, E, curated):
                             osmPts=npts, src='osm', code=q.get('platform_code') or pid.split('-')[-1], sys=tr['sys'], unused=True)
             used_tracks[sid].add(tr['id'])
             log(f'  unused GTFS platform {pid} ({sid}) placed on {tr["id"]}')
+    # two-track stations: the curated layout decides the side (an island lies between the tracks, side platforms
+    # outside them); OSM's nearest feature can be an edge or a neighbouring structure (San Bruno after spreading).
+    # A curated per-platform side still wins.
+    fixed = []
+    for sid in sorted({pl['station'] for pl in out.values()}):
+        lay = (curated.get(sid) or {}).get('layout')
+        faces = [pl for pl in out.values() if pl['station'] == sid]
+        if lay not in ('island', 'side') or len({pl['track'] for pl in faces}) != 2:
+            continue
+        for pl in faces:
+            if ((curated.get(sid) or {}).get('platforms', {}).get(pl['code'], {})).get('side'):
+                continue
+            other = next(q for q in faces if q['track'] != pl['track'])
+            p_ = by_id[pl['track']]['pub']; q_ = by_id[other['track']]['pub']
+            c = 0.5 * (pl['s0'] + pl['s1']); i = int(min(max(c / p_['step'], 1), len(p_['x']) - 2))
+            dx, dz = p_['x'][i + 1] - p_['x'][i - 1], p_['z'][i + 1] - p_['z'][i - 1]
+            k = int(np.argmin(np.hypot(q_['x'] - p_['x'][i], q_['z'] - p_['z'][i])))
+            lat = (q_['x'][k] - p_['x'][i]) * (-dz) + (q_['z'][k] - p_['z'][i]) * dx
+            want = (1 if lat > 0 else -1) * (1 if lay == 'island' else -1)
+            if want != pl['side']:
+                fixed.append(pl['gtfs']); pl['side'] = want
+                # the extent too: from the OSM platform points on that side
+                tr = by_id[pl['track']]
+                x_, z_ = float(p_['x'][i]), float(p_['z'][i])
+                s0, s1, _, lat_, npts, src = extent_on_track(tr, x_, z_, feats, PLAT_LEN, PLAT_LEN + 30, side_hint=want)
+                if src == 'osm' and s1 - s0 > 0.8 * (other['s1'] - other['s0']):
+                    pl['s0'], pl['s1'], pl['osmLateral'], pl['osmPts'] = s0, s1, lat_, npts
+    if fixed:
+        log(f'  platform sides set from the curated layout (two-track stations): {fixed}')
     n_osm = sum(1 for p in out.values() if p['src'] == 'osm')
     log(f'platforms: {len(out)} ({n_osm} from OSM platform geometry, {len(out) - n_osm} from the station point)')
     return out

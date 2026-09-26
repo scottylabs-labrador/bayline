@@ -235,9 +235,108 @@
     for (let b = 0; b < 2; b++) bogie(E, b);
     roofDetail(E, P, isD);
     carDecals(E, P, isD);
+    // the per-car parts the baked LODs draw over their atlas (car numbers, door lamps)
+    const overlay = E.extract(['numW', 'numK', 'doorLampR', 'doorLampL']);
     const ext = E.geometry(), glass = G.geometry();
-    return { ext, glass, P, tris: (E.I.length + G.I.length) / 3 };
+    return { ext, glass, P, overlay, tris: (E.I.length + G.I.length) / 3 };
   }
+
+  // ------------------------------------------------------------------------------------------ baked LODs
+  // LOD 1: the body shell (a coarse section swept along the car; the door portals open behind their leaves), the leaves
+  // on their bones, the ends (the D nose as its fillet rings and face), skirt cards (trucks and equipment as seen from
+  // the side), all mapped onto the design's atlas (42_metrokit_bake.js); per car on top: numbers and door lamps copied
+  // from the full model, lamp discs, the LED signs. LOD 2: shell, ends and skirts only.
+  // A coarse section (right half, skirt -> roof centre) through the given heights, a sample where the normal turns maxDeg.
+  function lodSection(P, ys, maxDeg) {
+    const D = P.dense, n = D.p.length, maxA = maxDeg * Math.PI / 180, ts = [0, D.t[n - 1]];
+    for (const y of ys) ts.push(tAtY(P, y));
+    let last = 0;
+    for (let i = 1; i < n; i++) { const a0 = Math.atan2(D.n[last][0], D.n[last][1]), a1 = Math.atan2(D.n[i][0], D.n[i][1]); if (Math.abs(a1 - a0) > maxA) { ts.push(D.t[i]); last = i; } }
+    ts.sort((a, b) => a - b);
+    const out = [], q = { y: 0, z: 0, ny: 0, nz: 0 };
+    for (const t of ts) { if (out.length && t - out[out.length - 1].t < 0.03) continue; profAt(P, t, q); out.push({ t, y: q.y, z: q.z, ny: q.ny, nz: q.nz }); }
+    const e = out[out.length - 1]; e.z = 0; e.ny = 1; e.nz = 0;
+    return out;
+  }
+  const loopOf = sec => sec.map(p => ({ y: p.y, z: p.z, ny: p.ny, nz: p.nz })).concat(sec.slice(0, -1).reverse().map(p => ({ y: p.y, z: -p.z, ny: p.ny, nz: -p.nz })));
+  function lodBaked(d, level, bake) {
+    const isD = d.type === 'D', P = d.profile, E = new MB(), uvAt = (v, p) => bake.uv(v, p[0], p[1], p[2]);
+    const vtx = (p, n, v) => { const t = uvAt(v, p); return E.v(p[0], p[1], p[2], n[0], n[1], n[2], t[0], t[1]); };
+    const quad = (A, B, C, D, nA, nB, nC, nD) => {             // one view for the whole quad (no seams inside it)
+      const v = bake.viewFor((nA[0] + nB[0] + nC[0] + nD[0]) / 4, (nA[1] + nB[1] + nC[1] + nD[1]) / 4, (nA[2] + nB[2] + nC[2] + nD[2]) / 4);
+      E.quadA(vtx(A, nA, v), vtx(B, nB, v), vtx(C, nC, v), vtx(D, nD, v)); };
+    const sec = level === 1 ? lodSection(P, [0.8, F.FLOOR, F.PORTAL_TOP, F.YC], 13) : lodSection(P, [F.FLOOR, F.YC], 34);
+    const xR = -F.BODY, xF = isD ? F.NOSE_XC : F.BODY;
+    const xs = [xR, xF]; if (level === 1) for (const dc of F.DOORS) xs.push(dc - F.PORTAL, dc + F.PORTAL); xs.sort((a, b) => a - b);
+    const inPortal = (xm, ya, yb) => level === 1 && Math.min(ya, yb) >= F.FLOOR - 0.002 && Math.max(ya, yb) <= F.PORTAL_TOP + 0.002 && F.DOORS.some(dc => Math.abs(xm - dc) < F.PORTAL);
+    E.pal('baked'); E.bone = 0;
+    // the shell (the roof in one span: portal columns only matter on the sides)
+    for (const s of [1, -1]) for (let j = 0; j < sec.length - 1; j++) {
+      const A = sec[j], B = sec[j + 1], side = Math.abs(A.nz + B.nz) > 0.8, X = side ? xs : [xR, xF];
+      for (let i = 0; i < X.length - 1; i++) {
+        const xa = X[i], xb = X[i + 1]; if (inPortal((xa + xb) / 2, A.y, B.y)) continue;
+        const nA = [0, A.ny, s * A.nz], nB = [0, B.ny, s * B.nz];
+        quad([xa, A.y, s * A.z], [xb, A.y, s * A.z], [xb, B.y, s * B.z], [xa, B.y, s * B.z], nA, nA, nB, nB);
+      }
+    }
+    // door leaves (closed at rest; they slide on their bones), just outside the skin
+    if (level === 1) for (let dd = 0; dd < 3; dd++) for (const s of [1, -1]) for (const k of [-1, 1]) {
+      const dc = F.DOORS[dd], a = k < 0 ? dc - F.LEAF : dc, b = k < 0 ? dc : dc + F.LEAF, z = s * (F.W + 0.004), n = [0, 0, s], v = s > 0 ? 0 : 1;
+      E.bone = BONE.leaf(dd, s, k);
+      E.quadA(vtx([a, F.LEAF_Y0, z], n, v), vtx([b, F.LEAF_Y0, z], n, v), vtx([b, F.LEAF_Y1, z], n, v), vtx([a, F.LEAF_Y1, z], n, v));
+      E.bone = 0;
+    }
+    // skirt cards: the running gear and underframe as the side views saw them
+    for (const s of [1, -1]) { const z = s * 1.44, n = [0, 0, s], v = s > 0 ? 0 : 1, x0 = -F.BODY + 0.35, x1 = (isD ? F.NOSE_XC - 0.2 : F.BODY - 0.35), y0 = 0.06, y1 = 0.66;
+      E.quadA(vtx([x0, y0, z], n, v), vtx([x1, y0, z], n, v), vtx([x1, y1, z], n, v), vtx([x0, y1, z], n, v)); }
+    // ends: flat caps (the section) at the E ends and the D rear
+    const loop = loopOf(sec), capAt = (x, e) => {
+      const pts = loop.map(p => [p.z, p.y]), v = e > 0 ? 3 : 4;
+      E.shape(pts, [], (z, y) => ({ p: [x, y, z], n: [e, 0, 0] }), (z, y) => uvAt(v, [x, y, z])); };
+    capAt(xR, -1);
+    if (!isD) capAt(xF, 1);
+    else {
+      // the nose: fillet rings from the section into the raked face, then the face
+      const R = F.NOSE_R, xs0 = F.NOSE_XC, A = level === 1 ? 3 : 1, cols = A + 1, Pp = [], Nn = [];
+      for (let i = 0; i < loop.length; i++) for (let j = 0; j <= A; j++) {
+        const a = (j / A) * Math.PI / 2, p = loop[i], off = RYZ(p.y) * (1 - Math.cos(a)), w = 1 - Math.cos(a), y = p.y - p.ny * off, z = p.z - p.nz * off;
+        Pp.push([xs0 + R * Math.sin(a) + w * noseD(y, z), y, z]);
+        const fn = faceN(y, z), c = Math.cos(a), sn = Math.sin(a); const nx = fn[0] * sn, ny = p.ny * c + fn[1] * sn, nz = p.nz * c + fn[2] * sn, l = Math.hypot(nx, ny, nz) || 1;
+        Nn.push([nx / l, ny / l, nz / l]);
+      }
+      for (let i = 0; i < loop.length - 1; i++) for (let j = 0; j < A; j++) {
+        const q = [i * cols + j, i * cols + j + 1, (i + 1) * cols + j + 1, (i + 1) * cols + j];
+        quad(Pp[q[0]], Pp[q[1]], Pp[q[2]], Pp[q[3]], Nn[q[0]], Nn[q[1]], Nn[q[2]], Nn[q[3]]);
+      }
+      const face = loop.map(p => [p.z - p.nz * RYZ(p.y), p.y - p.ny * RYZ(p.y)]);
+      E.shape(level === 1 ? densify(face, 0.35) : face, [], (z, y) => faceAt(z, y), (z, y) => uvAt(3, faceAt(z, y).p));
+    }
+    if (level === 1) {
+      // per-car overlays: numbers and door lamps from the full model, lifted clear of the coarser shell
+      E.paste(d.overlay, 0.012);
+      // lamp discs on the D face (their levels per car, like the full model's lamps)
+      if (isD) for (const L of d.lamps) {
+        const pal = { head: 'headLamp', tail: 'tailLamp', marker: 'markerLamp', bar: 'topBar' }[L.kind] || 'headLamp';
+        const r = L.kind === 'head' ? 0.07 : L.kind === 'tail' ? 0.058 : L.kind === 'marker' ? 0.034 : 0;
+        if (!r) { E.pal(pal); E.box(L.p[0] - 0.06, L.p[1] - 0.04, -0.42, L.p[0] + 0.012, L.p[1] + 0.04, 0.42); continue; }
+        const y = L.p[1], z = L.p[2], f = faceAt(z, y, 0.012), n = f.n; E.pal(pal);
+        const c = E.v(f.p[0], f.p[1], f.p[2], n[0], n[1], n[2]), ring = [];
+        for (let k = 0; k <= 10; k++) { const an = k / 10 * TAU, g = faceAt(z + Math.cos(an) * r, y + Math.sin(an) * r, 0.012); ring.push(E.v(g.p[0], g.p[1], g.p[2], n[0], n[1], n[2])); }
+        for (let k = 0; k < 10; k++) E.triA(c, ring[k], ring[k + 1]);
+      }
+      // LED destination signs (the consist's sign canvas): the side signs at the window tops, the D front sign
+      E.pal('ledSign');
+      const sgn = (A, B, C, D, uvs, n) => { const ids = [A, B, C, D].map((p, i) => E.v(p[0], p[1], p[2], n[0], n[1], n[2], uvs[i][0], uvs[i][1])); E.quadA(ids[0], ids[1], ids[2], ids[3]); };
+      const V0 = 32 / 48;
+      for (const g of SIGNS(isD)) {
+        const [ax, c, a0, a1] = g.a, [y0, y1, dir] = g.b, u0 = dir > 0 ? 0 : 1, u1 = 1 - u0;
+        if (ax === 1) { const s = Math.sign(c), z = s * (F.W + 0.005); sgn([a0, y0, z], [a1, y0, z], [a1, y1, z], [a0, y1, z], [[u0, V0], [u1, V0], [u1, 1], [u0, 1]], [0, 0, s]); }
+        else { const fz = z => faceAt(z, (y0 + y1) / 2, 0.01).p[0]; sgn([fz(a0), y0, a0], [fz(a1), y0, a1], [fz(a1), y1, a1], [fz(a0), y1, a0], [[u0, V0], [u1, V0], [u1, 1], [u0, 1]], [1, 0, 0]); }
+      }
+    }
+    return E.geometry();
+  }
+  K.fotfLodBaked = lodBaked;
 
   // ------------------------------------------------------------------------------------------ doorway (one side)
   function doorway(E, G, P, s, dc, d) {
@@ -877,7 +976,7 @@
     for (const dc of F.DOORS) for (const [dx, z] of [[-0.35, 0.55], [0.35, -0.55], [0, 0.95], [0, -0.95], [-0.45, -0.1], [0.45, 0.1], [0.2, 0.75], [-0.2, -0.75]]) standSpots.push({ x: dc + dx, y: F.FLOOR, z, yaw: z > 0 ? -Math.PI / 2 : Math.PI / 2 });
     for (let x = -8.6; x <= (isD ? 7.6 : 8.6); x += 0.75) { if (F.DOORS.some(dc => Math.abs(x - dc) < 1.0)) continue; standSpots.push({ x, y: F.FLOOR, z: ((Math.round(x / 0.75) % 2) ? 0.16 : -0.16), yaw: Math.round(x) % 2 ? 0 : Math.PI }); }
     return {
-      ext: b.ext, glass: b.glass, tris: b.tris, length: F.L, width: 2 * F.W, height: F.ROOF, profile: b.P,
+      ext: b.ext, glass: b.glass, tris: b.tris, length: F.L, width: 2 * F.W, height: F.ROOF, profile: b.P, overlay: b.overlay,
       sphere: new THREE.Sphere(new THREE.Vector3(0, 1.9, 0), 11.3),
       bones, boneIdx: { bogie: [1, 2], axlesOf: [[3, 4], [5, 6]], handle: isD ? BONE.handle : undefined }, leaves, wipers, shoes,
       meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye, standSpots },
@@ -891,6 +990,7 @@
 
   K.builders.bart.interior = (d, q) => K.buildFotfInterior(d, q);
   K.builders.bart.lod = (d, level) => K.fotfLod(d, level);
+  K.builders.bart.lodBaked = (d, level, bake) => lodBaked(d, level, bake);
   K.buildFotf = buildFotf; K.sideGrid = sideGrid; K.rrXT = rrXT; K.ring = ring; K.fill = fill;
   K.fotfProfile = { makeProfile, profAt, tAtY, bodyAt, profileFrom, sectionLoop };
 })();

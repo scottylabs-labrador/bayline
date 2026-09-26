@@ -53,7 +53,10 @@ C = {
     'MLBR': dict(type='surface', layout='split',
                  note='At-grade intermodal station; BART track 3 (west) faces Caltrain NB across the shared island (the only '
                       'BART face in service: GTFS platform 3); the middle and east BART tracks share a BART-only island used for '
-                      'train storage (A). Layout "split": one face of a shared island + a BART island (was "side" until M2b).', src=['A']),
+                      'train storage (A). Layout "split": one face of a shared island + a BART island (was "side" until M2b).', src=['A'],
+                 # platform 3 is the BART face of the island shared with the Peninsula line's platform 4 (elevator notes via
+                 # STATIONS): west of W3, which runs north-west here, so its left side (OSM's nearest feature is the storage side)
+                 platforms={'3': dict(side='left')}),
     # ------------------------------------------------------------------ Oakland
     'WOAK': dict(type='aerial', layout='side', plat=7.0, w=20,
                  note='Elevated with two side platforms (P1 north = SF-bound, P2 south) over a street-level fare lobby (A).', src=['A']),

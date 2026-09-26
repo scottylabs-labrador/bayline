@@ -15,7 +15,7 @@ const MetroTube = (() => {
   if (!(typeof MetroTrack !== 'undefined' && MetroTrack.enabled)) return { body() {}, finish() {}, commitCells() {}, dropCells() {}, init() {} };
   const MT = MetroTrack, DIM = MT.DIM, PAL = MT.PAL;
   let MATS = null, TRACKS = null;
-  const F = {}, F2 = {};
+  const F = {}, F2 = {}, _Fc = {};
   const CELL = 200;                                    // max cell length (m)
   const TB = 0.52;                                     // trackbed (DF slab) top below top of rail
   const WALK = 0.71, WALKW = 0.78;                     // walkway top above rail, width
@@ -84,7 +84,7 @@ const MetroTube = (() => {
 
   // ------------------------------------------------------------------ building one cell's geometry
   // tracks: [{ L (lateral in my level frame), o (outer side) }] of the section; ss: sample positions on my track
-  function buildCell(ctx, cell, sec, tracksL, ss) {
+  function buildCell(ctx, cell, sec, tracksL, ss, topAt) {
     const gb = cell.tgb, pair = tracksL.length > 1;
     const rows = ctx.rowsAt(ctx, ss, 0, 0, false, (row, Fr) => { row.top = Fr.y + 6; row.gnd = Fr.y - TB; });
     for (const tk of tracksL) {
@@ -95,7 +95,10 @@ const MetroTube = (() => {
       const hF = sec.kind === 'box' ? 2.6 : 2.3, latF = P.wallAt(hF) + o * 0.14;      // (the inner wall is on the -o side: step back toward +o)
       gb.fix = [latF, hF, sec.lamp, 0.0];
       gb.wear = 0.8;
-      gb.sweep(rows, P.arc, sec.lining, { flat: !!P.flatArc });
+      if (topAt && sec.kind === 'box') {                   // (thin cover: the ceiling follows the lid, row by row)
+        const nseg = P.arc.length - 1, col = new Array(nseg).fill(sec.lining);
+        sweepVarT(gb, rows.map(row => Object.assign({}, row, { prof: boxProfile(Object.assign({}, sec, { H: topAt(row.s) + TB }), L, o, wi).arc, col }))); }
+      else gb.sweep(rows, P.arc, sec.lining, { flat: !!P.flatArc });
       gb.sweep(rows, P.floor, PAL.concreteDark); gb.sweep(rows, P.walkTop, PAL.concrete); gb.sweep(rows, P.walkFace, PAL.concreteDark);
       // walkway handrail on the wall side, cable trough cover lines, cables on the outer wall
       const hr = WALK + 1.0, hrL = P.wallAt(hr) - (-o) * 0.1;
@@ -141,27 +144,84 @@ const MetroTube = (() => {
   function setRef(gb, ctx, F) { gb.ref = { o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz] }; }
 
   // ------------------------------------------------------------------ portal headwall at a tunnel mouth
-  function headwall(ctx, s, dir, secs, lo, hi, crown) {
+  // (own openings from the section; a neighbouring tunnel crossing the wall's plane, e.g. the other bore of an unpaired
+  // twin portal, gets its opening too, so no headwall ever closes the tunnel beside it)
+  function headwall(ctx, s, dir, secs, lo, hi, crown, own = [ctx.R]) {
     const gb = ctx.B.infra; MT.frameAt(ctx.R, s, F);
     const T = [F.tx * dir, 0, F.tz * dir]; const tl = Math.hypot(T[0], T[2]) || 1; T[0] /= tl; T[2] /= tl;
     const Lv = [F.lx, 0, F.lz];
-    const x0 = lo - 3.2, x1 = hi + 3.2, ybot = -TB - 1.2;
+    let x0 = lo - 3.2, x1 = hi + 3.2; const ybot = -TB - 1.2;
+    const holes = secs.map(sc => { const pts = sc.arc.concat([sc.floor[0]]); return { pts, x0: Math.min(...pts.map(p => p[0])), x1: Math.max(...pts.map(p => p[0])), y0: Math.min(...pts.map(p => p[1])), y1: Math.max(...pts.map(p => p[1])) }; });
+    { const Fh = Object.assign({}, F); for (const h of faceHoles(Fh, [lo - 3.2, hi + 3.2])) { if (own.some(Q => Q.id === h.id)) continue; if (h.x1 < x0 - 0.5 || h.x0 > x1 + 0.5) continue; holes.push(h); }
+      for (let merged = true; merged;) { merged = false;
+        for (let i = 0; i < holes.length && !merged; i++) for (let j = i + 1; j < holes.length && !merged; j++) { const A = holes[i], B = holes[j];
+          if (A.x0 < B.x1 + 0.15 && B.x0 < A.x1 + 0.15 && A.y0 < B.y1 + 0.15 && B.y0 < A.y1 + 0.15) {
+            const u0 = Math.min(A.x0, B.x0), u1 = Math.max(A.x1, B.x1), v0 = Math.min(A.y0, B.y0), v1 = Math.max(A.y1, B.y1);
+            holes[i] = { x0: u0, x1: u1, y0: v0, y1: v1, pts: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]] }; holes.splice(j, 1); merged = true; } } }
+      for (const h of holes) { x0 = Math.min(x0, h.x0 - 0.4); x1 = Math.max(x1, h.x1 + 0.4); } }
     let gTop = -1e9; for (const l of [x0, (x0 + x1) / 2, x1]) gTop = Math.max(gTop, MT.groundAt(F.x + F.lx * l + T[0] * 3, F.z + F.lz * l + T[2] * 3) - F.y);
     const top = Math.max(crown + 1.2, Math.min(gTop + 0.9, crown + 9));
     // wall face as an extruded shape with the tunnel openings as holes (x = lateral, y = up, z = outward)
-    const shape = new THREE.Shape(); shape.moveTo(x0, ybot); shape.lineTo(x1, ybot); shape.lineTo(x1, top); shape.lineTo(x0, top); shape.closePath();
-    for (const sc of secs) { const hole = new THREE.Path(); const pts = sc.arc.concat([sc.floor[0]]); const cw = THREE.ShapeUtils.isClockWise(pts.map(p => new THREE.Vector2(p[0], p[1])));
+    const yb2 = Math.min(ybot, ...holes.map(h => h.y0 - 0.4)), top2 = Math.max(top, ...holes.map(h => h.y1 + 0.4));
+    const shape = new THREE.Shape(); shape.moveTo(x0, yb2); shape.lineTo(x1, yb2); shape.lineTo(x1, top2); shape.lineTo(x0, top2); shape.closePath();
+    for (const h of holes) { const hole = new THREE.Path(), pts = h.pts; const cw = THREE.ShapeUtils.isClockWise(pts.map(p => new THREE.Vector2(p[0], p[1])));
       const P2 = cw ? pts : pts.slice().reverse(); P2.forEach((p, i) => i ? hole.lineTo(p[0], p[1]) : hole.moveTo(p[0], p[1])); hole.closePath(); shape.holes.push(hole); }
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.8, bevelEnabled: false, curveSegments: 4 });
     const m4 = new THREE.Matrix4().makeBasis(new THREE.Vector3(Lv[0], 0, Lv[2]), new THREE.Vector3(0, 1, 0), new THREE.Vector3(T[0], 0, T[2]));
     m4.setPosition(F.x - ctx.ox - T[0] * 0.4, F.y, F.z - ctx.oz - T[2] * 0.4);
-    gb.top = F.y + top; gb.gnd = F.y + ybot; gb.wear = 0.9; appendGeo(gb, geo, m4, PAL.concreteWarm); geo.dispose();
+    gb.top = F.y + top2; gb.gnd = F.y + yb2; gb.wear = 0.9; appendGeo(gb, geo, m4, PAL.concreteWarm); geo.dispose();
     // coping and a fence along the top
-    const cc = [F.x + F.lx * (x0 + x1) / 2 - ctx.ox, F.y + top + 0.1, F.z + F.lz * (x0 + x1) / 2 - ctx.oz];
+    const cc = [F.x + F.lx * (x0 + x1) / 2 - ctx.ox, F.y + top2 + 0.1, F.z + F.lz * (x0 + x1) / 2 - ctx.oz];
     gb.box(cc[0], cc[1], cc[2], T, [0, 1, 0], Lv, 0.55, 0.1, (x1 - x0) / 2 + 0.1, PAL.concreteLight);
-    const fp = []; for (let k = 0; k <= 8; k++) { const l = x0 + (x1 - x0) * k / 8; fp.push([F.x + F.lx * l - ctx.ox, F.y + top + 0.2, F.z + F.lz * l - ctx.oz]); }
+    const fp = []; for (let k = 0; k <= 8; k++) { const l = x0 + (x1 - x0) * k / 8; fp.push([F.x + F.lx * l - ctx.ox, F.y + top2 + 0.2, F.z + F.lz * l - ctx.oz]); }
     MetroGuide.fenceRun(ctx, fp, 1.5);
     gb.top = 1e4; gb.gnd = -1e4; gb.wear = 0.5;
+  }
+  // ------------------------------------------------------------------ thin cover over a box (cut-and-cover)
+  // The lowest drawn ground over a box at s, relative to the rail: the terrain or the base surface (roads) on the box
+  // centreline and 0.35 m outside both outer walls. Where the box would not fit under it with a 0.55 m lid, the lid comes
+  // down flush under the ground and the ceiling with it (to no less than 3.5 m above the rail; there the lid thins to
+  // 0.12 m), and the cell's volume stops 0.5 m under the ground (the under map's soft edge reaches 0.45 m above a
+  // volume), so the terrain and the roads over it are never cut open. (M2b puts the box east of Milpitas under ~4.2 m
+  // of ground: STATIONS.) The cover is the lowest within 10 m, inside the box's own run, and not within 12 m of a tunnel
+  // mouth: portals and the first metres of a box behind a mouth keep their full height (the headwall and the portal
+  // shell are the structure there, the ground beside them is the approach's cut).
+  const LID = 0.55, CLR = 3.5, MOUTH_KEEP = 12;
+  const nearMouth = (R, q) => { for (const m of mouths(R)) if (Math.abs(m.s - q) < MOUTH_KEEP) return true; return false; };
+  function coverAt(R, s, lo, hi) {
+    MT.frameAt(R, s, _Fc); let c = 1e9;
+    for (const l of [lo - 2.35, (lo + hi) / 2, hi + 2.35]) {
+      const x = _Fc.x + _Fc.lx * l, z = _Fc.z + _Fc.lz * l; let g = MT.groundAt(x, z);
+      try { const h = Terrain.h(x, z); if (isFinite(h)) g = Math.min(g, h); } catch (e) {}
+      c = Math.min(c, g - _Fc.y);
+    }
+    return c;
+  }
+  const boxTop = (H, cover) => Math.min(-TB + H, Math.max(3.3, cover - LID, Math.min(CLR, cover - 0.12)));
+  // { top(s): the ceiling above the rail, vol(s): the volume's ceiling above the rail, thin: any lowered } over [a, b]
+  function coverFor(R, a, b, lo, hi, H, r0 = 0, r1 = R.len) {
+    const cs = [], e0 = Math.max(0, r0 + 2, Math.min(a, r1 - 2) - 10), e1 = Math.min(R.len, r1 - 2, Math.max(b, r0 + 2) + 10);
+    for (let q = e0; ; q = Math.min(e1, q + 5)) { if (!nearMouth(R, q)) cs.push(q, coverAt(R, q, lo, hi)); if (q >= e1) break; }
+    const cmin = (q) => { if (nearMouth(R, q)) return 1e9; let m = 1e9; for (let i = 0; i < cs.length; i += 2) if (Math.abs(cs[i] - q) <= 10.01) m = Math.min(m, cs[i + 1]); return m; };
+    const Hn = -TB + H; let thin = false; for (let i = 1; i < cs.length; i += 2) if (boxTop(H, cs[i]) < Hn - 0.01) thin = true;
+    return { thin, top: (q) => boxTop(H, cmin(q)), vol: (q) => { const c = cmin(q), t = boxTop(H, c); return Math.max(t + 0.05, Math.min(Hn + 0.6, c - 0.5)); } };
+  }
+  // ------------------------------------------------------------------ outer shell near a mouth (outdoor mesh)
+  function shell(ctx, sec, tl, wi, a, b, cov) {
+    const gb = ctx.B.infra, ss = ctx.sampleS(ctx.R, a, b, 6, 1.5), rows = ctx.rowsAt(ctx, ss, 0, 0, false), yb = -TB - 0.8;
+    if (sec.kind === 'box') {
+      let L0 = 1e9, L1 = -1e9; for (const t of tl) { const oW = t.L + 2.01 * t.o, iW = t.L - wi * t.o; L0 = Math.min(L0, oW, iW); L1 = Math.max(L1, oW, iW); }
+      L0 -= 0.45; L1 += 0.45; const C3 = [PAL.concrete, PAL.concrete, PAL.concrete];
+      // (the lid's top stays under the volume's ceiling, i.e. under the ground where the cover is thin)
+      const yt = (q) => cov ? Math.min(cov.top(q) + 0.45, cov.vol(q) - 0.02) : -TB + sec.H + 0.45;
+      gb.wear = 0.7; MetroGuide.sweepVar(gb, rows.map(row => Object.assign({}, row, { prof: [[L0, yb], [L0, yt(row.s)], [L1, yt(row.s)], [L1, yb]], col: C3 }))); gb.wear = 0.5; return;
+    }
+    for (const t of tl) {                                   // bores: an outer ring 0.35 m out, down to the ground on both sides
+      const bp = boreProfile(sec, t.L, t.o), R = bp.R + 0.35, pts = [[bp.lc - R, yb]];
+      for (let k = 0; k <= 16; k++) { const ang = Math.PI - k / 16 * Math.PI; pts.push([bp.lc + Math.cos(ang) * R, bp.hc + Math.sin(ang) * R]); }
+      pts.push([bp.lc + R, yb]);
+      gb.wear = 0.7; gb.sweep(rows, pts, PAL.concrete, { flat: false }); gb.wear = 0.5;
+    }
   }
   // ------------------------------------------------------------------ bulkhead where a box meets bores
   // A 0.3 m wall across the box at s: per track, the opening is its bore's profile clipped to its box cell (so twin bores
@@ -321,10 +381,16 @@ const MetroTube = (() => {
     // the light line follows the left wall)
     const rows = [], spans = [], trk = [];
     let nr = 0;
-    for (const q of ss) { if (++nr % 30 === 0) yield; MT.frameAt(R, q, F); const tr = []; const sp = spanAt(R, q, tr); spans.push(sp); const Lw = sp[0] - 2.01, Rw = sp[1] + 2.01;
+    // (thin cover: per row, the ceiling comes down under the lowest ground within 10 m, like a box's; see coverFor)
+    // (rows over open track, e.g. a trench the chamber reaches into, do not count)
+    const pre = []; for (const q of ss) { if (++nr % 30 === 0) yield; const tr = []; const sp = spanAt(R, q, tr); MT.frameAt(R, q, _Fc); pre.push({ q, sp, tr, c: _Fc.struct >= 7 && !nearMouth(R, q) ? coverAt(R, q, sp[0], sp[1]) : 1e9 }); }
+    for (const e of pre) { let m = 1e9; if (!nearMouth(R, e.q)) for (const f of pre) if (Math.abs(f.q - e.q) <= 10.01) m = Math.min(m, f.c); e.top = boxTop(5.3, m); e.vol = Math.max(e.top + 0.05, Math.min(top + 0.6, m - 0.5)); }
+    if (pre.some(e => e.top < top - 0.01)) { cell.thin = true; MT.stats.thinBoxes = (MT.stats.thinBoxes || 0) + 1; }
+    nr = 0;
+    for (const e of pre) { const q = e.q; if (++nr % 30 === 0) yield; MT.frameAt(R, q, F); const tr = e.tr, sp = e.sp, tq = e.top; spans.push(sp); const Lw = sp[0] - 2.01, Rw = sp[1] + 2.01;
       const fl = -TB + Math.min(0, ...tr.map(t => t.dy)); trk.push({ tr, fl });
       rows.push({ s: q, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], c: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz], fix: [Lw + 0.14, 2.6, 15.24, 0],
-        prof: [[Lw + 0.35, fl], [Rw - 0.35, fl], [Rw, fl + 0.3], [Rw, top - 0.35], [Rw - 0.35, top], [Lw + 0.35, top], [Lw, top - 0.35], [Lw, fl + 0.3], [Lw + 0.35, fl]],
+        prof: [[Lw + 0.35, fl], [Rw - 0.35, fl], [Rw, fl + 0.3], [Rw, tq - 0.35], [Rw - 0.35, tq], [Lw + 0.35, tq], [Lw, tq - 0.35], [Lw, fl + 0.3], [Lw + 0.35, fl]],
         col: [PAL.concreteDark, PAL.concrete, PAL.concrete, PAL.concrete, PAL.concrete, PAL.concrete, PAL.concrete, PAL.concrete] }); }
     gb.wear = 0.8;
     yield; sweepVarT(gb, rows); yield;
@@ -350,7 +416,8 @@ const MetroTube = (() => {
           if (A.x0 < B.x1 + 0.15 && B.x0 < A.x1 + 0.15 && A.y0 < B.y1 + 0.15 && B.y0 < A.y1 + 0.15) {
             const x0 = Math.min(A.x0, B.x0), x1 = Math.max(A.x1, B.x1), y0 = Math.min(A.y0, B.y0), y1 = Math.max(A.y1, B.y1);
             hs[i] = { x0, x1, y0, y1, pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] }; hs.splice(j, 1); merged = true; } } }
-      let X0 = Lw, X1 = Rw, Y0 = -TB - 0.1, Y1 = top + 0.1; for (const h of hs) { X0 = Math.min(X0, h.x0 - 0.3); X1 = Math.max(X1, h.x1 + 0.3); Y0 = Math.min(Y0, h.y0 - 0.3); Y1 = Math.max(Y1, h.y1 + 0.3); }
+      const tEnd = (dir < 0 ? pre[0] : pre[pre.length - 1]).top;
+      let X0 = Lw, X1 = Rw, Y0 = -TB - 0.1, Y1 = tEnd + 0.1; for (const h of hs) { X0 = Math.min(X0, h.x0 - 0.3); X1 = Math.max(X1, h.x1 + 0.3); Y0 = Math.min(Y0, h.y0 - 0.3); Y1 = Math.max(Y1, h.y1 + 0.3); }
       const shape = new THREE.Shape(); shape.moveTo(X0, Y0); shape.lineTo(X1, Y0); shape.lineTo(X1, Y1); shape.lineTo(X0, Y1); shape.closePath();
       for (const h of hs) { const hole = new THREE.Path(), pts = h.pts, cw = THREE.ShapeUtils.isClockWise(pts.map(p => new THREE.Vector2(p[0], p[1])));
         (cw ? pts : pts.slice().reverse()).forEach((p, i) => i ? hole.lineTo(p[0], p[1]) : hole.moveTo(p[0], p[1])); hole.closePath(); shape.holes.push(hole); }
@@ -369,6 +436,8 @@ const MetroTube = (() => {
       const pa = ext(pts[0], pts.slice(1)), pb = ext(pts[pts.length - 1], pts.slice(0, -1).reverse());
       if (pa) { pts.unshift(pa); day.unshift(0); } if (pb) { pts.push(pb); day.push(0); } }
     cell.strip = { pts, half: hw, below: TB + 1.2, above: top + 0.6, day }; cell.lo = spans[0][0]; cell.hi = spans[0][1]; cell.crown = top; cell.mid = 0;
+    if (cell.thin) { const volAt = (q) => { let bst = pre[0]; for (const e of pre) if (Math.abs(e.q - q) < Math.abs(bst.q - q)) bst = e; return bst.vol; };
+      cell.strip.aboveArr = pts.map(pt => { let bq = 0, bd = 1e18; for (const e of pre) { MT.frameAt(R, e.q, _Fc); const d = (_Fc.x - pt[0]) ** 2 + (_Fc.z - pt[2]) ** 2; if (d < bd) { bd = d; bq = e.q; } } return volAt(bq); }); }
     return cell;
   }
   // sweepVar for the tunnel builder (sets the reference frame per row)
@@ -439,8 +508,10 @@ const MetroTube = (() => {
         if (p) { const o = p.lat > 0 ? -1 : 1; tl.push({ L: 0, o }, { L: p.lat, o: -o }); } else tl.push({ L: 0, o: -innerSide(R, (s0 + s1) / 2) });
         const id = 'tn:' + R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0);
         const cell = { id, s0, s1, sec, tl, tgb: new MT.TGB(), R };
-        // (built in pieces of ~50 m that share their boundary rows, a step each)
-        ctx.ch.stage = 'tube:cell'; for (let i0 = 0; i0 < ss.length - 1;) { let i1 = i0 + 1; while (i1 < ss.length - 1 && ss[i1] - ss[i0] < 25) i1++; buildCell(ctx, cell, sec, tl, ss.slice(i0, i1 + 1)); i0 = i1; yield; }
+        const wiP = p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25, lat0 = Math.min(...tl.map(t => t.L)), lat1 = Math.max(...tl.map(t => t.L));
+        const cov = sec.kind === 'box' && run.type === 'cutcover' ? coverFor(R, s0, s1, lat0, lat1, sec.H, run.s0, run.s1) : null; if (cov && cov.thin) { cell.thin = true; MT.stats.thinBoxes = (MT.stats.thinBoxes || 0) + 1; }
+        // (built in pieces of ~25 m that share their boundary rows, a step each)
+        ctx.ch.stage = 'tube:cell'; for (let i0 = 0; i0 < ss.length - 1;) { let i1 = i0 + 1; while (i1 < ss.length - 1 && ss[i1] - ss[i0] < 25) i1++; buildCell(ctx, cell, sec, tl, ss.slice(i0, i1 + 1), cov && cov.thin ? cov.top : null); i0 = i1; yield; }
         MetroGuide.midRails(ctx, cell.tgb, R, s0, s1, tl.map(t => t.L));
         ctx.ch.stage = 'tube:strip';
         // where this box meets a bored section (the Oakland box and the Tube, a portal box and the Berkeley Hills
@@ -459,6 +530,7 @@ const MetroTube = (() => {
         const crown = sec.kind === 'box' ? -TB + sec.H : sec.kind === 'shoe' ? sec.spring + sec.R : 1.49 + sec.R;
         const pts = [], day = []; for (let s = s0; ; s = Math.min(s1, s + 10)) { MT.frameAt(R, s, F); pts.push([F.x + F.lx * mid, F.y, F.z + F.lz * mid]); day.push(dayOf(R, s)); if (s >= s1) break; }
         cell.strip = { pts, half: (hi - lo) / 2 + 3.0, below: TB + 1.2, above: crown + 0.6, day };
+        if (cov && cov.thin) { const sp = []; for (let s = s0; ; s = Math.min(s1, s + 10)) { sp.push(s); if (s >= s1) break; } cell.strip.aboveArr = sp.map(q => cov.vol(q)); }
         cell.lo = lo; cell.hi = hi; cell.crown = crown; cell.mid = mid;
         // junctions: drop what lies inside another track's tunnel (the union of the tunnels remains: an opening in the
         // centre wall where a crossover passes, the split nose of a wye); the cluster's cells then show together
@@ -468,8 +540,14 @@ const MetroTube = (() => {
         ctx.B.tcells.push(cell);
         // mouths in this cell: a headwall facing out
         for (const m of mouths(R)) if (m.s >= s0 - 0.5 && m.s <= s1 + 0.5 && m.s >= ctx.s0 && m.s < ctx.s1) {
-          const secs = tl.map(t => sec.kind === 'box' ? boxProfile(sec, t.L, t.o, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25) : boreProfile(sec, t.L, t.o));
-          headwall(ctx, m.s, m.dir, secs, lo, hi, crown); cell.mouth = m; yield;
+          const secM = cov && cov.thin ? Object.assign({}, sec, { H: cov.top(m.s) + TB }) : sec;
+          const secs = tl.map(t => sec.kind === 'box' ? boxProfile(secM, t.L, t.o, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25) : boreProfile(sec, t.L, t.o));
+          headwall(ctx, m.s, m.dir, secs, lo, hi, crown, p ? [R, p.R2] : [R]); cell.mouth = m;
+          // the outside of the tunnel for 80 m in from the mouth: where the ground does not cover it (or the terrain is
+          // cut open over the mouth) it reads as a concrete portal structure instead of a see-through lining
+          const ia = m.dir < 0 ? m.s : Math.max(s0, m.s - 80), ib = m.dir < 0 ? Math.min(s1, m.s + 80) : m.s;
+          if (ib - ia > 1) shell(ctx, sec, tl, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25, ia, ib, cov);
+          yield;
         }
       }
     }

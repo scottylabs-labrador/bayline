@@ -89,72 +89,193 @@ def fix_tube_spacing(tracks):
 # Downtown Berkeley 6.7 / 7.7 m, Glen Park 7.7 m: islands of 1-4.5 m). Mappers trace subway tracks schematically and
 # San Bruno's under the station roof. The two tracks are moved apart symmetrically to BART's usual island spacing
 # (11.1 m track centres, as measured at Fremont, Bay Fair, Orinda, Castro Valley, West Dublin ...) along the platform
-# (+-20 m) with cosine tapers of up to 150 m that stop short of any junction.
+# (+-20 m) with cosine tapers of up to 150 m that stop short of any junction. Where a siding complex sits between the
+# mains next to the platform (San Bruno's middle pocket track and its two crossovers), its switch points first slide out
+# of the platform (slide_switches: >= 10 m past the end) and the whole complex is spread with the mains, keeping every
+# point's fractional position across the corridor (spread_corridor).
 ISLAND_MIN = 8.2           # m track centres below which the island would be < 5 m wide (2 x 1.616 m edges)
 ISLAND_SPACING = 11.1
 TAPER = 150.0
 JUNCTION_CLEAR = 25.0
 
 
-def spread_islands(tracks, pairs, junction_s):
-    """pairs: [(station, track A, s_A (fine s at the platform centre), s0_A, s1_A, track B)] for island stations;
-    junction_s: {id(track): [fine s of every junction vertex on it]}. Moves tr['fine'] x/z in place."""
-    done = []
-    for (st, ta, sa, a0, a1, tb) in pairs:
-        fa, fb = ta['fine'], tb['fine']
-        PB = np.stack([fb['x'], fb['z']], 1)
-        i = int(np.clip(np.searchsorted(fa['s'], sa), 1, len(fa['s']) - 2))
-        d0 = float(np.hypot(PB[:, 0] - fa['x'][i], PB[:, 1] - fa['z'][i]).min())
-        if d0 >= ISLAND_MIN:
-            continue
-        shift = 0.5 * (ISLAND_SPACING - d0)
-        moved = []
-        ok = True
-        plan = []
-        for tr, other in ((ta, tb), (tb, ta)):
-            f = tr['fine']; of = other['fine']
-            PO = np.stack([of['x'], of['z']], 1)
-            # platform zone on this track: nearest points to the ends of A's platform
-            if tr is ta:
-                p0, p1 = min(a0, a1), max(a0, a1)
-            else:
-                ends = []
-                for sv in (a0, a1):
-                    k = int(np.clip(np.searchsorted(fa['s'], sv), 0, len(fa['s']) - 1))
-                    ends.append(float(f['s'][int(np.argmin(np.hypot(f['x'] - fa['x'][k], f['z'] - fa['z'][k])))]))
-                p0, p1 = min(ends), max(ends)
-            p0 -= 20.0; p1 += 20.0
-            js = [j for j in junction_s.get(id(tr), [])]
-            if any(p0 - 5 <= j <= p1 + 5 for j in js):
-                ok = False
-                break
-            lo_room = min([p0 - j for j in js if j < p0] + [TAPER + JUNCTION_CLEAR]) - JUNCTION_CLEAR
-            hi_room = min([j - p1 for j in js if j > p1] + [TAPER + JUNCTION_CLEAR]) - JUNCTION_CLEAR
-            t0, t1 = min(TAPER, lo_room), min(TAPER, hi_room)
-            if min(t0, t1) < 60.0 or p0 - t0 < 0 or p1 + t1 > f['s'][-1]:
-                ok = False
-                break
-            s = f['s']
-            w = np.zeros(len(s))
-            w[(s >= p0) & (s <= p1)] = 1.0
-            m = (s > p0 - t0) & (s < p0)
-            w[m] = 0.5 - 0.5 * np.cos(np.pi * (s[m] - (p0 - t0)) / t0)
-            m = (s > p1) & (s < p1 + t1)
-            w[m] = 0.5 - 0.5 * np.cos(np.pi * ((p1 + t1) - s[m]) / t1)
-            idx = np.where(w > 0)[0]
-            gx = np.gradient(f['x']); gz = np.gradient(f['z']); L = np.hypot(gx, gz) + 1e-12
-            nx_, nz_ = -gz / L, gx / L                       # right-hand normal
-            from scipy.spatial import cKDTree
-            kd = cKDTree(PO)
-            _, kk = kd.query(np.stack([f['x'][idx], f['z'][idx]], 1))
-            side = np.sign((PO[kk, 0] - f['x'][idx]) * nx_[idx] + (PO[kk, 1] - f['z'][idx]) * nz_[idx])   # other track: +1 right
-            plan.append((tr, idx, -side * w[idx] * shift, nx_[idx], nz_[idx]))
-        if not ok:
-            log(f'  island spacing at {st}: {d0:.1f} m, junction too close to spread; left as mapped')
-            continue
-        for (tr, idx, off, nx_, nz_) in plan:
-            tr['fine']['x'] = tr['fine']['x'].copy(); tr['fine']['z'] = tr['fine']['z'].copy()
-            tr['fine']['x'][idx] += off * nx_; tr['fine']['z'][idx] += off * nz_
-        done.append(f'{st} {d0:.1f}->{ISLAND_SPACING}')
-    log('island spacing (OSM tracks too close for the island platform): ' + (', '.join(done) if done else 'none'))
-    return done
+def spread_corridor(tracks, st, ia, ib, a0, a1, junctions_of, H_TARGET=ISLAND_SPACING / 2):
+    """Spread the island tracks ia, ib (indices) to H_TARGET either side of their midline along the platform [a0, a1]
+    (fine s on ia), together with every siding / crossover that lies between them near the platform (San Bruno's middle
+    pocket track and its crossovers), so switch points stay on their tracks and the island gets its width. Points keep
+    their fractional position across the corridor; cosine tapers beyond the zone stop short of any other junction.
+    junctions_of[i] = [(fine s, set of other track indices)] for every junction vertex on track i."""
+    from scipy.spatial import cKDTree
+    ta, tb = tracks[ia], tracks[ib]
+    fa, fb = ta['fine'], tb['fine']
+    PA = np.stack([fa['x'], fa['z']], 1); PB = np.stack([fb['x'], fb['z']], 1)
+    kda = cKDTree(PA)
+
+    def on_a(P):                                   # fine s on ta of points P (nearest)
+        return fa['s'][kda.query(P)[1]]
+
+    z0, z1 = a0 - 20.0, a1 + 20.0
+    members = set()
+    for _ in range(6):
+        changed = False
+        for i in [ia, ib] + sorted(members):
+            tr = tracks[i]
+            P = np.stack([tr['fine']['x'], tr['fine']['z']], 1)
+            for (sj, others) in junctions_of.get(i, []):
+                pj = P[int(np.argmin(np.abs(tr['fine']['s'] - sj)))]
+                sa = float(on_a(pj[None])[0])
+                if not (z0 - 40 <= sa <= z1 + 40):
+                    continue
+                for o in others:
+                    if o in (ia, ib) or o in members:
+                        continue
+                    to = tracks[o]
+                    if to['service'] is None or to['length'] > 1200:
+                        return None, f'{to["id"]} (a main or long track) joins inside the island zone'
+                    members.add(o); changed = True
+                    Po = np.stack([to['fine']['x'], to['fine']['z']], 1)
+                    so = on_a(Po)
+                    z0, z1 = min(z0, float(so.min()) - 20.0), max(z1, float(so.max()) + 20.0)
+        if not changed:
+            break
+    # taper room: to the nearest junction on ia / ib outside the zone that is not a member's
+    def room(side):
+        best = TAPER + JUNCTION_CLEAR
+        for i in (ia, ib):
+            tr = tracks[i]
+            P = np.stack([tr['fine']['x'], tr['fine']['z']], 1)
+            for (sj, others) in junctions_of.get(i, []):
+                if others and others <= (members | {ia, ib}):
+                    continue
+                sa = float(on_a(P[int(np.argmin(np.abs(tr['fine']['s'] - sj)))][None])[0])
+                if side < 0 and sa < z0:
+                    best = min(best, z0 - sa)
+                if side > 0 and sa > z1:
+                    best = min(best, sa - z1)
+        return best - JUNCTION_CLEAR
+    t0, t1 = min(TAPER, room(-1)), min(TAPER, room(+1))
+    if min(t0, t1) < 60.0 or z0 - t0 < fa['s'][0] or z1 + t1 > fa['s'][-1]:
+        return None, f'no room for the tapers ({t0:.0f} m / {t1:.0f} m)'
+    # midline along ta
+    m_s = fa['s'][(fa['s'] >= z0 - t0) & (fa['s'] <= z1 + t1)]
+    ia0 = int(np.searchsorted(fa['s'], m_s[0])); pa = PA[ia0:ia0 + len(m_s)]
+    kdb = cKDTree(PB)
+    pb = PB[kdb.query(pa)[1]]
+    mid = 0.5 * (pa + pb); hv = 0.5 * (pa - pb); h = np.hypot(hv[:, 0], hv[:, 1]) + 1e-9; nv = hv / h[:, None]
+    w = np.ones(len(m_s))
+    lo = m_s < z0; w[lo] = 0.5 - 0.5 * np.cos(np.pi * (m_s[lo] - (z0 - t0)) / t0)
+    hi = m_s > z1; w[hi] = 0.5 - 0.5 * np.cos(np.pi * ((z1 + t1) - m_s[hi]) / t1)
+    kdm = cKDTree(mid)
+    moved = 0.0
+    for i in [ia, ib] + sorted(members):
+        tr = tracks[i]
+        P = np.stack([tr['fine']['x'], tr['fine']['z']], 1)
+        dd, j = kdm.query(P)
+        rel = P - mid[j]
+        lat = rel[:, 0] * nv[j, 0] + rel[:, 1] * nv[j, 1]
+        inside = (np.abs(lat) <= h[j] + 1.5) & (dd < h[j] + 6.0) & (w[j] > 0)
+        scale = 1.0 + w[j] * (H_TARGET / h[j] - 1.0)
+        dl = np.where(inside, lat * (scale - 1.0), 0.0)
+        nx = P[:, 0] + dl * nv[j, 0]; nz = P[:, 1] + dl * nv[j, 1]
+        moved = max(moved, float(np.abs(dl).max()))
+        tr['fine']['x'] = nx; tr['fine']['z'] = nz
+    return dict(members=[tracks[i]['id'] for i in sorted(members)], zone=(round(z0), round(z1)), tapers=(round(t0), round(t1)),
+                spacing=round(float(2 * np.median(h[(m_s >= a0) & (m_s <= a1)])), 1), moved=round(moved, 2)), None
+
+
+SWITCH_CLEAR = 10.0        # m from a platform end to the first switch point beyond it
+
+
+def corridor_members(tracks, ia, ib, z0, z1, junctions_of):
+    """Sidings / crossovers that join the island tracks ia, ib within [z0 - 40, z1 + 40] (fine s on ia), transitively."""
+    from scipy.spatial import cKDTree
+    fa = tracks[ia]['fine']; kda = cKDTree(np.stack([fa['x'], fa['z']], 1))
+    members = set()
+    for _ in range(6):
+        changed = False
+        for i in [ia, ib] + sorted(members):
+            tr = tracks[i]
+            for (sj, others) in junctions_of.get(i, []):
+                if i in (ia, ib):                       # on the mains: only switches near the platform
+                    k = int(np.argmin(np.abs(tr['fine']['s'] - sj)))
+                    sa = float(fa['s'][kda.query([[tr['fine']['x'][k], tr['fine']['z'][k]]])[1][0]])
+                    if not (z0 - 40 <= sa <= z1 + 40):
+                        continue
+                for o in others - {ia, ib} - members:     # the whole siding complex, wherever it connects
+                    if tracks[o]['service'] is None or tracks[o]['length'] > 1200:
+                        return None
+                    members.add(o); changed = True
+        if not changed:
+            break
+    return members
+
+
+def slide_switches(tracks, st, ia, ib, plat, junctions_of, node_of):
+    """Switch points of a siding complex that sit inside (or within SWITCH_CLEAR of) an island platform's end move out:
+    the whole complex (San Bruno's middle pocket track and its crossovers) slides along the corridor away from the
+    platform, keeping each point's fractional position across the corridor, and the mains' junction positions move
+    with it. plat[i] = (s0, s1) fine s of the platform on island track i; node_of[(i, j)] = index into tracks[i]['nodes']
+    of the junction shared with track j. Returns a log line or None."""
+    from scipy.spatial import cKDTree
+    fa, fb = tracks[ia]['fine'], tracks[ib]['fine']
+    PA = np.stack([fa['x'], fa['z']], 1); PB = np.stack([fb['x'], fb['z']], 1)
+    a0, a1 = plat[ia]
+    members = corridor_members(tracks, ia, ib, a0, a1, junctions_of)
+    if not members:
+        return None
+    # how far inside is the worst switch, and which platform end is it at (as fine s on ia)
+    kda = cKDTree(PA)
+    need, end_sign = 0.0, 0
+    for i in (ia, ib):
+        s0, s1 = plat[i]
+        for (sj, others) in junctions_of.get(i, []):
+            if not (others & members):
+                continue
+            for e_s, sgn in ((s0, -1), (s1, +1)):            # sgn: + = the end at larger s on track i
+                depth = (e_s - sj) * sgn + SWITCH_CLEAR           # > 0: inside or too close
+                if -60 < (sj - e_s) * sgn < SWITCH_CLEAR and depth > need:
+                    # direction of that end on ia: which way along ia is "away from the platform"
+                    tr = tracks[i]; k = int(np.argmin(np.abs(tr['fine']['s'] - sj)))
+                    sa = float(fa['s'][kda.query([[tr['fine']['x'][k], tr['fine']['z'][k]]])[1][0]])
+                    need, end_sign = depth, (1 if sa > 0.5 * (a0 + a1) else -1)
+    if need <= 0:
+        return None
+    # midline along ia (whole track), fractional lateral coordinates
+    kdb = cKDTree(PB)
+    pb = PB[kdb.query(PA)[1]]
+    mid = 0.5 * (PA + pb); hv = 0.5 * (PA - pb); h = np.hypot(hv[:, 0], hv[:, 1]) + 1e-9; nv = hv / h[:, None]
+    ms = fa['s']; kdm = cKDTree(mid)
+    for i in sorted(members):
+        tr = tracks[i]
+        P = np.stack([tr['fine']['x'], tr['fine']['z']], 1)
+        _, j = kdm.query(P)
+        rel = P - mid[j]
+        f = (rel[:, 0] * nv[j, 0] + rel[:, 1] * nv[j, 1]) / h[j]
+        tng = np.stack([nv[j, 1], -nv[j, 0]], 1)
+        lon = rel[:, 0] * tng[:, 0] + rel[:, 1] * tng[:, 1]
+        s_new = ms[j] + end_sign * need
+        m2 = np.stack([np.interp(s_new, ms, mid[:, 0]), np.interp(s_new, ms, mid[:, 1])], 1)
+        n2 = np.stack([np.interp(s_new, ms, nv[:, 0]), np.interp(s_new, ms, nv[:, 1])], 1)
+        n2 /= np.hypot(n2[:, 0], n2[:, 1])[:, None]
+        h2 = np.interp(s_new, ms, h)
+        t2 = np.stack([n2[:, 1], -n2[:, 0]], 1)
+        Q = m2 + (f * h2)[:, None] * n2 + lon[:, None] * t2
+        tr['fine']['x'] = Q[:, 0]; tr['fine']['z'] = Q[:, 1]
+    # the mains' junction nodes with members move along the mains by the same arc length
+    moved = []
+    for i in (ia, ib):
+        tr = tracks[i]; f_ = tr['fine']
+        # direction on track i that corresponds to +s on ia
+        k0 = len(f_['s']) // 2
+        j0 = int(kda.query([[f_['x'][k0], f_['z'][k0]]])[1][0]); k1 = min(k0 + 20, len(f_['s']) - 1)
+        j1 = int(kda.query([[f_['x'][k1], f_['z'][k1]]])[1][0])
+        same = 1 if fa['s'][j1] >= fa['s'][j0] else -1
+        for o in members:
+            k = node_of.get((i, o))
+            if k is None:
+                continue
+            s_old = float(np.interp(tr['s_raw_nodes'][k], f_['raw'], f_['s']))
+            s_new = s_old + same * end_sign * need
+            tr['s_raw_nodes'][k] = float(np.interp(s_new, f_['s'], f_['raw']))
+            moved.append(f"{tr['id']} {s_old:.0f}->{s_new:.0f}")
+    return f"{st}: switches moved {need:.0f} m out of the platform with {[tracks[i]['id'] for i in sorted(members)]} ({', '.join(moved)})"

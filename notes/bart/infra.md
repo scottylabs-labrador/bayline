@@ -5,6 +5,55 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 `notes/bart/shots/infra/`, plus small, clearly marked hooks in `10_env.js`, `12_terrain.js`, `13_gfx.js`, `14_post.js`,
 `90_main.js` (underground support). Everything is behind `#metro=1`.
 
+## To the lead (latest first)
+
+- **10:00 INFRA round2 OK** (M2b round 2, frozen, `#metrodir=metro-next/`, one capture session): San Bruno: junction
+  chamber jc569 (W1 6337-6473) takes W1, M2 and the pocket tracks W-sd1 / W-sd3 with the switches out of the platform;
+  the pocket-track box meets the chamber; the third rail gaps at the W1 switch (6440-6453). Concord: the viaduct and its
+  twin girders read right from the deck (the crossovers on the embankment bring no structure of their own). Milpitas
+  (trench plus lids): ground and road intact over the lid east of the station, the trench / lid sequence reads as
+  portals. Daly City chamber: unchanged (post-M3 item below). A street-level QA shot under the Concord viaduct put the
+  camera under not-yet-streamed terrain (camera placement, not the guideway).
+- **09:40 Daly City chamber (lead's follow-up)**: it predates the thin-cover change: `bart` 4dfaca7 and 1126cde give
+  identical captures inside it (M3 s 1640, M2b) and identical x-rays. Not a simple end-wall fix, so it is a **post-M3
+  item** (below, Open problems).
+- **09:10 thin cover (STATIONS' Milpitas report)**: a cut-and-cover box never pokes through the ground now. Per row,
+  the lowest drawn ground over the box (terrain or base surface with its roads, on the centreline and 0.35 m outside
+  both walls, the lowest within 10 m inside the box's own run) sets the ceiling: the normal 4.78 m above the rail where
+  it fits under a 0.55 m lid; else a lid flush under the ground with the ceiling following it (smoothly, row by row) to
+  no less than 3.5 m above the rail; and the cell's volume (under map) stops 0.5 m under the ground, beyond the map's
+  soft edge, so the terrain and the road ribbons over the box are never cut. Portal runs and the first / last 12 m of a
+  box behind a tunnel mouth keep full height (headwall and portal shell there). Chambers follow the same rule per row.
+  Milpitas on M2b (`#metrodir=metro-next/`, DATA's merged pieces: cutcover 3432-3682 and 3737-3852 on S1): the ground
+  and Montague's road over the box are intact (volume ceiling 0.55-2.1 m under the ground over the box's middle);
+  inside, the box reads normal. Other boxes this touches (thin cover found): Wye (K3.1 / K-main.6), Richmond (R2),
+  near MacArthur (R1), Daly City chambers, Berryessa (S1 ~7000); the Oakland box and the Berkeley subway are unchanged.
+  `MetroTrack.stats.thinBoxes` counts the thin cells built. Open (pre-existing, not from this change): inside the Daly
+  City chamber (jc279, M3 s ~1640) the side toward the M1.2 portal is open to daylight.
+- **08:40 wrap-up** (f4c0d47 on top of `bart` 4dfaca7): the portal visibility walk is time-budgeted (after 4 ms every
+  cell within 300 m is drawn instead: a superset, never a hole; `Under.stats.visOver` counts it; one 30 ms walk was
+  seen once on a Market St ride under load) and chunk disposal is capped at 3 per frame (a 10.7 ms dispose frame was
+  seen on the Tube flight). Last profiles on the shared machine: Tube-approach flight metro max 12 ms, Market St ride
+  15 ms before these two caps, 0 frames over 16 ms from metro code in both. Dev server stopped.
+- **08:10 please take fb30fa3 with the M3 merge**: 32127f8 (the triangle work) reused palette kind 11 for the simple
+  mid-distance rails, and 11 is the Market St steel liner plates, so within 190 m of the camera the Market St bore
+  lining was discarded (black tunnel with floating lamps). Fixed in fb30fa3 (mid rails are kinds 21 / 22 now).
+- **08:10 day / night / dusk underground**: Tube, Market St and Berkeley Hills interiors measure the same at noon and
+  22:00 (mean luma 36.5 / 36.9, 17.5 / 18.3, 58.5 / 59.0): bloom and its threshold no longer follow the night below
+  ground, and the golden-hour tint fades out underground. Dusk (18:54, sun 0.5 deg): West Oakland approach -> mouth ->
+  20 m -> 80 m inside and the Berkeley Hills west portal both ways ramp smoothly (exposure 1.13 -> 1.01 -> 1.0; the low
+  sun glows in the Berkeley Hills mouth seen from inside). One world object: a town building (towns tile 32,4) stands in
+  the West Oakland portal mouth (red walls inside the openings); WORLD's `dropBuilding` only drops near raised
+  structures; request below.
+- **08:00 isolation**: SIM's `tools/qa_metro_isolation.sh` against this branch: 11/11 PASS (one warning, no errors,
+  metro off with track and stations removed, frames advancing), including `metrofail=under` and `build`.
+- **07:45 INFRA M2b OK** (`#metrodir=metro-next/`): Berkeley subway (spread islands: tunnels meet ASHB / DBRK / NBRK),
+  Milpitas, Daly City and the Wye verified; every subway platform has its cell; fixes for crossovers' own structures,
+  trench walls and shallow trenches are on `bart-infra` (see Status).
+- **07:30 M3 gate (infra)**: numbers in Status below (Peninsula ~0; MacArthur aerial 278 k tris / 54 calls; hitches
+  from metro code max 8.7 ms on a 50 m/s Tube-approach flight, 7.7 ms on a Market St ride; Low = structures and rails;
+  failures through `Metro.fail`; debug-only diagnostics). SIM's `tools/qa_metro_isolation.sh` run against this branch.
+
 ## Status
 
 - **2026-09-26 07:30 — M3 gate items (infra) + M2 / M2b profile** (on `bart-infra`, merged with `bart` 26b10ee):
@@ -15,7 +64,7 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
   - **Triangles / shadows** (lead's MacArthur aerial probe, 110 m up): metro-infra **841 k -> 278 k triangles incl.
     shadows, 69 -> 54 calls** (lead measured 274 k / 55). Detail ring 240 m in 200 m chunks; the running rails switch at
     190 m (dithered 16 m band; 150 Medium, 110 Low) from the detail layer's rails to simple 3-face rails in the body layer
-    (palette kinds 11 / 12, drawn only beyond the switch); rails, small parts and fence fabric cast no shadows;
+    (palette kinds 21 / 22, drawn only beyond the switch); rails, small parts and fence fabric cast no shadows;
     structures cast only within 650 m; fences show within 450 m; instanced parts to 150 m (insulators 120 m); bodies to
     1.6 km, far silhouettes beyond.
   - **Low tier**: structures and rails only (no instanced fasteners / ties / insulators, no fences). `MetroTrack.setQuality`
@@ -340,13 +389,28 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
 - Good spots: M1.1 s 1300 (West Oakland aerial), 3150 → 3485 (aerial → portal → box), 8000 (Tube); C1 5200 (Berkeley
   Hills tunnel); M1.1 14000 (Mission St bore); A1.1 7000 (Fruitvale–Coliseum aerial).
 - Shots: `notes/bart/shots/infra/`.
+- Performance hooks (QA, always on, cheap): `MetroTrack.stats` { away (1 = nothing near: idle), chunks, body, detail,
+  far, jobs, buildMs (this frame's job time), slow (the slowest job steps seen, [ms, 'layer:stage:track:chunk']),
+  tb (this frame's ms: body / detail / far / dispose / jobs / instances), instMs, instParts, tris, inst };
+  `Under.stats` { cells, portals, cuts, visCells, mapDraws, mapMs, culled, walk, tu (map / cell / visibility ms),
+  failsafe }. Diagnostics in the console only with `#debug` (or `?dev`).
+- Profiling scripts used for the M3 numbers (not committed; scratch): a camera flown along a track by
+  `requestAnimationFrame` + `MetroTrack.shot`, wrapping `MetroTrack.update` / `Under.update` / `Under.preRender` with
+  timers, plus `renderer.info.programs` for shader compiles.
 
 ## Open problems
 
-- v0 data: the Tube tracks are 5.0 m apart (real 8.03 m), cut-and-cover pairs ~5.0 m (real 5.49 m), Berkeley Hills
-  bores ~20 m (real 15.2 m); the tube run is 3.4 km (real 5.83 km immersed + 1.08 km Oakland box + 0.45 km SF bores);
-  aerial/portal profiles are rough (e.g. 10 m drops over 80 m at the West Oakland portal) — builders adapt, but
-  accuracy follows the data.
+- **Post-M3: Daly City junction chamber jc279 (M2b)**. Owned by M1.2 (s 1590-1752), it spans M1.2, M3, M2 and the
+  crossovers M-xo4 / M-xo7, and runs on over the portal runs where the three tracks leave the ground at different
+  points (M3's mouth at about M1.2 s 1695, M1.2's at 1750), so a single wide box covers part of M3's open trench.
+  Portals are exempt from the thin-cover clamp, so there the chamber keeps its full 4.78 m height and stands above the
+  lower ground on the M2 / M3 side. The terrain inside its volume is cut away, and the flora placed on that terrain
+  floats inside the chamber, dark because it is lit as interior. The bright far end is M1.2's real portal mouth.
+  Plan: end a chamber at the first mouth of any member track (each track then keeps its own portal box and
+  headwall), or build a stepped portal face per track; WORLD's flora and ground cover should skip points where
+  `Under.cutAt(x, z, y)` is true (offered earlier). Riders to Colma / Millbrae pass through it.
+- The data's accuracy limits the builders (aerial heights from clearance rules, the Wye's solved levels, portal
+  profiles); builders adapt, but accuracy follows the data.
 - Milpitas (M2b): the data alternates cut-and-cover and trench every ~50 m around the station (the roofed trench), so
   the approach is a row of short boxes with headwalls; the carved ground beside the trench still rises in steep facets
   behind the walls (WORLD's carve / the terrain resolution). STATIONS is opening the ground over their trenches.
@@ -379,5 +443,16 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
   calls `side` (West Oakland: M1.1 and M2 both `left`, so both faces sit between tracks 4.2 m apart), and the third-rail
   plane follows them (rail under the platform edges). STATIONS correct the sides from the layout, and so do I for the
   contact rail within stations; please flip the sides (and the plane) there so everyone reads the same answer.
+- **WORLD (07:40)**: at the West Oakland portal approach (M1.1 s 3330-3402, `trench` on M2) the rendered terrain was not
+  carved (the trench and its walls sat under a sand-coloured surface); infra now cuts the terrain itself wherever the
+  ground over a trench is not actually below the rail (`carvedAlong`), but please check the carve there. Milpitas (M2b):
+  the carve leaves steep facets behind the trench walls.
+- **WORLD (08:10)**: please extend MetroGround's `dropBuilding` to open cuts: buildings within ~8 m of a track whose
+  structure is `trench` or `portal`, and within 30 m outside a tunnel mouth (towns tile 32,4 has one standing in the
+  West Oakland portal, M1.1 s ~3400; **towns tile 46,-5 has one across the Berkeley Hills east portal box, C1 s ~8281,
+  which closes the tunnel mouth** (seen from outside it looks like a building over the tracks)).
+- **DATA (07:40)**: Milpitas (M2b) alternates `cutcover` / `trench` every ~50 m (S1 3232-3942): a row of short boxes with
+  headwalls. If the station's trench is open with a lid only under the concourse / roads, fewer and longer pieces
+  would read better.
 - **TRAINS / SIM**: metro trains in tunnels are lit by the under map's ambient only (tunnel fixtures light my own
   geometry); `Under.keep(car.group)` is already in 46_metrosim.js, good.
