@@ -17,7 +17,7 @@ OSM_JSON = os.path.join(RAW, 'osm', 'bart_osm.json')
 
 LAT0, LON0, MLAT, MLON = 37.40, -122.10, 110985.1, 88542.2
 GAUGE = 1.676                  # BART broad gauge, m (rail centre to rail centre ~ 1.676 + 0.07)
-GAUGE_STD = 1.435              # eBART (Stadler FLIRT DMU) and the airport connector guideway (cable, nominal)
+GAUGE_STD = 1.435              # eBART (Stadler GTW 2/6 DMU units) and the airport connector guideway (cable, nominal)
 RAIL_CC = 1.676 + 0.0727       # rail centre-to-centre for 1676 mm gauge (gauge is measured at the inner faces)
 MPH = 0.44704
 

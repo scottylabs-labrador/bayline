@@ -59,11 +59,12 @@ const MetroNet = (() => {
   function build(bin) {
     const buf = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
     for (const h of net.tracks) {
-      const n = h.n, P = new Float32Array(buf, h.off, n * 3), A = new Uint8Array(buf, h.off + n * 12, n * 4);
+      const n = h.n, np_ = h.planes || 4, P = new Float32Array(buf, h.off, n * 3), A = new Uint8Array(buf, h.off + n * 12, n * np_);
       const X = new Float32Array(n), Y = new Float32Array(n), Z = new Float32Array(n), CA = new Float32Array(n);
       const ST = A.subarray(0, n), VL = A.subarray(n, 2 * n), CR = A.subarray(2 * n, 3 * n), CV = A.subarray(3 * n, 4 * n);
+      const TR = np_ > 4 ? A.subarray(4 * n, 5 * n) : new Uint8Array(n);     // third rail side: 0 none, 1 left, 2 right
       for (let i = 0; i < n; i++) { X[i] = P[i * 3]; Y[i] = P[i * 3 + 1]; Z[i] = P[i * 3 + 2]; CA[i] = (CR[i] - 128) * 0.002; }
-      const t = Object.assign({}, h, { idx: tracks.length, X, Y, Z, ST, VL, CA, CV });
+      const t = Object.assign({}, h, { idx: tracks.length, X, Y, Z, ST, VL, CA, CV, TR });
       let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
       for (let i = 0; i < n; i++) { if (X[i] < x0) x0 = X[i]; if (X[i] > x1) x1 = X[i]; if (Z[i] < z0) z0 = Z[i]; if (Z[i] > z1) z1 = Z[i]; }
       t.bbox = [x0, z0, x1, z1];
@@ -105,6 +106,7 @@ const MetroNet = (() => {
     out.cant = cant; out.bank = bank;
     const k = a < 0.5 ? i : i + 1;
     out.struct = t.ST[k]; out.structName = STRUCT[out.struct]; out.vlim = t.VL[k] * MPH; out.cover = t.CV[k];
+    out.third = t.TR[k] === 1 ? -1 : t.TR[k] === 2 ? 1 : 0;       // contact rail side: -1 left, +1 right (facing +s), 0 none
     out.s = f * st; out.track = t; out.i = k;
     return out;
   }

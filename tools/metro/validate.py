@@ -5,6 +5,7 @@ where fine enough, else a USGS NAIP chip), profile plots per line, and unit-sani
     python3 tools/metro/validate.py overlay [name ...]     # notes/bart/shots/data/ov_<name>.jpg
     python3 tools/metro/validate.py profiles               # notes/bart/shots/data/profile_<pattern>.png
     python3 tools/metro/validate.py checks                 # gauge/grade/continuity/junction sanity report
+    python3 tools/metro/validate.py timetable              # trips vs pattern paths: order, dwell, implied hop speeds
 """
 import io, json, math, os, struct, sys, zlib
 import numpy as np
@@ -20,7 +21,7 @@ X0, Z0, SIZE = -45056.0, -49152.0, 102400.0
 
 # name: (lat, lon, size m, note)
 SPOTS = {
-    'wye': (37.8052, -122.2893, 700, 'Oakland Wye / West Oakland aerial'),
+    'wye': (37.8003, -122.2790, 700, 'M-line portal (5th & Clay) toward the Oakland Wye'),
     'woak': (37.80488, -122.29515, 320, 'West Oakland station'),
     'mcar': (37.8288, -122.2671, 420, 'MacArthur: 4 tracks, two islands, C/R split'),
     'mcar_n': (37.8350, -122.2665, 600, 'north of MacArthur: SR-24 / R-line split and flyover'),
@@ -176,7 +177,9 @@ def overlay(net, name, spot):
     d.text((12, 10), f'{name}: {note}  ({lat:.5f}, {lon:.5f}; {src})', fill=(255, 255, 255, 255), stroke_width=2, stroke_fill=(0, 0, 0, 255))
     os.makedirs(SHOTS, exist_ok=True)
     out = os.path.join(SHOTS, f'ov_{name}.jpg')
-    img.save(out, quality=82)
+    if img.size[0] > 900:
+        img = img.resize((900, int(img.size[1] * 900 / img.size[0])), Image.LANCZOS)
+    img.save(out, quality=72, optimize=True)
     return out
 
 
@@ -278,6 +281,38 @@ def checks(net):
     return rep
 
 
+def check_timetable(net):
+    tt = json.load(open(os.path.join(PUB, 'timetable.json')))
+    P = {p['id']: p for p in net['patterns']}
+    rep = collections_counter = {}
+    bad_align = bad_order = 0
+    fast, slow = [], []
+    for t in tt['trips']:
+        p = P[t['pat']]
+        for L, lt in zip(p['legs'], t['legs']):
+            if len(lt) != 2 * len(L['stops']):
+                bad_align += 1
+                continue
+            if any(lt[i + 1] < lt[i] for i in range(len(lt) - 1)):
+                bad_order += 1
+            for k in range(len(L['stops']) - 1):
+                dd = L['stops'][k + 1]['d'] - L['stops'][k]['d']
+                dt = lt[2 * k + 2] - lt[2 * k + 1]
+                if dd <= 0 or dt <= 0:
+                    continue
+                v = dd / dt / 0.44704
+                hop = (L['stops'][k]['station'], L['stops'][k + 1]['station'])
+                if v > 62:
+                    fast.append((round(v, 1), hop, t['id']))
+                if v < 8 and L['sys'] != 'oac':
+                    slow.append((round(v, 1), hop, t['id']))
+    print(f'trips {len(tt["trips"])}, legs misaligned {bad_align}, legs with times going backwards {bad_order}')
+    fh = sorted(set((round(v), h) for v, h, _ in fast), reverse=True)[:12]
+    sh = sorted(set((round(v), h) for v, h, _ in slow))[:12]
+    print(f'hops with average > 62 mph (path distance / scheduled time; BART max 70): {len(fast)}', fh)
+    print(f'hops with average < 8 mph: {len(slow)}', sh)
+
+
 if __name__ == '__main__':
     net = load_net()
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'overlay'
@@ -288,6 +323,8 @@ if __name__ == '__main__':
     elif cmd == 'profiles':
         for o in profiles(net):
             log(o)
+    elif cmd == 'timetable':
+        check_timetable(net)
     elif cmd == 'checks':
         for r in checks(net):
             print(r)

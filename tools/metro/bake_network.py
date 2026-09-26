@@ -625,11 +625,24 @@ def main():
     for tr in tracks:
         tr['stops'] = {}
     plat_pos = {}
-    for pid, c in plat_track.items():
-        (ti, s), _ = c.most_common(1)[0]
-        code, num = (pid.split('-') + [''])[:2] if '-' in pid else (pid, '1')
-        tracks[ti]['stops'][(code, num)] = s
-        plat_pos[pid] = (ti, s)
+    # per station: give distinct platform codes distinct tracks where the paths allow it (terminals such as Berryessa,
+    # where arrivals and departures share a code but use either face of the island), maximising the trips served
+    import itertools
+    by_st_pid = collections.defaultdict(list)
+    for pid in plat_track:
+        by_st_pid[pid.split('-')[0]].append(pid)
+    for code_, pids in by_st_pid.items():
+        cands = {pid: [(ti_s, n) for ti_s, n in plat_track[pid].most_common(3)] for pid in pids}
+        best, best_n = None, -1
+        for combo in itertools.product(*[cands[pid] for pid in pids]):
+            tis = [c[0][0] for c in combo]
+            n = sum(c[1] for c in combo) + (10 ** 6 if len(set(tis)) == len(tis) else 0)
+            if n > best_n:
+                best, best_n = combo, n
+        for pid, ((ti, s), _) in zip(pids, best):
+            code, num = (pid.split('-') + [''])[:2] if '-' in pid else (pid, '1')
+            tracks[ti]['stops'][(code, num)] = s
+            plat_pos[pid] = (ti, s)
     # nearest station code for naming non-main tracks
     st_xy = {sid: tuple(map(float, ll2w(float(p['stop_lat']), float(p['stop_lon'])))) for sid, p in parents.items()}
     for tr in tracks:
@@ -712,13 +725,24 @@ def main():
                 continue
             t, s0, s1 = g['members'][0]
             anchors['rel'].append(dict(track=t, s0=min(s0, s1), s1=max(s0, s1), rel=rel, w=w, station=g['station'], level=g['level']))
+    # Transbay Tube: tracks at -85 ft at the SF vent structure (Rogers & Peck / NTSB via research and infra notes) and the
+    # 1965 general profile digitized by the engineering research (low confidence): 1965 MSL ~ NGVD29, NAVD88 = +0.8 m here
+    eng = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'research', 'engineering.json')))
+    prof_pts = eng['transbay_tube']['approx_profile_digitized']['points_distance_from_SF_vent_ft__track_elev_ft']
     for tr in tracks:
         if tr.get('tube'):
-            anchors['points'].append(dict(track=tr['id'], s=tr['tube'][2], y=-25.9, w=300.0, why='SF vent structure: tracks at -25.9 m (NTSB RAR-79-05 via infra notes)'))
+            lo_, hi_, s_sf, s_oak = tr['tube']
+            sg = 1 if s_oak > s_sf else -1
+            anchors['points'].append(dict(track=tr['id'], s=s_sf, y=-85 * 0.3048 + 0.8, w=300.0, why='SF vent structure: tracks at -85 ft'))
+            for dist_ft, el_ft in prof_pts[1:]:
+                sv = s_sf + sg * dist_ft * 0.3048
+                if min(lo_, hi_) <= sv <= max(lo_, hi_):
+                    anchors['points'].append(dict(track=tr['id'], s=sv, y=el_ft * 0.3048 + 0.8, w=40.0, why='1965 Transbay Tube general profile (digitized)'))
     log(f'platform level groups: {len(groups)}, height anchors: {len(anchors["rel"])} + {len(anchors["points"])} points')
     roads = PR2.Roads()
     PR2.solve(out_tracks, junctions, groups, anchors, roads)
     PR2.finish(out_tracks)
+    PR2.third_rail(out_tracks, junctions, platforms)
 
     # ---------------- stations
     tn = byid.get(('node', 5319797505))
@@ -728,7 +752,12 @@ def main():
     vlines, vrep = PR2.validate(out_tracks, stations, junctions, groups)
     for ln in vlines:
         log(ln)
-    write_json(os.path.join(PUB, 'validation.json'), dict(generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), summary=vlines, report=vrep), compact=False)
+    anchor_rep = [dict(station=a['station'], level=a['level'], track=a['track'], target=a['y'], solved=a.get('solved'), delta=a.get('delta'),
+                       ground=a['ground'], rel=a['rel'], w=a['w']) for a in anchors.get('resolved', [])]
+    big = [a for a in anchor_rep if a['delta'] is not None and abs(a['delta']) > 1.0]
+    log(f'  researched heights missed by > 1 m: {len(big)} ' + ', '.join(f"{a['station']}{'/' + a['level'] if a['level'] != 'main' else ''} {a['delta']:+.1f}" for a in big))
+    write_json(os.path.join(PUB, 'validation.json'), dict(generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), summary=vlines, report=vrep,
+                                                           anchors=anchor_rep), compact=False)
 
     # ---------------- lines + patterns
     lines = []
@@ -774,13 +803,15 @@ def write_tracks(tracks, links, junctions, stations, lines, pats):
         n = len(p['s'])
         arr = np.zeros((n, 3), np.float32)
         arr[:, 0] = p['x']; arr[:, 1] = p['y']; arr[:, 2] = p['z']
-        attr = np.zeros((n, 4), np.uint8)
+        attr = np.zeros((n, 5), np.uint8)
         attr[:, 0] = p['struct']
         attr[:, 1] = np.clip(np.round(p['vlim'] / MPH), 0, 255).astype(np.uint8)          # mph
         attr[:, 2] = np.clip(np.round(p['cant'] * 1000 / 2) + 128, 0, 255).astype(np.uint8) # 2 mm units, 128 = 0
         attr[:, 3] = np.clip(np.round(p['depth']), 0, 255).astype(np.uint8)                 # cover (m) above tunnel crown / clearance
-        blob = arr.tobytes() + np.ascontiguousarray(attr.T).tobytes()      # xyz interleaved, then 4 attribute planes
-        head.append(dict(id=tr['id'], n=n, step=round(p['step'], 6), off=off, sys=tr['sys'], cls=tr['service'] or 'main'))
+        attr[:, 4] = p.get('third', np.zeros(n, np.uint8))                                 # third rail: 0 none, 1 left, 2 right
+        blob = arr.tobytes() + np.ascontiguousarray(attr.T).tobytes()      # xyz interleaved, then 5 attribute planes
+        blob += b'\0' * ((-len(blob)) % 4)                                  # next track's floats stay 4-byte aligned
+        head.append(dict(id=tr['id'], n=n, step=round(p['step'], 6), off=off, planes=5, sys=tr['sys'], cls=tr['service'] or 'main'))
         blobs.append(blob)
         off += len(blob)
     raw = b''.join(blobs)
@@ -795,7 +826,7 @@ def write_tracks(tracks, links, junctions, stations, lines, pats):
                             station=tr.get('near_station'), structure=segs, prev=links[ti].get('prev'), next=links[ti].get('next')))
     net = dict(version=0, format='bayline-metro-network', frame='Bay frame: x=(lon+122.10)*88542.2 east, z=-(lat-37.40)*110985.1 south, y=m above sea level (top of rail)',
                generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), sources=SOURCES,
-               structCodes=PR2.STRUCT_NAMES, tracksBin=dict(path=f'{PUB_DIR}/{bin_name}', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 4 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m)'),
+               structCodes=PR2.STRUCT_NAMES, tracksBin=dict(path=f'{PUB_DIR}/{bin_name}', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 5 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m), third-rail side (0 none, 1 left, 2 right); padded to 4 bytes'),
                tracks=tr_meta, junctions=junctions, stations=stations, lines=lines, patterns=pats)
     size = write_json(os.path.join(PUB, 'network.json'), net)
     log(f'network.json {size/1e6:.2f} MB, tracks.bin {size_bin/1e6:.2f} MB ({len(raw)/1e6:.2f} MB raw), {len(tracks)} tracks')
