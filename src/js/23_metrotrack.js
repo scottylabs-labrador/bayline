@@ -467,7 +467,11 @@ const MetroTrack = (() => {
   }
   // the nearest parallel track within 22 m (e.g. the other bore of a twin-bore tunnel): its lateral (+ right), or 0
   function nbrAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.nbrL.length - 1); return R.nbrL[b]; }
-  function pairAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1); const p = R.pairT[b]; return p < 0 ? null : { R2: TRACKS[p], s2: R.pairS[b], lat: R.pairL[b], dy: R.pairDy[b], primary: !!R.primary[b] }; }
+  function pairAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1); const p = R.pairT[b]; return p < 0 ? null : { R2: TRACKS[p], s2: R.pairS[b], lat: pairLatAt(R, s, p), dy: R.pairDy[b], primary: !!R.primary[b] }; }
+  // the partner's lateral at s, interpolated between the 10 m bins (cm-accurate on smooth curves)
+  function pairLatAt(R, s, p) { const f = U.clamp(s / BIN, 0, R.pairT.length - 1.001), i = Math.floor(f), a = f - i;
+    const l0 = R.pairT[i] === p ? R.pairL[i] : null, l1 = R.pairT[i + 1] === p ? R.pairL[i + 1] : null;
+    return l0 !== null && l1 !== null ? l0 + (l1 - l0) * a : l0 !== null ? l0 : l1 !== null ? l1 : R.pairL[Math.round(f)]; }
   // station ranges on a track (STATIONS builds the box / deck / trackway there; I build rails and third rail through)
   // (MetroStations.limits when STATIONS provides it; else the platform ranges, normalised like STATIONS does: v0 puts the
   // two faces of an island up to ~200 m apart, so every track of a station takes the first platform's range, projected)

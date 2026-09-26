@@ -52,8 +52,20 @@ const MetroGuide = (() => {
   // ground relative to top of rail at a lateral offset (level frame), clamped
   function gRel(F, lat, lo = -40, hi = 12) { const x = F.x + F.lx * lat, z = F.z + F.lz * lat; return U.clamp(MT.groundAt(x, z) - F.y, lo, hi); }
 
-  // ------------------------------------------------------------------ grade / embankment / median bed
+  // the world workstream's MetroGround carves the terrain to the bed (rail - 0.85 m within 2.4 m of each track, then
+  // 1:2 slopes; trenches cut to rail - 1.2 m within 3.0 m): notes/bart/world.md "Ground meets BART". When it is active the
+  // bed needs no terrain cut and its slopes simply run down to the (carved) ground.
+  const carved = () => typeof MetroGround !== 'undefined' && MetroGround.stats && MetroGround.stats.segments > 0;
+  // ballast prism on carved ground: top at ~tie top, 0.305 m shoulders, 2:1 slopes down to the ground [BFS 34 05 17]
+  function bedCarved(F, lo, hi) {
+    const tie = DIM.tieLen / 2, top = -DIM.railH - 0.02, sh = DIM.ballastShoulder;
+    const L = lo - tie, Rr = hi + tie, Ls = L - sh, Rs = Rr + sh;
+    const toe = (edge, dir) => { let l = edge + dir * 1.3; for (let k = 0; k < 3; k++) { const g = gRel(F, l, -6, 3); l = edge + dir * Math.max(0.2, (top - g) * DIM.ballastSlope); } const g = gRel(F, l, -6, 3); return [l + dir * 0.15, Math.min(g - 0.08, top - 0.05)]; };
+    const tl = toe(Ls, -1), tr = toe(Rs, 1);
+    return { prof: [tl, [Ls, top - 0.02], [L, top], [Rr, top], [Rs, top - 0.02], tr], col: [PAL.ballast, PAL.ballast, PAL.ballast, PAL.ballast, PAL.ballast], toe: Math.min(tl[1], tr[1]) };
+  }
   // cross-section of the ballast bed under both tracks of a pair (lo..hi), the cess and a skirt down (or up) to the ground
+  // (fallback without MetroGround: the terrain is cut under it)
   function bedProfile(F, lo, hi, kind) {
     const tie = DIM.tieLen / 2, top = -0.235, sh = DIM.ballastShoulder, toe = -0.23 - DIM.tieH - DIM.ballastDepth;   // toe ≈ -0.76
     const L = lo - tie, Rr = hi + tie;
@@ -68,16 +80,18 @@ const MetroGuide = (() => {
       col: [PAL.soil, PAL.soil, PAL.ballast, PAL.ballast, PAL.ballast, PAL.ballast, PAL.ballast, PAL.soil, PAL.soil], cutL: L - sh - 0.5, cutR: Rr + sh + 0.5, toe };
   }
   function buildBed(ctx, a, b, kind) {
+    const cv = carved();
     for (const [s0, s1] of ownedRanges(ctx, a, b)) {
       const ss = ctx.sampleS(ctx.R, s0, s1, 6, 2);
       const rows = []; const cutL = [], cutR = []; let below = 1e9;
       for (const s of ss) {
-        MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const bp = bedProfile(F, ln.lo, ln.hi, kind);
+        MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const bp = cv ? bedCarved(F, ln.lo, ln.hi) : bedProfile(F, ln.lo, ln.hi, kind);
+        if (cv) { rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: bp.prof, col: bp.col, gnd: F.y + bp.toe }); continue; }
         rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: bp.prof, col: bp.col, gnd: F.y + bp.toe });
         cutL.push([F.x + F.lx * bp.cutL, F.z + F.lz * bp.cutL]); cutR.push([F.x + F.lx * bp.cutR, F.z + F.lz * bp.cutR]); below = Math.min(below, F.y + bp.toe + 0.1);
       }
       sweepVar(ctx.B.infra, rows);
-      if (kind !== 'median' || true) addCut(ctx, 'mg:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
+      if (!cv) addCut(ctx, 'mg:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
     }
   }
   // sweep with a per-row profile (same point count on every row): rows[i].prof, rows[i].col (per segment)
@@ -105,7 +119,7 @@ const MetroGuide = (() => {
       const ss = ctx.sampleS(ctx.R, s0, s1, 5, 2); const rows = []; const cutL = [], cutR = []; let below = 1e9;
       for (const s of ss) {
         MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s);
-        const wl = ln.lo - 2.9, wr = ln.hi + 2.9, t = 0.6, fl = -0.72;               // inner wall faces, thickness, floor (DF slab)
+        const wl = ln.lo - 3.05, wr = ln.hi + 3.05, t = 0.6, fl = -0.72;             // inner wall faces (MetroGround steps at 3.0-3.9 m), thickness, floor (DF slab)
         const gl = gRel(F, wl - t - 0.5, -5, 14), gr = gRel(F, wr + t + 0.5, -5, 14);
         const tl = Math.max(gl + 0.35, 1.1), tr = Math.max(gr + 0.35, 1.1);                     // wall tops: coping just above the ground
         rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], gnd: F.y + fl, top: F.y + Math.min(tl, tr),
@@ -115,10 +129,10 @@ const MetroGuide = (() => {
       }
       for (const R of rows) R.top = R.o[1] + 1.2;
       sweepVar(ctx.B.infra, rows);
-      addCut(ctx, 'mt:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
+      if (!carved()) addCut(ctx, 'mt:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
       // drainage grates in the floor gutter and wall weep holes every 6 m (small, near only: part of the body for now)
       for (let s = Math.ceil(s0 / 6) * 6; s < s1; s += 6) { MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s);
-        for (const lat of [ln.lo - 2.9 + 0.02, ln.hi + 2.9 - 0.02]) ctx.B.infra.box(F.x + F.lx * lat - ctx.ox, F.y - 0.1, F.z + F.lz * lat - ctx.oz, [F.tx, F.ty, F.tz], [F.vx, F.vy, F.vz], [F.lx, F.ly, F.lz], 0.05, 0.05, 0.025, PAL.black, 4); }
+        for (const lat of [ln.lo - 3.05 + 0.02, ln.hi + 3.05 - 0.02]) ctx.B.infra.box(F.x + F.lx * lat - ctx.ox, F.y - 0.1, F.z + F.lz * lat - ctx.oz, [F.tx, F.ty, F.tz], [F.vx, F.vy, F.vz], [F.lx, F.ly, F.lz], 0.05, 0.05, 0.025, PAL.black, 4); }
     }
   }
 
@@ -226,19 +240,26 @@ const MetroGuide = (() => {
       }
     } else {
       const prof = girderProfile(hD);
+      // girders: the primary of a pair builds both (the partner's follows its interpolated offset), so a pair's aerial
+      // is one draw call; an unpaired track builds its own
       for (const [s0, s1, capA, capB] of spans) {
-        const subs = ownedRanges(ctx, s0, s1, false); if (!subs.length) continue;
+        const subs = ownedRanges(ctx, s0, s1); if (!subs.length) continue;
         for (const [q0, q1] of subs) {
           const ss = ctx.sampleS(R, q0, q1, 8, 2.5);
-          const rows = ctx.rowsAt(ctx, ss, 0, 0, false, (row, Fr) => { row.top = Fr.y + hD; row.gnd = -1e4; });
-          gb.wear = 0.75; gb.sweep(rows, prof, PAL.precast, { closed: true });
-          if (capA && q0 === subs[0][0]) gb.capProfile(rows[0], prof, PAL.precast, -1);
-          if (capB && q1 === subs[subs.length - 1][1]) gb.capProfile(rows[rows.length - 1], prof, PAL.precast, 1);
-          // drainage channel on the girder centreline (a shallow dark groove between the plinths)
-          gb.sweep(rows, [[-0.09, hD + 0.004], [0.09, hD + 0.004]], PAL.concreteDark);
-          // the sunken walkway between the two girders of a pair (primary): a slab 0.25 m below the decks
           const pp = ctx.pairAt(R, (q0 + q1) / 2);
-          if (pp && pp.primary) {
+          for (const which of pp ? [0, 1] : [0]) {
+            let lastLa = pp ? pp.lat : 0;
+            const rows = ss.map(s => { MT.frameAt(R, s, F); const pq = which ? MT.pairAt(R, s) : null; const la = which ? (pq ? (lastLa = pq.lat) : lastLa) : 0;
+              return { s, o: [F.x + F.lx * la - ctx.ox, F.y, F.z + F.lz * la - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz], top: F.y + hD, gnd: -1e4 }; });
+            gb.wear = 0.75; gb.sweep(rows, prof, PAL.precast, { closed: true });
+            if (capA && q0 === subs[0][0]) gb.capProfile(rows[0], prof, PAL.precast, -1);
+            if (capB && q1 === subs[subs.length - 1][1]) gb.capProfile(rows[rows.length - 1], prof, PAL.precast, 1);
+            // drainage channel on the girder centreline (a shallow dark groove between the plinths)
+            gb.sweep(rows, [[-0.09, hD + 0.004], [0.09, hD + 0.004]], PAL.concreteDark);
+          }
+          // the sunken walkway between the two girders: a slab 0.25 m below the decks
+          if (pp) {
+            const rows = ctx.rowsAt(ctx, ss, 0, 0, false);
             const w0 = Math.min(0, pp.lat) + A.girderTopW / 2 + 0.01, w1 = Math.max(0, pp.lat) - A.girderTopW / 2 - 0.01;
             if (w1 - w0 > 0.2) { const yw = hD - A.walkDrop; gb.sweep(rows, [[w0, yw - 0.14], [w0, yw], [w1, yw], [w1, yw - 0.14]], PAL.concrete); }
           }
@@ -332,6 +353,7 @@ const MetroGuide = (() => {
       default: {
         // at grade / on embankment, except where the track runs well below the ground on both sides (portal approaches,
         // cuttings): there a retained cut (U-section) holds the ground back instead of a skirt
+        if (carved()) return buildBed(ctx, a, b, run.type === 'embankment' ? 'embankment' : 'grade');
         for (const [s0, s1, deep] of cutRanges(ctx, a, b)) { if (deep) buildTrench(ctx, s0, s1); else buildBed(ctx, s0, s1, run.type === 'embankment' ? 'embankment' : 'grade'); }
       }
     }
