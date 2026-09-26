@@ -897,16 +897,32 @@ const Terrain = (() => {
   api.covers = (x, z) => (x >= X0 && x < X0 + SIZE && z >= Z0 && z < Z0 + SIZE) || North.contains(x, z);
   api.cutTest = null;           // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
   api.cutUniforms = null;       // the fine cut level's uniforms (Under), used by the cut variant only
-  // (Bayline Metro, world workstream) add a height filter (see heightFilters); loaded height tiles overlapping rect
-  // [x0, z0, x1, z1] are dropped so they stream in again, filtered (a brief step down in detail there, once)
+  // (Bayline Metro, world workstream) add a height filter (see heightFilters). Height tiles already loaded that overlap
+  // rect [x0, z0, x1, z1] are filtered in place (their CPU heights and textures, a few ms each, spread over frames), so
+  // nothing re-streams and the view never steps down in detail. The filter returns true when it changed a tile.
   api.addHeightFilter = (fn, rect) => {
     heightFilters.push(fn);
-    for (const [k, r] of [...hrec]) {
-      if (r.state !== 2 || r.L < 5) continue;
+    const todo = [...hrec.values()].filter(r => {
+      if (r.state !== 2 || r.L < 5 || !r.h) return false;
       const T = tileSize(r.L), x0 = X0 + r.x * T, z0 = Z0 + r.y * T;
-      if (rect && (x0 > rect[2] || x0 + T < rect[0] || z0 > rect[3] || z0 + T < rect[1])) continue;
-      if (r.tex) r.tex.dispose(); hrec.delete(k);
-    }
+      return !(rect && (x0 > rect[2] || x0 + T < rect[0] || z0 > rect[3] || z0 + T < rect[1]));
+    });
+    return new Promise((done) => {
+      const step = () => {
+        const t0 = performance.now();
+        while (todo.length && performance.now() - t0 < 3) refilter(todo.pop(), fn);
+        if (todo.length) requestAnimationFrame(step); else done();
+      };
+      step();
+    });
   };
+  function refilter(r, fn) {
+    const T = tileSize(r.L); if (!fn(r.L, X0 + r.x * T, Z0 + r.y * T, T, r.h)) return;
+    let mn = 1e9, mx = -1e9; for (let i = 0; i < r.h.length; i++) { const v = r.h[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    r.mn = mn; r.mx = mx; r.base = mn;
+    const hf = new Uint16Array(HS * HS); for (let i = 0; i < hf.length; i++) hf[i] = THREE.DataUtils.toHalfFloat(r.h[i] - r.base);
+    const t = new THREE.DataTexture(hf, HS, HS, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+    const old = r.tex; r.tex = t; if (old) setTimeout(() => old.dispose(), 0);         // (nodes pick the new one up next frame)
+  }
   return api;
 })();
