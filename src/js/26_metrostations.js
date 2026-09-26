@@ -161,6 +161,7 @@ const MetroStations = (() => {
     group.remove(st.root);
     st.root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
     if (typeof Under !== 'undefined' && Under.remove && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {} }
+    if (typeof MetroSigns !== 'undefined') { MetroSigns.freeBoards(st); MetroSigns.releaseAtlas(st); }
     st.root = null; st.res = null; st.walk = null; st.boards.clear(); st.state = 'idle'; stats.built--;
   }
   // build context shared with the type builders
@@ -205,6 +206,7 @@ const MetroStations = (() => {
       if (r && r.update) r.update(dt, camPos, night);
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
+    if (typeof StationCrowds !== 'undefined') StationCrowds.update(dt, camPos, list);
   }
 
   // ------------------------------------------------------------------------------------------------ walk metadata
@@ -239,7 +241,9 @@ const MetroStations = (() => {
   }
   function spawnPoint(id, key) {
     const st = byId[id]; if (!st) return null; if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return null;
-    const p = pl.plats.find(q => q.key === String(key)) || pl.plats[0]; const u = (p.u0 + p.u1) / 2 + 12;
+    // key: a platform code ('1') or a GTFS platform id ('M20-1')
+    const k = String(key == null ? '' : key); const code = k.includes('-') ? k.split('-').pop() : k;
+    const p = pl.plats.find(q => q.gtfs === k || q.key === code) || pl.plats[0]; const u = (p.u0 + p.u1) / 2 + 12;
     const S = spineAt(pl, u, {}); const v = trackV(pl, p.t, u) + p.sideV * (EDGE + 2.2);
     return { x: S.x + S.rx * v, y: p.yRail + PLAT_H, z: S.z + S.rz * v, yaw: Math.atan2(-S.rx * p.sideV, -S.rz * p.sideV) };
   }

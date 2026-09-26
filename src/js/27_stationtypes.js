@@ -104,6 +104,16 @@ const StationTypes = (() => {
     // wrong stretch of a track) takes the first face's range: both sides of a station are the same 213 m
     const ref0 = plan.plats[0]; const refC = (ref0.u0 + ref0.u1) / 2, refL = Math.min(216, Math.max(150, ref0.u1 - ref0.u0));
     for (const p of plan.plats) { const c = (p.u0 + p.u1) / 2, l = p.u1 - p.u0; if (l < 150 || Math.abs(c - refC) > 40) { p.u0 = refC - refL / 2; p.u1 = refC + refL / 2; } }
+    // a known layout (research) corrects the sides the v0 data inferred: side platforms extend away from the other
+    // track, island faces toward it
+    if ((H.layout === 'side' || H.layout === 'island') && plan.plats.length >= 2 && new Set(plan.plats.map(q => q.t)).size === 2) {
+      const um = (ref0.u0 + ref0.u1) / 2;
+      for (const p of plan.plats) {
+        const other = plan.plats.filter(q => q.t !== p.t); if (!other.length) continue;
+        const dv = tv(other[0].t, um) - tv(p.t, um); if (Math.abs(dv) < 0.5) continue;
+        p.sideV = (H.layout === 'side' ? -1 : 1) * Math.sign(dv);
+      }
+    }
     const faces = plan.plats.map(p => ({ p, e: (u) => tv(p.t, u) + p.sideV * EDGE }));
     const plats = []; const used = new Set();
     for (let i = 0; i < faces.length; i++) {
@@ -265,13 +275,20 @@ const StationTypes = (() => {
     if (T.esc.length) { const m = SP.escSteps(T.esc); if (m) { near.add(m); zP.lights.bind(m, root); } }
     for (const c of T.cells) if (res.zones[c.zone]) c.under.group = res.zones[c.zone].group;
     indexWalk(walk);
+    // crowd zones (station-local via toLocal/toWorld): platforms with their faces and circulation, the concourse
+    res.toWorld = (u, v) => WUV(u, v); res.toLocal = (u, v) => L2(u, v); res.yawAt = (u) => yawAt(u); res.origin = [OX, OZ];
+    res.crowd = {
+      plats: plats.map(p => ({ kind: p.kind, keys: p.keys, y: p.y, u0: p.u0, u1: p.u1, eL: p.eL, eR: p.eR, sideV: p.sideV, tracks: p.tracks.map(t => t.id),
+        groups: (p.groups || []).map(g => ({ uFoot: g.uFoot, uHead: g.uHead, vc: g.vc, gw: g.gw, down: !!g.down })), busy: (u, v) => T.occupied.some(o => o.p === p && u > o.u0 - 0.6 && u < o.u1 + 0.6 && v > o.v0 - 0.6 && v < o.v1 + 0.6) })),
+      conc: T.concZone || null,
+    };
     // per-frame: light intensity follows the exposure underground (lit 24/7, the same at noon and midnight)
     res.update = (dt, camPos, night) => {
       const expo = (typeof Env !== 'undefined' && Env.state.exposure) || 1;
       const underK = (typeof Under !== 'undefined' && Under.fixesExposure) ? 1 : 1.0 / expo;
-      for (const { mat, z } of matsToTick) mat.userData.sk.uLightK.value = z.under ? underK : (0.25 + 0.75 * night);
-      for (const { m, z } of signMats) m.emissiveIntensity = z.under ? 0.9 * underK : 0.18 + 0.7 * night;
-      shared.glow.userData.k.value = under ? 5 * underK : 1.5 + 4 * night;
+      for (const { mat, z } of matsToTick) mat.userData.sk.uLightK.value = z.under ? underK : (0.6 + 0.4 * night);
+      for (const { m, z } of signMats) m.emissiveIntensity = z.under ? 0.9 * underK : 0.3 + 0.6 * night;
+      shared.glow.userData.k.value = under ? 5 * underK : 2.5 + 3 * night;
       // without the Under module: hide the underground levels while the camera is up in the street, away from entrances
       if (under && typeof Under === 'undefined' && !MetroStations.debug.showAll) {
         const upTop = camPos.y > street - 0.8; let nearEnt = false; for (const e of T.entrances || []) if (Math.hypot(camPos.x - e.wx, camPos.z - e.wz) < 30) { nearEnt = true; break; }
@@ -777,6 +794,7 @@ const StationTypes = (() => {
       zC.signs.push({ u: ug - face * 0.6, v: (a + b) / 2, y: yCF + 2.7, yaw: T.yawAt(ug) + (face < 0 ? Math.PI / 2 * 0 + Math.PI : 0), w: 2.8, h: 0.7, region: 'gates', both: true, T });
       yield;
     }
+    T.concZone = { y: yCF, u0: cu0 + 2, u1: cu1 - 2, vl, vr, holes: T.ceilHoles.map(h => ({ u0: h.u0, u1: h.u1, v0: h.v0, v1: h.v1 })) };
     // lights: rows of troughs along the concourse ceiling
     const LC = S.light, I = S.lightI * 0.85; const f0 = frameAt(cu0 + 2), f1 = frameAt(cu1 - 2); const vm = (vl(uc) + vr(uc)) / 2, hw = (vr(uc) - vl(uc)) / 2;
     for (const off of [-0.5, 0, 0.5]) {
@@ -918,6 +936,7 @@ const StationTypes = (() => {
     for (const [ue] of [[cu0], [cu1]]) { const f = frameAt(ue); const a = vl(ue), b = vr(ue); const P = (vv, y) => [f.x - f.tz * vv, y, f.z + f.tx * vv];
       zC.m.glass.quad(P(a, yCF + 0.1), P(b, yCF + 0.1), P(b, yTop - 0.1), P(a, yTop - 0.1), [0, 0, 1, 0, 1, 1, 0, 1]); zC.m.glass.quad(P(b, yCF + 0.1), P(a, yCF + 0.1), P(a, yTop - 0.1), P(b, yTop - 0.1), [0, 0, 1, 0, 1, 1, 0, 1]); }
     for (let i = 0; i + 1 < fr.length; i++) { const f0 = fr[i], f1 = fr[i + 1]; const q = [[f0.u, vl(f0.u)], [f1.u, vl(f1.u)], [f1.u, vr(f1.u)], [f0.u, vr(f0.u)]].map(([u, v]) => T.WUV(u, v)); addFloor(walk, q, yCF); }
+    T.concZone = { y: yCF, u0: cu0 + 1, u1: cu1 - 1, vl: (u) => vl(u) + 0.6, vr: (u) => vr(u) - 0.6, holes: [] };
     // fare gates across the concourse, booth, TVMs
     const ug = cu0 + 6; const a = vl(ug), b = vr(ug); const nG = U.clamp(Math.floor((b - a - 6) / 0.86), 4, 10); const arrW = nG * 0.86 + 0.6; const v0 = (a + b) / 2 - arrW / 2;
     T.placeB(zC.d, ug, v0, yCF, 0); SP.fareGates(zC.d, nG); T.popB(zC.d);
@@ -989,13 +1008,15 @@ const StationTypes = (() => {
         z.signs.push({ u, v, y, yaw: T.yawAt(u), w: 3.2, h: 0.4, region: 'nameS', both: true, T });
         place(gd, u, v, y + 0.2, 0); gd.mat(0x2a2c2e, K.PAINT); gd.cbox(-1.3, 0, 0, 0.03, Math.max(0.2, ceil - y - 0.2), 0.03); gd.cbox(1.3, 0, 0, 0.03, Math.max(0.2, ceil - y - 0.2), 0.03); gd.pop();
       }
+      // next-train displays: double-sided, hung across the platform over each face's half, readable along it
       for (let u = p.u0 + 45; u < p.u1 - 20; u += 70) {
-        const v = island ? cv(u) : backV(u); if (busy(p, u, v, 1.5)) continue; const y = p.y + 2.7;
-        for (const [k, side] of (island ? [[0, -1], [1, 1]] : [[0, p.sideV > 0 ? -1 : 1]])) {
-          const key = p.keys[Math.min(k, p.keys.length - 1)];
-          z.boards.push({ key, geo: boardGeo(T, u, v + side * 0.08, y, side), u, v });
+        const y = p.y + 2.75;
+        const spots = island ? [[p.keys[0], cv(u) - 1.7], [p.keys[1] || p.keys[0], cv(u) + 1.7]] : [[p.keys[0], (p.eL(u) + p.eR(u)) / 2]];
+        for (const [key, v] of spots) {
+          if (busy(p, u, v, 1.0)) continue;
+          z.boards.push({ key, geo: boardGeo(T, u, v, y), u, v });
+          place(gd, u, v, y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, -0.29, 0, 0.12, 0.58, 1.95); gd.cbox(0, 0.29, -0.8, 0.04, Math.max(0.2, ceil - y - 0.29), 0.04); gd.cbox(0, 0.29, 0.8, 0.04, Math.max(0.2, ceil - y - 0.29), 0.04); gd.pop();
         }
-        place(gd, u, v, y + 0.4, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, -0.42, 0, 1.9, 0.62, 0.14); gd.cbox(-0.8, 0.2, 0, 0.04, Math.max(0.2, ceil - y - 0.6), 0.04); gd.cbox(0.8, 0.2, 0, 0.04, Math.max(0.2, ceil - y - 0.6), 0.04); gd.pop();
       }
       let um = (p.u0 + p.u1) / 2 - 8; while (busy(p, um, cv(um), 2) && um > p.u0 + 10) um -= 6;
       p.keys.forEach((key, k) => { const side = island ? (k === 0 ? -1 : 1) : (p.sideV > 0 ? -1 : 1); const v = (island ? cv(um) : backV(um)) + side * 0.12;
@@ -1013,9 +1034,12 @@ const StationTypes = (() => {
       z.signs.push({ u, v, y: T.yT + 1.9, yaw: T.yawAt(u) + (side < 0 ? Math.PI : 0), w: 6.4, h: 1.2, region: 'name', both: false, T });
     }
   }
-  function boardGeo(T, u, v, y, side) {
-    const [x, z] = T.L2(u, v); const yaw = T.yawAt(u) + (side < 0 ? Math.PI : 0);
-    const g = new THREE.PlaneGeometry(1.8, 0.45); g.rotateY(yaw); g.translate(x, y, z);
+  // a display face on each side (normals +u and -u), 1.8 x 0.45 m, just proud of the housing
+  function boardGeo(T, u, v, y) {
+    const [x, z] = T.L2(u, v); const f = T.frameAt(u); const yaw = Math.atan2(f.tx, f.tz);
+    const a = new THREE.PlaneGeometry(1.8, 0.45); a.translate(0, 0, 0.065); a.rotateY(yaw);
+    const b = new THREE.PlaneGeometry(1.8, 0.45); b.translate(0, 0, 0.065); b.rotateY(yaw + Math.PI);
+    const g = U.mergeGeometries([a, b]); g.translate(x, y, z);
     return g;
   }
   function signGeometry(list, rect) {
