@@ -1,7 +1,7 @@
 // P08, golden hour (about 18:35, the sun a few degrees up): a metro train on the Concord aerial, Mt Diablo filling
-// the sky behind it. A drone on the line from the mountain through the viaduct, a kilometre out and 95-130 m up (over
-// the trees), on the longest lens that fits both: the train in the lower third, the summit (1,170 m, 15 km away) near
-// the top, stacked by the compression; the low sun from behind-right lights both. The spot (viaduct point, distance,
+// the sky behind it. A drone on the line from the mountain through the viaduct, 300-450 m out and 28-38 m up, on the
+// longest lens that fits both (about 100 mm): the train in the lower third, the summit (1,170 m, 15 km away) near the
+// top, stacked by the compression; the low sun from behind-right lights both. The spot (viaduct point, distance,
 // height) is scouted for a clear line to the train (__m.scout); a slow lateral drift gives a touch of parallax.
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
@@ -10,7 +10,7 @@ export default {
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline, C = __cine;
     await M.day('2026-09-29', 18 * 3600 + 30 * 60); const N = B.MetroSim.net, F = {}, T = N.byId['C1'];
     const dia = C.ll(37.8816, -121.9142, 0), sm = { x: dia.x, y: 1173, z: dia.z }, cands = [];
-    for (const s of [29500, 30300, 28700]) for (const [d, h] of [[900, 95], [1100, 110], [900, 130]]) { N.frame(T, s, F);
+    for (const s of [29500, 30300, 30000]) for (const [d, h] of [[300, 28], [360, 33], [450, 38]]) { N.frame(T, s, F);
       const ux = dia.x - F.x, uz = dia.z - F.z, ul = Math.hypot(ux, uz), c = { x: F.x - ux / ul * d, z: F.z - uz / ul * d }; c.y = C.ground(c.x, c.z) + h;
       cands.push(Object.assign(c, { s, tr: { x: F.x, y: F.y + 2.4, z: F.z }, u: { x: ux / ul, z: uz / ul } })); }
     window.__S = { cands, sm, T }; C.put(cands[0], sm);

@@ -10,8 +10,9 @@ export default {
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline;
     await M.day('2026-09-29', 6 * 3600 + 25 * 60); const N = B.MetroSim.net, F = {}, T = N.byId['M2'];
     const at = (s, side, h) => { N.frame(T, s, F); return { x: F.x + F.rx * side, y: F.y + h, z: F.z + F.rz * side }; };
-    // the westbound track's centre is 5 m left of the eastbound one here (north); the look: the middle of the mouth
-    window.__P = { c0: at(${S_CAM} + 10, -5.1, 0.95), c1: at(${S_CAM}, -5.1, 0.9), q: at(${S_MOUTH}, -2.4, 2.6) }; __cine.put(window.__P.c0, window.__P.q);
+    // between the tracks, 3.7 m left of the eastbound one's centre (its train passes 2 m clear), eye 0.9 m above the rail
+    // (the lamp post over the portal's far side then stands off the middle of the mouth); the look: the mouth's middle
+    window.__P = { c0: at(${S_CAM} + 10, -3.7, 0.95), c1: at(${S_CAM}, -3.7, 0.9), q: at(${S_MOUTH}, -1.6, 2.6) }; __cine.put(window.__P.c0, window.__P.q);
     window.__dep = M.pass({ track: 'M2', s: ${S_CAM} }, { heading: 97 }, 6 * 3600 + 28 * 60, ${LEAD}, { focus: true });
     // (nothing may come down the westbound track at the camera during the shot)
     const wb = M.passes(window.__P.c1, { heading: 277 }, window.__dep.t - 5, window.__dep.t + 12); window.__dep.clear = !wb.length;

@@ -13,8 +13,8 @@ export default {
     const hd = Math.atan2(-F.tx, F.tz), q = { x: c0.x + Math.sin(hd) * 1000, z: c0.z - Math.cos(hd) * 1000 }; q.y = c0.y + Math.tan(${PITCH} * Math.PI / 180) * 1000;
     window.__P = { c0, c1: { x: c0.x, y: c0.y - 1.5, z: c0.z }, q };
     C.put(c0, q);
-    // the eastbound train (to Antioch) reaches 260 m short of the camera 5 s into the shot: it comes from ~390 m to ~200 m
-    window.__dep = M.pass({ track: 'E1', s: ${S} - 260 }, { kind: 'dmu', heading: 100, tol: 50 }, 18 * 3600 + 33 * 60, 5.0, { focus: true });
+    // the eastbound train (to Antioch) reaches 150 m short of the camera 6 s into the shot: it comes from ~300 m to ~120 m
+    window.__dep = M.pass({ track: 'E1', s: ${S} - 150 }, { kind: 'dmu', heading: 100, tol: 50 }, 18 * 3600 + 33 * 60, 6.0, { focus: true });
     return window.__dep; }`,
   prime: `() => { const B = window.__bayline; __cine.put(window.__P.c0, window.__P.q); B.Env.setClock(window.__dep.t); B.MetroSim.setFocus(window.__dep.key); return window.__dep.line + ' to ' + window.__dep.dest + ' ' + window.__dep.v + ' m/s'; }`,
   before: `(t) => { const B = window.__bayline; B.Env.camera.fov = ${FOV}; B.MetroSim.setFocus(window.__dep.key); }`,
