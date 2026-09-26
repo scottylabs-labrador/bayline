@@ -127,8 +127,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } else if (cmd === 'peninsula') {
     const P = M.Stations, want = rest[0] ? rest[0].split(',') : [];
     for (const st of P.list) console.log(st.id, st.plats.map(p => p.side + (p.xplat ? '*' : '') + ' ' + p.s0.toFixed(1) + '-' + p.s1.toFixed(1) + ' w' + p.w.toFixed(2)).join(' | '), 'stop', st.stop.join(','), 'door', st.door.join(','));
-    for (const id of want) { const st = P.list.find(o => o.id === id); if (!st) continue; const cam = { x: st.x, y: st.y + 2, z: st.z };
-      for (let i = 0; i < 60 && !st.obj; i++) { P.update(1 / 30, cam, []); await new Promise(r => setTimeout(r, 5)); }
-      let n = 0; if (st.obj) st.obj.traverse(o => { if (o.isMesh) n++; }); console.log('built', id, !!st.obj, 'meshes', n, 'triangles', st.obj ? tris(st.obj) : 0, 'boards', st.boards.length); }
+    // (the listed stations built, or 'all': meshes, triangles and a hash of their geometry, to compare two trees)
+    const hashGeo = (root) => { let h = 2166136261; const mix = (v) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619); };
+      root.traverse(o => { if (!o.isMesh || !o.geometry) return; const g = o.geometry, P = g.attributes.position; if (P) for (let i = 0; i < P.array.length; i++) mix(P.array[i]);
+        if (g.index) for (let i = 0; i < g.index.array.length; i++) mix(g.index.array[i]); mix(o.renderOrder); }); return (h >>> 0).toString(16); };
+    for (const id of want[0] === 'all' ? P.list.map(o => o.id) : want) { const st = P.list.find(o => o.id === id); if (!st) continue; const cam = { x: st.x, y: st.y + 2, z: st.z };
+      for (let i = 0; i < 200 && !st.obj; i++) { P.update(1 / 30, cam, []); await new Promise(r => setTimeout(r, 2)); }
+      let n = 0; if (st.obj) st.obj.traverse(o => { if (o.isMesh) n++; }); console.log('built', id, !!st.obj, 'meshes', n, 'triangles', st.obj ? tris(st.obj) : 0, 'boards', st.boards.length, 'geo', st.obj ? hashGeo(st.obj) : '-'); }
   } else console.log('usage: node tools/metro_offline.mjs summary|ends|gaps|plan|eval|peninsula ... (see the header)');
 }
