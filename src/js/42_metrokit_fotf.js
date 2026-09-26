@@ -420,6 +420,9 @@
       Nn[idx(i, j)] = [nx / l, ny / l, nz / l];
     }
     E.gridQuads(Pp, Nn, n, cols, (i, j) => (L[i].y < 0.86 && j > 2) ? 'frame' : 'cap');
+    // the cab's inner lining behind the fillet (seen from the cab): the same grid pushed 6 cm inward, facing in
+    { const Pi = Pp.map((q, k) => [q[0] - Nn[k][0] * 0.06, q[1] - Nn[k][1] * 0.06, q[2] - Nn[k][2] * 0.06]), Ni = Nn.map(q => [-q[0], -q[1], -q[2]]);
+      E.gridQuads(Pi, Ni, n, cols, (i) => L[i].y > F.FLOOR ? 'wallInt2' : 'frame'); }
     // the face: the inner offset loop, closed at the bottom
     const face = L.map(p => [p.z - p.nz * RYZ(p.y), p.y - p.ny * RYZ(p.y)]);
     const yBot = face[0][1];
@@ -445,6 +448,13 @@
       if (k >= 0) { const dir = Math.sign(out2[(k + 1) % out2.length][0] - out2[k][0]); out2.splice(k + 1, 0, [-dir * 0.86, FACE_Y0], [-dir * 0.86, 1.07], [dir * 0.86, 1.07], [dir * 0.86, FACE_Y0]); } }
     E.pal('cap');
     E.shape(ccw(out2), [cw(mask), cw(podR), cw(podL)], (z, y) => faceAt(z, y));
+    // inner lining of the face (the cab's front wall) with the windscreen and door-window openings, facing into the cab
+    { const lining = clipY(faceD, F.FLOOR, true), inward = (z, y) => { const f = faceAt(z, y, -0.07); return { p: f.p, n: [-f.n[0], -f.n[1], -f.n[2]] }; };
+      E.pal('wallInt2'); E.shape(ccw(lining), [cw(wsR), cw(wsL), cw(dwin)], inward);
+      // window reveals from the lining to the glass
+      for (const w of [wsR, wsL, dwin]) { E.pal('rubberInt'); for (let i = 0; i < w.length; i++) { const a = w[i], b = w[(i + 1) % w.length];
+        const A1 = faceAt(a[0], a[1], -0.012).p, B1 = faceAt(b[0], b[1], -0.012).p, C1 = faceAt(b[0], b[1], -0.07).p, D1 = faceAt(a[0], a[1], -0.07).p;
+        const nn = fnorm(A1, B1, C1); const ids = [A1, B1, C1, D1].map(q => E.v(q[0], q[1], q[2], nn[0], nn[1], nn[2])); E.quad(ids[0], ids[1], ids[2], ids[3]); E.quad(ids[0], ids[3], ids[2], ids[1]); } } }
     const maskD = mask;
     if (lower.length > 2) { E.pal('frame'); E.shape(ccw(lower), [], (z, y) => faceAt(z, y, -0.01)); }
     void pocket;
@@ -759,7 +769,7 @@
     const wipers = [];
     for (const s of [1, -1]) { const bi = BONE.wiper[s > 0 ? 0 : 1], pz = s * 0.93, py = MASK_Y0 + 0.1, n = faceN(py, pz);
       bones[bi] = { pivot: [faceX(py, pz), py, pz] }; if (isD) wipers.push({ bone: bi, pivot: [faceX(py, pz), py, pz], axis: n }); }
-    bones[BONE.handle] = { pivot: [9.64, F.FLOOR + 0.83, 0.33] };
+    bones[BONE.handle] = { pivot: [9.64, F.FLOOR + 0.81, 1.09] };
     for (let i = 0; i < BONE.N; i++) if (!bones[i]) bones[i] = { pivot: [0, 0, 0] };
     const units = seatLayout(type), seats = seatsFrom(units);
     // interior-mapping seat rows (signed z ranges)
@@ -773,9 +783,9 @@
     const floorRegions = [{ name: 'saloon', x0: -xEnd, x1: isD ? F.CAB_BACK : xEnd, z0: -1.37, z1: 1.37, y: F.FLOOR },
       { name: 'endR', x0: -(F.BODY - 0.23), x1: -xEnd, z0: -0.5, z1: 0.5, y: F.FLOOR }];
     if (!isD) floorRegions.push({ name: 'endF', x0: xEnd, x1: F.BODY - 0.23, z0: -0.5, z1: 0.5, y: F.FLOOR });
-    else floorRegions.push({ name: 'cabDoor', x0: F.CAB_BACK, x1: xCabDoor, z0: -0.45, z1: 0.45, y: F.FLOOR }, { name: 'cab', x0: xCabDoor, x1: 9.85, z0: -1.25, z1: 1.25, y: F.FLOOR });
+    else floorRegions.push({ name: 'cabDoor', x0: F.CAB_BACK, x1: xCabDoor, z0: -0.45, z1: 0.45, y: F.FLOOR }, { name: 'cab', x0: xCabDoor, x1: 9.45, z0: -1.25, z1: 1.25, y: F.FLOOR });
     const gangways = { rear: { x: -F.HL, z0: -0.38, z1: 0.38, y: F.FLOOR, emergency: true }, front: isD ? null : { x: F.HL, z0: -0.38, z1: 0.38, y: F.FLOOR, emergency: true } };
-    const cabEye = isD ? [9.3, F.FLOOR + 1.27, 0.72] : null;
+    const cabEye = isD ? [8.98, F.FLOOR + 1.27, 0.72] : null;
     return {
       ext: b.ext, glass: b.glass, tris: b.tris, length: F.L, width: 2 * F.W, height: F.ROOF, profile: b.P,
       sphere: new THREE.Sphere(new THREE.Vector3(0, 1.9, 0), 11.3),
