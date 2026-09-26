@@ -376,14 +376,24 @@ const MetroGuide = (() => {
   // Within 45 m of a junction: coincident rails are drawn once (the lexically smaller track keeps its rail), a rail
   // crossing another track's rail gets a manganese frog casting and a guard rail opposite, a switch machine stands at the
   // points, and the third rail gaps wherever it would foul another track (with its 76 mm end ramps) [BFS, CLEMONS].
+  // junction clusters: junctions within 150 m of each other form one cluster (a wye, a double crossover); zone ranges
+  // carry the cluster key (z[2]) so the tunnels of one cluster can be drawn as one union
+  let jroot = null;
+  function clusters() {
+    if (jroot) return jroot; const J = MT.net.junctions || [], par = J.map((_, i) => i);
+    const find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+    for (let i = 0; i < J.length; i++) for (let k = i + 1; k < J.length; k++) if (Math.abs(J[i].x - J[k].x) < 150 && Math.abs(J[i].z - J[k].z) < 150 && Math.hypot(J[i].x - J[k].x, J[i].z - J[k].z) < 150) par[find(i)] = find(k);
+    jroot = new Map(); J.forEach((j, i) => jroot.set(j.id, 'jc' + find(i))); return jroot;
+  }
   function zonesOf(R) {
-    if (R.jz) return R.jz; const z = [];
-    for (const j of MT.net.junctions || []) for (const [tid, sj] of j.tracks) if (tid === R.id) z.push([sj - 45, sj + 45]);
-    if (R.cls === 'crossover') z.push([-1, R.len + 1]);
+    if (R.jz) return R.jz; const z = [], C = clusters();
+    for (const j of MT.net.junctions || []) for (const [tid, sj] of j.tracks) if (tid === R.id) z.push([sj - 45, sj + 45, C.get(j.id)]);
+    if (R.cls === 'crossover') { let key = null; for (const j of MT.net.junctions || []) for (const [tid] of j.tracks) if (tid === R.id) key = key || C.get(j.id); z.push([-1, R.len + 1, key]); }
     z.sort((a, b) => a[0] - b[0]); const m = [];
-    for (const r of z) { if (m.length && r[0] <= m[m.length - 1][1]) m[m.length - 1][1] = Math.max(m[m.length - 1][1], r[1]); else m.push(r.slice()); }
+    for (const r of z) { if (m.length && r[0] <= m[m.length - 1][1]) { m[m.length - 1][1] = Math.max(m[m.length - 1][1], r[1]); m[m.length - 1][2] = m[m.length - 1][2] || r[2]; } else m.push(r.slice()); }
     return (R.jz = m);
   }
+  const zoneAt = (R, s) => { for (const z of zonesOf(R)) if (s >= z[0] && s <= z[1]) return z; return null; };
   const inZone = (R, s) => { for (const z of zonesOf(R)) if (s >= z[0] && s <= z[1]) return true; return false; };
   // other tracks near a world point (same level): [{ Q, s, lat (the point's lateral from Q's centreline), dot }]
   const _oth = [];
@@ -640,6 +650,6 @@ const MetroGuide = (() => {
   }
 
   function init(o) { MATS = o.MATS; }
-  return { init, body, detail, far, updateInstances, lanes, owns, ownedRanges, sweepVar, fenceRun, tube, eraAt, spanJoints, RAIL, bedProfile };
+  return { init, body, detail, far, updateInstances, lanes, owns, ownedRanges, sweepVar, fenceRun, tube, eraAt, spanJoints, RAIL, bedProfile, zonesOf, zoneAt };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroGuide = MetroGuide;   // debug handle (window.__bayline.MetroGuide)

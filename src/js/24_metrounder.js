@@ -52,7 +52,7 @@ const Under = (() => {
     // ambient: a number (hemisphere-light units) or an [r, g, b] (its luminance is used; the tint is the shared one)
     const amb = Array.isArray(o.ambient) ? 0.2126 * (+o.ambient[0] || 0) + 0.7152 * (+o.ambient[1] || 0) + 0.0722 * (+o.ambient[2] || 0) : (+o.ambient || 0);
     const c = { id: o.id, kind: o.kind || 'cell', poly: o.poly || null, strip: o.strip || null, floor: o.floor, ceil: o.ceil, ambient: isFinite(amb) ? amb : 0,
-      daylight: o.daylight || null, group: o.group || null, terrain: o.terrain !== false, mesh: null };
+      daylight: o.daylight || null, group: o.group || null, terrain: o.terrain !== false, zone: o.zone ? [].concat(o.zone) : null, mesh: null };
     if (c.strip) { c.rows = stripRows(c.strip); c.half = c.strip.half || 3; const b = bboxOf(c.strip.pts); c.bb = [b[0] - c.half - PAD, b[1] - c.half - PAD, b[2] + c.half + PAD, b[3] + c.half + PAD];
       c.floor = Math.min(...c.rows.map(r => r.floor)); c.ceil = Math.max(...c.rows.map(r => r.ceil)); }
     else if (c.poly && c.poly.length >= 3) { const b = bboxOf(c.poly); c.bb = [b[0] - PAD, b[1] - PAD, b[2] + PAD, b[3] + PAD]; }
@@ -354,8 +354,17 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   const adj = new Map();                               // cell id -> portals touching it (rebuilt every frame: 'auto' ends move)
   const EMPTY = [];
   function other(p, cid) { const b = p.b === 'auto' ? p.rb : p.b; return p.a === cid ? b : p.a; }
+  // cells sharing a zone key (the tunnels of one junction cluster, which open into each other without portals) are one
+  // visibility unit: entering one enters all, with the same rectangle
+  const zoneMembers = new Map();
+  function enterZone(cid, rect, cam, depth) {
+    const c = cells.get(cid); if (!c || !c.zone) return;
+    for (const key of c.zone) { const zm = zoneMembers.get(key); if (!zm) continue;
+      for (const o of zm) { if (o === cid) continue; const had = seen.get(o); if (had && contains(had, rect)) continue; seen.set(o, unionR(had, rect)); state.visible.add(o); if (depth < 24) walk(o, rect, cam, depth + 1); } }
+  }
   function walk(cid, rect, cam, depth) {
     stats.walk++;
+    enterZone(cid, rect, cam, depth);
     for (const p of adj.get(cid) || EMPTY) {
       const o = other(p, cid); if (o === cid) continue;
       const pr = rectOf(p, cam); if (!pr) continue;
@@ -370,6 +379,8 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   function visibility(cam) {
     state.visible.clear(); seen.clear(); state.outsideVisible = false; stats.walk = 0;
     for (const l of adj.values()) l.length = 0;
+    for (const l of zoneMembers.values()) l.length = 0;
+    for (const c of cells.values()) if (c.zone) for (const key of c.zone) { let l = zoneMembers.get(key); if (!l) zoneMembers.set(key, l = []); l.push(c.id); }
     const put = (id, p) => { if (id === null || id === undefined) return; let l = adj.get(id); if (!l) adj.set(id, l = []); l.push(p); };
     for (const p of portals.values()) {
       if (p.b === 'auto') p.rb = p.probe ? cellAt(p.probe.x, p.probe.y, p.probe.z, 0.5) : null;
