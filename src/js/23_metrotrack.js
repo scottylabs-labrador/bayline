@@ -480,9 +480,27 @@ const MetroTrack = (() => {
   // station ranges on a track (STATIONS builds the box / deck / trackway there; I build rails and third rail through)
   // (MetroStations.limits when STATIONS provides it; else the platform ranges, normalised like STATIONS does: v0 puts the
   // two faces of an island up to ~200 m apart, so every track of a station takes the first platform's range, projected)
+  // the physical side ('left' / 'right' facing +s) of a station's platform on track R, which puts the third rail on the
+  // other side: the data's side, corrected like STATIONS build it by the station's researched layout (M2 'layout'):
+  // side platforms lie away from the other platform track, an island's faces toward it (the data's per-platform
+  // sides point toward the other track at side-platform stations such as West Oakland, and so does its third-rail plane)
+  function platSide(st, R) {
+    const p = (st.platforms || []).find(q => q.track === R.id); if (!p) return null;
+    const tr = [...new Set((st.platforms || []).map(q => q.track))];
+    if ((st.layout === 'side' || st.layout === 'island') && tr.length === 2) {
+      const o = tr.find(id => id !== R.id), O = MetroNet.byId ? MetroNet.byId[o] : null;
+      if (O) {
+        frameAt(R, (p.s0 + p.s1) / 2, F0); const q = MetroNet.nearAll(F0.x, F0.z, 40, (t) => t === O)[0];
+        if (q) { const F1 = frameAt(O, q.s, {}), dv = (F1.x - F0.x) * F0.lx + (F1.z - F0.z) * F0.lz;
+          if (Math.abs(dv) > 0.5) return (st.layout === 'side' ? -1 : 1) * Math.sign(dv) > 0 ? 'right' : 'left'; }
+      }
+    }
+    return p.side;
+  }
   function stationRanges(R) {
     const out = [];
-    if (typeof MetroStations !== 'undefined' && MetroStations.limits) { try { for (const st of net.stations) for (const l of MetroStations.limits(st.id) || []) if (l.track === R.id) out.push({ s0: l.s0, s1: l.s1, st, side: null }); } catch (e) {} }
+    const sideOf = (st) => platSide(st, R);
+    if (typeof MetroStations !== 'undefined' && MetroStations.limits) { try { for (const st of net.stations) for (const l of MetroStations.limits(st.id) || []) if (l.track === R.id) out.push({ s0: l.s0, s1: l.s1, st, side: sideOf(st) }); } catch (e) {} }
     if (out.length) return out;
     for (const st of net.stations) {
       const pl = (st.platforms || []).filter(p => TRACKS.some(T => T.id === p.track)); if (!pl.length) continue;
@@ -492,7 +510,7 @@ const MetroTrack = (() => {
         let s0 = Math.min(p.s0, p.s1), s1 = Math.max(p.s0, p.s1);
         if (p !== ref && Rr) { frameAt(Rr, a0, F0); const q0 = projectS(R, F0.x, F0.z, p.s); frameAt(Rr, a1, F0); const q1 = projectS(R, F0.x, F0.z, p.s);
           if (q0 !== null && q1 !== null) { s0 = Math.min(q0, q1); s1 = Math.max(q0, q1); } }
-        out.push({ s0: s0 - 12, s1: s1 + 12, st, side: p.side, type: st.type });
+        out.push({ s0: s0 - 12, s1: s1 + 12, st, side: sideOf(st), type: st.type });
       }
     }
     return out;
@@ -506,10 +524,14 @@ const MetroTrack = (() => {
     return bs;
   }
   function inStation(R, s, pad = 0) { for (const r of R.stations) if (s > r.s0 - pad && s < r.s1 + pad) return r; return null; }
-  // third rail side (+1 right, -1 left) at s: away from the platform in stations, else the outside of a pair (the field
-  // side), else right. BART alternates the side around crossovers; the data can override with a per-track array later.
+  // third rail side (+1 right, -1 left facing +s, 0 none) at s: away from the platform in stations (and 60 m either
+  // side; platform sides as built, see platSide); else the data's per-sample side where the bake has one (M2 'third'
+  // plane); else the outside of a pair (the field side), else right. No contact rail on eBART (standard-gauge DMUs).
+  // Where it is actually drawn (gaps, end ramps): MetroGuide.thirdPieces.
   function thirdSide(R, s) {
+    if (!R.third) return 0;
     const st = inStation(R, s, 60); if (st && st.side) return st.side === 'right' ? -1 : 1;
+    const t = R.t; if (t.planes > 4 && t.TR) { const k = U.clamp(Math.round(s / t.step), 0, t.TR.length - 1); return t.TR[k] === 1 ? -1 : t.TR[k] === 2 ? 1 : 0; }
     const nb = nbrAt(R, s); if (nb) return nb > 0 ? -1 : 1;
     return 1;
   }
@@ -732,6 +754,8 @@ const MetroTrack = (() => {
       if (t.sys === 'oac') continue;                              // the airport connector is its own thing (later)
       if (t.cls === 'yard' && !/yd/.test(t.id)) continue;
       const R = { t, id: t.id, k: TRACKS.length, len: t.length, cls: t.cls, sys: t.sys };
+      R.gauge = t.gauge || DIM.gauge; R.railC = R.gauge / 2 + DIM.railHead / 2 - 0.016;   // (eBART: 1,435 mm)
+      R.third = t.sys !== 'ebart';                                 // (eBART: DMUs, no contact rail)
       R.runs = runsOf(t); TRACKS.push(R); TI.set(t, R);
     }
     pairTracks();
@@ -743,7 +767,12 @@ const MetroTrack = (() => {
     ready = true;
     console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
   }
-  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
-    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf: (t) => TI.get(t) };
+  // track by MetroNet track object or id
+  const trackOf = (t) => TI.get(typeof t === 'string' ? (MetroNet.byId || {})[t] : t);
+  // the contact rail as drawn, for TRAINS (collector shoes) and SIM: see notes/bart/infra.md "Third rail (contact rail)"
+  const thirdRail = (id, s) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdAt(R, s) : null; };
+  const thirdRuns = (id, s0, s1) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdRuns(R, s0, s1) : []; };
+  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
+    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)
