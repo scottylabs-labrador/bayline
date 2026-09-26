@@ -14,14 +14,18 @@ const StationCrowds = (() => {
   const KINDS = ['commuter', 'commuter', 'office', 'office', 'student', 'tourist', 'cyclist', 'senior', 'kid'];
   function ensure() {
     if (people || typeof Life === 'undefined' || !Life.createPeople) return !!people;
-    try { people = Life.createPeople(MAX, { lod: true, seed: 71 }); people.count = 0; MetroStations.group.add(people.mesh); } catch (e) { console.warn('station crowds', e); people = null; }
+    try { people = Life.createPeople(MAX, { lod: true, seed: 71 }); people.count = 0; MetroStations.group.add(people.mesh);
+      // (its shaders compile in the background before anyone is drawn: see MetroStations.attach)
+      people.warm = false; MetroStations.warmUp(people.mesh, () => { people.warm = true; });
+    } catch (e) { console.warn('station crowds', e); people = null; }
     return !!people;
   }
   // people present right now: exits/day -> a platform population (peaks x ~2.2, night closure)
   function population(id) {
     const ex = EXITS[id] || 2000; const h = (typeof Env !== 'undefined' ? Env.time.sec : 43200) / 3600;
     const f = h < 4.6 ? 0.02 : h < 6 ? 0.25 : h < 6.5 ? 0.5 : h < 9.5 ? 1.0 : h < 15.5 ? 0.45 : h < 19 ? 1.0 : h < 21 ? 0.4 : h < 23.9 ? 0.22 : 0.08;
-    return Math.round(U.clamp(8 + ex * 0.0085 * f, 3, MAX - 30));
+    const k = typeof MetroStations !== 'undefined' && MetroStations.quality ? MetroStations.quality.crowd : 1;   // (quality: Low a quarter)
+    return Math.round(U.clamp((8 + ex * 0.0085 * f) * k, 3, MAX - 30));
   }
   const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   function spawn(st) {
@@ -73,7 +77,7 @@ const StationCrowds = (() => {
     for (const st of stations) { if (st.state !== 'built' || !st.res || !st.res.crowd) continue; const d = Math.hypot(st.x - camPos.x, st.z - camPos.z); if (d < bd) { bd = d; best = st; } }
     if (!best) { if (people) { people.count = 0; people.mesh.visible = false; } active = null; return; }
     if (!ensure()) return;
-    people.mesh.visible = true;
+    people.mesh.visible = people.warm !== false && !!best.root && best.root.userData.warm !== false;
     if (best !== active || !list.length && population(best.id) > 3 && Math.random() < 0.01) spawn(best);
     const R = active.res; const [ox, oz] = R.origin;
     doorT -= dt; if (doorT <= 0) { doorT = 0.5; doors = trainDoors(active); }

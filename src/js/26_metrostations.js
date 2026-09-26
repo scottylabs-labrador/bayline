@@ -27,7 +27,22 @@ const MetroStations = (() => {
   // (floor 0.36 ASSUMED, half width 1.30); edges leave the BART gap (76 mm, 3 in) or 50 mm where platform doors stand
   // minL: the shortest platform the data may give before it is taken as wrong; minHalf: the plan's least half length
   const VEH = { bart: { ph: PLAT_H, edge: EDGE, minL: 150, minHalf: 107 }, ebart: { ph: 0.635, edge: 1.549, minL: 110, minHalf: 62 }, oac: { ph: 0.36, edge: 1.35, minL: 30, minHalf: 22 } };
-  const BUILD_R = 1500, DROP_R = 2100, NEAR_R = 320, FAR_R = 9000;
+  const FAR_R = 9000;
+  // quality (90_main's applyTier -> setQuality(tier name)): Low builds only the simple structure near the camera (no
+  // animated escalator steps, the near detail within 150 m), a quarter of the crowd, 4 line lights per material, a
+  // half-size sign atlas, and builds and keeps stations over shorter distances; Medium 60 % of the crowd and 8 lights.
+  // A change of the detail level rebuilds the stations near the camera (nearest first).
+  const QT = { ultraplus: { detail: 2, crowd: 1, lights: 12, atlas: 1, buildR: 1500, dropR: 2100, nearR: 320 }, ultra: { detail: 2, crowd: 1, lights: 12, atlas: 1, buildR: 1500, dropR: 2100, nearR: 320 },
+    high: { detail: 2, crowd: 1, lights: 12, atlas: 1, buildR: 1500, dropR: 2100, nearR: 320 }, medium: { detail: 1, crowd: 0.6, lights: 8, atlas: 1, buildR: 1300, dropR: 1800, nearR: 250 },
+    low: { detail: 0, crowd: 0.25, lights: 4, atlas: 0.5, buildR: 900, dropR: 1300, nearR: 150 } };
+  const Q = Object.assign({ name: 'high' }, QT.high);
+  function setQuality(name) {
+    const q = QT[name] || QT.high; const redo = q.detail !== Q.detail || q.atlas !== Q.atlas; Object.assign(Q, q, { name: QT[name] ? name : 'high' });
+    try { if (typeof StationKit !== 'undefined' && StationKit.setLightCap) StationKit.setLightCap(Q.lights); } catch (e) {}
+    try { if (typeof MetroSigns !== 'undefined' && MetroSigns.setScale) MetroSigns.setScale(Q.atlas); } catch (e) {}
+    if (redo) for (const st of list) { if (st.root) drop(st); }
+    return Q;
+  }
   const stats = { built: 0, building: 0, jobsMs: 0, lastBuildMs: 0, tris: 0, calls: 0, koStations: 0, koZones: 0, koMs: 0, koCalls: 0, maxStepMs: 0, maxStepAt: '', slowSteps: [], maxFrameMs: 0, slowFrames: [], maxFootMs: 0 };
   const debug = { showAll: false }; const qa = { hidden: [] };
 
@@ -197,8 +212,30 @@ const MetroStations = (() => {
         fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } });
     });
   }
+  // compile an object's shaders in the background for the pass that will draw it: Post draws the scene into its HDR
+  // target (no tone mapping, linear output: other program keys than the screen's), so the programs are made with that
+  // target bound; done() once they are linked (KHR_parallel_shader_compile), or at once without compileAsync
+  function warmUp(obj, done) {
+    const R = Env.renderer; if (!R || !R.compileAsync) { done(); return; }
+    let prev = null;
+    try {
+      const rt = typeof Post !== 'undefined' && Post.enabled && Post.targets ? Post.targets.rtScene : null; prev = R.getRenderTarget();
+      if (rt) R.setRenderTarget(rt);
+      const pr = R.compileAsync(obj, Env.camera, Env.scene); R.setRenderTarget(prev); prev = null;
+      // (a time-out in case a program never reports ready: the station must not stay hidden, nor its disposal wait)
+      let fired = false; const once = () => { if (!fired) { fired = true; done(); } };
+      pr.then(once, once); setTimeout(once, 8000);
+    } catch (e) { if (prev !== null) try { R.setRenderTarget(prev); } catch (e2) {} done(); }
+  }
   function attach(st, res) {
     st.root = res.root; st.res = res; group.add(res.root);
+    // shaders compile off the critical path (KHR_parallel_shader_compile) while the new station stays hidden; the
+    // programs are shared by every station (one key per material kind), so after the first station this resolves at
+    // once and no station ever compiles on the frame it appears (lead, M3 hitch budget)
+    // (per root: a station dropped and rebuilt meanwhile has a new root; a dropped root is disposed only once its
+    // compile has finished, or three's readiness poll reads a disposed material)
+    const root = res.root; root.userData.warm = false;
+    warmUp(root, () => { root.userData.warm = true; stats.warmed = (stats.warmed || 0) + 1; const f = root.userData.dropLater; if (f) { root.userData.dropLater = null; f(); } });
     // Under: a station without cells (aerial, at grade) is outdoor world: hidden with it while the camera is underground
     // and no opening to the outdoors is in view; underground levels are cell groups (their visibility is Under's)
     if (typeof Under !== 'undefined' && Under.enabled && !(res.cells && res.cells.length)) Under.outdoor(res.root, true);
@@ -217,7 +254,8 @@ const MetroStations = (() => {
   function drop(st) {
     if (!st.root) return;
     group.remove(st.root);
-    st.root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
+    const root = st.root, dispose = () => root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
+    if (root.userData.warm === false) root.userData.dropLater = dispose; else dispose();
     if (typeof Under !== 'undefined' && Under.enabled && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {}
       for (const p of st.res.portals || []) if (p.id) try { Under.remove(p.id); } catch (e) {} try { Under.outdoor(st.root, false); } catch (e) {} }
     if (typeof MetroSigns !== 'undefined') { MetroSigns.freeBoards(st); MetroSigns.releaseAtlas(st); }
@@ -227,7 +265,7 @@ const MetroStations = (() => {
   let CTX = null;
   function ctx() {
     if (CTX) return CTX;
-    CTX = { PLAT_H, EDGE, DU, spineAt, trackV, N, lines: N.lines(), renderer: Env.renderer, stationsList: list };
+    CTX = { PLAT_H, EDGE, DU, spineAt, trackV, N, lines: N.lines(), renderer: Env.renderer, stationsList: list, q: Q };
     return CTX;
   }
 
@@ -273,8 +311,8 @@ const MetroStations = (() => {
     for (const st of list) {
       st.dist = Math.hypot(st.x - camPos.x, st.z - camPos.z);
       const eff = Math.hypot(st.dist, alt * 0.8);
-      if (st.state === 'idle' && eff < BUILD_R && eff < wd) { want = st; wd = eff; }
-      if (st.state === 'built' && eff > DROP_R) drop(st);
+      if (st.state === 'idle' && eff < Q.buildR && eff < wd) { want = st; wd = eff; }
+      if (st.state === 'built' && eff > Q.dropR) drop(st);
     }
     if (want && stats.building === 0) startBuild(want);
     runJobs(3.0);
@@ -283,9 +321,9 @@ const MetroStations = (() => {
     for (const st of list) {
       if (!st.root) continue;
       const eff = Math.hypot(st.dist, alt);
-      st.root.visible = eff < FAR_R;
+      st.root.visible = st.root.userData.warm !== false && eff < FAR_R;
       const r = st.res;
-      if (r && r.nears) { const nv = eff < NEAR_R; for (const g of r.nears) g.visible = nv; }
+      if (r && r.nears) { const nv = eff < Q.nearR; for (const g of r.nears) g.visible = nv; }
       if (r && r.update) r.update(dt, camPos, night);
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
@@ -641,7 +679,7 @@ const MetroStations = (() => {
     return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null, perf };
   }
 
-  const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, get enabled() { return enabled; }, get ready() { return ready; },
+  const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, setQuality, quality: Q, warmUp, get enabled() { return enabled; }, get ready() { return ready; },
     keepOut, keepOutAny, dropBuilding, keepOutZones, KEEPOUT_PAD: PAD, get droppedBuildings() { return dropped; }, get worldRefresh() { return refresh; },
     makePlan, spineAt, trackV, net: N, PLAT_H, EDGE, VEH, jobs, shot, debug };
   // hooks: ride along with the Peninsula stations' init/update (no edits to the shared main loop; inert without #metro=1)

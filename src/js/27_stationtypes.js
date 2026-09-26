@@ -427,15 +427,17 @@ const StationTypes = (() => {
     yield* furnish(T);
 
     // ---------------------------------------------------------------- finalise: meshes per zone
-    st._phase = 'finalize';
+    st._phase = 'fin:env';
     const env = under ? interiorEnv(C.renderer) : null;
-    yield;
+    yield; st._phase = 'fin:res';
     const res = { root, near, walk, cells: T.cells, portals: T.portals, cuts: T.cuts, boards: [], limits: [boxU0, boxU1], zones: {}, update: null, footprint: footprintT(T),
       info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated, guard: st.plan.guard,
         landDbg: T.landDbg, landings: (T.landings || []).map(L => ({ foot: T.W2(...L.foot), top: T.W2(...L.top), dir: L.dir, rise: +L.rise.toFixed(2), gy: L.gy, segs: L.segs.length, name: L.name })), plats: plats.map(p => [p.kind, +p.u0.toFixed(1), +p.u1.toFixed(1), +(p.eR(uc) - p.eL(uc)).toFixed(2), (p.groups || []).map(g => [g.kinds.join('+'), +g.uFoot.toFixed(1), +g.uHead.toFixed(1), +g.vc.toFixed(1)])]),
         ceilHoles: (T.ceilHoles || []).map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)]), platHoles: plats.map(p => p.holes.map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)])) } };
     const shared = sharedMats();
+    yield; st._phase = 'fin:atlas';
     const atlas = yield* MetroSigns.stationAtlasGen(st);
+    st._phase = 'fin:zones';
     const signMats = [];
     const matsToTick = [];
     for (const z of zones) {
@@ -445,7 +447,7 @@ const StationTypes = (() => {
       const grp = new THREE.Group(); grp.name = 'zone-' + z.name; root.add(grp); const grpN = new THREE.Group(); grpN.name = 'zone-' + z.name + '-near'; grp.add(grpN);
       res.zones[z.name] = { group: grp, near: grpN, under: z.under };
       const mk = (g, m, parent, shadow) => { const geo = g.build(); if (!geo) return null; const mesh = new THREE.Mesh(geo, m); mesh.castShadow = shadow && !z.under; mesh.receiveShadow = true; parent.add(mesh); if (m === mat) z.lights.bind(mesh, root); return mesh; };
-      mk(z.m.sk, mat, grp, true); mk(z.d.sk, mat, grpN, true);
+      mk(z.m.sk, mat, grp, true); yield; mk(z.d.sk, mat, grpN, true);
       const gl1 = mk(z.m.glass, shared.glass, grp, false), gl2 = mk(z.d.glass, shared.glass, grpN, false); for (const g of [gl1, gl2]) if (g) g.renderOrder = 2;
       mk(z.m.glow, shared.glow, grp, false); mk(z.d.glow, shared.glow, grpN, false);
       if (z.signs.length) { const sm = new THREE.MeshStandardMaterial({ map: atlas.tex, emissiveMap: atlas.tex, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.0 });
@@ -453,7 +455,7 @@ const StationTypes = (() => {
       for (const b of z.boards) { const bd = MetroSigns.newBoard(st, b.key); const m = new THREE.Mesh(b.geo, new THREE.MeshBasicMaterial({ map: bd.tex, toneMapped: false })); m.material.color.setScalar(1.6); grpN.add(m); res.boards.push(bd); b.mat = m.material; yield; }
       yield;
     }
-    if (T.esc.length) { const m = SP.escSteps(T.esc); if (m) { (T.levels.length > 1 ? near : res.zones.plat.near).add(m); zP.lights.bind(m, root); } }
+    if (T.esc.length && !(C.q && C.q.detail === 0)) { const m = SP.escSteps(T.esc); if (m) { (T.levels.length > 1 ? near : res.zones.plat.near).add(m); zP.lights.bind(m, root); } }
     res.nears = Object.values(res.zones).map(z => z.near);
     res.entrances = (T.entrances || []).map(e => ({ wx: e.wx, wz: e.wz, name: e.name }));
     // (the street entrances share one zone: their cells get no group, or Under would hide every shaft whenever one of
@@ -815,9 +817,11 @@ const StationTypes = (() => {
     };
     g.sweep(fr, (i, f) => wallProf(edgeV(f.u, -1), -1));
     g.sweep(fr, (i, f) => wallProf(edgeV(f.u, 1), 1));
+    yield;
     // ceiling (with the escalator wells), its slab edge faces, and (without a concourse above) the roof slab
     slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1), (u) => edgeV(u, 1), ceilY, ceilHoles, mCeil, false);
-    for (const h of ceilHoles) inclinedWell(T, g, h, M(S.wall), M(S.ceil), top ? undefined : { ceilY, yTop: T.levels[L.k - 1].yT - 0.3, zone: z });
+    yield;
+    for (const h of ceilHoles) { inclinedWell(T, g, h, M(S.wall), M(S.ceil), top ? undefined : { ceilY, yTop: T.levels[L.k - 1].yT - 0.3, zone: z }); yield; }
     if (top && T.mode === 'ends') slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1) - wallT, (u) => edgeV(u, 1) + wallT, ceilY + 0.8, T.ceilHoles, M([0x77746e, K.CONCRETE]), true);
     // end walls with tunnel openings around each track (the tunnels themselves are INFRA's)
     for (const [ue, dir] of [[boxU0, -1], [boxU1, 1]]) {
@@ -1199,6 +1203,7 @@ const StationTypes = (() => {
     const zC = new Zone('conc', { under: T.under, amb: T.under ? S.amb : [0.03, 0.03, 0.03] }); zones.push(zC); T.zC = zC;
     // escalator + stair groups on each platform (in its level's zone; a stacked station's lower banks climb to the
     // platform over them)
+    T.st._phase = 'circ:banks';
     for (const p of plats) for (const g of p.groups || []) {
       const zP = p.zone || zones[0];
       const B = zP.d; const up = !g.down;
@@ -1240,6 +1245,7 @@ const StationTypes = (() => {
       T.occupied.push({ p, u0: u0 - 1.5, u1: u1 + 1.5, v0: g.vc - g.gw / 2 - 0.6, v1: g.vc + g.gw / 2 + 0.6 });
       yield;
     }
+    T.st._phase = 'circ:conc';
     if (mode === 'above') yield* subwayConcourse(T);
     else if (mode === 'below') yield* concourseBelow(T);
     else yield* footbridge(T);
@@ -1265,14 +1271,14 @@ const StationTypes = (() => {
     const roofHoles = T.entPlan.filter(e => e.inBox).map(e => ({ u0: Math.min(e.uTop, e.uBot) - 0.3, u1: Math.max(e.uTop, e.uBot) + 0.3, v0: e.ve - e.W / 2 - 0.25, v1: e.ve + e.W / 2 + 0.25 }));
     T.roofHoles = roofHoles;
     // floor (with the wells), ceiling, walls, end walls
-    slab(T, g, cu0, cu1, vl, vr, yCF, holes, M(S.cFloor), true);
-    yield;
+    T.st._phase = 'conc:floor'; slab(T, g, cu0, cu1, vl, vr, yCF, holes, M(S.cFloor), true);
+    yield; T.st._phase = 'conc:ceil';
     const vault = T.H.vault === 'ribs' && !roofHoles.length && yCC - yCF > 3.2;
     if (vault) yield* vaultCeiling(T, g, cu0, cu1, vl, vr, yCC);
     else slab(T, g, cu0, cu1, vl, vr, yCC, roofHoles, M(S.cCeil), false);
     for (const h of roofHoles) holeRim(T, g, h, yCC, yCC + 0.9, M(S.cWall));
     yield;
-    if (T.H.mural) yield* tileMurals(T, zC, cu0, cu1, vl, vr, yCF);
+    T.st._phase = 'conc:walls'; if (T.H.mural) yield* tileMurals(T, zC, cu0, cu1, vl, vr, yCF);
     const fr = frames(cu0, cu1);
     const mW = M(S.cWall), mL = M(S.wallLow);
     g.sweep(fr, (i, f) => { const v = vl(f.u); return [[v, yCC, yCC, mW], [v, yCF + 0.15, yCF + 0.15, mL], [v, yCF, yCF]]; });
@@ -1326,7 +1332,7 @@ const StationTypes = (() => {
     for (const h of holes) { const q = [[h.u0, h.v0], [h.u1, h.v0], [h.u1, h.v1], [h.u0, h.v1]].map(([u, v]) => { const [x, z] = T.WUV(u, v); return [x, yCF, z]; }); T.portals.push({ a: `st:${T.st.id}:plat`, b: `st:${T.st.id}:conc`, quad: q, day: 0 }); }
     // roof slab over the concourse
     slab(T, g, cu0, cu1, (u) => vl(u) - 0.5, (u) => vr(u) + 0.5, yCC + 0.9, roofHoles, M([0x77746e, K.CONCRETE]), true);
-    yield* streetEntrances(T, cu0, cu1);
+    T.st._phase = 'ent'; yield* streetEntrances(T, cu0, cu1);
   }
 
   // 16th/24th St: a segmental vault of wood slats between cream precast arch ribs on splayed brackets, lit along the ribs
@@ -1408,7 +1414,7 @@ const StationTypes = (() => {
     const zE = new Zone('ent', { under: false, amb: [0.02, 0.02, 0.02] }); T.zones.push(zE);
     const g = zE.m.sk;
     let k = 0;
-    for (const P of T.entPlan || []) {
+    for (const P of T.entPlan || []) { T.st._phase = 'ent:stairs';
       const { e, ve, dir, uTop, uBot, topY, riseE, runE, inBox, W } = P;
       // (a shallow station's end shafts land on the platform, pass the box roof and open into the platform's cell)
       const yCF = P.yBot ?? T.yCF, roofTop = P.roofY ?? (yCC + 0.9), link = P.link || 'conc';
@@ -1421,7 +1427,7 @@ const StationTypes = (() => {
       // from the head where the head was raised over the ground (a street above a low lot)
       const Lf = P.lift ?? 0.035, hv0 = ve - W / 2 - 0.2, hv1 = ve + W / 2 + 0.2, raised = topY > surfY(T, uTop, ve, Lf) + 0.1 ? topY : -1e9;
       const colY = (u, v) => Math.max(surfY(T, u, v, Lf), raised - 0.25 * Math.hypot(Math.max(ua - u, 0, u - ub), Math.max(hv0 - v, 0, v - hv1)));
-      yield;
+      yield; T.st._phase = 'ent:shaft';
       // shaft walls above the stair cheeks up to the street, the sloped soffit over the lower part
       for (const side of [-1, 1]) {
         const vv = ve + side * (W / 2 + 0.2);
@@ -1433,6 +1439,7 @@ const StationTypes = (() => {
         if (y >= yS - 0.1 || (inBox && y < roofTop)) return [[ve + W / 2 + 0.2, y, null, 'skip'], [ve - W / 2 - 0.2, y]];
         return [[ve + W / 2 + 0.2, y, null, Object.assign(M(S.cCeil), { sky: t * 0.5 })], [ve - W / 2 - 0.2, y]]; });
       yield;
+      T.st._phase = 'ent:collar';
       // a paved collar around the opening, draped on the ground: the ground cut is a raster (~1 m texels near the
       // camera, 4 m beyond), so its edge is ragged and would show the void under the street
       // (in front of the mouth the apron runs 6 m further, so no path or cycle track on the sidewalk leads into the stair)
@@ -1460,7 +1467,7 @@ const StationTypes = (() => {
           const y0 = gyAt(...p0), y1 = gyAt(...p1), b0 = Terrain.h(...T.WUV(...p0)) - 0.3, b1 = Terrain.h(...T.WUV(...p1)) - 0.3;
           if (y0 - b0 > 0.4 || y1 - b1 > 0.4) g.quad(PT(p0[0], p0[1], y0), PT(p1[0], p1[1], y1), PT(p1[0], p1[1], b1), PT(p0[0], p0[1], b0), [0, y0, 1, y1, 1, b1, 0, b0]); } };
         skirt([eu0, ev0], [eu1, ev0]); skirt([eu1, ev0], [eu1, ev1]); skirt([eu1, ev1], [eu0, ev1]); skirt([eu0, ev1], [eu0, ev0]); }
-      yield;
+      yield; T.st._phase = 'ent:head';
       // street: railings on three sides (glass under a canopy), the totem at the head
       const canopyEnt = !!T.H.canopyEnt && !P.link;
       // (railings, posts and the pylon stand on the collar: on a sloping street they follow it)
@@ -1489,8 +1496,9 @@ const StationTypes = (() => {
         zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7, y: ty + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
       }
       zE.signs.push({ u: uBot + dir * 0.5, v: ve, y: yCF + 2.6, yaw: T.yawAt(uBot) + (dir > 0 ? Math.PI : 0), w: 2.0, h: 0.5, region: 'exit', both: false, T });
-      let door = null;
+      let door = null; T.st._phase = 'ent:passage';
       if (!inBox) { const r = yield* passage(T, zE, uBot, ve, dir, W); door = r; }
+      T.st._phase = 'ent:cells';
       const [ax, az] = T.L2(uBot, ve), [bx, bz] = T.L2(uTop, ve);
       zE.lights.add({ a: [ax, yCF + 3.0, az], b: [bx, topY - 0.2, bz], color: S.light.map(c => c * 0.8), range: 12, radius: 0.08, dir: [0, -1, 0], focus: 1 });
       // Under: the sidewalk cut, the shaft cell (and its passage), portals to the street and to the concourse
@@ -1546,7 +1554,11 @@ const StationTypes = (() => {
     const q = [[u0, vA], [u1, vA], [u1, vB], [u0, vB]].map(([u, v]) => T.WUV(u, v)); addFloor(walk, q, yCF);
     addWall(walk, T.WUV(u0, vA), T.WUV(u0, vB), yCF - 0.5, yCF + h); addWall(walk, T.WUV(u1, vA), T.WUV(u1, vB), yCF - 0.5, yCF + h);
     // open the concourse wall: remove the walk wall segments there (the drawn wall stays for now: a doorway panel)
-    for (let i = walk.walls.length - 1; i >= 0; i--) { const w = walk.walls[i]; const mid = [(w.x0 + w.x1) / 2, (w.z0 + w.z1) / 2]; const uv = toUV(T, mid[0] - T.OX, mid[1] - T.OZ);
+    // (only walls whose middle lies near the doorway are projected: a stacked station has thousands)
+    const dq = [[u0, vWall - 0.6], [u1, vWall - 0.6], [u1, vWall + 0.6], [u0, vWall + 0.6]].map(([u, v]) => T.WUV(u, v));
+    const bx0 = Math.min(...dq.map(p => p[0])) - 0.5, bx1 = Math.max(...dq.map(p => p[0])) + 0.5, bz0 = Math.min(...dq.map(p => p[1])) - 0.5, bz1 = Math.max(...dq.map(p => p[1])) + 0.5;
+    for (let i = walk.walls.length - 1; i >= 0; i--) { const w = walk.walls[i]; const mid = [(w.x0 + w.x1) / 2, (w.z0 + w.z1) / 2];
+      if (mid[0] < bx0 || mid[0] > bx1 || mid[1] < bz0 || mid[1] > bz1) continue; const uv = toUV(T, mid[0] - T.OX, mid[1] - T.OZ);
       if (uv && uv[0] > u0 && uv[0] < u1 && Math.abs(uv[1] - vWall) < 0.3 && w.y0 < yCF + 1 && w.y1 > yCF + 1) walk.walls.splice(i, 1); }
     T.doors = T.doors || []; T.doors.push({ u0, u1, side, y0: yCF, y1: yCF + h });
     yield;
@@ -1559,8 +1571,10 @@ const StationTypes = (() => {
   }
   // station-local (x, z) -> (u, v) by projection onto the spine
   function toUV(T, x, z) {
-    const S = T.plan.spine; let best = -1, bd = 1e18;
-    for (let i = 0; i < S.length; i++) { const f = T.frameAt(S[i].u); const d = (f.x - x) ** 2 + (f.z - z) ** 2; if (d < bd) { bd = d; best = i; } }
+    // (coarse pass every 8th sample, then the neighbourhood of the best: stations are near-straight)
+    const S = T.plan.spine, n = S.length; let best = -1, bd = 1e18;
+    for (let i = 0; i < n; i += 8) { const f = T.frameAt(S[i].u); const d = (f.x - x) ** 2 + (f.z - z) ** 2; if (d < bd) { bd = d; best = i; } }
+    if (best >= 0) { const c = best; for (let i = Math.max(0, c - 8); i <= Math.min(n - 1, c + 8); i++) { const f = T.frameAt(S[i].u); const d = (f.x - x) ** 2 + (f.z - z) ** 2; if (d < bd) { bd = d; best = i; } } }
     if (best < 0) return null; const f = T.frameAt(S[best].u); const du = (x - f.x) * f.tx + (z - f.z) * f.tz, dv = (x - f.x) * -f.tz + (z - f.z) * f.tx;
     return [S[best].u + du, dv];
   }
