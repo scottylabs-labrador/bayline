@@ -45,7 +45,7 @@ const StationHeroes = (() => {
       cFloor: QUARRY(0x8e3e2c), cWall: [0xd9cfb8, K.CONCRETE, 0], cCeil: [0xb07a45, K.WOOD, 0.09], vault: 'ribs', mural: [0xd8b23a, 0x7a4a26, 0x5e3a22, 0x9a6b3c], hero: 1 },
     GLEN: { layout: 'island', type: 'subway', access: 'above', floor: [0x9a4a36, K.BRICK, 0], wall: BOARD(0x6d6760, 0.2), wallUp: BOARD(0x6d6760, 0.2), ceil: BOARD(0x5d5852, 0.2),
       cFloor: [0x9a4a36, K.BRICK, 0], cWall: BOARD(0x7a746c), daylight: true, arch: true, hero: 1 },
-    BALB: { layout: 'island', type: 'trench', access: 'above', floor: [0x8e4636, K.BRICK, 0], wall: FLUTE(0xa8a298, 0.35), canopy: { style: 'flat', len: 90, fascia: 0x9d978d, under: 0x8a857c, posts: { shape: 'rect', col: 0x9d978d, size: 0.45, spacing: 12, where: 'centre' } }, hero: 1 },
+    BALB: { layout: 'island', type: 'trench', access: 'above', floor: [0x8e4636, K.BRICK, 0], wall: FLUTE(0xa8a298, 0.35), canopy: { style: 'flat', len: 90, fascia: 0x9d978d, under: 0x8a857c, posts: { shape: 'rect', col: 0x9d978d, size: 0.45, spacing: 12, where: 'centre' } }, conduit: true, hero: 1 },
     DALY: { layout: 'island', type: 'aerial', access: 'below', floor: CONC(0xa39d91), bands: 0x8c4a33, canopy: { style: 'flat', len: 110, fascia: 0x2b2b2d, under: 0x3a3a3c, beams: true, posts: { shape: 'rect', col: 0x2b2b2d, size: 0.35, spacing: 9, where: 'centre' } }, ends: 'poles', hero: 1 },
     COLM: { layout: 'island', type: 'trench', access: 'bridge', floor: GRAN(0x9d958c, 0.6), bands: 0xc98f86, canopy: { style: 'gull', len: 120, top: 0xf3f3f1, under: 0xeeeeea, fascia: 0xf3f3f1, posts: { shape: 'round', col: 0xd99a8e, size: 0.6, spacing: 12, where: 'centre', capital: 0xf0efea } } },
     // ---------------------------------------------------------------- Peninsula and SFO

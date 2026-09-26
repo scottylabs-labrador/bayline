@@ -1141,7 +1141,8 @@ const StationTypes = (() => {
 
   function* trenchBuild(T, fr, mBal) {
     const { zones, M, frames, WUV, L2 } = T, tr = T.trench, z = zones[0], g = z.m.sk, { vl, vr, yTB } = tr;
-    const mRW = M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 }), mLid = M([0x9c978e, K.CONCRETE, 0.1], { sky: 1 }), mSoff = M([0x8f8a82, K.BOARDFORM, 0.1], { sky: 0.4 });
+    // (the retaining walls take the station's own wall finish where research gives one: Balboa Park's precast panels)
+    const mRW = T.H.wall ? Object.assign(M(T.H.wall), { sky: 0.8 }) : M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 }), mLid = M([0x9c978e, K.CONCRETE, 0.1], { sky: 1 }), mSoff = M([0x8f8a82, K.BOARDFORM, 0.1], { sky: 0.4 });
     const lidAt = (u) => tr.lids.find(L => L.kind !== 'bridge' && u >= L.u0 - 1e-3 && u <= L.u1 + 1e-3);
     const base = (u, v) => { const [x, zz] = WUV(u, v); return Terrain.hBase(x, zz); };
     // the ground over a cover (outside the walls: MetroGround may have carved the middle), its soffit >= 4.9 m over the
@@ -1196,6 +1197,17 @@ const StationTypes = (() => {
       const [c0, c1] = dir > 0 ? [a, b] : [b, a], [s0, s1] = dir > 0 ? [m0, m1] : [m1, m0];
       g.quad(P(u2, c0, top), P(u2, c1, top), P(u, c1, top), P(u, c0, top), [c0, 0, c1, 0, c1, 0.6, c0, 0.6]);
       g.set(mSoff); g.quad(P(u, s0, yM), P(u, s1, yM), P(u2, s1, yM), P(u2, s0, yM), [s0, 0, s1, 0, s1, 0.6, s0, 0.6]);
+    }
+    // Balboa Park: "a single overhead conduit over the platform edge carries power, lighting, sign and communications
+    // lines" (research): a steel trunk along each platform edge on hangers, lamps under it
+    if (T.H.conduit) for (const p of T.plats) for (const side of p.kind === 'island' ? [-1, 1] : [p.sideV > 0 ? -1 : 1]) {
+      const fr2 = frames(p.u0 + 2, p.u1 - 2), ev = (u) => (side < 0 ? p.eL(u) + 0.9 : p.eR(u) - 0.9), yC = p.y + 3.1, mC = M([0x6f7275, K.STEEL, 0.3], { sky: 0.6 });
+      g.sweep(fr2, (i, f) => { const v = ev(f.u); return [[v - 0.16, yC - 0.2, null, mC], [v - 0.16, yC + 0.1, null, mC], [v + 0.16, yC + 0.1, null, mC], [v + 0.16, yC - 0.2, null, mC], [v - 0.16, yC - 0.2]]; });
+      for (let u = p.u0 + 4; u < p.u1 - 2; u += 6) { const [x, zz] = L2(u, ev(u)); g.set(mC); g.push().at(x, yC + 0.1, zz, 0); g.cbox(0, 0, 0, 0.06, Math.max(0.2, (tr.lids.some(L => L.kind !== 'bridge' && u >= L.u0 && u <= L.u1) ? 1.2 : 0.6)), 0.06); g.pop(); }
+      z.m.glow.mat(T.S.light); z.m.glow.sweep(fr2, (i, f) => { const v = ev(f.u); return [[v + 0.1, yC - 0.21], [v - 0.1, yC - 0.21]]; });
+      const a = T.frameAt(p.u0 + 4), b = T.frameAt(p.u1 - 4), va = ev(p.u0 + 4), vb = ev(p.u1 - 4);
+      z.lights.add({ a: [a.x - a.tz * va, yC - 0.3, a.z + a.tx * va], b: [b.x - b.tz * vb, yC - 0.3, b.z + b.tx * vb], color: T.S.light.map(c => c * 0.8), range: 7, radius: 0.08, dir: [0, -1, 0], focus: 1 });
+      yield;
     }
     // the open stretches: Under cuts over the walls' middle lines (the ground and Towns' ground above the floor go; the
     // raster edge is ragged by ~1 m either way: the coping hides a slot outside, a sliver inside is ground over the wall)
