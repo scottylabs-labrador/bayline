@@ -1135,7 +1135,7 @@ const StationTypes = (() => {
     const back = (u) => p.sideV > 0 ? p.eR(u) : p.eL(u), island = p.kind === 'island';
     const colV = (u) => island ? (p.eL(u) + p.eR(u)) / 2 : back(u) - (p.sideV > 0 ? 1 : -1) * Math.max(0.9, PS.size);
     // (the cover's soffit, as trenchBuild draws it)
-    const soff = (u) => Math.max(T.yRail + 4.9, Math.max(Terrain.hBase(...T.WUV(u, tr.vl(u) - 3)), Terrain.hBase(...T.WUV(u, tr.vr(u) + 3))) - 0.08 - 1.2);
+    const soff = (u) => Math.max(T.yRail + 4.3, Math.max(Terrain.hBase(...T.WUV(u, tr.vl(u) - 3)), Terrain.hBase(...T.WUV(u, tr.vr(u) + 3))) - 0.08 - 1.2);
     const spacing = Math.max(8, PS.spacing || 10), mStrut = M([0xcfcac0, K.CONCRETE, 0.2], { sky: 0.3 });
     for (let u = p.u0 + spacing / 2; u < p.u1 - 2; u += spacing) {
       if (!lidAt(u) || inGroups(p, u, 1.0)) continue;
@@ -1178,10 +1178,11 @@ const StationTypes = (() => {
     const mRW = T.H.wall ? Object.assign(M(T.H.wall), { sky: 0.8 }) : M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 }), mLid = M([0x9c978e, K.CONCRETE, 0.1], { sky: 1 }), mSoff = M([0x8f8a82, K.BOARDFORM, 0.1], { sky: 0.4 });
     const lidAt = (u) => tr.lids.find(L => L.kind !== 'bridge' && u >= L.u0 - 1e-3 && u <= L.u1 + 1e-3);
     const base = (u, v) => { const [x, zz] = WUV(u, v); return Terrain.hBase(x, zz); };
-    // the ground over a cover (outside the walls: MetroGround may have carved the middle), its soffit >= 4.9 m over the
-    // rails (a train and its clearance) and <= 1.2 m under the ground
-    const lidTop = (u) => Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08;
-    const soffit = (u) => Math.max(T.yRail + 4.9, lidTop(u) - 1.2);
+    // the ground over a cover (outside the walls: MetroGround may have carved the middle), its soffit >= 4.3 m over the
+    // rails (a train and its clearance) and <= 1.2 m under the ground; a shallow cover (Milpitas: 4.7 m of ground over
+    // the rail) is a thin slab, never a soffit above its own top
+    const soffit = (u) => Math.max(T.yRail + 4.3, Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08 - 1.2);
+    const lidTop = (u) => Math.max(Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08, soffit(u) + 0.3);
     // the floor, wall to wall, under the trackbeds and platforms
     g.sweep(fr, (i, f) => [[vl(f.u), yTB - 0.03, null, mBal], [vr(f.u), yTB - 0.03]]);
     // retaining walls 0.5 m thick with a coping 1.1 m over the ground outside (under a lid: up to its soffit)

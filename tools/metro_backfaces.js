@@ -24,7 +24,7 @@ async (B, a) => {
       rc.set(new THREE.Vector3(x, y, z), d); nr++;
       const h = rc.intersectObjects(meshes, false)[0]; if (!h || !h.face) continue;
       n.copy(h.face.normal).transformDirection(h.object.matrixWorld);
-      if (n.dot(d) > 0.2) { const mt = h.object.material, kind = mt.map ? 'textured(sign/board)' : mt.userData && mt.userData.sk ? 'station' : mt.type; const key = (h.object.parent ? h.object.parent.name : '') + '/' + kind; const b = bad.get(key) || { zone: h.object.parent && h.object.parent.name, kind, n: 0, pts: [] }; b.n++; if (b.pts.length < 3) b.pts.push(h.point.toArray().map(v => +v.toFixed(1))); bad.set(key, b); }
+      if (n.dot(d) > 0.2 && saved[meshes.indexOf(h.object)] !== THREE.DoubleSide) { const mt = h.object.material, kind = mt.map ? 'textured(sign/board)' : mt.userData && mt.userData.sk ? 'station' : mt.type; const key = (h.object.parent ? h.object.parent.name : '') + '/' + kind; const b = bad.get(key) || { zone: h.object.parent && h.object.parent.name, kind, n: 0, pts: [] }; b.n++; if (b.pts.length < 4) { const pl = st.plan, dx = h.point.x - pl.cx, dz = h.point.z - pl.cz; b.pts.push([+(dx * pl.tx + dz * pl.tz).toFixed(1), +(-dx * pl.tz + dz * pl.tx).toFixed(1), +h.point.y.toFixed(1), 'n' + n.toArray().map(q => q.toFixed(1)).join(','), 'from' + [x, y, z].map((q, i) => i === 1 ? q.toFixed(1) : '').join('')]); } bad.set(key, b); }
     }
     meshes.forEach((m, i) => { m.material.side = saved[i]; });
     out.push({ id, ms: Math.round(performance.now() - t0), views: views.length, rays: nr, back: [...bad.values()].filter(b => b.n >= 3).sort((p, q) => q.n - p.n).slice(0, 6) });
