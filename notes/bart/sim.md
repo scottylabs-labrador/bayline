@@ -298,12 +298,19 @@ The data is © BART under its developer license (free, as-is; no BART marks in t
   with two, picks with a bigger radius; the drive bar (on-screen driving buttons, already there for the Peninsula)
   reads ATO / Ends and hides the bell while driving a metro train; boards explain ride/drive by touch.
   `tools/qa_metro_mobile.sh`: shot.mjs `--mobile` (DPR 2, touch) 390×844, Low and Medium, GPU: map from the HUD pill,
-  tap a station, "Go to the platform", tap the prompt to board, ride panel, drive bar Power (ATO).
+  tap a station, "Go to the platform", tap the prompt for the arrivals board ("Tap for Embarcadero trains", the touch
+  hint), tap a train on it (on its platform), tap the prompt to board, ride panel, drive bar Power (ATO): 9 steps.
 - **Item 6, the front door** (approved v2): title card Bay-wide with the metro on (eyebrow, 3-line intro, one sentence on
   phones, Peninsula Ride/Drive cards name their line, credits folded behind "Data & credits" with the non-affiliation
   lines visible), a Bayline Metro strip (route-bundle icon, Ride / Drive / System map with inline station search over
   names, codes and aliases, and the drive runs); a HUD "Metro" pill; help keys; the map's "Unofficial. Not affiliated
   with the San Francisco Bay Area Rapid Transit District" line. Shots: `notes/bart/shots/sim/front_v2_*.jpg`.
+  `tools/qa_metro_front.sh` (+ `qa_metro_front.js`), from the title card at 1366×768, no `#auto`: with the metro on,
+  the strip, eyebrow, credits and non-affiliation lines, the card fits, Ride's search (19 names, codes and aliases,
+  "no station"), Drive's runs, Back, a station chip starts on its platform with the HUD naming it, the HUD Metro pill
+  opens the map with its line, help keys, no trademark in any visible text of the card, map or board; with `#metro=0`
+  the old card, eyebrow, intro and credits, no metro keys, no pill, no metro data loaded; with no flag, whichever of the
+  two the page's default gives.
 - **Item 7, multiplayer**: `node tools/qa_metro_mp.mjs [page] [out]` (under tools/wd.py): a local relay (server/mp.py,
   modes 0..9, hello v2), one headless Chrome with two pages at Millbrae: A boards a metro train (mode 8), B walks the
   Peninsula platform (mode 1); each sees the other (B draws A in its own copy of the car); A drives (mode 9) and B's copy
@@ -312,28 +319,51 @@ The data is © BART under its developer license (free, as-is; no BART marks in t
   connector's COLS/OAKL platforms + the shuttle's PITT-T faces + ANTC), then 10 minutes of `#auto` with the metro on
   following trains through the camera views; fails on any page error, console error or metro failure.
 
-### M3 gate commands (SIM's items; the dev server on PORT; `XH=metrodir=metro-next/` until DATA's M2b is promoted)
+### M3 gate commands (SIM's items; `XH=metrodir=metro-next/` until DATA's M2b is promoted, then drop it)
+
+Build and serve the candidate (`BAYLINE_OUT=dist/sim.html python3 build.py`, `python3 tools/devserver.py 8136`), then
+from the repo root, one at a time (each script runs one headless Chrome at a time under `tools/wd.py`; `--gpu` inside):
 
 ```sh
-PORT=8136 METRO=1 XH=metrodir=metro-next/ sh tools/qa_metro_peninsula.sh sim.html /tmp/g2      # item 2 (and METRO=0 to compare)
-PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_isolation.sh sim.html /tmp/g4              # item 4 (11 cases)
-PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_mobile.sh sim.html /tmp/g5                 # item 5 (Low + Medium)
+PORT=8136 METRO=1 XH=metrodir=metro-next/ sh tools/qa_metro_peninsula.sh sim.html /tmp/g2on    # item 2, the metro on
+PORT=8136 METRO=0 XH=metrodir=metro-next/ sh tools/qa_metro_peninsula.sh sim.html /tmp/g2off   # item 2, the same run with the metro off
+PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_isolation.sh sim.html /tmp/g4              # item 4 (11 cases, first frame on/off)
+PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_mobile.sh sim.html /tmp/g5                 # item 5 (phone Low + Medium)
+PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_front.sh sim.html /tmp/g6                  # item 6 (front door: on, #metro=0, default; first run pending)
 XH=metrodir=metro-next/ python3 tools/wd.py 400 node tools/qa_metro_mp.mjs http://127.0.0.1:8136/sim.html /tmp/g7   # item 7
-PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_tour.sh sim.html /tmp/g8                   # item 8 (tour + 10 min #auto)
-python3 tools/wd.py 900 node tools/qa_metro_heap.mjs http://127.0.0.1:8136/sim.html "at=palo_alto&t=08:03&q=low" --mobile   # heap per module
+PORT=8136 XH=metrodir=metro-next/ sh tools/qa_metro_tour.sh sim.html /tmp/g8                   # item 8 (55 stops + 10 min #auto)
+HEAP_VARIANTS='metro=0|metro=1' python3 tools/wd.py 400 node tools/qa_metro_heap.mjs http://127.0.0.1:8136/sim.html "at=palo_alto&t=08:03&q=low&metrodir=metro-next/" --mobile   # heap (drop HEAP_VARIANTS for per module)
 ```
 
-### M3 results (2026-09-26, bart-sim 128b10a on metro-next = M2b round 2)
+Each prints PASS/FAIL lines and ends with `== N failed` (exit code 0 when N = 0); the MP script prints its 12 checks.
+`XH` reaches every URL (qa_all.sh inside item 2 takes it too). **The flip** is one line, `const DEFAULT_ON = true;` in
+`src/js/18_metro.js`; the commands force the metro with `#metro=1` / `#metro=0` where it matters, so they run the same
+before and after the flip; item 6 also loads the page with no flag and checks whichever card the default gives (the
+old card before the flip, the metro card after it).
 
-- Item 2: 0 failed with METRO=1 and with METRO=0 (M2 data, a1cc675+; the Caltrain spots unchanged since).
-- Item 4: 11/11 (WORLD's in-place terrain APIs: `reloadHeights` / `Towns.refresh` / `Flora.reloadIn`); the ground,
-  buildings and trees come back natural, no black tiles (`notes/bart/shots/sim/isolation_faults.jpg`).
-- Item 5: phone Low and Medium 7/7 each (map, station, platform, tap to board, ride panel, ATO drive bar).
-- Item 7: 12/12 at Millbrae (mride seen and drawn in the other client's car, walk seen, mdrive followed).
-- Metro-next: ride (Balboa Park → Daly City, doors left), manual drive (Embarcadero 0.74 m, Montgomery 0.79, Powell
-  0.76, Civic Center 0.71, all on time, 0 ATC brakes), reckless ATC (22 warn, 21 brake, 0 penalty, codes 70/50/36),
-  front-door search with M2b aliases (SFO, Civic Center/UN Plaza, North San Jose, OAK, Temescal, Uptown, 12th St,
-  Dublin), shuttle headsigns from DATA ("Pittsburg / Bay Point (change for SFO Airport)").
+### M3 results (2026-09-26)
+
+**Merged build (bart-sim a3a132e = bart 87c32c7 merged, on metro-next), 09:08-09:52**, stopped at item 2 when the lead
+started the M3 gate on the final candidate (bart acf077f + the flip; it contains every SIM commit up to c3948d3):
+- Item 4: 11/11 (one warning each, no errors, frames advancing); first frame metro off 4969 ms / on 4961 ms.
+- Millbrae depot hall (STATIONS' split: Landmarks' hall hidden while the BART station draws the shared hall): after an
+  injected metro failure it is visible and in the scene. At `at=place_MLBR` it had not been hidden yet 45 s after the
+  metro loaded (MLBR, the biggest station, still building under a loaded GPU), so the hidden → shown path is not yet
+  observed; the follow-up check teleports to the MLBR platform and waits up to 150 s (run after the gate).
+- Front / ride / drive / ATC on metro-next: search with M2b aliases, DATA's shuttle headsigns; ride Balboa Park → Daly
+  City (doors left); manual drive Embarcadero 0.73 m, Montgomery 0.74, Powell 0.68, Civic Center 0.69, all on time, 0
+  ATC brakes, 67 mph max; reckless ATC 25 warn / 24 brake / 0 penalty (codes 70/50/36).
+- Item 5: phone Low and Medium 9/9 each (now with the arrivals board by touch: prompt tap "Tap for Embarcadero
+  trains", touch hint, tap a train: on its platform).
+- Item 7: 12/12. Item 8: 55 stops in 10.7 min, metro on, no page/console errors; 10 min `#auto`: metro on, 40 trains
+  running, no errors.
+- Item 2: not finished on this build (stopped); last full result 0 failed with METRO=1 and METRO=0 (a1cc675+).
+- Item 6: `tools/qa_metro_front.sh` written after the stop was announced: first run pending (the lead's gate has its own
+  front-door check).
+
+**Before the merge (bart-sim 128b10a on metro-next)**: item 2 0 failed on/off (a1cc675+), item 4 11/11 (WORLD's
+in-place terrain APIs; ground, buildings, trees natural, no black tiles: `notes/bart/shots/sim/isolation_faults.jpg`),
+item 5 7/7 each, item 7 12/12, item 8 55 stops in 10.7 min + 10 min `#auto` clean.
 - Heap (phone Low, Palo Alto, forced GC): metro off 51.4 MB, on 64.7 MB (+13.3): MetroSim 5.5, stations 2.7,
   guideway 1.9, MetroGround 1.0, the rest 2.2. (The earlier +75 MB was garbage not yet collected.)
 
