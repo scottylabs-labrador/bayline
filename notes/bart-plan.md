@@ -163,3 +163,41 @@ Rules:
   system map and arrivals, sounds, world coverage published; performance tuned; ship to production (still
   behind the flag if anything is rough).
 - **M3:** polish, novel features, hero screenshots and a capture pass; enable by default; iterate.
+
+## 7. M3: Bayline Metro on by default (ship gate and work items, lead, 2026-09-26 05:10)
+
+M2 (e474daf) ships to production behind `#metro=1`. **M3 flips `DEFAULT_ON` in `46_metrosim.js`**: every visitor gets
+the whole system with nothing to opt into (`#metro=0` stays as the escape hatch). With the flag gone, the metro path
+IS the default path, so everything below has to hold with metro ON.
+
+### Ship gate (the lead runs it; each item has an owner who makes it pass first)
+
+1. **World published** (world): stages 1-2 (+3) and the dropout replacements on both volumes; flight QA over the new
+   coverage (north strip, Richmond, Concord, Pittsburg/Antioch, Orinda/Lafayette, Dublin, Milpitas) shows no holes,
+   seams, dropout squares or height steps.
+2. **Peninsula unchanged with metro on** (sim, with everyone): `qa_all.sh` views + drive + ride, PTC, signal and the
+   flight FDM all pass with the default page (metro on). HUD, boards and prompts at Caltrain stations are the
+   Peninsula ones, including the shared and adjacent spots: **Millbrae** (Caltrain + BART in one building),
+   San Bruno / South SF, Hillsdale / SF 4th & King (no BART), Diridon (no BART).
+3. **Performance** (§4, everyone): Peninsula views with no BART within ~3 km cost about nothing (draw calls within
+   +5, frame time within noise); BART hero views on High ≤ +15 % median frame time and ≤ +150 draw calls; Low adds
+   only simple LOD geometry; no hitch over 16 ms from metro code while streaming or riding. The lead measures on an
+   idle GPU in a quiet window (agents pause their Chromes when asked).
+4. **Boot and failure isolation** (sim): no added time to first frame (metro data, about 250 KB gzipped JSON plus
+   1.1 MB of tracks, loads after the first frame); if any metro module or file fails (404, parse error, exception
+   while building), the game runs exactly as before without metro and logs one console warning.
+5. **Phones** (sim + trains + stations): on a phone profile (DPR 2, touch, Low/Medium) the game loads, runs with
+   metro on without a crash, and stays inside the memory budget. Map, boards and ride work by touch; drive has touch
+   controls or is cleanly unavailable.
+6. **Front door** (sim): a first-time visitor finds BART without reading docs. The start screen offers it (ride from a
+   station, drive a train, the system map), the HUD has a map button, the help/controls sheet lists the metro keys,
+   station search includes every metro station, and the "Unofficial. Not affiliated..." line sits in the metro UI
+   (§0 trademark policy).
+7. **Multiplayer** (sim): two clients see each other riding or driving metro trains (modes 8/9) and on the Peninsula.
+8. **Clean console** (everyone): no page errors or console errors across a tour of every station (50 + Coliseum
+   connector + Antioch/Pittsburg DMU platforms) and 10 minutes of `#auto` with metro on.
+
+### After the flip
+
+A capture pass: hero stills and a short trailer cut (captions: big centre titles or one-line captions only,
+nothing that looks machine-made), plus the README and the launch kit updated.

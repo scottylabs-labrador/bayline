@@ -12,13 +12,13 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 |---|---|
 | coverage: +992 L6, +1749 L7, +3003 L8 (502 / 811 / 1334 of them in the north strip), L2-L5 over the strip | done 00:42 |
 | OSM extract v3 (bbox to lat 38.095) for masks / trees | done 00:46 |
-| heights, imagery (NAIP, add-only) | done 01:18 (10 L6 tiles on the strip's top row retried 01:26, ok) |
-| masks, trees (t), index | running |
-| GPU: L9 (3594 new tiles in 453 L7 parents), then new L8 -> 1024 px | running (sr_tiles from 01:18) |
-| lidar h9: 3DEP fetch 3002 L8 tiles | fetched 01:24; bake waits for towns b2 |
-| towns b2: OSM extract (Caltrain + BART 3 km, strip) | running |
-| materials, t2 | after towns / masks |
-| stage 2: strip L6 + L7 complete (removes the Globe everywhere in the strip) | after stage 1 |
+| heights, imagery (NAIP, add-only) | done 01:18 (10 L6 tiles on the strip's top row retried 01:26) |
+| masks, tree crowns (t), `tiles/index.json` (with `north`) | done 02:21 (strip crowns re-run 02:41: a negative-seed bug) |
+| towns b2 (OSM extract with Caltrain + BART 3 km + the strip; bake) | done 02:40: 1692 new tiles + 127 replacing changed b tiles, 14.2 MB; 350 changed tiles held (pre-Metro lidar under them) |
+| GPU: L9 (3594 new tiles in 453 L7 parents), then new L8 -> 1024 px | L9 running (1926 written 02:51) |
+| lidar h9 (3002 L8 fetched), materials, t2 | lidar bake running (02:44), then materials, t2 |
+| NAIP band dropouts (see below): re-fetch + re-bake of the affected new tiles | running |
+| **stage 2** (`bart2`): the whole north strip at L6 + L7 (+522 L6, +3285 L7; NAIP prefetched 02:06-02:37) | imagery running (02:44), then masks, index |
 
 Runtime (branch `bart-world`): north-strip support in Terrain / Globe / WorldTiles / Towns (b2) / Flora / UI map / flight
 solids, committed; with the data not yet published everything renders exactly as before (checked: Marin from 2.5 km
@@ -110,11 +110,30 @@ a ground-level BART track are touched). Rule, per track sample (MetroNet `ST` co
 | aerial (1), bridge (2) | untouched (columns stand on the natural ground) |
 | platforms of ground-level stations (platform structure grade / embankment / median / trench) | cut only, to the bed (rail - 0.85 m), from 1.2 m to 11 m from the track centreline on the platform side, over the platform length + 5 m |
 
+Also in `MetroGround` (with `#metro=1`): a Towns drop filter (`Towns.addDrop`) removes, in the older `tiles/b` tiles,
+what b2 already drops at bake time: OSM `building=train_station` footprints within 160 m of a BART station (8 stations
+have one in old tiles: WOAK, GLEN, BALB, DALY, LAKE, FTVL, SBRN, SFIA), canopies / sheds / garages within 22 m and anything
+within 7 m of an above-ground BART track. Stations: tell me if you need other kinds or radii.
+
 For infra: at grade the ballast shoulder / sleeper ends can assume flat ground at rail - 0.85 m out to 2.4 m; in
 medians the ground between the track and the barriers is the same bed plane (the freeway lanes stay where Towns draws
 them); trench walls must cover the vertical step at 3.0-3.9 m. For stations: the ground under a ground-level
 platform is at or below the bed. v0 profile vs the ground (main tracks, before the carve): grade rail-ground median
 +0.5 m (p10 -0.1, p90 +2.0), embankment +1.1 m, trench -2.8 m, portal -5.4 m.
+
+## Findings along the way
+
+- **NAIP band dropouts (also in production).** Under load the USGS NAIPPlus ImageServer sometimes returns an image in
+  which one band of a rectangular block is empty: magenta (no green), yellow (no blue) or cyan (no red) squares. 59 of
+  today's RGB responses had them (repaired: re-fetched with a new fetch-time check that retries, affected new tiles
+  re-baked before anything is published) and **15 of the Sep 23 responses too**, i.e. some *published* Peninsula / SF /
+  East Bay tiles show coloured squares today (e.g. near Palo Alto 37.41,-122.13 and San Mateo 37.55,-122.33).
+  `data/raw/tiles/fix_dropouts/report.json` lists them; fixing them means overwriting those published files (and
+  purging them from the CDN), so it is the lead's call; I can produce the fixed files (incl. the 1024 px L8 via the GPU).
+- **The Globe's bays** (visible across the old north edge and still north of 38.07): the Globe classified the
+  sediment-brown bays as land and ran ocean surf through them (white speckles). `tiles/globe/baywater.png` (44 KB, from OSM
+  bay / strait / water polygons, 1024 px over lon -123.3..-120.9, lat 36.4..38.8) now marks them in the Bay frame as calm
+  bay water with one uniform tone (`15_globe.js`, cache key bayline-globe-v4); old clients never load it.
 
 ## Requests / notes for other workstreams
 

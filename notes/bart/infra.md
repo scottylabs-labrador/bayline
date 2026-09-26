@@ -7,6 +7,22 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## Status
 
+- **2026-09-26 05:00 — M2 progress** (all on `bart-infra`, merged with `bart` 23d1eb9):
+  - **Junctions v1** (open air): within 45 m of every MetroNet junction, coincident rails are drawn once (the switch
+    points), rail crossings get rail-bound manganese frog castings + guard rails (48 mm flangeway), switch machines stand
+    at the points, and the third rail gaps wherever it would foul another track (76 mm end ramps; insulators follow).
+  - **Underground junctions**: crossover chambers (a wide cut-and-cover box over each junction cluster where crossover or
+    diverging tracks run within 12 m: Market/Mission St double crossovers, Embarcadero, Berkeley, Milpitas, SFO/Millbrae,
+    Daly City tail), end walls with the continuing tunnels as openings; elsewhere (the Oakland Wye) tunnels are merged by
+    dropping triangles inside other tunnels' envelopes; tunnels of one junction cluster are one visibility unit.
+  - **Ground**: beds and trench walls follow the world workstream's MetroGround carve (ballast 2:1 slopes to the carved
+    ground, walls at 3.05 m cover its 3.0-3.9 m step; no terrain cuts at grade when the carve is active).
+  - **Right-of-way fences** at grade (2.13 m chain link + 3 barbed strands on outriggers), stochastic-transparency
+    fabric; **tie LOD** (full ties ≤ 70 m, flat ties to 320 m), nearest-first instance budgets.
+  - **Fine cut level** (0.25 m over 128 m around the camera) for the terrain cut test: sharp stair wells and portals.
+  - **Draw calls**: the primary of a pair builds both girders and its partner's rails; far pieces self-hide under
+    bodies. MacArthur (busiest view): all metro modules together 201 → 246 calls (+45); West Oakland +55.
+  - EMBR platform bug fixed (Under never culls a top-level ancestor of a registered cell group).
 - **2026-09-26 02:40 — M1 delivered on `bart-infra`** (merged with `bart` M1 integration):
   - `23_metrotrack.js` MetroTrack: streamed guideway over every MetroNet track (bart + ebart; the airport connector
     is left to its own module), three layers per track with their own chunk lengths (DETAIL 400 m ≤ 480 m, BODY 800 m
@@ -68,12 +84,17 @@ Under.addPortal({ id, a: cellId, b: cellId | null | 'auto', quad: [[x,y,z] x 4],
   // any planar convex quad, any winding, any slope (request 8): horizontal slab openings, vertical tunnel faces and
   // sloped escalator wells all work (visibility projects the 4 corners, clipped to the near plane).
   // b: null = outdoors; 'auto' = whatever cell contains `probe` (resolved every frame, so a station can stream in
-  // after my tunnel); unresolved 'auto' portals count as outdoors (safe: nothing is culled through them).
+  // after my tunnel); an unresolved 'auto' portal counts as outdoors (safe) unless it has `dead: true` (then as closed:
+  // my tunnel ends use that, since nothing is built beyond them).
 Under.addCut({ id, poly: [[x, z], ...], below: y })   // terrain above y inside poly is not drawn (request 7: `below` =
   // the well/trench floor; up to 256 vertices; no limit on the count, 64 alive at once is fine)
 Under.remove(id)          // a cell (and every portal that names it), a portal or a cut
 Under.cellAt(x, y, z)     // -> id | null (request 2): the cell whose poly contains (x, z) with floor <= y <= ceil
-Under.keep(obj)           // top-level objects that must keep drawing while the outdoor world is culled (metro trains)
+Under.keep(obj)           // top-level objects that must keep drawing while the outdoor world is culled (metro trains);
+                          // top-level ancestors of registered cell groups are kept automatically
+Under.cutAt(x, z, y)      // true where the ground at (x, z) is cut away above y or y is inside a cell: modules that place
+                          // things on the terrain (grass, trees, props) can skip those spots
+// addCell also takes zone: key | [keys]: cells sharing a key are one visibility unit (tunnels of a junction cluster)
 Under.state               // { cell, depth 0..1, outsideVisible, visible: Set<cellId>, daylight }
 ```
 
@@ -112,6 +133,40 @@ evaluated in the shared patch for fragments inside volumes: accepted, send the G
 up to **×4 (2 EV)** underground (outdoors it stays 2.1 by day, 1.3 at night) and never darkens more than today. The AE
 key is unchanged (0.1): a view whose centre-weighted log-average luminance is ~0.1 at exposure 1.0 (a platform with
 albedo ~0.35 under ~0.9 units of irradiance) needs no adaptation. Street daylight seen from an entrance blows out.
+
+### Third rail (contact rail) for TRAINS / SIM: `MetroTrack.thirdRail`, `MetroTrack.thirdRuns`
+
+Exact values as built (research: BART Facilities Standards, see "Track, third rail" below). All offsets are in the
+track's **banked** frame (`MetroTrack.frameAt(R, s)` / `MetroNet.frame(id, s)`: `rx,ry,rz` right, `ux,uy,uz` up),
+measured from the track centreline at top-of-rail height:
+
+| quantity | value |
+|---|---|
+| contact surface height above top of running rail | **+0.171 m** (6 3/4 in), top contact |
+| contact rail centreline from the track centreline | **1.499 m** (4 ft 11 in; 0.660 m from the near gauge line) |
+| contact rail head width | 0.076 m (the shoe's contact band: 1.461-1.537 m) |
+| coverboard | underside +0.239 m, top +0.263 m above top of rail; spans 1.339 m (track side) to 1.630 m, where it turns down to +0.181 m |
+| gaps | the rail stops 1.5 m short of every side change and every point where it would foul another track (turnouts, crossovers) and 14 m before track ends |
+| end ramps | the last 3.5 m of every piece at a gap drop linearly by **76 mm** (to +0.095 m at the very end) |
+| side | per piece, see below; **no contact rail on eBART** (standard gauge 1.435 m, DMUs) |
+
+Side rule (the data's M2 third-rail plane, corrected in stations): in a station (and 60 m beyond each platform end)
+the rail is on the side **away from the platform as STATIONS build it** (side platforms: between the tracks; islands:
+outside); elsewhere the data's per-sample side (the field side of a double track, i.e. away from the other track);
+without the plane, the same rules computed here. So at a side-platform station (West Oakland, Fruitvale, San Leandro,
+Hayward, Walnut Creek, Pleasant Hill, El Cerrito, Union City, Milpitas ...) the rail changes sides twice, with a gap.
+
+```js
+MetroTrack.thirdRail(trackId, s)  // -> { side: +1 | -1, lat: ±1.499, top: 0.171 (less on an end ramp) } | null (no rail at s)
+                                  //    side/lat: + = right of the track facing +s (a train running toward -s: flip)
+MetroTrack.thirdRuns(trackId, s0, s1)   // -> [{ s0, s1, side, lat, top, rampA, rampB }] the rail pieces in [s0, s1];
+                                  //    rampA / rampB: where the start ramp reaches full height / the end ramp begins (or null)
+```
+`thirdRail` costs ~2 µs (fine per shoe per frame). It is exactly what is drawn (one definition for the rail, its
+insulators and these calls). Real BART cars carry a shoe on **both sides of both trucks** (4 per car) because the rail
+changes sides: keep both, put the shoe that is over the rail on its contact surface, and let the other hang free a
+little lower than the ramp ends (~+0.09 m) so the 76 mm ramps lift it on. Envelope for the shoe gear: paddle within
+lat 1.43-1.57 m and below +0.239 m where it runs under the coverboard; nothing beyond 1.63 m below +0.19 m.
 
 ## Research: BART infrastructure facts (dimensions, sources, assumptions)
 
@@ -180,7 +235,8 @@ Retrofit IS/MND (2012); [TRID] A-Line North aerial retrofit abstract; [IJ] Inter
   stainless-capped aluminium, 9.14 m lengths; **light-grey porcelain insulators** (229 mm; 152 at dips/ramps) every
   **3.05 m**; **light-grey fibreglass coverboard** (ANSI 70), brackets ≤ 1.83 m; dip sections/ramps 76 mm lower;
   gaps < 55 ft bridged by the shoes; side: away from the platform at stations, alternating at grade, the outer edges
-  on aerials (walkway between the tracks).
+  on aerials (walkway between the tracks). (Modelled: the data's per-sample side, field side between stations; it
+  changes sides at side-platform stations; no surveyed side data exists.)
 - **Aerials, original (1968-72)**: **two precast post-tensioned trapezoidal box girders, one per track, 14 ft apart,
   each 1.22 m deep with a 3.556 m deck** (0.71 m gap between the decks), drainage channel on each girder centreline;
   simple spans 21.3-22.9 m (55-145 ft, avg 75 ft); **single 1.52 m hexagonal column with a T / hammerhead cap**
@@ -219,11 +275,20 @@ Retrofit IS/MND (2012); [TRID] A-Line North aerial retrofit abstract; [IJ] Inter
 
 Build: jobs ≤ 3.2 ms per frame. Next: merge body chunks of paired tracks further, measure with a quiet GPU.
 
+## Verified views (2026-09-26 05:30, High unless noted; shots in `notes/bart/shots/infra/`)
+
+Transbay Tube (day, night, Low, Ultra), Embarcadero approach bore, Mission St bore + double-crossover chamber,
+Embarcadero crossover chamber, Berkeley Hills tunnel, West Oakland aerial (deck, underside, street, night) and the
+aerial → portal → box → Tube transition, Oakland Wye (usable; a gap remains at one box end), Orinda SR-24 median (day,
+night), Pittsburg SR-4 median, Walnut Creek aerial, Fruitvale–Coliseum aerial from the air, Warm Springs at grade,
+Milpitas portal approach, Berryessa (modern single-box aerial), Daly City crossovers, Millbrae beside the Caltrain
+catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/MONT/12TH/19TH/GLEN platforms.
+
 ## Preview / QA
 
 - In game (dev server on my worktree): `http://localhost:8134/infra.html#auto&metro=1&t=12:00&ll=...`; then
   `__bayline.MetroTrack.shot('M1.1', 8000, 0.3, 2.3, { ds: 60, lat: 0, up: 1.5 })` puts the camera on a track (works
-  underground). `__bayline.Under.state`, `.stats`, `.debug.sample(x, z)`; `__bayline.MetroTrack.stats`.
+  underground); `shotG(id, s, lat, h, target)` h m above the ground; `shot([x, y, z], null, 0, 0, [tx, ty, tz])` world. `__bayline.Under.state`, `.stats`, `.debug.sample(x, z)`; `__bayline.MetroTrack.stats`.
 - Good spots: M1.1 s 1300 (West Oakland aerial), 3150 → 3485 (aerial → portal → box), 8000 (Tube); C1 5200 (Berkeley
   Hills tunnel); M1.1 14000 (Mission St bore); A1.1 7000 (Fruitvale–Coliseum aerial).
 - Shots: `notes/bart/shots/infra/`.
@@ -256,5 +321,16 @@ Build: jobs ≤ 3.2 ms per frame. Next: merge body chunks of paired tracks furth
   (no `Under.keep` needed, but it doesn't hurt); (b) my tunnel ends add `'auto'` portals probing 3 m into your box
   at TOR + 1.5 m, so make `st:<ID>:plat` cover the trackway up to the box ends; (c) `ambient` accepted as a number or
   `[r, g, b]`.
+- **WORLD (observation, 05:30)**: near BART the road traffic floats ~1 m above the road surface (Walnut Creek beside
+  the aerial; the road crossing over the West Oakland portal box) — probably traffic lanes computed before MetroGround's
+  carve re-shaped `hBase`, or roads crossing carved trenches (they need a deck there, the ground under them is cut).
+  Shots: `notes/bart/shots/infra/woak_portal_night.jpg`.
+- **TRAINS (06:10)**: collector shoes: contact surface **+0.171 m** above top of rail (not 0.19), contact rail centre
+  **1.499 m** from the track centreline (not 1.45); shoes on both sides of every truck are right (4 per car). Side per
+  segment: `MetroTrack.thirdRail(id, s)` / `thirdRuns(id, s0, s1)` (section "Third rail" above). eBART units: no shoes.
+- **DATA (06:10)**: the M2 platform `side` fields point toward the other track at the stations your curated `layout`
+  calls `side` (West Oakland: M1.1 and M2 both `left`, so both faces sit between tracks 4.2 m apart), and the third-rail
+  plane follows them (rail under the platform edges). STATIONS correct the sides from the layout, and so do I for the
+  contact rail within stations; please flip the sides (and the plane) there so everyone reads the same answer.
 - **TRAINS / SIM**: metro trains in tunnels are lit by the under map's ambient only (tunnel fixtures light my own
   geometry); `Under.keep(car.group)` is already in 46_metrosim.js, good.

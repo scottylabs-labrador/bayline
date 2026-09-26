@@ -4,7 +4,20 @@ Workstream: trains · branch `bart-trains` · worktree `.worktrees/bart-trains` 
 Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `notes/bart/trains.md`, `notes/bart/shots/trains/`.
 
 ## Status
-- 2026-09-26: started. Research (Fleet of the Future D/E cars, FLIRT DMU, Cable Liner) in progress.
+
+- 2026-09-26 (session 1, iteration 3): interior impression v2 in the exterior glass (the lit cabin, passengers by
+  load, far windows showing the scene, a D-cab view), matching the real interior when it is built (A/B checked);
+  collector shoes on infra's published contact rail, driven per truck from `MetroTrack.thirdRail` (checked in game
+  against infra's build); body sway on the air springs; detailed trucks; GTW nose raked and repainted; ASCII-only
+  sources. `bart` merged (62c83db).
+- 2026-09-26 (session 1, later): the Antioch DMU (GTW 2/6-like, articulated on bones) and the airport people mover
+  (Cable Liner-like) exist; lamp glow billboards; the D-car cab rebuilt after the 2014 mock-up; the body's cant line
+  lowered to 2.9 m after the Lake Merritt photo; interior brighter, teardrop straps, ad frames; standing spots.
+- 2026-09-26 (session 1): MetroKit v1 on `bart-trains`: Fleet of the Future-type D/E cars (exterior, plug doors on
+  bones, trucks with yaw + spinning wheelsets, collector shoes, couplers, decals with per-car numbers, LED signs behind
+  the glass, interior-mapped windows), interiors (saloon: seats, poles, straps, partitions, screens, signs, end walls;
+  D-car cab: console, ATC + status screens, controller on a bone, seat), LOD1/LOD2, far batch with billboard lamps.
+  Next: DMU (GTW 2/6), people mover, night glow billboards on near trains, nose/interior polish, in-game QA.
 
 ## Numbers for stations (authoritative; MetroKit geometry uses exactly these)
 
@@ -18,13 +31,87 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 | car length over coupler faces (D and E) | 21.336 m (70 ft); 10-car train 213.36 m (platforms 700 ft = 213.4 m) | BART |
 | door centres along the car (both sides) | x = 0 and ±5.33 m from the car centre (car-local), 3 per side, same on D and E cars | photogrammetry (cross-ratios on a side-on photo of a 10-car train, 5 estimates 5.29–5.37 m) + BART 2014/2015 floor plans |
 | door clear opening | 1.372 m (54 in) wide, ~1.93 m high | BART board presentation 2014 ("54 inch door opening") |
+| **collector shoes (4 per car, both sides of both trucks)** | contact face **+0.171 m** above top of rail over lat **1.43–1.57 m** (centre 1.50; infra's rail head 1.461–1.537), shoe 0.38 m long with upturned ends; arm pivots on a longitudinal pin at lat 1.28 m / +0.228 m (inboard of the coverboard edge 1.339 m); everything under the coverboard stays below +0.232 m; nothing beyond lat 1.57 m | infra's published contact rail (notes/bart/infra.md "Third rail"); shoe envelope checked against it |
+| shoe on the rail / free | the shoe over the rail rides its contact surface (ramp heights included); the other hangs tilted, its face ~+0.09 m (0.08 m below contact), so the 76 mm end ramps (down to +0.095 m) lift it on | per truck from `MetroTrack.thirdRail(track, s)` in `MetroKit.poseOnTrack` (LOD 0 cars) |
 
 The "42 in (1.07 m)" figure the stations team found does not match any BART source I could find; BART's own
 facts page and the platform standard both give 39 in. Always read `car.doors[i]` (x, side, width, sillY) from the
 MetroKit metadata at runtime; `sillY` will be 0.991.
 
-## API
-(to come; modelled on TrainKit, see notes/trains.md)
+## API (MetroKit, `src/js/41_metrokit.js` + `42_metrokit_*.js`)
+
+Modelled on TrainKit (notes/trains.md); same car-local frame and metadata conventions.
+
+```js
+const c = MetroKit.createConsist('bart' | 'dmu' | 'apm', { cars, seed, name, order, destination })
+  // bart: exactly `cars` cars (2..12); default orders D-E..E-D, 7+ cars = two units cab to cab
+  // (7 'DED DEED', 8 'DEED DEED', 9 'DEED DEEED', 10 'DEEED DEEED'); order: a string like 'DEED DEED' to override.
+  // car 0's cab at the consist's +X end, the last car flipped (TrainKit convention)
+c.cars, c.length (21.336 m per BART car), c.kind, c.speed (m/s, signed: + toward +X)
+c.setDestination(text, lineColorHex) | c.setDestination({ line: 'yellow', color, text })   // front + side LED signs
+c.setNextStop(text)                           // interior end-wall LED signs (also set by setDisplay)
+c.setDoors('left' | 'right' | 'both' | 'none', t)   // consist frame, +Z = right; doors take 2.2 s to open, 2.8 s to close
+c.openDoors(side); c.closeDoors(side)       // closeDoors plays the chime first: onEvent('chime', side), then closes
+c.onEvent = (type, side, consist) => {}     // 'chime' | 'doors-opening' | 'doors-open' | 'doors-closing' | 'doors-closed'
+c.setLights({ head, tail, interior, cab, signs, lead: 'front' | 'rear' }); c.setLeadEnd(lead)
+    // lead cab: white headlights + markers + amber top bar; trailing cab: red tails + red top bar
+c.setNight(n)                                // 0 day .. 1 night (early-outs when unchanged)
+c.setDisplay({ line, color, lineName, destination, nextStop, arriving, doors: 'left'|'right', transfer, stops: [..], index, clock })
+c.setCab({ speedMph, atcCodeMph | codeMph, targetMph, effort | notch, mode: 'ATO'|'MANUAL', doors, nextStop, distFt, clock,
+           cars, destination, lineColor | color, alarm | atc: 'ok'|'warn'|'brake'|'penalty', handle })  // ~8 Hz redraw max
+c.setInteriorVisible(bool) / car.setInteriorVisible(bool)   // builds the interior lazily (cached per design)
+c.setLoad(f)                                 // 0 empty .. 1 crush: passengers seen through the windows (default 0.3)
+c.sway = true                                 // body sway on the air springs (default on; false = rigid body): roll
+                                             // 0.07 rad per g of unbalanced lateral acceleration (v^2 k + g sin(bank), k
+                                             // from the bogie tangents in poseOnTrack), pitch 0.02 rad/g under braking /
+                                             // traction, track-excited rock and bounce tied to distance run; applied on
+                                             // top of the group's pose in update(), bogies counter-transformed so they
+                                             // stay on the rails; cameras attached to the car (cabEye, seats) ride along
+c.setThirdRail(side, top = 0.171)            // previews without MetroTrack: contact rail on the consist's +Z (1) / -Z (-1)
+                                             // side or none (0); poseOnTrack sets the shoes from MetroTrack by itself
+c.setLOD(0|1|2) / car.setLOD(level)          // 0 full, 1 one mesh per car, 2 a banded prism (built lazily)
+c.update(dt)                                  // doors, wheel spin, bone upload for LOD0 cars; no allocations
+c.dispose()                                   // per-consist GPU resources (design geometry stays cached)
+MetroKit.poseCar(car, F, R, roll)            // as TrainKit.poseCar
+MetroKit.poseOnTrack(c, frame, dFront)       // frame(d, out) -> out {x, y, z, tx, ty, tz, bank}; d grows toward +X;
+                                              // poses every car from its bogie pivots and yaws the bogies; with
+                                              // MetroNet frames (out.track, out.s, out.sign, out.rx/rz) and MetroTrack in
+                                              // the build it also puts each truck's shoe on the contact rail
+car.setBogies(F, R)                           // bogie yaw from pivot frames (for callers that pose cars themselves)
+MetroKit.createFarBatch(scene, { maxCars, maxLamps })  // every distant train in one instanced draw per car design:
+  far.begin(); far.addCar('bart', 'D'|'E', matrix4 | {x,y,z,yaw,pitch,roll}, flip); far.addLamp(x, y, z, 'head'|'tail'); far.end(night)
+MetroKit.setQuality('low'|'medium'|'high'|'ultra'|'max' | 0..4)   // applies to designs built afterwards
+```
+
+Per car (as TrainKit): `group` (rotation order YZX), `length`, `width`, `height`, `offset`, `number`, `bogieOffsets
+[front, rear]` (±7.62), `floorRegions`, `ramps` ([]), `gangways` ({front, rear}: end doors, `emergency: true`), `seats`
+(eye positions, yaw 0 = +X, + `color`), `doors [{x, side, width 1.36, sillY 0.991}]`, `cabEye` (D: [9.3, 2.26, 0.72]
+unflipped) and `cabYaw`.
+
+## Costs (measured in preview/metro.html#view=exterior&cars=10&measure=1, consist only, no shadows)
+
+| | draw calls | triangles |
+|---|---|---|
+| 10-car train, LOD0 exterior | 20 (body + glass per car) | 384k (D 41.5k, E 36.3k per car at quality 2; the trucks are 6.4k of it) |
+| + interior of one car | +2 | +33k |
+| 10-car train, LOD1 | 10 | 10.9k |
+| 10-car train, LOD2 | 10 | 1.0k |
+| far batch (all far trains) | 1 per car design + 1 for all lamps | 72-152 per car |
+
+Build times (M2, first use, then cached): D exterior 95 ms, E 38 ms; interiors 21-36 ms; GTW unit 65 ms; APM cars 22 ms.
+
+Render time (preview, 1600 x 900, sun shadows on, `#gpu=1`: render + gl.finish, median of 40, with minus without the
+train): 10-car train exterior 3/4 view 0.6 ms (0.3 before the interior impression v2: the glass fragments now ray-cast
+the cabin; the 3/4 view has the most window area), side view 0.2 ms, inside a car (interior of that car built) 0.4 ms.
+DMU unit: 27k triangles, 2 draws (+1 glow at night); APM car: 4-6k triangles, 2 draws.
+
+## Preview
+
+`python3 tools/devserver.py 8133`, then `http://localhost:8133/preview/metro.html#view=<v>` with views exterior, nose,
+front, cabside, side, doors, bogie, roof, ends, rear, interior, seated, cab, night-exterior, night-interior, night-nose,
+lod, curve, dmu, apm. Options: `&cars=N`, `&order=DEED`, `&line=red&dest=Richmond`, `&meta=1` (walking metadata),
+`&clean=1` (no HUD), `&q=0..4` (quality), `&measure=1` (costs to the console), `&night=1`, `&doors=1`.
+In game: `#auto&metro=1&t=08:05&mst=WOAK`. Screenshots: `notes/bart/shots/trains/`.
 
 ## Research: Fleet of the Future (D and E cars), references and dimensions
 
@@ -65,12 +152,65 @@ page, Stadler fact sheet, Wikipedia.) MetroKit builds the GTW; `createConsist('d
 Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 mph top; cars ASSUMED 9.3 m long,
 2.7 m wide, 3.1 m tall; white with a full-height black glazing band and light-blue stripes; platform screen doors.
 
+## Iteration log (screenshots in notes/bart/shots/trains/)
+
+- **it1** (`it1_*.jpg`): nose compared with the head-on Dublin/Pleasanton 2016 photo: windscreens widened to the
+  corner pillars (|z| 0.475-1.265), door window narrowed to 0.38 m, mask bottom 2.08 m, pods 1.52-2.13 m, bumper 1.07-1.27
+  m, lower pods 0.86-1.12 m, white face ends at 0.87 m with the dark coupler pocket, coupler head at 0.8 m. Swoosh
+  re-drawn from the El Cerrito 2021 photo (blue from the cab back to x 8.83 at the eaves / 9.70 at the skirt, white
+  band behind tapering 0.58 -> 0.08 m). Aluminium brightened (albedo #dde0e3, metalness 0.88, roughness 0.34,
+  anisotropic along the car); the NaN in the anisotropic tangent on faces normal to the car axis (the nose logo was
+  black) is fixed. Interior compared with the March 2018 D-car interior photo (seats, poles, straps, light bands).
+  Open: nose still reads flatter than the real cab; pods are ovals rather than teardrops; interior lacks the wall ad
+  frames and the light-blue trim line; cab displays oversized.
+
+- **it2** (`it2_*.jpg`, `it2_game_woak.jpg`): 3/4 view compared with the El Cerrito 2021 photo, the saloon with the
+  March 2018 D-car interior photo, the cab with the 2014 cab mock-up. Cab now matches the mock-up's layout (L-desk,
+  two displays VATC | status, keypad plate, e-stop, MANUAL CONTROL T-handle, sun blind); the body's white roof now
+  starts right above the windows (cant 2.9 m); straps are teardrops; interior fill brighter (the ceiling reads white);
+  nose ring palette bleeding fixed. In game (WOAK aerial, 10:30) the cars read as silver with the blue ends, passengers
+  visible, window reflections of the street.
+
+- **it3** (`it3_*.jpg`): windows compared with the Lake Merritt 2026 photo (lit cabin seen from the platform: bright
+  ceiling bands at the window tops, grey walls, dark far windows, lime priority seats, poles) and the Millbrae 2026
+  photo (by day: dark tinted glass, the light bands and the far windows brighter than the cabin). The impression now
+  draws the cabin's convex section with the 0.5 m LED bands in the sloped ceiling, the far wall's windows (the scene's
+  environment through a second pane), reveals, doors with windows, ads and screens, the lime end walls with the end
+  door, seat backs/cushions (blue, lime priority), benches, partitions, poles, rails and passengers; it is shaded with
+  the real interior's light model, so `it3_imap_ab.jpg` (top: impression, bottom: real interior of car 1) match in
+  layout and brightness day and night. Bug found on the way: the mirrored ceiling plane had the wrong offset (a false
+  second light band). Shoes: under the coverboard on the rail side, free and tilted on the other (in game, infra's
+  build). Trucks: swan-neck frames, bellows, dampers, brake blocks, cables (`it3_shoes_truck.jpg`). GTW compared with
+  Stadler's rendering: raked windscreen, blue wrapping the lower corners of the white cab front, bigger lamp clusters.
+
+## Known issues / open problems
+
+- The glass ray-cast costs ~0.3 ms more for a close 10-car 3/4 view (fragment-bound; rows are culled by the ray's x
+  span). If it shows in profiles: skip passengers beyond ~80 m or drop to the old flat impression at LOD0 > 100 m.
+- The Cable Liner's big panes show the dark outside through the far glass at night (physically right, but the real
+  cabins read brighter in photos: the far glass mirrors the lit interior more than modelled).
+
+- The D car's front is close to the reference in the head-on view but still simpler in 3/4 views (corner pillars'
+  recessed panels, the chin's curvature).
+- The DMU and APM interiors are simple (no cabs); the GTW nose is closer to Stadler's rendering but still rounder.
+- Headlight pods are ovals rather than the real teardrops; the corner pillars lack their recessed panels.
+
 ## Requests for other workstreams
 
 - DATA: the Antioch vehicles are Stadler **GTW 2/6** (BARTCHIVES, Wikipedia "eBART"), not FLIRTs; please fix the
   wording in timetable `consist` / bart-data.md. I read `cars` for eBART as the number of GTW units (each ~40.9 m).
-- INFRA: third-rail geometry for the collector shoes. I assume the contact surface at **y = +0.19 m** above top of rail
-  and the contact rail centreline at **|z| = 1.45 m** from the track centreline (shoes on both sides of every truck,
-  paddles ~0.3 m long). Please tell me your numbers and I'll move the shoes to match.
-- SIM: consists will be `MetroKit.createConsist('bart' | 'dmu' | 'apm', { cars, order, seed })`; car metadata like
-  TrainKit (floorRegions, seats, doors, cabEye, bogieOffsets). A pose helper will take MetroNet-style frames.
+- INFRA: done (2026-09-26): shoes moved to your published contact rail (+0.171 m, lat 1.499 m; see "Numbers") and
+  driven per truck from `MetroTrack.thirdRail(frame.track, frame.s)` inside `MetroKit.poseOnTrack` (the frames the sim
+  passes carry MetroNet's track + s): the shoe over the rail rides it, ramps included, the other hangs free at ~+0.09 m.
+  Nothing else needed from you; if the sim ever poses with frames without `track`/`s` the shoes keep their last state.
+- LEAD: done in 62c83db (`MetroKit.setQuality` in applyTier), thanks.
+- SIM: MetroKit is ready for all three kinds: `createConsist('bart' | 'dmu' | 'apm', { cars, seed })`. For 'dmu',
+  `cars` = GTW units (each one MetroKit car of 40.89 m with articulated bodies; `c.cars.length === cars`); for 'apm',
+  `cars` = cars (end, mid.., end). Please pose with `MetroKit.poseOnTrack` (it articulates the GTW and yaws bogies).
+  Suggested: `MetroKit.createFarBatch(Env.scene)` for your far trains (real car silhouettes in one draw per design and
+  billboard lamps that draw in this pipeline; GL points don't). Per-car `standSpots` [{x, y, z, yaw}] for standing
+  passengers (feet on the floor), `seats` for seated ones (eye positions, like TrainKit). `consist.onEvent` fires
+  'chime' / 'doors-opening' / 'doors-open' / 'doors-closing' / 'doors-closed' for the door sounds if you use
+  `openDoors` / `closeDoors` (with `setDoors(side, t)` you drive the doors yourself and no chime event fires).
+- STATIONS: the GTW's door sills are at 0.635 m above rail (ASSUMED: low-floor GTW), doors at x = ±6.4 m from the
+  unit centre, 1.30 m clear; APM floor 0.36 m (ASSUMED), one 1.6 m door per car side at the car centre.
