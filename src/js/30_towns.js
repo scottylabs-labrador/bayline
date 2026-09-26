@@ -729,7 +729,9 @@ const Towns = (() => {
     const [ox, oz] = tileOrigin(tx, ty);
     // OSM footprints of the modelled bridges' towers and anchorages (they would stand as office blocks): the model draws those
     const onBridge = bb => { const P = bb.pts, n = P.length / 2; let cx = 0, cz = 0; for (let i = 0; i < n; i++) { cx += P[i * 2]; cz += P[i * 2 + 1]; } return Landmarks.deckAt(ox + cx / n, oz + cz / n) !== null; };
-    const keep = typeof Landmarks !== 'undefined' && Landmarks.deckAt ? b.filter(bb => !onBridge(bb)) : b;
+    let keep = typeof Landmarks !== 'undefined' && Landmarks.deckAt ? b.filter(bb => !onBridge(bb)) : b;
+    if (dropFilters.length) keep = keep.filter(bb => { const P = bb.pts, n = P.length / 2; let cx = 0, cz = 0; for (let i = 0; i < n; i++) { cx += P[i * 2]; cz += P[i * 2 + 1]; }
+      cx = ox + cx / n; cz = oz + cz / n; for (const f of dropFilters) if (f(bb, cx, cz)) return false; return true; });
     return { tx, ty, ox, oz, region, mask, b: keep, r, a, t, it, lamps: new Float32Array(lamps) };
   }
   function remember(k, d) { decoded.delete(k); decoded.set(k, d); while (decoded.size > 140) decoded.delete(decoded.keys().next().value); }
@@ -1881,6 +1883,10 @@ const Towns = (() => {
       stats.b2 = i2.tiles.length;
     } catch (e) { /* not published (yet) */ }
   }
+  // building drop filters (Bayline Metro: MetroGround drops OSM station buildings and platform canopies the BART
+  // stations draw themselves): fn(building, centroid x, z) -> true drops it when a tile decodes (call dispose() after)
+  const dropFilters = [];
+  const addDrop = (fn) => { dropFilters.push(fn); };
   // world rects [x0, z0, x1, z1] of the Towns tiles overlapping a rectangle (WorldTiles leaves those to Towns)
   function rectsIn(x0, z0, x1, z1) {
     const out = [];
@@ -1903,6 +1909,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn,
+  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();
