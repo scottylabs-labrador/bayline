@@ -6,7 +6,9 @@
 //
 //   Net.connect(url?)       start (url defaults to wss://<host>/ws; file:// pages stay solo)
 //   Net.setState(st)        call every frame; sends at most 2 Hz and only on meaningful change
-//                           st = { mode, trip, s, car, x, y, z, yaw, speed }   mode: name or 0..6
+//                           st = { mode, trip, s, car, x, y, z, yaw, speed }   mode: name or 0..9
+//                           (8 'mride' / 9 'mdrive': Bayline Metro; a relay that predates them (hello v < 2) gets
+//                           'walk' at the world position st.wx/wy/wz instead, so nobody is kicked for bad data)
 //   Net.others()            interpolated peers: [{ id, name, color, mode, modeName, trip, s, car, x, y, z, yaw, speed, age }]
 //   Net.status              { online, state, players, ping, id, name, color, text }
 //   Net.onStatus(fn)        called whenever status.text changes
@@ -22,7 +24,8 @@ const Net = (() => {
     '#2ec4b6', '#ffbf46', '#5c80bc', '#d65db1', '#56c596', '#ff7f51', '#3d9be9', '#c3d350'];
   const callsign = id => `${ROLES[id % 8]} ${WORDS[Math.floor(id / 8) % 32]} ${(id * 37) % 100}`;
   const colorOf = id => COLORS[(id * 7) % 16];
-  const MODE_NAMES = ['menu', 'walk', 'ride', 'drive', 'fly', 'map', 'cab', 'air'];
+  const MODE_NAMES = ['menu', 'walk', 'ride', 'drive', 'fly', 'map', 'cab', 'air', 'mride', 'mdrive'];
+  let relayModes = 8;                                      // modes the relay accepts (hello v >= 2: all ten)
   const MODE = Object.fromEntries(MODE_NAMES.map((n, i) => [n, i]));
 
   const SEND_MIN_MS = 500, HEARTBEAT_MS = 15000, PING_MS = 10000, HIDDEN_CLOSE_MS = 60000;
@@ -117,7 +120,7 @@ const Net = (() => {
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.t === 'hi') {
         status.id = m.id | 0; status.name = callsign(status.id); status.color = colorOf(status.id);
-        snapMs = 1000 / (m.hz || 1);
+        snapMs = 1000 / (m.hz || 1); relayModes = (m.v | 0) >= 2 || (m.modes | 0) >= 10 ? MODE_NAMES.length : 8;
         setText('online', 'Online');
         lastSent = null; lastSendAt = -1e9; send(true);
       } else if (m.t === 'po' && typeof m.c === 'number') {
@@ -189,9 +192,10 @@ const Net = (() => {
 
   function setState(st) {
     if (!st) return;
-    const mode = typeof st.mode === 'string' ? (MODE[st.mode] ?? 0) : (st.mode | 0);
+    let mode = typeof st.mode === 'string' ? (MODE[st.mode] ?? 0) : (st.mode | 0);
+    if (mode >= relayModes) { mode = MODE.walk; st = { ...st, trip: '', s: 0, car: -1, x: st.wx ?? st.x, y: st.wy ?? st.y, z: st.wz ?? st.z, speed: 0 }; }
     cur = {
-      mode: Math.min(7, Math.max(0, mode)),
+      mode: Math.min(relayModes - 1, Math.max(0, mode)),
       trip: String(st.trip ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12),
       s: fin(st.s, -1000, 250000), car: Math.round(fin(st.car ?? -1, -1, 31)),
       x: fin(st.x, -250000, 250000), y: fin(st.y, -1000, 10000), z: fin(st.z, -250000, 250000),
