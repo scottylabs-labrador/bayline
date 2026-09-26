@@ -141,27 +141,53 @@ const MetroTube = (() => {
   function setRef(gb, ctx, F) { gb.ref = { o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz] }; }
 
   // ------------------------------------------------------------------ portal headwall at a tunnel mouth
-  function headwall(ctx, s, dir, secs, lo, hi, crown) {
+  // (own openings from the section; a neighbouring tunnel crossing the wall's plane, e.g. the other bore of an unpaired
+  // twin portal, gets its opening too, so no headwall ever closes the tunnel beside it)
+  function headwall(ctx, s, dir, secs, lo, hi, crown, own = [ctx.R]) {
     const gb = ctx.B.infra; MT.frameAt(ctx.R, s, F);
     const T = [F.tx * dir, 0, F.tz * dir]; const tl = Math.hypot(T[0], T[2]) || 1; T[0] /= tl; T[2] /= tl;
     const Lv = [F.lx, 0, F.lz];
-    const x0 = lo - 3.2, x1 = hi + 3.2, ybot = -TB - 1.2;
+    let x0 = lo - 3.2, x1 = hi + 3.2; const ybot = -TB - 1.2;
+    const holes = secs.map(sc => { const pts = sc.arc.concat([sc.floor[0]]); return { pts, x0: Math.min(...pts.map(p => p[0])), x1: Math.max(...pts.map(p => p[0])), y0: Math.min(...pts.map(p => p[1])), y1: Math.max(...pts.map(p => p[1])) }; });
+    { const Fh = Object.assign({}, F); for (const h of faceHoles(Fh, [lo - 3.2, hi + 3.2])) { if (own.some(Q => Q.id === h.id)) continue; if (h.x1 < x0 - 0.5 || h.x0 > x1 + 0.5) continue; holes.push(h); }
+      for (let merged = true; merged;) { merged = false;
+        for (let i = 0; i < holes.length && !merged; i++) for (let j = i + 1; j < holes.length && !merged; j++) { const A = holes[i], B = holes[j];
+          if (A.x0 < B.x1 + 0.15 && B.x0 < A.x1 + 0.15 && A.y0 < B.y1 + 0.15 && B.y0 < A.y1 + 0.15) {
+            const u0 = Math.min(A.x0, B.x0), u1 = Math.max(A.x1, B.x1), v0 = Math.min(A.y0, B.y0), v1 = Math.max(A.y1, B.y1);
+            holes[i] = { x0: u0, x1: u1, y0: v0, y1: v1, pts: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]] }; holes.splice(j, 1); merged = true; } } }
+      for (const h of holes) { x0 = Math.min(x0, h.x0 - 0.4); x1 = Math.max(x1, h.x1 + 0.4); } }
     let gTop = -1e9; for (const l of [x0, (x0 + x1) / 2, x1]) gTop = Math.max(gTop, MT.groundAt(F.x + F.lx * l + T[0] * 3, F.z + F.lz * l + T[2] * 3) - F.y);
     const top = Math.max(crown + 1.2, Math.min(gTop + 0.9, crown + 9));
     // wall face as an extruded shape with the tunnel openings as holes (x = lateral, y = up, z = outward)
-    const shape = new THREE.Shape(); shape.moveTo(x0, ybot); shape.lineTo(x1, ybot); shape.lineTo(x1, top); shape.lineTo(x0, top); shape.closePath();
-    for (const sc of secs) { const hole = new THREE.Path(); const pts = sc.arc.concat([sc.floor[0]]); const cw = THREE.ShapeUtils.isClockWise(pts.map(p => new THREE.Vector2(p[0], p[1])));
+    const yb2 = Math.min(ybot, ...holes.map(h => h.y0 - 0.4)), top2 = Math.max(top, ...holes.map(h => h.y1 + 0.4));
+    const shape = new THREE.Shape(); shape.moveTo(x0, yb2); shape.lineTo(x1, yb2); shape.lineTo(x1, top2); shape.lineTo(x0, top2); shape.closePath();
+    for (const h of holes) { const hole = new THREE.Path(), pts = h.pts; const cw = THREE.ShapeUtils.isClockWise(pts.map(p => new THREE.Vector2(p[0], p[1])));
       const P2 = cw ? pts : pts.slice().reverse(); P2.forEach((p, i) => i ? hole.lineTo(p[0], p[1]) : hole.moveTo(p[0], p[1])); hole.closePath(); shape.holes.push(hole); }
     const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.8, bevelEnabled: false, curveSegments: 4 });
     const m4 = new THREE.Matrix4().makeBasis(new THREE.Vector3(Lv[0], 0, Lv[2]), new THREE.Vector3(0, 1, 0), new THREE.Vector3(T[0], 0, T[2]));
     m4.setPosition(F.x - ctx.ox - T[0] * 0.4, F.y, F.z - ctx.oz - T[2] * 0.4);
-    gb.top = F.y + top; gb.gnd = F.y + ybot; gb.wear = 0.9; appendGeo(gb, geo, m4, PAL.concreteWarm); geo.dispose();
+    gb.top = F.y + top2; gb.gnd = F.y + yb2; gb.wear = 0.9; appendGeo(gb, geo, m4, PAL.concreteWarm); geo.dispose();
     // coping and a fence along the top
-    const cc = [F.x + F.lx * (x0 + x1) / 2 - ctx.ox, F.y + top + 0.1, F.z + F.lz * (x0 + x1) / 2 - ctx.oz];
+    const cc = [F.x + F.lx * (x0 + x1) / 2 - ctx.ox, F.y + top2 + 0.1, F.z + F.lz * (x0 + x1) / 2 - ctx.oz];
     gb.box(cc[0], cc[1], cc[2], T, [0, 1, 0], Lv, 0.55, 0.1, (x1 - x0) / 2 + 0.1, PAL.concreteLight);
-    const fp = []; for (let k = 0; k <= 8; k++) { const l = x0 + (x1 - x0) * k / 8; fp.push([F.x + F.lx * l - ctx.ox, F.y + top + 0.2, F.z + F.lz * l - ctx.oz]); }
+    const fp = []; for (let k = 0; k <= 8; k++) { const l = x0 + (x1 - x0) * k / 8; fp.push([F.x + F.lx * l - ctx.ox, F.y + top2 + 0.2, F.z + F.lz * l - ctx.oz]); }
     MetroGuide.fenceRun(ctx, fp, 1.5);
     gb.top = 1e4; gb.gnd = -1e4; gb.wear = 0.5;
+  }
+  // ------------------------------------------------------------------ outer shell near a mouth (outdoor mesh)
+  function shell(ctx, sec, tl, wi, a, b) {
+    const gb = ctx.B.infra, ss = ctx.sampleS(ctx.R, a, b, 6, 1.5), rows = ctx.rowsAt(ctx, ss, 0, 0, false), yb = -TB - 0.8;
+    if (sec.kind === 'box') {
+      let L0 = 1e9, L1 = -1e9; for (const t of tl) { const oW = t.L + 2.01 * t.o, iW = t.L - wi * t.o; L0 = Math.min(L0, oW, iW); L1 = Math.max(L1, oW, iW); }
+      const yt = -TB + sec.H + 0.45; L0 -= 0.45; L1 += 0.45;
+      gb.wear = 0.7; gb.sweep(rows, [[L0, yb], [L0, yt], [L1, yt], [L1, yb]], PAL.concrete); gb.wear = 0.5; return;
+    }
+    for (const t of tl) {                                   // bores: an outer ring 0.35 m out, down to the ground on both sides
+      const bp = boreProfile(sec, t.L, t.o), R = bp.R + 0.35, pts = [[bp.lc - R, yb]];
+      for (let k = 0; k <= 16; k++) { const ang = Math.PI - k / 16 * Math.PI; pts.push([bp.lc + Math.cos(ang) * R, bp.hc + Math.sin(ang) * R]); }
+      pts.push([bp.lc + R, yb]);
+      gb.wear = 0.7; gb.sweep(rows, pts, PAL.concrete, { flat: false }); gb.wear = 0.5;
+    }
   }
   // ------------------------------------------------------------------ bulkhead where a box meets bores
   // A 0.3 m wall across the box at s: per track, the opening is its bore's profile clipped to its box cell (so twin bores
@@ -469,7 +495,12 @@ const MetroTube = (() => {
         // mouths in this cell: a headwall facing out
         for (const m of mouths(R)) if (m.s >= s0 - 0.5 && m.s <= s1 + 0.5 && m.s >= ctx.s0 && m.s < ctx.s1) {
           const secs = tl.map(t => sec.kind === 'box' ? boxProfile(sec, t.L, t.o, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25) : boreProfile(sec, t.L, t.o));
-          headwall(ctx, m.s, m.dir, secs, lo, hi, crown); cell.mouth = m; yield;
+          headwall(ctx, m.s, m.dir, secs, lo, hi, crown, p ? [R, p.R2] : [R]); cell.mouth = m;
+          // the outside of the tunnel for 80 m in from the mouth: where the ground does not cover it (or the terrain is
+          // cut open over the mouth) it reads as a concrete portal structure instead of a see-through lining
+          const ia = m.dir < 0 ? m.s : Math.max(s0, m.s - 80), ib = m.dir < 0 ? Math.min(s1, m.s + 80) : m.s;
+          if (ib - ia > 1) shell(ctx, sec, tl, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25, ia, ib);
+          yield;
         }
       }
     }

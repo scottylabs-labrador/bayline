@@ -406,7 +406,8 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
   the carve leaves steep facets behind the trench walls.
 - **WORLD (08:10)**: please extend MetroGround's `dropBuilding` to open cuts: buildings within ~8 m of a track whose
   structure is `trench` or `portal`, and within 30 m outside a tunnel mouth (towns tile 32,4 has one standing in the
-  West Oakland portal, M1.1 s ~3400).
+  West Oakland portal, M1.1 s ~3400; **towns tile 46,-5 has one across the Berkeley Hills east portal box, C1 s ~8281,
+  which closes the tunnel mouth** (seen from outside it looks like a building over the tracks)).
 - **DATA (07:40)**: Milpitas (M2b) alternates `cutcover` / `trench` every ~50 m (S1 3232-3942): a row of short boxes with
   headwalls. If the station's trench is open with a lid only under the concourse / roads, fewer and longer pieces
   would read better.
