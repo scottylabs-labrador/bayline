@@ -2430,7 +2430,7 @@ const StationTypes = (() => {
     // furniture is solid to a walker, and its footprint is a wall in the walk data (the spawn's view check, SIM's
     // pickSpot, keeps its line of sight clear of it: #mst=MCAR put a bin 1.5 m in front of the player)
     const solid = (p, u, v, hu, hv, h) => { const q = [[u - hu, v - hv], [u + hu, v - hv], [u + hu, v + hv], [u - hu, v + hv]].map(([a, b]) => T.WUV(a, b));
-      for (let k = 0; k < 4; k++) addWall(T.walk, q[k], q[(k + 1) % 4], p.y - 0.5, p.y + h); };
+      for (let k = 0; k < 4; k++) addWall(T.walk, q[k], q[(k + 1) % 4], p.y - 0.5, p.y + h, 'furn'); };
     for (const p of plats) {
       const z = p.zone || zones[0], gd = z.d.sk, B = z.d;
       const island = p.kind === 'island';
@@ -2551,7 +2551,7 @@ const StationTypes = (() => {
     for (const [x, z] of q) { poly.push(x, z); bx0 = Math.min(bx0, x); bx1 = Math.max(bx1, x); bz0 = Math.min(bz0, z); bz1 = Math.max(bz1, z); }
     W.floors.push({ poly, a: p0[2], gx, gz, x0: p0[0], z0: p0[1], bx0, bx1, bz0, bz1, slope: true });
   }
-  function addWall(W, a, b, y0, y1) { W.walls.push({ x0: a[0], z0: a[1], x1: b[0], z1: b[1], y0, y1 }); }
+  function addWall(W, a, b, y0, y1, tag) { const w = { x0: a[0], z0: a[1], x1: b[0], z1: b[1], y0, y1 }; if (tag) w.tag = tag; W.walls.push(w); }
   function indexWalk(W) { W.nFloors = W.floors.length; W.nWalls = W.walls.length; }
 
   return { build, footprint, STYLE, ERA, styleFor, Zone, addFloor, addSlope, addWall };
