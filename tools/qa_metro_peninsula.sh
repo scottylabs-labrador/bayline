@@ -6,7 +6,7 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd); cd "$ROOT"
 PAGE=${1:-sim.html}; OUT=${2:-/tmp/bayline-peninsula-metro${METRO:-}}; mkdir -p "$OUT"
-BASE="http://localhost:${PORT:-8136}/$PAGE"
+BASE="http://localhost:${PORT:-8136}/$PAGE"; X=${XH:+&$XH}
 MQ=""; [ "${METRO:-}" = 1 ] && MQ="&metro=1"; [ "${METRO:-}" = 0 ] && MQ="&metro=0"
 fails=0
 note() { echo "$1"; case "$1" in FAIL*) fails=$((fails+1));; esac; }
@@ -18,15 +18,15 @@ grep -qE '\[pageerror\]|\[console\.error\]' "$OUT/all.log" && note "FAIL qa_all:
 grep -q '"boarded":true' "$OUT/all.log" && note "PASS ride flow boards" || note "FAIL ride flow did not board"
 grep -q 'drive_qa.*maxMph' "$OUT/all.log" && note "PASS keyboard drive ran" || note "FAIL keyboard drive"
 # 2. PTC: a reckless driver into the 30 mph Diridon zone must be warned, enforced to a stop, released
-python3 tools/wd.py 200 node tools/shot.mjs "$BASE#auto$MQ&t=08:00" "$OUT/ptc.png" --gpu --wait 90000 --eval "$(cat tools/qa_ptc.js)" --eval2 "JSON.stringify(window.__qa)" > "$OUT/ptc.log" 2>&1
+python3 tools/wd.py 200 node tools/shot.mjs "$BASE#auto$MQ&t=08:00$X" "$OUT/ptc.png" --gpu --wait 90000 --eval "$(cat tools/qa_ptc.js)" --eval2 "JSON.stringify(window.__qa)" > "$OUT/ptc.log" 2>&1
 grep '^\[eval\]' "$OUT/ptc.log" | tail -1 | cut -c1-400
 grep -q 'PTC ENFORCE' "$OUT/ptc.log" && grep -q 'PTC OK at 0.0 mph' "$OUT/ptc.log" && ! grep -qE '\[pageerror\]|\[console\.error\]' "$OUT/ptc.log" && note "PASS PTC warn/enforce/release" || note "FAIL PTC"
 # 3. signal: a reckless driver behind a parked train must be stopped before the red
-python3 tools/wd.py 200 node tools/shot.mjs "$BASE#auto$MQ&t=08:00" "$OUT/signal.png" --gpu --wait 90000 --eval "$(cat tools/qa_signal.js)" --eval2 "JSON.stringify(window.__qa)" > "$OUT/signal.log" 2>&1
+python3 tools/wd.py 200 node tools/shot.mjs "$BASE#auto$MQ&t=08:00$X" "$OUT/signal.png" --gpu --wait 90000 --eval "$(cat tools/qa_signal.js)" --eval2 "JSON.stringify(window.__qa)" > "$OUT/signal.log" 2>&1
 grep '^\[eval\]' "$OUT/signal.log" | tail -1 | cut -c1-400
 grep -q '"passedRed":0' "$OUT/signal.log" && ! grep -qE '\[pageerror\]|\[console\.error\]' "$OUT/signal.log" && note "PASS signal: stopped before the red" || note "FAIL signal"
 # 4. the Caltrain stations next to the metro: HUD, strip, prompt, B board
-python3 tools/wd.py 200 node tools/shot.mjs "$BASE#auto$MQ&t=08:10&at=place_MLBR" "$OUT/spots.png" --gpu --wait 300 --eval "$(cat tools/qa_peninsula_spots.js)" > "$OUT/spots.log" 2>&1
+python3 tools/wd.py 200 node tools/shot.mjs "$BASE#auto$MQ&t=08:10&at=place_MLBR$X" "$OUT/spots.png" --gpu --wait 300 --eval "$(cat tools/qa_peninsula_spots.js)" > "$OUT/spots.log" 2>&1
 grep '^\[eval\]' "$OUT/spots.log" | cut -c8- | python3 -c "
 import sys, json
 for line in sys.stdin:

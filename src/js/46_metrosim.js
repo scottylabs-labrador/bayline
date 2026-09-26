@@ -50,7 +50,7 @@ const MetroSim = (() => {
   async function loadData() {
     if (typeof MetroNet === 'undefined' || !MetroNet.load) throw new Error('MetroNet is not in this build');
     MN = MetroNet; await MN.load(); TT = await MN.loadTimetable();
-    for (const s of MN.stations) { const o = { id: s.id, name: s.name, short: NAMES_SHORT[s.id] || s.name, x: s.x, z: s.z, y: s.levels ? s.levels.platform : 0, type: s.type, layout: s.layout, src: s, lines: new Set(), idx: stations.length }; stations.push(o); stById.set(o.id, o); }
+    for (const s of MN.stations) { const o = { id: s.id, name: s.name, short: s.short || NAMES_SHORT[s.id] || s.name, x: s.x, z: s.z, y: s.levels ? s.levels.platform : 0, type: s.type, layout: s.layout, src: s, lines: new Set(), idx: stations.length }; stations.push(o); stById.set(o.id, o); }
     for (const l of MN.lines) { const o = { id: l.id, name: l.name || l.id, short: LINE_SHORT[l.id] || l.name || l.id, color: l.colour || l.color || '#cccccc', text: l.text || '#000000', terminals: l.terminals || [], src: l }; lines.push(o); lineById.set(o.id, o); }
     trips = TT.trips.filter(t => t.legs && t.legs.length && MN.patterns[t.pat]);
     busTrips = TT.busBridge || [];
@@ -817,6 +817,10 @@ const MetroSim = (() => {
   // real ones do, though you change to the shuttle at Pittsburg / Bay Point); the Antioch shuttle says where IT goes
   // (Pittsburg / Bay Point) and "change for" the trip's destination. { dest, change } per leg.
   function legDest(l) {
+    // DATA's headsigns when the network has them (M2b: per pattern and per pattern leg; the shuttle's own leg says
+    // Pittsburg / Bay Point), else from the stops
+    const pat = MN.patterns[l.plan.trip.pat], PL = pat && pat.legs && pat.legs[l.stops[0].k];
+    if (PL && PL.headsign) { const whole = pat.headsign || PL.headsign; return { dest: PL.headsign, change: l.kind === 'dmu' && whole !== PL.headsign ? whole : '' }; }
     let x = l; while (x.next) x = x.next;
     const L = l.plan.legs, fin = L[L.length - 1], finSt = fin.stops[fin.stops.length - 1].st, endSt = x.stops[x.stops.length - 1].st;
     if (l.kind === 'dmu' && endSt !== finSt) return { dest: stName(endSt), change: stName(finSt) };
@@ -937,7 +941,7 @@ const MetroSim = (() => {
   function refreshEvents() { if (liveDirty) { liveDirty = false; buildEvents(); } }
 
   async function init() {
-    if (!isOn()) return false;
+    if (!isOn() || (typeof Metro !== 'undefined' && Metro.skip('sim'))) return false;
     if (loading) return loading;
     loading = (async () => {
       try {

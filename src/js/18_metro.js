@@ -21,6 +21,7 @@ const Metro = (() => {
   const forced = hash.get('metro');
   let on = forced === null ? DEFAULT_ON : forced !== '0';
   const faults = new Set((hash.get('metrofail') || '').split(',').map(s => s.trim()).filter(Boolean));
+  const skips = new Set((hash.get('metroskip') || '').split(',').map(s => s.trim()).filter(Boolean));   // (QA: memory per module)
   let failed = null, armed = false, started = false;
   const waiting = [], teardowns = [], listeners = [];
   const NEVER = new Promise(() => {});                         // what a failed metro load resolves to: callers just stop
@@ -94,13 +95,13 @@ const Metro = (() => {
     // guideway (infra)
     if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled) {
       const init = MetroTrack.init, update = MetroTrack.update; let n = 0;
-      MetroTrack.init = function (...a) { if (!on) return; let p; try { p = init.apply(this, a); } catch (e) { fail('the guideway', e); return; } if (p && p.catch) p.catch(e => fail('the guideway', e)); return p; };
+      MetroTrack.init = function (...a) { if (!on || skips.has('track')) return; let p; try { p = init.apply(this, a); } catch (e) { fail('the guideway', e); return; } if (p && p.catch) p.catch(e => fail('the guideway', e)); return p; };
       MetroTrack.update = function (...a) { if (!on) return; if (fault('build') && started && ++n > 150) throw injected('build'); return update.apply(this, a); };
     }
     // stations (stations workstream): their hooks on Stations.init/update call these properties; the wrappers never throw
     if (typeof MetroStations !== 'undefined' && MetroStations.enabled) {
       const init = MetroStations.init, update = MetroStations.update; let n = 0;
-      MetroStations.init = function (...a) { if (!on) return; let p; try { p = init.apply(this, a); } catch (e) { fail('the stations', e); return; } if (p && p.catch) p.catch(e => fail('the stations', e)); return p; };
+      MetroStations.init = function (...a) { if (!on || skips.has('stations')) return; let p; try { p = init.apply(this, a); } catch (e) { fail('the stations', e); return; } if (p && p.catch) p.catch(e => fail('the stations', e)); return p; };
       MetroStations.update = function (...a) {
         if (!on) return;
         try { if (fault('stations') && started && MetroStations.ready && ++n > 150) throw injected('stations'); return update.apply(this, a); } catch (e) { fail('the stations', e); }
@@ -156,7 +157,7 @@ const Metro = (() => {
 
   const api = {
     get on() { return on; }, get failed() { return failed; }, get started() { return started; }, DEFAULT_ON,
-    arm, start, fail, guard, guardAll, fault, injected, whenStarted,
+    arm, start, fail, guard, guardAll, fault, injected, whenStarted, skip: (k) => skips.has(k),
     onTeardown(f) { teardowns.push(f); }, onFail(f) { listeners.push(f); },
   };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).Metro = api;
