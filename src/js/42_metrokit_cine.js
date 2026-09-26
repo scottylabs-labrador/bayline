@@ -195,7 +195,7 @@
     void mkRain(vec2 q, float pxm) {
       mkRN = vec2(0.0); mkRC = 0.0; mkRT = 0.0; mkRR = 0.001;
       float v = mkCineB.z, run = clamp(abs(v) / 14.0, 0.0, 1.0), t = mkCineC.z;
-      vec2 flow = normalize(vec2(-sign(v) * run * 2.6, -(1.0 - 0.62 * run)));
+      vec2 flow = normalize(vec2(-sign(v) * run * 1.2, -1.0));          // (down, and back along the car at speed)
       vec2 f = vec2(dot(q, flow), dot(q, vec2(-flow.y, flow.x)));
       float st = 1.0 + 0.35 * run;
       // beads (old drops that cling): 3.2 mm cells
@@ -213,22 +213,23 @@
         if (h < mkCineB.y * 0.22) { vec2 j = vec2(rH(id + 51.1), rH(id + 53.9)) - 0.5;
           float r = mix(0.0022, 0.0036, rH(id + 57.7));
           rDrop(f, o + j * cs * 0.16, r, st * 1.08, pxm, flow); } }
-      // sliders: columns across the flow (14 mm), one drop per 110 mm stretch moving along at its own pace, wavering
-      // at speed; behind it a thin trail and a line of tiny beads left on the glass, fading
-      { float wc = 0.014, P = 0.11, col = floor(f.y / wc), hc = rH(vec2(col, 29.1));
-        float wob = 0.22 * wc * sin(f.x * 70.0 + hc * 6.28) * (0.25 + 0.75 * run);
+      // runners: columns across the flow (15 mm), one drop per 100 mm stretch running along at its own pace in stick-
+      // slip steps, wavering; behind it a thin trail and a line of tiny beads left on the glass, fading
+      { float wc = 0.015, P = 0.1, col = floor(f.y / wc), hc = rH(vec2(col, 29.1));
+        float wob = 0.2 * wc * sin(f.x * 60.0 + hc * 6.28) * (0.4 + 0.6 * run);
         float y = f.y - (col + 0.5) * wc - wob;
         float seg = floor(f.x / P), hs = rH(vec2(col, seg) + 31.7);
-        float sp = mix(0.02, 0.1, rH(vec2(col, 37.3))) * (0.3 + 1.6 * run);
-        float ca = (seg + fract(hs + t * sp / P)) * P;                   // this stretch's drop (a lap of P per P / sp s)
-        if (rH(vec2(col, seg) + 41.9) < mkCineB.y * 0.75) {
-          float r = mix(0.0016, 0.003, rH(vec2(col, seg) + 43.1));
-          rDrop(vec2(f.x, y), vec2(ca, 0.0), r, st * (1.0 + 0.4 * run), pxm, flow);
-          float back = ca - f.x, Lt = 0.05 * (0.6 + run);
+        float sp = mix(0.015, 0.07, rH(vec2(col, 37.3))) * (0.5 + 0.9 * run);
+        float ca = (seg + fract(hs + (t + 0.3 * sin(2.3 * t + 6.28 * hs)) * sp / P)) * P;   // (a lap of P per P / sp s)
+        if (rH(vec2(col, seg) + 41.9) < mkCineB.y * 0.7) {
+          float r = mix(0.0024, 0.0038, rH(vec2(col, seg) + 43.1));
+          rDrop(vec2(f.x, y), vec2(ca, 0.0), r, st * (1.05 + 0.3 * run), pxm, flow);
+          float back = ca - f.x, Lt = 0.08;
           if (back > r && back < Lt) {
-            float fade = 1.0 - back / Lt, tw = r * 0.3 * fade;
-            float tr = 1.0 - smoothstep(tw - pxm, tw + pxm, abs(y));
-            if (tr > mkRT) mkRT = tr * fade;
+            float fade = 1.0 - back / Lt, tw = r * 0.42 * fade;
+            float tr = (1.0 - smoothstep(tw - pxm, tw + pxm, abs(y))) * fade;
+            // the trail is a thin cylindrical lens across its width (drawn like a drop: a squeezed image, dark edges)
+            if (tr > mkRC) { mkRC = tr * 0.85; mkRT = tr; mkRR = tw; mkRN = vec2(-flow.y, flow.x) * clamp(y / max(tw, 1e-5), -1.0, 1.0) * 0.7; }
             // tiny beads along the trail (fixed on the glass)
             float bs = 0.0026, bi = floor(f.x / bs), bx = (bi + 0.5) * bs + (rH(vec2(bi, col)) - 0.5) * bs * 0.4;
             float br = r * 0.3 * (0.5 + 0.5 * rH(vec2(bi, col + 3.0))) * fade;

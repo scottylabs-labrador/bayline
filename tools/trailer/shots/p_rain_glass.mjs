@@ -46,15 +46,17 @@ export default {
     if (B.Post) { B.Post.debug.ae = false; B.Post.debug.expo = 1.25; }
     B.MetroKit.look({ refl: 1, cinema: { bokeh: 0.055, gain: 8, thr: 0.8, lens: 0.3, beads: 0.75, fresh: 0.12, focus: 0, refl: 0.25, tint: 1.25 } });
     for (let i = 0; i < 40 && !(__m.train(d.key) && __m.train(d.key).entry); i++) await new Promise(r => setTimeout(r, 100));
-    // hold the train at the start and draw a few frames from inside the car, so MetroKit knows the camera is in it (the
-    // cinema glass is chosen by the camera the cars were last drawn with) from the first captured frame on
-    const t1 = performance.now();
-    while (performance.now() - t1 < 900) { B.Env.setClock(d.t); __m.focus(d.key); const R = window.__rig(0); if (R) __cine.put(R.eye, R.at); await new Promise(r => setTimeout(r, 40)); }
+    // a pre-roll in capture mode with the clock held: a few frames drawn from inside the car (MetroKit picks the car's
+    // cinema glass by the camera; its programs compile), and capture mode left on, so the game's own loop never draws
+    // the free camera (outside the car, clamped above the trench) before the first captured frame
+    B.capture.cam = (t, c) => { const R = window.__rig(0); if (R) { __cine.aim(c, R.eye, R.at, 24, 0); c.near = 0.03; c.updateProjectionMatrix(); } };
+    B.capture.on = true;
+    for (let i = 0; i < 8; i++) { B.Env.setClock(d.t); __m.focus(d.key); const R = window.__rig(0); if (R) { __cine.put(R.eye, R.at); B.MetroKit.viewHint(R.eye, 24); } B.stepFrame(1); await new Promise(r => setTimeout(r, 30)); }
     B.Env.setClock(d.t);
     return JSON.stringify({ key: d.key, line: d.line, dest: d.dest, cars: d.cars, t: d.t, v: d.v }); }`,
   before: `(t) => { const B = window.__bayline, d = window.__dep; if (!d) return; __m.focus(d.key);
     // rain arrives on the glass once our car is out: a few old beads in the Tube, fresh drops and sliders outside
     const out = B.Env.time.sec - (d.t + ${LEAD}); B.MetroKit.look({ cinema: { fresh: 0.12 + 0.88 * __cine.ease((out - 0.2) / 2.2) } });
-    const R = window.__rig(t); if (R) __cine.put(R.eye, R.at); }`,
+    const R = window.__rig(t); if (R) { __cine.put(R.eye, R.at); if (B.MetroKit.viewHint) B.MetroKit.viewHint(R.eye, 24); } }`,
   cam: `(t, cam) => { const R = window.__rig(t); if (!R) return; __cine.aim(cam, R.eye, R.at, 24, 0); if (cam.near > 0.03) { cam.near = 0.03; cam.updateProjectionMatrix(); } }`,
 };

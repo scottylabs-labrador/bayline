@@ -1937,6 +1937,9 @@ const MetroKit = (() => {
   K.FONT = FONT; K.Consist = Consist; K.Car = Car;
 
   const createFarBatch = (scene, o) => K.createFarBatch(scene, o);
-  return { _k: K, setQuality, setWet, stats, precompile, look: o => K.look ? K.look(o) : null, setRenderer: r => K.setRenderer && K.setRenderer(r), bakesSettled: () => K.bakesSettled ? K.bakesSettled() : Promise.resolve(), createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
+  // viewHint(p, fov): where the camera will be for the next frame (trailer hooks: the capture camera is placed after the
+  // runtime has updated, so without it the first captured frame is judged from the previous view)
+  const viewHint = (p, fov) => { _camW.set(p.x, p.y, p.z); _camTan = fov ? Math.tan(fov * Math.PI / 360) : TAN_GAME; _camT = performance.now(); };
+  return { _k: K, setQuality, setWet, stats, precompile, viewHint, look: o => K.look ? K.look(o) : null, setRenderer: r => K.setRenderer && K.setRenderer(r), bakesSettled: () => K.bakesSettled ? K.bakesSettled() : Promise.resolve(), createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroKit = MetroKit;
