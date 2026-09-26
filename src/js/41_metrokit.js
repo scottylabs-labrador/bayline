@@ -96,7 +96,7 @@ const MetroKit = (() => {
   pal('lime', '#b8c43a', 0.5, 0, { ...IN, pat: PAT.plastic, gr: 0.15 });
   pal('ceil', '#e8e8e4', 0.6, 0, { ...IN, pat: PAT.ceil, gr: 0.1 });
   pal('lightStrip', '#fffdf5', 0.3, 0, { ...IN, eg: G.interior, ew: 3.2 });
-  pal('floor', '#56595d', 0.72, 0, { ...IN, pat: PAT.floor, gr: 0.5 });
+  pal('floor', '#45484c', 0.62, 0, { ...IN, pat: PAT.floor, gr: 0.5 });              // dark grey resilient floor (photos)
   pal('floorDecal', '#e9eaea', 0.6, 0, { ...IN, pat: PAT.floor, gr: 0.4 });
   pal('seatBlue', '#1b679d', 0.42, 0, { ...IN, cc: 0.35, pat: PAT.vinyl, gr: 0.3 });
   pal('seatLime', '#b3bf1c', 0.42, 0, { ...IN, cc: 0.35, pat: PAT.vinyl, gr: 0.3 });
@@ -313,7 +313,7 @@ const MetroKit = (() => {
         float ridge = 1.0 - smoothstep(0.08, 0.22, abs(f.x * 0.6 + f.y * 0.9)); col *= 0.85 + 0.25 * ridge * fade; mkRough -= 0.1 * ridge;
       } else if (mkPat == 10.0) {                                // speckled resilient floor (Marmoleum)
         float s1 = mkH(floor(p.xz * 190.0)), s2 = mkF(p.xz * 2.3);
-        col *= 0.9 + 0.12 * s2; col = mix(col, vec3(0.5, 0.5, 0.49), step(0.955, s1) * 0.35 * fade);
+        col *= 0.9 + 0.12 * s2; col = mix(col, vec3(0.3, 0.3, 0.3), step(0.955, s1) * 0.3 * fade);
         col = mix(col, vec3(0.14), step(s1, 0.04) * 0.35 * fade);
         mkRough -= 0.15 * smoothstep(0.4, 0.9, mkF(p.xz * 0.6 + 5.0));       // scuffed wear path glosses
       } else if (mkPat == 11.0) {                                // vinyl upholstery: grain + stitch lines
@@ -699,7 +699,7 @@ const MetroKit = (() => {
     uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
     const vec3 MK_WALL = vec3(0.776, 0.768, 0.730), MK_WALL2 = vec3(0.651, 0.651, 0.624), MK_CEIL = vec3(0.807, 0.807, 0.776);
-    const vec3 MK_FLOOR = vec3(0.093, 0.100, 0.109), MK_BLUE = vec3(0.011, 0.136, 0.337), MK_LIME = vec3(0.451, 0.521, 0.011);
+    const vec3 MK_FLOOR = vec3(0.058, 0.064, 0.072), MK_BLUE = vec3(0.011, 0.136, 0.337), MK_LIME = vec3(0.451, 0.521, 0.011);
     const vec3 MK_SHELL = vec3(0.578, 0.604, 0.617), MK_POLE = vec3(0.56, 0.59, 0.62), MK_DOORI = vec3(0.60, 0.61, 0.60);
     float mkLitK, mkDayK; vec3 mkDayA;
     // LED signs behind the glass: plane (axis 0: x = c, 1: z = c), extent a0..a1 along the other horizontal axis,
