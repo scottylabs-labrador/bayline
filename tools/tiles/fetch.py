@@ -63,7 +63,7 @@ def stats():
         return dict(_stats)
 
 
-def naip(bbox, px, bands='rgb', quality=92):
+def naip(bbox, px, bands='rgb', quality=92, timeout=180):
     """NAIP export for a lon/lat bbox (w,s,e,n) at px*px. bands: 'rgb' or 'nir'. Returns JPEG bytes."""
     w, s, e, n = bbox
     extra = '&bandIds=3' if bands == 'nir' else ''
@@ -73,14 +73,36 @@ def naip(bbox, px, bands='rgb', quality=92):
     # metres, not in degrees), which misregisters every tile by up to ~50 m. Cache dir 'naip_aar0' so old fetches are never reused.
     key = f'{w:.7f}_{s:.7f}_{e:.7f}_{n:.7f}_{px}_{bands}'
     dest = os.path.join(RAW, 'naip_aar0', bands, str(px), key.replace('-', 'm') + '.jpg')
-    return get_cached(url, dest, min_bytes=500, validate=lambda r: r.headers.get('content-type', '').startswith('image/'))
+    return get_cached(url, dest, min_bytes=500, timeout=timeout, validate=lambda r: r.headers.get('content-type', '').startswith('image/') and
+                      (bands != 'rgb' or _rgb_ok(r.content)))
 
 
-def terrarium(z, x, y):
-    dest = os.path.join(RAW, 'terrarium', str(z), str(x), f'{y}.png')
-    return get_cached(TERRARIUM.format(z=z, x=x, y=y), dest, min_bytes=100, timeout=60)
+def _rgb_ok(b):
+    """False when the ImageServer dropped a band in some block (magenta / yellow / cyan rectangles under load):
+    get_cached then retries (tools/metro_world/naip_dropouts.py). A dropout block: one band all but zero while the
+    other two look like bright, textured land (clear water, where red is near zero too, is smooth and darker)."""
+    try:
+        import io
+        import numpy as np
+        from PIL import Image
+        im = Image.open(io.BytesIO(b)); im.draft('RGB', (max(64, im.size[0] // 8), max(64, im.size[1] // 8)))
+        bad = rgb_dropout_array(np.asarray(im.convert('RGB')).astype(np.float32))
+        if bad:
+            log('NAIP band dropout in a response, retrying')
+        return not bad
+    except Exception:
+        return True
 
 
-def usgs_tile(z, x, y):
-    dest = os.path.join(RAW, 'usgs', str(z), str(x), f'{y}.jpg')
-    return get_cached(USGS_TILE.format(z=z, x=x, y=y), dest, min_bytes=300, timeout=60)
+def rgb_dropout_array(a, G=16):
+    import numpy as np
+    n = a.shape[0] // G
+    if n < 2:
+        return False
+    B = a[:n * G, :n * G].reshape(G, n, G, n, 3).transpose(0, 2, 1, 3, 4).reshape(G, G, n * n, 3)
+    hi = np.percentile(B, 98, axis=2); mean = B.mean(2); std = B.std(2)
+    for c in range(3):
+        o = [k for k in range(3) if k != c]
+        if ((hi[..., c] < 6) & (mean[..., o].min(-1) > 40) & (std[..., o].min(-1) > 7)).any():
+            return True
+    return False
