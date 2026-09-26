@@ -1,12 +1,13 @@
 #!/bin/sh
 # Bayline QA suite: views, gameplay flows and frame cost. Needs the dev server (tools/devserver.py) running.
-# Usage: [PORT=8123] [METRO=1|0] sh tools/qa_all.sh [page] [outdir]      page defaults to lead.html (tools/devbuild.sh output)
+# Usage: [PORT=8123] [METRO=1|0] [XH=k=v&...] sh tools/qa_all.sh [page] [outdir]      page defaults to lead.html (tools/devbuild.sh output)
 #   METRO=1 / METRO=0 appends #metro=1 / #metro=0 to every view (Bayline Metro on / off); unset: the page's default
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd); cd "$ROOT"
 PAGE=${1:-lead.html}; OUT=${2:-/tmp/bayline-qa}; mkdir -p "$OUT"
 BASE="http://localhost:${PORT:-8123}/$PAGE"     # PORT=8124 sh tools/qa_all.sh ... against a second dev server
 MQ=""; [ "${METRO:-}" = 1 ] && MQ="&metro=1"; [ "${METRO:-}" = 0 ] && MQ="&metro=0"
+MQ="$MQ${XH:+&$XH}"                               # XH=metrodir=metro-next/ (any extra hash) adds to every view too
 [ -n "$MQ" ] && echo "== with #${MQ#&}"
 W='new Promise(r=>{const f=()=>window.__bayline&&window.__bayline.Sim.TT?r():setTimeout(f,200);f();}).then(()=>'
 PERF='new Promise(r=>{const i=__bayline.Env.renderer.info;let n=0,t0=performance.now();function f(){n++;if(n<90)requestAnimationFrame(f);else r(JSON.stringify({ms:((performance.now()-t0)/n).toFixed(1),calls:i.render.calls,tris:i.render.triangles,stream:{req:Stream_stats()}}))}requestAnimationFrame(f)})'
