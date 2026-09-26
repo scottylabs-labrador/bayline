@@ -284,7 +284,7 @@ const Post = (() => {
           col *= mix(ao, 1.0, 0.65 * smoothstep(0.08, 0.5, lx)); }
         vec3 wp = ro + rd * tS;
         #ifdef BL_UNDER
-        { vec3 uw = wp; uw.y = blUnbentY(wp, ro); blIn = max(uUnderAll, blUnder(uw).x); }
+        { vec3 uw = wp; uw.y = blUnbentY(wp, ro); blIn = max(uUnderAll, blUnderL(uw).x); }       // (reads only near the volumes: Under)
         #endif
         #ifdef BL_SSR
         // open water sits at sea level (the terrain draws it at y = 0): a pixel within ~0.4 m of it, seen from above,
