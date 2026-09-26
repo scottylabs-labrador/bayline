@@ -151,7 +151,7 @@ const UI = (() => {
       while (L < 8 && Terrain.tileSize(L) * pxPerM > 420) L++;
       const T = Terrain.tileSize(L), n = 1 << L;
       const wx0 = map.cx - W / 2 / pxPerM, wz0 = map.cz - H / 2 / pxPerM, wx1 = map.cx + W / 2 / pxPerM, wz1 = map.cz + H / 2 / pxPerM;
-      const tx0 = Math.max(0, Math.floor((wx0 - T0.X0) / T)), tx1 = Math.min(n - 1, Math.floor((wx1 - T0.X0) / T)), ty0 = Math.max(0, Math.floor((wz0 - T0.Z0) / T)), ty1 = Math.min(n - 1, Math.floor((wz1 - T0.Z0) / T));
+      const tx0 = Math.max(0, Math.floor((wx0 - T0.X0) / T)), tx1 = Math.min(n - 1, Math.floor((wx1 - T0.X0) / T)), ty0 = Math.max(Terrain.north ? -(n >> 2) : 0, Math.floor((wz0 - T0.Z0) / T)), ty1 = Math.min(n - 1, Math.floor((wz1 - T0.Z0) / T));
       g.imageSmoothingQuality = 'high';
       for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
         // draw the finest cached image at or above this level

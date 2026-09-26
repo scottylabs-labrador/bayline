@@ -6,7 +6,9 @@
 //   Globe.frame                 { lat0, lon0, mlat, mlon, bay, id }: x = (lon - lon0) mlon, z = -(lat - lat0) mlat
 //   Globe.ll2w(lat, lon) / w2ll(x, z)
 //   Globe.setFrame(lat, lon)    rebase to a new origin (Bay frame when within reach of the Peninsula)
-//   Globe.inBayline(x, z)       inside the Bayline square of the Bay frame
+//   Globe.inBayline(x, z)       inside the area the Bayline terrain draws (the square, plus the north strip when
+//                               its tiles are published: Terrain.area), in the Bay frame
+//   Globe.inSquare(x, z)        inside the original Bayline square (102.4 km) of the Bay frame
 //   Globe.h(x, z)               ground height (m, sea level clamps water) from the finest loaded elevation tile
 //   Globe.ensure(x, z)          promise: full-detail elevation around a point (for spawning)
 //   Globe.update(camera)        per frame
@@ -16,6 +18,9 @@ const Globe = (() => {
   const N = 32, NV = (N + 1) * (N + 1);                 // quads per tile side, grid vertices
   const HZ_MAX = 14, SIZE = 256;                        // terrarium: finest zoom used, pixels per tile
   const BX0 = -45056, BZ0 = -49152, BS = 102400;        // the Bayline square (Bay frame)
+  // the area the Bayline terrain draws and the globe leaves to it: the square, extended north over the Bayline Metro
+  // strip when its tiles are published (set from Terrain.area at init; see notes/bart/world.md)
+  const EX = [BX0, BZ0, BX0 + BS, BZ0 + BS];
   const group = new THREE.Group(); group.name = 'globe'; group.layers.enable(1);
   const stats = { nodes: 0, drawn: 0, hTiles: 0, iTiles: 0, loading: 0, built: 0, fails: 0 };
 
@@ -24,7 +29,8 @@ const Globe = (() => {
   const frame = { lat0: Geo.LAT0, lon0: Geo.LON0, mlat: Geo.MLAT, mlon: Geo.MLON, bay: true, id: 0 };
   const ll2w = (lat, lon) => ({ x: (lon - frame.lon0) * frame.mlon, z: -(lat - frame.lat0) * frame.mlat });
   const w2ll = (x, z) => ({ lat: frame.lat0 - z / frame.mlat, lon: frame.lon0 + x / frame.mlon });
-  const inBayline = (x, z) => frame.bay && x > BX0 && x < BX0 + BS && z > BZ0 && z < BZ0 + BS;
+  const inBayline = (x, z) => frame.bay && x > EX[0] && x < EX[2] && z > EX[1] && z < EX[3];
+  const inSquare = (x, z) => frame.bay && x > BX0 && x < BX0 + BS && z > BZ0 && z < BZ0 + BS;
   const frameListeners = [];
   function setFrame(lat, lon) {
     const bay = Math.hypot((lat - Geo.LAT0) * Geo.MLAT, (lon - Geo.LON0) * Geo.MLON) < 160000;
@@ -210,14 +216,32 @@ const Globe = (() => {
 
   // ------------------------------------------------------------------ material
   const shared = { uExcl: { value: new THREE.Vector4(BX0, BZ0, BX0 + BS, BZ0 + BS) }, uExclOn: { value: 1 }, night: U.uNight,
-    uWaveN: { value: null }, uWindW: U.uWind, uWaveT: U.uTime, uDebug: { value: 0 }, uGround: { value: null } };
+    uWaveN: { value: null }, uWindW: U.uWind, uWaveT: U.uTime, uDebug: { value: 0 }, uGround: { value: null },
+    uBayW: { value: null }, uBayR: { value: new THREE.Vector4(0, 0, 1, 1) }, uBayOn: { value: 0 } };
+  // ---- inland / bay water around the Bayline area (tiles/globe/baywater.png, tools/metro_world/globe_water.py): the
+  // sediment-brown bays north and east of it (San Pablo, Carquinez, Suisun, the Delta) fail the photo's water test, and the
+  // ocean surf would run through them; in the Bay frame the raster marks them as calm bay water (world workstream)
+  let bayInfo = null;
+  function bayWater() {
+    if (bayInfo || typeof Stream === 'undefined') return;
+    bayInfo = { loading: true };
+    Promise.all([Stream.json('tiles/globe/baywater.json', 3), Stream.image('tiles/globe/baywater.png', 3)]).then(([j, bmp]) => {
+      const t = new THREE.Texture(bmp); t.flipY = false; t.minFilter = t.magFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
+      bayInfo = { bbox: j.bbox }; shared.uBayW.value = t; bayFrame();
+    }, () => {});
+  }
+  function bayFrame() {
+    if (!bayInfo || !bayInfo.bbox || !shared.uBayW.value) { shared.uBayOn.value = 0; return; }
+    const [w, s, e, n] = bayInfo.bbox, a = ll2w(n, w), b = ll2w(s, e);
+    shared.uBayR.value.set(a.x, a.z, b.x, b.z); shared.uBayOn.value = frame.bay ? 1 : 0;
+  }
   function makeMaterial() {
     if (!shared.uWaveN.value && Terrain.waveTexture) shared.uWaveN.value = Terrain.waveTexture();
     if (!shared.uGround.value && Terrain.groundDetail) shared.uGround.value = Terrain.groundDetail();
     const u = Object.assign({ iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 10 }, iEox: { value: 1 },
       nTex: { value: null }, nUV: { value: new THREE.Vector4(0, 0, 1, 1) }, nHas: { value: 0 } }, shared);
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0, envMapIntensity: 0.5 });
-    m.userData.u = u; m.customProgramCacheKey = () => 'bayline-globe-v3';
+    m.userData.u = u; m.customProgramCacheKey = () => 'bayline-globe-v4';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
@@ -228,6 +252,7 @@ const Globe = (() => {
         .replace('#include <common>', `#include <common>
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform vec4 uExcl; uniform float uExclOn; uniform float night; uniform float uDebug;
           uniform sampler2D uGround; uniform float iTexel; uniform float iEox; uniform sampler2D nTex; uniform vec4 nUV; uniform float nHas;
+          uniform sampler2D uBayW; uniform vec4 uBayR; uniform float uBayOn;
           float gh1(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
           float gn1(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(gh1(i), gh1(i+vec2(1,0)), f.x), mix(gh1(i+vec2(0,1)), gh1(i+vec2(1,1)), f.x), f.y); }
           varying vec3 vGW; varying vec2 vGUv; varying float vGH; varying vec3 vGN; vec3 gGN; float gGRough; float gGWater;
@@ -244,6 +269,13 @@ const Globe = (() => {
             float lum = dot(pc, vec3(0.299, 0.587, 0.114));
             float blu = smoothstep(-0.02, 0.06, pc.b - pc.r) * (1.0 - smoothstep(0.42, 0.62, lum));
             gGWater = (1.0 - smoothstep(-0.2, 0.6, vGH)) * max(blu, 1.0 - smoothstep(0.1, 0.22, lum));
+            float bayK = 0.0;                           // mapped bay / inland water near sea level (Bay frame only)
+            if (uBayOn > 0.5) { vec2 bq = (vGW.xz - uBayR.xy) / (uBayR.zw - uBayR.xy);
+              if (bq.x > 0.0 && bq.x < 1.0 && bq.y > 0.0 && bq.y < 1.0) { bayK = smoothstep(0.35, 0.75, texture2D(uBayW, bq).r) * (1.0 - smoothstep(0.4, 2.5, vGH)); gGWater = max(gGWater, bayK); }
+              // one bay-water tone (the balanced NAIP of the Bayline bays) instead of the imagery tiles' patchwork of
+              // acquisition dates, kept a little of the photo's own variation (sediment plumes, channels)
+              col = mix(col, vec3(0.29, 0.35, 0.34) * (0.85 + 0.3 * smoothstep(0.1, 0.45, lum)), bayK * 0.85);
+              depth = mix(depth, min(depth, 2.5), bayK); }    // (the DEM tiles' bathymetry differs tile to tile: shallow bay tone)
             gGN = normalize(vGN); gGRough = 0.93;
             // close to the ground a Sentinel-2 pixel (5-10 m) covers many screen pixels: add real surface texture (grass,
             // soil, asphalt, concrete from the Bayline detail set) tinted by the photo, plus metre-scale variation,
@@ -260,7 +292,7 @@ const Globe = (() => {
               col *= 1.0 + mag * (det + (v1 - 0.5) * 0.22 + (v2 - 0.5) * 0.14);
             }
             #ifdef BL_WATER
-            if (gGWater > 0.0) blWater(vGW.xz, depth, gGWater, fwq, fwDepth, gGWater, 1.0, col, gGN, gGRough);
+            if (gGWater > 0.0) blWater(vGW.xz, depth, gGWater, fwq, fwDepth, gGWater * (1.0 - bayK), 1.0, col, gGN, gGRough);
             #endif
             diffuseColor.rgb = col;
             if (uDebug > 0.5) diffuseColor.rgb = uDebug < 1.5 ? vec3(gGWater, clamp(vGH / 50.0, 0.0, 1.0), clamp(-vGH / 50.0, 0.0, 1.0)) : vec3(iUV.z < 0.99 ? 1.0 : 0.0, iHas, 0.0);
@@ -373,7 +405,7 @@ const Globe = (() => {
       const dh = Math.hypot(dxm, dzm);
       if (dh > viewR) continue;
       const x0 = (lonW - frame.lon0) * frame.mlon, x1 = (lonE - frame.lon0) * frame.mlon, z0 = -(latN - frame.lat0) * frame.mlat, z1 = -(latS - frame.lat0) * frame.mlat;
-      if (frame.bay && x0 >= BX0 && x1 <= BX0 + BS && z0 >= BZ0 && z1 <= BZ0 + BS) continue;   // wholly Bayline
+      if (frame.bay && x0 >= EX[0] && x1 <= EX[2] && z0 >= EX[1] && z1 <= EX[3]) continue;   // wholly Bayline
       const hr = z >= 2 ? bestH(z, x, y) : null; const mn = hr ? seaClamp(hr.mn) : 0, mx = hr ? Math.max(seaClamp(hr.mx), 0) : 4500;
       const dv = Math.max(0, cp.y - mx, mn - cp.y), dist = Math.hypot(dh, dv) + 1;
       const latC = (latN + latS) / 2, size = CIRC * Math.cos(latC * DEG) / 2 ** z;
@@ -436,8 +468,10 @@ const Globe = (() => {
   function invalidate() { for (const n of nodes.values()) n.hKey = -2; }
   function init() {
     try { maxAniso = Math.min(8, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+    if (typeof Terrain !== 'undefined' && Terrain.area) { const a = Terrain.area; EX[0] = a[0]; EX[1] = a[1]; EX[2] = a[2]; EX[3] = a[3]; shared.uExcl.value.set(a[0], a[1], a[2], a[3]); }
+    bayWater(); onFrame(bayFrame);
     Env.scene.add(group);
   }
-  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, maybeRebase, invalidate, inBayline, h, hAt, ensure, lodK,
+  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, maybeRebase, invalidate, inBayline, inSquare, h, hAt, ensure, lodK,
     set enabled(v) { enabled = !!v; }, get enabled() { return enabled; }, tx, ty, lonOf, latOf, inUS };
 })();

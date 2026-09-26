@@ -144,7 +144,7 @@ def _runways():
             for a in json.load(open(p))['a']:
                 for w in a[10]:
                     la, oa, lb, ob, wft, approx = w[2], w[3], w[4], w[5], w[9], w[14]
-                    if approx or not (36.9 < la < 37.9 and -122.65 < oa < -121.4):
+                    if approx or not (36.9 < la < 38.1 and -122.65 < oa < -121.4):
                         continue
                     A = ll2w(la, oa); B = ll2w(lb, ob)
                     _rwys.append((A[0], A[1], B[0], B[1], max(wft * 0.3048, 10.0) / 2))
@@ -207,14 +207,29 @@ def modelled_weight(tx, ty):
 
 
 _l8set = None
+_OLD = None
+OLD_L8 = os.path.join(CACHE, 'old_l8.json')
+
+
+def old_l8():
+    """The L8 tiles of the h9 layer as published before Bayline Metro (frozen on first use): never recomputed."""
+    global _OLD
+    if _OLD is None:
+        import json
+        if not os.path.exists(OLD_L8):
+            prev = json.load(open(os.path.join(PUB_TILES, 'h9', 'index.json')))
+            write_atomic(OLD_L8, json.dumps([[r[0], r[1]] for r in prev['l8'] + prev.get('l8n', [])]).encode())
+        _OLD = {tuple(t) for t in json.load(open(OLD_L8))}
+    return _OLD
 
 
 def edge_weight(tx, ty):
-    """Fade the detail to zero toward any neighbouring L8 tile that gets no lidar (outside the imagery coverage)."""
+    """Fade the detail to zero toward any neighbouring L8 tile that gets no lidar (outside the imagery coverage) and
+    toward the pre-Metro tiles (old_l8): those were baked when this tile had no lidar, so they faded to zero here."""
     global _l8set
     if _l8set is None:
-        import json
-        _l8set = {tuple(t) for t in json.load(open(os.path.join(PUB_TILES, 'index.json')))['levels']['8']}
+        from .common import coverage
+        _l8set = {tuple(t) for t in coverage()[8]} - old_l8()
     x0, z0, _, _ = bounds(8, tx, ty)
     g = np.arange(NV) * STEP9
     X = (x0 + g)[None, :]; Z = (z0 + g)[:, None]
