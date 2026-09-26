@@ -26,6 +26,8 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 | car length over coupler faces (D and E) | 21.336 m (70 ft); 10-car train 213.36 m (platforms 700 ft = 213.4 m) | BART |
 | door centres along the car (both sides) | x = 0 and ±5.33 m from the car centre (car-local), 3 per side, same on D and E cars | photogrammetry (cross-ratios on a side-on photo of a 10-car train, 5 estimates 5.29–5.37 m) + BART 2014/2015 floor plans |
 | door clear opening | 1.372 m (54 in) wide, ~1.93 m high | BART board presentation 2014 ("54 inch door opening") |
+| **collector shoes (4 per car, both sides of both trucks)** | contact face **+0.171 m** above top of rail over lat **1.43–1.57 m** (centre 1.50; infra's rail head 1.461–1.537), shoe 0.38 m long with upturned ends; arm pivots on a longitudinal pin at lat 1.28 m / +0.228 m (inboard of the coverboard edge 1.339 m); everything under the coverboard stays below +0.232 m; nothing beyond lat 1.57 m | infra's published contact rail (notes/bart/infra.md "Third rail"); shoe envelope checked against it |
+| shoe on the rail / free | the shoe over the rail rides its contact surface (ramp heights included); the other hangs tilted, its face ~+0.09 m (0.08 m below contact), so the 76 mm end ramps (down to +0.095 m) lift it on | per truck from `MetroTrack.thirdRail(track, s)` in `MetroKit.poseOnTrack` (LOD 0 cars) |
 
 The "42 in (1.07 m)" figure the stations team found does not match any BART source I could find; BART's own
 facts page and the platform standard both give 39 in. Always read `car.doors[i]` (x, side, width, sillY) from the
@@ -53,12 +55,17 @@ c.setDisplay({ line, color, lineName, destination, nextStop, arriving, doors: 'l
 c.setCab({ speedMph, atcCodeMph | codeMph, targetMph, effort | notch, mode: 'ATO'|'MANUAL', doors, nextStop, distFt, clock,
            cars, destination, lineColor | color, alarm | atc: 'ok'|'warn'|'brake'|'penalty', handle })  // ~8 Hz redraw max
 c.setInteriorVisible(bool) / car.setInteriorVisible(bool)   // builds the interior lazily (cached per design)
+c.setLoad(f)                                 // 0 empty .. 1 crush: passengers seen through the windows (default 0.3)
+c.setThirdRail(side, top = 0.171)            // previews without MetroTrack: contact rail on the consist's +Z (1) / -Z (-1)
+                                             // side or none (0); poseOnTrack sets the shoes from MetroTrack by itself
 c.setLOD(0|1|2) / car.setLOD(level)          // 0 full, 1 one mesh per car, 2 a banded prism (built lazily)
 c.update(dt)                                  // doors, wheel spin, bone upload for LOD0 cars; no allocations
 c.dispose()                                   // per-consist GPU resources (design geometry stays cached)
 MetroKit.poseCar(car, F, R, roll)            // as TrainKit.poseCar
 MetroKit.poseOnTrack(c, frame, dFront)       // frame(d, out) -> out {x, y, z, tx, ty, tz, bank}; d grows toward +X;
-                                              // poses every car from its bogie pivots and yaws the bogies
+                                              // poses every car from its bogie pivots and yaws the bogies; with
+                                              // MetroNet frames (out.track, out.s, out.sign, out.rx/rz) and MetroTrack in
+                                              // the build it also puts each truck's shoe on the contact rail
 car.setBogies(F, R)                           // bogie yaw from pivot frames (for callers that pose cars themselves)
 MetroKit.createFarBatch(scene, { maxCars, maxLamps })  // every distant train in one instanced draw per car design:
   far.begin(); far.addCar('bart', 'D'|'E', matrix4 | {x,y,z,yaw,pitch,roll}, flip); far.addLamp(x, y, z, 'head'|'tail'); far.end(night)
@@ -163,9 +170,11 @@ Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 m
 
 - DATA: the Antioch vehicles are Stadler **GTW 2/6** (BARTCHIVES, Wikipedia "eBART"), not FLIRTs; please fix the
   wording in timetable `consist` / bart-data.md. I read `cars` for eBART as the number of GTW units (each ~40.9 m).
-- INFRA: third-rail geometry for the collector shoes. I assume the contact surface at **y = +0.19 m** above top of rail
-  and the contact rail centreline at **|z| = 1.45 m** from the track centreline (shoes on both sides of every truck,
-  paddles ~0.3 m long). Please tell me your numbers and I'll move the shoes to match.
+- INFRA: done (2026-09-26): shoes moved to your published contact rail (+0.171 m, lat 1.499 m; see "Numbers") and
+  driven per truck from `MetroTrack.thirdRail(frame.track, frame.s)` inside `MetroKit.poseOnTrack` (the frames the sim
+  passes carry MetroNet's track + s): the shoe over the rail rides it, ramps included, the other hangs free at ~+0.09 m.
+  Nothing else needed from you; if the sim ever poses with frames without `track`/`s` the shoes keep their last state.
+- LEAD: done in 62c83db (`MetroKit.setQuality` in applyTier), thanks.
 - SIM: MetroKit is ready for all three kinds: `createConsist('bart' | 'dmu' | 'apm', { cars, seed })`. For 'dmu',
   `cars` = GTW units (each one MetroKit car of 40.89 m with articulated bodies; `c.cars.length === cars`); for 'apm',
   `cars` = cars (end, mid.., end). Please pose with `MetroKit.poseOnTrack` (it articulates the GTW and yaws bogies).
@@ -174,7 +183,5 @@ Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 m
   passengers (feet on the floor), `seats` for seated ones (eye positions, like TrainKit). `consist.onEvent` fires
   'chime' / 'doors-opening' / 'doors-open' / 'doors-closing' / 'doors-closed' for the door sounds if you use
   `openDoors` / `closeDoors` (with `setDoors(side, t)` you drive the doors yourself and no chime event fires).
-- LEAD (90_main.js applyTier): please add `if (typeof MetroKit !== 'undefined') MetroKit.setQuality(T.name);` next to
-  `ACModel.setQuality` (low -> coarser sections and seats; applies to designs built afterwards).
 - STATIONS: the GTW's door sills are at 0.635 m above rail (ASSUMED: low-floor GTW), doors at x = ±6.4 m from the
   unit centre, 1.30 m clear; APM floor 0.36 m (ASSUMED), one 1.6 m door per car side at the car centre.
