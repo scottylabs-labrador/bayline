@@ -137,9 +137,15 @@ const MetroStations = (() => {
     if (!st.plan) st.plan = makePlan(st.data);
     if (!st.plan) { st.state = 'nodata'; return; }
     st.state = 'building'; stats.building++;
-    const t0 = performance.now();
-    jobs.push({ name: st.id, gen: StationTypes.build(st, ctx()), done: (res) => { st.state = 'built'; stats.building--; stats.built++; stats.lastBuildMs = performance.now() - t0; attach(st, res); },
-      fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } });
+    // the station meets the ground (bents, trench walls, entrances, footbridge supports): build it on the fine terrain,
+    // as the Peninsula stations do (Terrain.ensure), with a time-out so a slow tile never blocks a station
+    const r = 280; const cx = st.plan.cx, cz = st.plan.cz;
+    const ready = typeof Terrain !== 'undefined' && Terrain.ensure ? Promise.race([Terrain.ensure(cx - r, cz - r, cx + r, cz + r, 1), new Promise(res => setTimeout(res, 20000))]) : Promise.resolve();
+    ready.catch(() => {}).then(() => {
+      const t0 = performance.now();
+      jobs.push({ name: st.id, gen: StationTypes.build(st, ctx()), done: (res) => { st.state = 'built'; stats.building--; stats.built++; stats.lastBuildMs = performance.now() - t0; attach(st, res); },
+        fail: (e) => { st.state = 'failed'; st.error = String(e && e.stack || e).slice(0, 400); stats.building--; } });
+    });
   }
   function attach(st, res) {
     st.root = res.root; st.res = res; group.add(res.root);

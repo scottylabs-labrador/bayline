@@ -421,7 +421,7 @@ const StationKit = (() => {
         // closest point on the segment to P: range window + directional (troughs light downward, coves upward)
         vec3 d = B - A; float t0 = clamp(dot(P - A, d) / max(dot(d, d), 1e-6), 0.0, 1.0); vec3 Cp = A + d * t0;
         float dist = length(P - Cp); float win = 1.0 - smoothstep(range * 0.6, range, dist); if (win <= 0.0) continue;
-        vec3 toP = (P - Cp) / max(dist, 1e-4); float dirk = uLD[i].w > 0.0 ? mix(uLD[i].w < 1.5 ? 0.12 : 0.0, 1.0, pow(clamp(dot(toP, uLD[i].xyz) * 0.5 + 0.5, 0.0, 1.0), 2.5)) : 1.0;
+        vec3 toP = (P - Cp) / max(dist, 1e-4); float dirk = uLD[i].w > 0.0 ? mix(uLD[i].w < 1.5 ? 0.3 : 0.0, 1.0, pow(clamp(dot(toP, uLD[i].xyz) * 0.5 + 0.5, 0.0, 1.0), 2.5)) : 1.0;
         float E = skLineE(P, N, A, B) * win * dirk;
         reflectedLight.directDiffuse += col * E * BRDF_Lambert(material.diffuseColor);
         // specular: representative point on the segment nearest the reflection ray, lobe widened by the tube radius

@@ -29,12 +29,12 @@ const StationHeroes = (() => {
 
   const CFG = {
     // ---------------------------------------------------------------- San Francisco (Market St: Muni over BART)
-    EMBR: { type: 'subway', access: 'above', muni: true, floor: TERR(0xb9b4aa, 3.0), wall: [0xe4e1da, K.TERRAZZO, 0], wallUp: [0xd8d4cc, K.TERRAZZO, 0], ceil: [0x2e2d2b, K.COFFER, 2.4],
+    EMBR: { type: 'subway', access: 'above', muni: true, floor: TERR(0xb9b4aa, 3.0), wall: [0xe4e1da, K.TERRAZZO, 0], wallUp: [0xd8d4cc, K.TERRAZZO, 0], ceil: [0x4a4845, K.COFFER, 2.4],
       cFloor: TERR(0xa8a296), cWall: BOARD(0x9d968a, 0.2), cCeil: [0x5a5854, K.GRATING, 0], light: [1.0, 0.93, 0.82], feature: ['circles'], hero: 1 },
-    MONT: { type: 'subway', access: 'above', muni: true, floor: HERR(0x7a3527), wall: [0xe8e6e0, K.PANEL, 1.6], wallUp: PAINT(0x3a3a3c), ceil: [0x3a3936, K.COFFER, 1.5],
+    MONT: { type: 'subway', access: 'above', muni: true, floor: HERR(0x7a3527), wall: [0xe8e6e0, K.PANEL, 1.6], wallUp: PAINT(0x3a3a3c), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
       cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome',
       cFloor: [0xd6ceb9, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0xe8e4dc, K.COFFER, 1.2], hero: 1 },
-    POWL: { type: 'subway', access: 'above', muni: true, floor: HERR(0x7d3a2b), wall: [0xe9dfc8, K.PANEL, 1.6], wallUp: PAINT(0xc2462f), ceil: [0x3a3936, K.COFFER, 1.5],
+    POWL: { type: 'subway', access: 'above', muni: true, floor: HERR(0x7d3a2b), wall: [0xe9dfc8, K.PANEL, 1.6], wallUp: PAINT(0xc2462f), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
       cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome',
       cFloor: [0xcfc8b8, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0x2a2a2c, K.GRATING, 0], muniCol: 0xb3362a, hero: 1 },
     CIVC: { type: 'subway', access: 'above', muni: true, floor: MARB(0xdcdad4), wall: [0xe6e3dc, K.PANEL, 1.5], wallUp: PAINT(0x1c2c4a), ceil: [0xe9e7e2, K.PANEL, 0.15],
@@ -64,7 +64,7 @@ const StationHeroes = (() => {
     '19TH': { type: 'subway', access: 'above', stacked: true, floor: [0xc8bca6, K.GRANITE, 0.4], wall: TILE(0xeae6dc, 0.2), band: 0x2a4fa0, wallUp: [0x1f3570, K.BRICK, 1], ceil: [0xecebe7, K.COFFER, 2.4],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 1.2, depth: 1.2, col: 0x1f3570, kind: K.BRICK }, cFloor: [0xc8bca6, K.GRANITE, 0.4], cWall: [0x1f3570, K.BRICK, 1], cCeil: [0xecebe7, K.COFFER, 2.4], hero: 1 },
     MCAR: { type: 'median', access: 'below', floor: CONC(0xa8a296), grid: 0x8c3f2e, canopy: { style: 'box', len: 95, off: 40, top: 0x3a2a22, under: 0x3a2a22, fascia: 0x3a2a22, span: 'all', posts: { shape: 'rect', col: 0x3a2a22, size: 0.4, spacing: 12, where: 'both' } }, hero: 1 },
-    LAKE: { type: 'subway', access: 'above', floor: TERR(0x9d8a82, 3.0), wall: [0xe8e2d6, K.CONCRETE, 0], band: 0xb3342b, wallUp: [0x3a3634, K.CONCRETE, 0], ceil: [0x2f2d2b, K.COFFER, 2.0],
+    LAKE: { type: 'subway', access: 'above', floor: TERR(0x9d8a82, 3.0), wall: [0xe8e2d6, K.CONCRETE, 0], band: 0xb3342b, wallUp: [0x3a3634, K.CONCRETE, 0], ceil: [0x4a4744, K.COFFER, 2.0],
       cFloor: TERR(0x9d8a82), cWall: [0xb54a2a, K.MOSAIC, 0.03], skylights: true, hero: 1 },
     FTVL: { type: 'aerial', access: 'below', floor: QUARRY(0x86412f), canopy: { style: 'shed', len: 100, top: 0x7a3f22, under: 0x5a3a2a, fascia: 0x3d2a20, tilt: true, posts: { shape: 'rect', col: 0x3d2a20, size: 0.3, spacing: 8, where: 'back' } },
       windscreen: 0x6b7a80, ends: 'wall', cCeil: [0xd96a1e, K.PANEL, 1.2], hero: 1 },
@@ -106,7 +106,7 @@ const StationHeroes = (() => {
   function style(id, base) {
     const c = CFG[id]; if (!c) return null;
     const S = Object.assign({}, base);
-    for (const k of ['floor', 'wall', 'wallUp', 'wallLow', 'ceil', 'cFloor', 'cWall', 'cCeil', 'deck', 'light']) if (c[k]) S[k] = c[k];
+    for (const k of ['floor', 'wall', 'wallUp', 'wallLow', 'ceil', 'cFloor', 'cWall', 'cCeil', 'deck', 'light', 'tread']) if (c[k] !== undefined) S[k] = c[k];
     if (c.lightI) S.lightI = c.lightI;
     return S;
   }
