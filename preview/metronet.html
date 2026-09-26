@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metro Network Preview</title>
+<style>
+  :root { color-scheme: dark; --bg: #0c0f13; --panel: #141920; --ink: #e9e6de; --dim: rgba(233, 230, 222, .58); --line: rgba(255, 255, 255, .1); --acc: #ffd24d; }
+  * { box-sizing: border-box }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 "Helvetica Neue", Arial, sans-serif; overflow: hidden }
+  #app { display: grid; grid-template-rows: auto 1fr 250px; height: 100vh }
+  header { display: flex; gap: 14px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap }
+  header b { font-size: 14px; letter-spacing: .02em }
+  label { color: var(--dim); font-size: 12px; display: flex; gap: 6px; align-items: center }
+  select, button, input { font: inherit; color: inherit; background: rgba(255, 255, 255, .06); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px }
+  button.on { background: var(--acc); color: #111; border-color: var(--acc) }
+  #main { position: relative; min-height: 0 }
+  #map, #three { position: absolute; inset: 0; width: 100%; height: 100% }
+  #three { display: none }
+  #prof { width: 100%; height: 100%; display: block; border-top: 1px solid var(--line); background: #0f1318 }
+  #tip { position: absolute; pointer-events: none; background: rgba(12, 15, 19, .92); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: 12px/1.35 ui-monospace, Menlo, monospace; white-space: pre; display: none; z-index: 5 }
+  #legend { position: absolute; right: 10px; top: 10px; background: rgba(12, 15, 19, .85); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.6; z-index: 4 }
+  #legend i { display: inline-block; width: 18px; height: 4px; margin-right: 6px; vertical-align: middle; border-radius: 2px }
+  #stat { color: var(--dim); font-size: 12px; margin-left: auto }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <b>Metro network</b>
+    <label>colour <select id="colour"><option value="struct">structure</option><option value="line">line (patterns)</option><option value="speed">speed limit</option><option value="grade">grade</option><option value="cls">track class</option></select></label>
+    <label>profile <select id="pat"></select></label>
+    <label><input type="checkbox" id="yards" checked> yards</label>
+    <label><input type="checkbox" id="labels" checked> labels</label>
+    <button id="b3d">3D</button>
+    <label>vert × <input id="vx" type="number" value="8" min="1" max="50" style="width:52px"></label>
+    <span id="stat">loading…</span>
+  </header>
+  <div id="main"><canvas id="map"></canvas><canvas id="three"></canvas><div id="tip"></div><div id="legend"></div></div>
+  <canvas id="prof"></canvas>
+</div>
+<script src="../vendor/three.min.js"></script>
+<script src="../src/js/21_metronet.js"></script>
+<script>
+(async () => {
+  const $ = (id) => document.getElementById(id);
+  const hp = new URLSearchParams(location.hash.slice(1));
+  const M = MetroNet;
+  await M.load({ base: hp.get('data') || '/data/v2/' });
+  const SC = { grade: '#8fbf6a', aerial: '#4db3ff', bridge: '#9b8cff', embankment: '#c7d88a', trench: '#ff9f43', median: '#f5d76e', portal: '#ff5d8f', cutcover: '#e05757', bored: '#b83b3b', tube: '#ff2fd0' };
+  const LC = {}; for (const l of M.lines) LC[l.id] = l.colour;
+  // track -> line colours used on it (from patterns)
+  const onLine = new Map();
+  for (const id in M.patterns) { const p = M.patterns[id]; for (const L of p.legs) for (const [t] of L.path) { if (!onLine.has(t)) onLine.set(t, new Set()); onLine.get(t).add(L.sys === 'ebart' ? 'ebart' : p.line); } }
+  // ---------- profile selector
+  const pats = Object.values(M.patterns).sort((a, b) => a.line.localeCompare(b.line) || a.dir - b.dir || b.trips - a.trips);
+  $('pat').innerHTML = pats.map(p => p.legs.map((L, k) => `<option value="${p.id}|${k}">${p.id}${p.legs.length > 1 ? ' leg ' + k + ' (' + L.sys + ')' : ''} · ${p.trips} trips · ${(L.length / 1000).toFixed(1)} km</option>`).join('')).join('');
+  if (hp.get('pat')) $('pat').value = hp.get('pat');
+  if (hp.get('c')) $('colour').value = hp.get('c');
+  // ---------- map view
+  const cv = $('map'), g = cv.getContext('2d'); let W = 0, H = 0, dpr = 1;
+  let cx = 0, cz = 0, sc = 0.02;                      // world centre, px per m
+  { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const t of M.tracks) { x0 = Math.min(x0, t.bbox[0]); z0 = Math.min(z0, t.bbox[1]); x1 = Math.max(x1, t.bbox[2]); z1 = Math.max(z1, t.bbox[3]); } cx = (x0 + x1) / 2; cz = (z0 + z1) / 2; sc = 0.9 * Math.min(innerWidth / (x1 - x0), (innerHeight - 290) / (z1 - z0)); }
+  if (hp.get('ll')) { const [la, lo, z] = hp.get('ll').split(',').map(Number); cx = (lo + 122.10) * 88542.2; cz = -(la - 37.40) * 110985.1; sc = z || 1; }
+  const sx = (x) => (x - cx) * sc * dpr + W / 2, sy = (z) => (z - cz) * sc * dpr + H / 2;
+  function colourOf(t, i) {
+    const mode = $('colour').value;
+    if (mode === 'struct') return SC[M.STRUCT[t.ST[i]]];
+    if (mode === 'speed') { const v = t.VL[i]; return `hsl(${Math.min(120, v * 1.7)},80%,55%)`; }
+    if (mode === 'grade') { const j = Math.min(t.n - 1, i + 1), k = Math.max(0, i - 1); const gr = Math.abs((t.Y[j] - t.Y[k]) / ((j - k) * t.step || 1)); return gr > 0.04 ? '#ff2d2d' : `hsl(${120 - gr / 0.04 * 100},80%,55%)`; }
+    if (mode === 'cls') return { main: '#e9e6de', yard: '#6b7a8a', crossover: '#ffd24d', siding: '#ff9f43', spur: '#b07cff' }[t.cls] || '#888';
+    const s = onLine.get(t.id); if (!s) return t.cls === 'main' ? '#777' : '#3b4450';
+    return LC[[...s][0]] || '#aaa';
+  }
+  function draw() {
+    dpr = devicePixelRatio || 1; W = cv.width = cv.clientWidth * dpr; H = cv.height = cv.clientHeight * dpr;
+    g.fillStyle = '#0c0f13'; g.fillRect(0, 0, W, H);
+    const yards = $('yards').checked;
+    g.lineCap = 'round';
+    for (const t of M.tracks) {
+      if (!yards && t.cls === 'yard') continue;
+      const b = t.bbox; if (sx(b[2]) < 0 || sx(b[0]) > W || sy(b[3]) < 0 || sy(b[1]) > H) continue;
+      const step = Math.max(1, Math.floor(1.5 / (sc * t.step)));
+      g.lineWidth = (t.cls === 'main' ? 2.2 : 1.2) * dpr;
+      let prevC = null; g.beginPath();
+      for (let i = 0; i < t.n; i += step) {
+        const c = colourOf(t, i);
+        if (c !== prevC && prevC !== null) { g.lineTo(sx(t.X[i]), sy(t.Z[i])); g.strokeStyle = prevC; g.stroke(); g.beginPath(); g.moveTo(sx(t.X[i]), sy(t.Z[i])); }
+        else if (prevC === null) g.moveTo(sx(t.X[i]), sy(t.Z[i])); else g.lineTo(sx(t.X[i]), sy(t.Z[i]));
+        prevC = c;
+      }
+      g.lineTo(sx(t.X[t.n - 1]), sy(t.Z[t.n - 1])); g.strokeStyle = prevC; g.stroke();
+      if (sc > 0.6) { g.fillStyle = '#ffffff'; g.font = `${10 * dpr}px ui-monospace, Menlo, monospace`; const i = t.n >> 1; if (t.cls === 'main' || sc > 2) g.fillText(t.id, sx(t.X[i]) + 4 * dpr, sy(t.Z[i]) - 4 * dpr); }
+    }
+    // platforms
+    if (sc > 0.15) for (const st of M.stations) for (const p of st.platforms) {
+      const t = M.byId[p.track]; if (!t) continue; g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = Math.max(2, 3.2 * sc) * dpr; g.beginPath();
+      for (let s = p.s0; s <= p.s1; s += 10) { const q = M.point(t, s, (p.side === 'right' ? 1 : -1) * 2.6); if (s === p.s0) g.moveTo(sx(q.x), sy(q.z)); else g.lineTo(sx(q.x), sy(q.z)); }
+      g.stroke();
+    }
+    // stations
+    for (const st of M.stations) {
+      const x = sx(st.x), y = sy(st.z); if (x < -50 || y < -50 || x > W + 50 || y > H + 50) continue;
+      g.fillStyle = st.hero ? '#ffd24d' : '#ffffff'; g.beginPath(); g.arc(x, y, 3.2 * dpr, 0, 7); g.fill();
+      if ($('labels').checked) { g.fillStyle = 'rgba(233,230,222,.9)'; g.font = `${11 * dpr}px Helvetica Neue, Arial`; g.fillText(`${st.id} ${sc > 0.05 ? st.name : ''}`, x + 6 * dpr, y + 4 * dpr); }
+    }
+    // entrances
+    if (sc > 0.8) for (const st of M.stations) for (const e of st.entrances) { g.fillStyle = e.src === 'gtfs' ? '#7CFC9A' : '#58c4ff'; g.fillRect(sx(e.x) - 2.5 * dpr, sy(e.z) - 2.5 * dpr, 5 * dpr, 5 * dpr); }
+    // selected path
+    const sel = selLeg(); if (sel) { g.strokeStyle = 'rgba(255,210,77,.55)'; g.lineWidth = 7 * dpr; g.beginPath(); for (let d = 0; d <= sel.length; d += Math.max(5, 3 / sc)) { const f = sel.frame(d, {}); if (d === 0) g.moveTo(sx(f.x), sy(f.z)); else g.lineTo(sx(f.x), sy(f.z)); } g.stroke(); }
+    legend();
+    $('stat').textContent = `${M.tracks.length} tracks · ${M.stations.length} stations · ${Object.keys(M.patterns).length} patterns · ${M.junctions.length} junctions · ${(sc).toFixed(3)} px/m`;
+  }
+  function legend() {
+    const mode = $('colour').value; let h = '';
+    if (mode === 'struct') h = Object.entries(SC).map(([k, c]) => `<div><i style="background:${c}"></i>${k}</div>`).join('');
+    else if (mode === 'line') h = M.lines.map(l => `<div><i style="background:${l.colour}"></i>${l.name}</div>`).join('');
+    else if (mode === 'speed') h = [10, 30, 50, 70].map(v => `<div><i style="background:hsl(${Math.min(120, v * 1.7)},80%,55%)"></i>${v} mph</div>`).join('');
+    else if (mode === 'grade') h = [0, 0.02, 0.04].map(v => `<div><i style="background:hsl(${120 - v / 0.04 * 100},80%,55%)"></i>${(v * 100).toFixed(0)} %</div>`).join('') + '<div><i style="background:#ff2d2d"></i>&gt; 4 %</div>';
+    else h = ['main', 'yard', 'crossover', 'siding', 'spur'].map(k => `<div><i style="background:${{ main: '#e9e6de', yard: '#6b7a8a', crossover: '#ffd24d', siding: '#ff9f43', spur: '#b07cff' }[k]}"></i>${k}</div>`).join('');
+    $('legend').innerHTML = h;
+  }
+  let drag = null;
+  cv.addEventListener('mousedown', (e) => { drag = { x: e.clientX, y: e.clientY, cx, cz }; });
+  addEventListener('mouseup', () => { drag = null; });
+  cv.addEventListener('mousemove', (e) => {
+    if (drag) { cx = drag.cx - (e.clientX - drag.x) / sc; cz = drag.cz - (e.clientY - drag.y) / sc; draw(); return; }
+    const r = cv.getBoundingClientRect(); const wx = cx + (e.clientX - r.left - r.width / 2) / sc, wz = cz + (e.clientY - r.top - r.height / 2) / sc;
+    const q = M.nearest(wx, wz, 12 / sc + 5); const tip = $('tip');
+    if (!q) { tip.style.display = 'none'; return; }
+    const f = M.frame(q.track, q.s, {}); const la = 37.40 - f.z / 110985.1, lo = -122.10 + f.x / 88542.2;
+    tip.textContent = `${q.track.id} (${q.track.cls}, ${q.track.sys})  s=${q.s.toFixed(1)} / ${q.track.length.toFixed(0)} m\n${f.structName}  y=${f.y.toFixed(2)} m  grade=${(f.grade * 100).toFixed(2)} %\nlimit ${(f.vlim / M.MPH).toFixed(0)} mph  cant ${(f.cant * 1000).toFixed(0)} mm  cover ${f.cover} m\n${la.toFixed(6)}, ${lo.toFixed(6)}`;
+    tip.style.display = 'block'; tip.style.left = (e.clientX - r.left + 14) + 'px'; tip.style.top = (e.clientY - r.top + 14) + 'px';
+  });
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); const r = cv.getBoundingClientRect(); const mx = e.clientX - r.left - r.width / 2, my = e.clientY - r.top - r.height / 2;
+    const wx = cx + mx / sc, wz = cz + my / sc; sc *= Math.exp(-e.deltaY * 0.0015); sc = Math.min(20, Math.max(0.002, sc)); cx = wx - mx / sc; cz = wz - my / sc; draw(); }, { passive: false });
+  // ---------- profile
+  function selLeg() { const [id, k] = ($('pat').value || '').split('|'); const p = M.pathFor(id); return p ? p.legs[+k || 0] : null; }
+  const pc = $('prof'), pg = pc.getContext('2d');
+  function drawProfile() {
+    const L = selLeg(); const d2 = devicePixelRatio || 1; const PW = pc.width = pc.clientWidth * d2, PH = pc.height = pc.clientHeight * d2;
+    pg.fillStyle = '#0f1318'; pg.fillRect(0, 0, PW, PH); if (!L) return;
+    const N = 1600, ys = [], gs = [], cs = [], fr = {};
+    let y0 = 1e9, y1 = -1e9, maxG = 0;
+    for (let k = 0; k <= N; k++) { const d = L.length * k / N; L.frame(d, fr); const c = fr.struct; const cover = fr.cover;
+      const gnd = M.isUnderground(c) ? fr.y + cover : (c === 1 || c === 2 ? fr.y - cover : fr.y - 0.5);
+      ys.push(fr.y); gs.push(gnd); cs.push(fr.structName); y0 = Math.min(y0, fr.y, gnd); y1 = Math.max(y1, fr.y, gnd); maxG = Math.max(maxG, Math.abs(fr.grade)); }
+    const padL = 48 * d2, padB = 22 * d2, padT = 16 * d2; const X = (k) => padL + (PW - padL - 10 * d2) * k / N, Y = (v) => PH - padB - (PH - padB - padT) * (v - y0) / Math.max(1, y1 - y0);
+    pg.strokeStyle = 'rgba(255,255,255,.07)'; pg.fillStyle = 'rgba(233,230,222,.55)'; pg.font = `${10 * d2}px ui-monospace, Menlo, monospace`; pg.lineWidth = 1;
+    for (let v = Math.ceil(y0 / 20) * 20; v <= y1; v += 20) { pg.beginPath(); pg.moveTo(padL, Y(v)); pg.lineTo(PW, Y(v)); pg.stroke(); pg.fillText(`${v} m`, 4 * d2, Y(v) + 3 * d2); }
+    pg.strokeStyle = 'rgba(160,140,110,.9)'; pg.lineWidth = 1.2 * d2; pg.beginPath(); gs.forEach((v, k) => k ? pg.lineTo(X(k), Y(v)) : pg.moveTo(X(k), Y(v))); pg.stroke();
+    pg.lineWidth = 2.4 * d2; for (let k = 1; k <= N; k++) { pg.strokeStyle = SC[cs[k]]; pg.beginPath(); pg.moveTo(X(k - 1), Y(ys[k - 1])); pg.lineTo(X(k), Y(ys[k])); pg.stroke(); }
+    pg.strokeStyle = 'rgba(0,120,255,.35)'; pg.beginPath(); pg.moveTo(padL, Y(0)); pg.lineTo(PW, Y(0)); pg.stroke();
+    pg.fillStyle = '#fff'; for (const s of L.stops) { if (s.d < 0) continue; const x = X(s.d / L.length * N); pg.fillRect(x - 1, padT, 2, PH - padB - padT); pg.save(); pg.translate(x + 3 * d2, padT + 2 * d2); pg.fillText(s.station, 0, 8 * d2); pg.restore(); }
+    pg.fillStyle = 'rgba(233,230,222,.7)'; pg.fillText(`${L.pattern} · ${(L.length / 1000).toFixed(2)} km · max grade ${(maxG * 100).toFixed(2)} % · y ${y0.toFixed(0)}…${y1.toFixed(0)} m`, padL, PH - 6 * d2);
+  }
+  // ---------- 3D
+  let three = null;
+  function build3d() {
+    const r = new THREE.WebGLRenderer({ canvas: $('three'), antialias: true, logarithmicDepthBuffer: true }); r.setPixelRatio(devicePixelRatio);
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0c0f13);
+    const cam = new THREE.PerspectiveCamera(50, 1, 10, 500000); const grp = new THREE.Group(); scene.add(grp);
+    three = { r, scene, cam, grp, yaw: 0.6, pitch: 0.55, dist: 90000, tx: cx, tz: cz, ty: 0 };
+    rebuild3d();
+    const el = $('three'); let dg = null;
+    el.addEventListener('mousedown', (e) => { dg = { x: e.clientX, y: e.clientY, yaw: three.yaw, pitch: three.pitch, tx: three.tx, tz: three.tz, pan: e.shiftKey || e.button === 2 }; });
+    addEventListener('mouseup', () => dg = null);
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('mousemove', (e) => { if (!dg) return; const dx = e.clientX - dg.x, dy = e.clientY - dg.y;
+      if (dg.pan) { const k = three.dist / 900; three.tx = dg.tx - (dx * Math.cos(three.yaw) + dy * Math.sin(three.yaw)) * k; three.tz = dg.tz - (-dx * Math.sin(three.yaw) + dy * Math.cos(three.yaw)) * k; }
+      else { three.yaw = dg.yaw - dx * 0.005; three.pitch = Math.max(0.02, Math.min(1.5, dg.pitch + dy * 0.004)); } render3d(); });
+    el.addEventListener('wheel', (e) => { e.preventDefault(); three.dist *= Math.exp(e.deltaY * 0.0015); three.dist = Math.max(100, Math.min(300000, three.dist)); render3d(); }, { passive: false });
+  }
+  function rebuild3d() {
+    const vx = +$('vx').value || 1; const grp = three.grp; while (grp.children.length) { const c = grp.children.pop(); c.geometry.dispose(); }
+    const pos = [], col = [], c3 = new THREE.Color();
+    for (const t of M.tracks) { if (!$('yards').checked && t.cls === 'yard') continue;
+      for (let i = 0; i + 1 < t.n; i++) { c3.set(colourOf(t, i)); pos.push(t.X[i], t.Y[i] * vx, t.Z[i], t.X[i + 1], t.Y[i + 1] * vx, t.Z[i + 1]); col.push(c3.r, c3.g, c3.b, c3.r, c3.g, c3.b); } }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    grp.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true })));
+    // sea level plane grid
+    const gp = []; for (let k = -60; k <= 60; k++) { gp.push(cx - 60000, 0, cz + k * 1000, cx + 60000, 0, cz + k * 1000, cx + k * 1000, 0, cz - 60000, cx + k * 1000, 0, cz + 60000); }
+    const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3)); grp.add(new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0x1d2a38 })));
+    render3d();
+  }
+  function render3d() {
+    if (!three) return; const el = $('three'); three.r.setSize(el.clientWidth, el.clientHeight, false); three.cam.aspect = el.clientWidth / el.clientHeight; three.cam.updateProjectionMatrix();
+    const { yaw, pitch, dist, tx, tz } = three; three.cam.position.set(tx + Math.sin(yaw) * Math.cos(pitch) * dist, Math.sin(pitch) * dist, tz + Math.cos(yaw) * Math.cos(pitch) * dist); three.cam.lookAt(tx, 0, tz);
+    three.r.render(three.scene, three.cam);
+  }
+  $('b3d').onclick = () => { const on = $('b3d').classList.toggle('on'); $('three').style.display = on ? 'block' : 'none'; $('map').style.display = on ? 'none' : 'block'; if (on) { if (!three) build3d(); else rebuild3d(); } };
+  for (const id of ['colour', 'yards', 'labels']) $(id).onchange = () => { draw(); if (three && $('b3d').classList.contains('on')) rebuild3d(); };
+  $('vx').onchange = () => three && rebuild3d();
+  $('pat').onchange = () => { drawProfile(); draw(); };
+  addEventListener('resize', () => { draw(); drawProfile(); render3d(); });
+  draw(); drawProfile();
+  if (hp.get('view') === '3d') { $('b3d').click(); if (hp.get('cam')) { const [yaw, pitch, dist, tx, tz] = hp.get('cam').split(',').map(Number); Object.assign(three, { yaw, pitch, dist, tx, tz }); render3d(); } }
+  window.__metro = { M, draw, drawProfile, ready: true };
+})().catch(e => { document.getElementById('stat').textContent = 'error: ' + e.message; console.error(e); window.__metro = { error: String(e) }; });
+</script>
+</body>
+</html>
