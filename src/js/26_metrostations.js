@@ -612,9 +612,15 @@ const MetroStations = (() => {
     if (typeof Towns === 'undefined' || !Towns.materials || !Towns.materials.roadMat || typeof Under === 'undefined' || !Under.enabled) return;
     const m = Towns.materials.roadMat; if (m.userData.blCut) return; m.userData.blCut = true;
     const prev = m.onBeforeCompile, key = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
+    // (the terrain's own test when Under shares it: the fine cut level near the camera, so the streets open exactly
+    // where the ground does; the coarse under map's footprints are dilated and left a ragged band of bare ground
+    // between an entrance's collar and the sidewalk)
+    const fine = typeof Terrain !== 'undefined' && Terrain.cutUniforms;
+    if (fine) m.defines = Object.assign({}, m.defines || {}, { BL_CUT: 1 });
     m.onBeforeCompile = function (sh, r) { if (prev) prev.call(this, sh, r);
-      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', '#include <lights_fragment_begin>\nif ( blU.w > 0.5 ) discard;'); };
-    m.customProgramCacheKey = () => (key ? key() : '') + '|blcut';
+      if (fine) Object.assign(sh.uniforms, Terrain.cutUniforms);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', '#include <lights_fragment_begin>\n' + (fine ? 'if ( blUnderCut( blUW ) ) discard;' : 'if ( blU.w > 0.5 ) discard;')); };
+    m.customProgramCacheKey = () => (key ? key() : '') + (fine ? '|blcut2' : '|blcut');
     m.needsUpdate = true;
   }
   // once the stations are known: world pieces placed before (towns, trees, parked cars) are placed again with the

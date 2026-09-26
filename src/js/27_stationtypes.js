@@ -302,8 +302,12 @@ const StationTypes = (() => {
   }
   // an entrance's collar lies on the highest paved surface round its opening (sidewalk, plaza) 3 cm proud, following
   // the base ground at that lift (Towns builds on it), never under the drawn ground
-  function headLift(T, pts) { let s = 0; for (const [u, v] of pts) s = Math.max(s, surfLift(T, u, v)); return s > 0 ? s + 0.03 : 0.035; }
-  function surfY(T, u, v, lift) { const [x, z] = T.WUV(u, v); return Math.max(Terrain.hBase(x, z) + lift, Terrain.h(x, z) + 0.035); }
+  // (8 cm proud of the Towns sidewalk: its ribbon interpolates the ground across the band differently from the
+  // collar's grid, and at 3 cm the two surfaces crossed in a sawtooth of bare planting strip)
+  function headLift(T, pts) { let s = 0; for (const [u, v] of pts) s = Math.max(s, surfLift(T, u, v)); return s > 0 ? s + 0.08 : 0.035; }
+  // (on a sidewalk or plaza the collar follows the base ground as Towns does; the detail layer is held at zero under
+  // Towns' surfaces, and following its lidar bumps folded the collar's grid under the sidewalk in a sawtooth)
+  function surfY(T, u, v, lift) { const [x, z] = T.WUV(u, v); const b = Terrain.hBase(x, z) + lift; return lift > 0.06 ? b : Math.max(b, Terrain.h(x, z) + 0.035); }
   // distance from (u, v) to a road segment's centreline
   function segDist(r, u, v) { const du = r.u1 - r.u0, dv = r.v1 - r.v0; const L2 = du * du + dv * dv || 1; const t = U.clamp(((u - r.u0) * du + (v - r.v0) * dv) / L2, 0, 1); return Math.hypot(r.u0 + du * t - u, r.v0 + dv * t - v); }
   const roadAt = (T, u, v, clear) => T.roads.some(r => segDist(r, u, v) < r.hw + clear);
@@ -1480,7 +1484,12 @@ const StationTypes = (() => {
       if (canopyEnt) {
         // downtown canopy (2018-27): a thin flat white roof on slender posts over the head of the stair, glass sides, a
         // roll-down gate housing over the mouth, a stainless pylon with the station name and a live-display strip
-        const Lc = Math.min(runE, 7.5), uA = uTop - dir * 0.9, uB = uTop + dir * Lc, hw = W / 2 + 0.55, yR = topY + 3.05;
+        // (the roof stops short of a building it would run into: an entrance against a facade)
+        let Lc = Math.min(runE, 7.5); const hw = W / 2 + 0.55, yR = topY + 3.05;
+        try { if (typeof Towns !== 'undefined' && Towns.buildingsAt) { const [ex, ez] = T.WUV(uTop, ve); const bl = Towns.buildingsAt(ex, ez, 18);
+          const inB = (u, v) => { const [x, z] = T.WUV(u, v); return bl.some(b => { const P = b.pts; let c = false; for (let i = 0, n = P.length / 2, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; }); };
+          while (Lc > 2.5 && [-hw, 0, hw].some(dv => inB(uTop + dir * (Lc + 0.3), ve + dv))) Lc -= 0.5; } } catch (e) {}
+        const uA = uTop - dir * 0.9, uB = uTop + dir * Lc;
         const ua2 = Math.min(uA, uB), ub2 = Math.max(uA, uB);
         { const [x, z] = T.L2((ua2 + ub2) / 2, ve); const gg = zE.m.sk; gg.push().at(x, 0, z, T.yawAt(uTop)); gg.mat(0xf2f1ec, K.PAINT); gg.box(-(ub2 - ua2) / 2, yR, -hw, (ub2 - ua2) / 2, yR + 0.16, hw);
           gg.mat(0xb9bec3, K.STEEL); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, -hw - 0.02, (ub2 - ua2) / 2 + 0.02, yR, -hw + 0.1); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, hw - 0.1, (ub2 - ua2) / 2 + 0.02, yR, hw + 0.02);
