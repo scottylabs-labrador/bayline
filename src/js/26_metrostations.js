@@ -284,6 +284,7 @@ const MetroStations = (() => {
   }
   function spawnPoint(id, key) {
     const st = byId[id]; if (!st) return null; if (!st.plan) st.plan = makePlan(st.data); const pl = st.plan; if (!pl) return null;
+    if (!kdone.has(st.id)) footprintOf(st);          // (the builders' setup corrects the platform sides the data guessed)
     // key: a platform code ('1') or a GTFS platform id ('M20-1')
     const k = String(key == null ? '' : key); const code = k.includes('-') ? k.split('-').pop() : k;
     const p = pl.plats.find(q => q.gtfs === k || q.key === code) || pl.plats[0]; const u = (p.u0 + p.u1) / 2 + 12;
