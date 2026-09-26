@@ -29,15 +29,15 @@ const StationHeroes = (() => {
 
   const CFG = {
     // ---------------------------------------------------------------- San Francisco (Market St: Muni over BART)
-    EMBR: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: TERR(0xb9b4aa, 3.0), wall: [0xe4e1da, K.CIRCLES, 3.2], wallUp: [0xd8d4cc, K.CIRCLES, 3.2], ceil: [0x4a4845, K.COFFER, 2.4],
+    EMBR: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: TERR(0xb9b4aa, 3.0), wall: [0xe4e1da, K.CIRCLES, 3.2], wallUp: [0xd8d4cc, K.CIRCLES, 3.2], ceil: [0x4a4845, K.COFFER, 2.4],
       cFloor: TERR(0xa8a296), cWall: BOARD(0x9d968a, 0.2), cCeil: [0x5a5854, K.GRATING, 0], light: [1.0, 0.93, 0.82], feature: ['circles'], hero: 1 },
-    MONT: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7a3527), wall: [0xe8e6e0, K.PANEL, 1.6], wallUp: PAINT(0x3a3a3c), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
+    MONT: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7a3527), wall: [0xe8e6e0, K.PANEL, 1.6], wallUp: PAINT(0x3a3a3c), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
       cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome', benches: 'bullseye',
       cFloor: [0xd6ceb9, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0xe8e4dc, K.COFFER, 1.2], hero: 1 },
-    POWL: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7d3a2b), wall: [0xe9dfc8, K.PANEL, 1.6], wallUp: PAINT(0xc2462f), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
+    POWL: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7d3a2b), wall: [0xe9dfc8, K.PANEL, 1.6], wallUp: PAINT(0xc2462f), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
       cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome', benches: 'bullseye',
       cFloor: [0xcfc8b8, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0x2a2a2c, K.GRATING, 0], muniCol: 0xb3362a, hero: 1 },
-    CIVC: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: MARB(0xdcdad4), wall: [0xe6e3dc, K.PANEL, 1.5], wallUp: PAINT(0x1c2c4a), ceil: [0xe9e7e2, K.PANEL, 0.15],
+    CIVC: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: MARB(0xdcdad4), wall: [0xe6e3dc, K.PANEL, 1.5], wallUp: PAINT(0x1c2c4a), ceil: [0xe9e7e2, K.PANEL, 0.15],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 0.9, depth: 0.5, col: 0x1a1a1b, kind: K.GRANITE }, cFloor: MARB(0xd6d3cc), cWall: BRICK(0x6e6358, 1), cCeil: [0xe2e0dc, K.PANEL, 0.15], hero: 1 },
     '16TH': { layout: 'island', type: 'subway', access: 'above', floor: QUARRY(0x8e3e2c), wall: TILE(0xeceae4, 0.152), wallUp: CONC(0x9b958a, 0), ceil: [0x8a857c, K.CONCRETE, 2.0],
       cFloor: QUARRY(0x8e3e2c), cWall: [0xd9cfb8, K.CONCRETE, 0], cCeil: [0xb07a45, K.WOOD, 0.09], vault: 'ribs', mural: [0x2f5d8c, 0x7c8a3a, 0xa9b83e, 0x8a8d88], hero: 1 },
@@ -101,6 +101,9 @@ const StationHeroes = (() => {
     DELN: { layout: 'side', type: 'aerial', access: 'below', floor: [0xa4583c, K.TILE, 0.3], deck: FLUTE(0xd2cdc2, 0.3), canopy: { style: 'flat', len: 60, top: 0xd2cdc2, under: 0x3a3836, fascia: 0xd2cdc2, posts: { shape: 'rect', col: 0xd2cdc2, size: 0.4, spacing: 13, where: 'back' } }, ends: 'beam', towers: 0x46b6d6 },
     RICH: { layout: 'island', type: 'surface', access: 'below', floor: CONC(0xa39e94), canopy: { style: 'flat', len: 92, top: 0x3a3a3c, under: 0xc0552e, underKind: K.PAINT, fascia: 0x2e2e30, posts: { shape: 'rect', col: 0x8f8b84, size: 0.5, spacing: 10, where: 'centre' } }, ends: 'poles' },
   };
+  // the airport connector's own station at Coliseum (a separate build beside the BART station, +13 m, a white capsule
+  // roof over one track with platform screen doors): Oakland Airport's design
+  CFG['COLS~OAC'] = Object.assign({}, CFG.OAKL, { canopy: Object.assign({}, CFG.OAKL.canopy, { len: 56 }) });
   function config(id) { return CFG[id] || {}; }
   // style palette override: the era default with this station's entries on top
   function style(id, base) {

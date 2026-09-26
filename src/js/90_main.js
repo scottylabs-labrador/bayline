@@ -275,6 +275,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof SunShade !== 'undefined') safe('sunshade', () => SunShade.setQuality(T.post));
     if (typeof ACModel !== 'undefined' && ACModel.setQuality) safe('acmodel', () => ACModel.setQuality(T.name));
     if (typeof MetroKit !== 'undefined' && MetroKit.setQuality) safe('metrokit', () => MetroKit.setQuality(T.name));   // Bayline Metro cars follow the tier too
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled && MetroTrack.setQuality) safe('metrotrack', () => MetroTrack.setQuality(T.name));   // (guideway: Low = structures and rails only)
     if (metroOn()) MetroSim.setQuality(T.post);
     window.dispatchEvent(new Event('resize'));
     gfxUi();

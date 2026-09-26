@@ -22,6 +22,8 @@ from metro import profile2 as PR2
 from metro import platforms as PL
 from metro import stations_curated as SC
 from metro import geomfix as GF
+from metro import crossings as CX
+from metro import yards as YD
 from metro import stations_meta as SM
 
 STEP = 5.0                 # max sample spacing of the published polylines (m)
@@ -77,8 +79,14 @@ def build_tracks(G):
     return out
 
 
-def densify(tr):
-    """Fine (1 m) resample with smoothing; keeps a raw-s -> node map for vertices."""
+TUNNEL_SIGMA = 40.0        # m: OSM draws tunnels (untraceable from the photo) as polylines with sharp corners
+PIN_STATION = 220.0        # m around a station point where the plan stays as mapped
+PIN_JUNCTION = 60.0        # m around a junction vertex (turnouts must stay on their through track)
+
+
+def densify(tr, G=None, station_xy=None):
+    """Fine (1 m) resample with smoothing; keeps a raw-s -> node map for vertices. Underground runs away from stations
+    and junctions get a much stronger smoothing (their OSM geometry is schematic: corners, not curves)."""
     xz = tr['xz']
     s_raw = cumlen(xz)
     L = s_raw[-1]
@@ -91,6 +99,34 @@ def densify(tr):
         sig = SMOOTH_SIGMA / (L / (n - 1))
         fx = smooth_fixed_ends(fx, sig)
         fz = smooth_fixed_ends(fz, sig)
+    if G is not None and L > 200 and tr['service'] is None:
+        tun = np.array([G.ways[tr['segway'][k]]['tags'].get('tunnel') in ('yes', 'building_passage') for k in seg])
+        if tun.any():
+            # only long tunnels (their geometry is guessed), strictly inside them: zero within 45 m of a portal, then an
+            # 80 m ramp, so the open-air track (traced from the photo) never moves
+            run = np.zeros(len(tun), bool)
+            lab, nlab = ndimage.label(tun)
+            for q in range(1, nlab + 1):
+                idx = np.where(lab == q)[0]
+                if len(idx) * (L / (n - 1)) >= 400:
+                    run[idx] = True
+            core = ndimage.binary_erosion(run, iterations=45) if run.any() else run
+            w = core.astype(float)
+            vs = [s_raw[k] for k, nid in enumerate(tr['nodes']) if nid in G.vert]
+            for sv in vs:
+                w[np.abs(t - sv) < PIN_JUNCTION] = 0.0
+            if station_xy is not None and len(station_xy):
+                from scipy.spatial import cKDTree
+                d, _ = cKDTree(station_xy).query(np.stack([fx, fz], 1))
+                w[d < PIN_STATION] = 0.0
+            w[:int(PIN_JUNCTION)] = 0.0; w[-int(PIN_JUNCTION):] = 0.0
+            w = ndimage.uniform_filter1d(w, 81, mode='nearest') * run      # 80 m blend, never outside the tunnel
+            w[w < 0.02] = 0.0
+            if w.any():
+                sig2 = TUNNEL_SIGMA / (L / (n - 1))
+                sx = smooth_fixed_ends(fx, sig2); sz = smooth_fixed_ends(fz, sig2)
+                tr['tunnel_smoothed'] = float(np.max(np.hypot(sx - fx, sz - fz) * w))
+                fx = fx + w * (sx - fx); fz = fz + w * (sz - fz)
     s_new = cumlen(np.stack([fx, fz], 1))
     tr['fine'] = dict(x=fx, z=fz, s=s_new, raw=t, seg=seg)
     tr['s_raw_nodes'] = s_raw
@@ -349,8 +385,12 @@ def main():
     d, E, byid = OG.load_osm()
     G = OG.Graph(E)
     tracks = build_tracks(G)
+    stops0 = gtfs('stops.txt')
+    st_pts = np.array([tuple(map(float, ll2w(float(q['stop_lat']), float(q['stop_lon'])))) for q in stops0 if q['location_type'] == '1'])
     for tr in tracks:
-        densify(tr)
+        densify(tr, G, st_pts)
+    sm = [tr.get('tunnel_smoothed', 0.0) for tr in tracks]
+    log(f'tunnel plan smoothing: {sum(1 for v in sm if v > 0)} tracks, max move {max(sm):.2f} m')
     GF.fix_tube_spacing(tracks)
 
     # edge -> (track index, s_raw start, s_raw end) (edges are whole within a track)
@@ -471,6 +511,41 @@ def main():
 
     mover = Mover(G, edge_track)
 
+    # GTFS platform points: where every platform a station's trips use lies clearly on its own track (<= 3 m from it,
+    # >= 3 m nearer than to any other track, all on different tracks), that track is the stop target, ahead of the OSM
+    # route relations' stop nodes (OSM lags the Aug 2026 platform use: Daly City through trains on the centre track,
+    # terminating trains on the west side platform; Berryessa's second face; Antioch's departure face)
+    used_pids = {pid for pat in patterns.values() for pid in pat['stops']}
+    gtfs_tg = {}
+    by_station = collections.defaultdict(list)
+    for pid in sorted(used_pids):
+        if pid in plats and plats[pid].get('parent_station'):
+            by_station[plats[pid]['parent_station']].append(pid)
+    for st_, pids in by_station.items():
+        res = {}
+        for pid in pids:
+            q = plats[pid]
+            x, z = map(float, ll2w(float(q['stop_lat']), float(q['stop_lon'])))
+            sysn = sys_of_stop(pid)
+            per_track = {}
+            for e in G.edges:
+                if e['sys'] != sysn or e['service'] == 'yard':
+                    continue
+                dd, s_at, _, _ = poly_project(e['xz'], x, z)
+                if dd < 20.0:
+                    ti = edge_track[e['id']][0]
+                    if ti not in per_track or dd < per_track[ti][0]:
+                        per_track[ti] = (dd, e['id'], s_at)
+            ranked = sorted(per_track.items(), key=lambda kv: kv[1][0])
+            if not ranked or ranked[0][1][0] > 3.0 or (len(ranked) > 1 and ranked[1][1][0] < ranked[0][1][0] + 3.0):
+                res = None
+                break
+            res[pid] = ranked[0]
+        if res and len({v[0] for v in res.values()}) == len(res):
+            for pid, (ti, (dd, eid, s_at)) in res.items():
+                gtfs_tg[pid] = {eid: [(s_at, (st_, 0.0))]}
+    log(f'stop targets from precise GTFS platform points: {len(gtfs_tg)} platforms at {len({plats[p]["parent_station"] for p in gtfs_tg})} stations')
+
     def generic_targets(x, z, sysn, tag, r=45.0):
         tg = {}
         for e in G.edges:
@@ -515,6 +590,8 @@ def main():
         return out
 
     def targets_for(st, pid, sysn, rel):
+        if pid in gtfs_tg:
+            return gtfs_tg[pid]
         # exact: the matched relation's stop node at this station
         if rel:
             for (sid, nid) in rel['stops']:
@@ -656,6 +733,29 @@ def main():
     assert len(ids) == len(set(ids)), collections.Counter(ids).most_common(5)
     log('main tracks:', sorted(t['id'] for t in tracks if t['service'] is None))
 
+    # ---------------- island platforms OSM draws too narrow: spread the two tracks to BART's usual 11.1 m
+    node_tracks = collections.defaultdict(set)
+    for ti, tr in enumerate(tracks):
+        for nid in tr['nodes']:
+            node_tracks[nid].add(ti)
+    junction_s = collections.defaultdict(list)
+    for ti, tr in enumerate(tracks):
+        for k, nid in enumerate(tr['nodes']):
+            if len(node_tracks[nid]) >= 2:
+                junction_s[id(tr)].append(raw_to_s(tr, float(tr['s_raw_nodes'][k])))
+    isl_pairs = []
+    for sid in parents:
+        if (SC.C.get(sid) or {}).get('layout') != 'island':
+            continue
+        pids = [pid for pid in plat_pos if (plats.get(pid) or {}).get('parent_station') == sid]
+        tis = sorted({plat_pos[pid][0] for pid in pids})
+        if len(tis) != 2:
+            continue
+        ta, tb = tracks[tis[0]], tracks[tis[1]]
+        sa = raw_to_s(ta, plat_pos[[pid for pid in pids if plat_pos[pid][0] == tis[0]][0]][1])
+        isl_pairs.append((sid, ta, sa, sa - 125.0, sa + 125.0, tb))
+    GF.spread_islands(tracks, isl_pairs, junction_s)
+
     # ---------------- publish samples, attributes, profile
     elev.ensure_along(np.concatenate([t['fine']['x'][::50] for t in tracks]), np.concatenate([t['fine']['z'][::50] for t in tracks]), 300)
     out_tracks = []
@@ -715,6 +815,18 @@ def main():
             b_, _ = project_track(tr, *xz_at(tr0, ref['s1']), s_hint=hint)
             members.append((pl['track'], a_, b_))
         groups.append(dict(station=g['station'], level=g['level'], sys=g['sys'], members=members))
+    # the Pittsburg/Bay Point transfer island has one walking surface: BART floor 0.991 m above its rail, the GTW's sill
+    # 0.635 m above its rail, so the eBART track along the island is 0.356 m higher (stations workstream / EIR)
+    gb = [g for g in groups if g['station'] == 'PITT-T' and g['sys'] == 'bart']
+    ge = [g for g in groups if g['station'] == 'PITT-T' and g['sys'] == 'ebart']
+    if gb and ge:
+        rt, r0, r1 = gb[0]['members'][0][:3]
+        et = ge[0]['members'][0][0]
+        hint = 0.5 * (ge[0]['members'][0][1] + ge[0]['members'][0][2])
+        a_, _ = project_track(by_tid[et], *xz_at(by_tid[rt], r0), s_hint=hint)
+        b_, _ = project_track(by_tid[et], *xz_at(by_tid[rt], r1), s_hint=hint)
+        gb[0]['members'].append((et, a_, b_, PL.PLAT_H_SYS['bart'] - PL.PLAT_H_SYS['ebart']))
+        groups.remove(ge[0])
     main_sys = {'PCTR': 'ebart', 'ANTC': 'ebart', 'OAKL': 'oac'}
     anchors = {'points': [], 'rel': []}
     for g in groups:
@@ -743,19 +855,24 @@ def main():
     PR2.solve(out_tracks, junctions, groups, anchors, roads)
     PR2.finish(out_tracks)
     PR2.third_rail(out_tracks, junctions, platforms)
+    CX.build(out_tracks, PR2.STRUCT_NAMES)
 
     # ---------------- stations
     tn = byid.get(('node', 5319797505))
     extra = [('PITT-T', 'Pittsburg / Bay Point (eBART transfer platform)', tn['lat'], tn['lon'], '')] if tn else []
     code_of['PITT-T'] = 'C80T'
     stations = SM.build2(parents, plats, ents, tracks, platforms, E, code_of, SC.C, extra)
+    yards = YD.build(E, out_tracks, stations)
     vlines, vrep = PR2.validate(out_tracks, stations, junctions, groups)
     for ln in vlines:
         log(ln)
     anchor_rep = [dict(station=a['station'], level=a['level'], track=a['track'], target=a['y'], solved=a.get('solved'), delta=a.get('delta'),
                        ground=a['ground'], rel=a['rel'], w=a['w']) for a in anchors.get('resolved', [])]
-    big = [a for a in anchor_rep if a['delta'] is not None and abs(a['delta']) > 1.0]
-    log(f'  researched heights missed by > 1 m: {len(big)} ' + ', '.join(f"{a['station']}{'/' + a['level'] if a['level'] != 'main' else ''} {a['delta']:+.1f}" for a in big))
+    # researched depths/heights (weight >= 100) should hold to 1 m; the generic "aerial platform ~7 m above the
+    # ground" priors (weight 20) only steer and are reported when 5 m off
+    big = [a for a in anchor_rep if a['delta'] is not None and abs(a['delta']) > (1.0 if a['w'] >= 100 else 5.0)]
+    log(f'  researched heights missed by > 1 m (generic priors by > 5 m): {len(big)} ' + ', '.join(f"{a['station']}{'/' + a['level'] if a['level'] != 'main' else ''} {a['delta']:+.1f}" for a in big))
+    vlines.append(f'  researched heights missed by > 1 m (generic priors by > 5 m): {len(big)}')
     write_json(os.path.join(PUB, 'validation.json'), dict(generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), summary=vlines, report=vrep,
                                                            anchors=anchor_rep), compact=False)
 
@@ -788,10 +905,10 @@ def main():
         lines.append(dict(id=line, **meta, patterns=[p['id'] for p in pats_out if p['line'] == line]))
 
     # ---------------- write
-    write_tracks(out_tracks, links, junctions, stations, lines, pats_out)
+    write_tracks(out_tracks, links, junctions, stations, lines, pats_out, yards)
 
 
-def write_tracks(tracks, links, junctions, stations, lines, pats):
+def write_tracks(tracks, links, junctions, stations, lines, pats, yards=()):
     # tracks.bin: see notes/bart-data.md
     order = list(range(len(tracks)))
     head = []
@@ -827,10 +944,30 @@ def write_tracks(tracks, links, junctions, stations, lines, pats):
     net = dict(version=0, format='bayline-metro-network', frame='Bay frame: x=(lon+122.10)*88542.2 east, z=-(lat-37.40)*110985.1 south, y=m above sea level (top of rail)',
                generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), sources=SOURCES,
                structCodes=PR2.STRUCT_NAMES, tracksBin=dict(path=f'{PUB_DIR}/{bin_name}', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 5 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m), third-rail side (0 none, 1 left, 2 right); padded to 4 bytes'),
-               tracks=tr_meta, junctions=junctions, stations=stations, lines=lines, patterns=pats)
+               constants=CONSTANTS, tracks=tr_meta, junctions=junctions, stations=stations, lines=lines, patterns=pats, yards=list(yards))
     size = write_json(os.path.join(PUB, 'network.json'), net)
     log(f'network.json {size/1e6:.2f} MB, tracks.bin {size_bin/1e6:.2f} MB ({len(raw)/1e6:.2f} MB raw), {len(tracks)} tracks')
+    # crossings in their own file, loaded on demand by the builders (keeps the boot download at the M2 size)
+    csize = write_json(os.path.join(PUB, 'crossings.json'), crossings_doc({tracks[ti]['id']: tracks[ti].get('crossings', []) for ti in order}))
+    log(f'crossings.json {csize/1e6:.2f} MB')
 
+
+def crossings_doc(by_track):
+    return dict(version=0, format='bayline-metro-crossings', generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'),
+                fields=['s', 'kind', 'class', 'rel', 'width', 'angle', 'name', 'dy'],
+                source='OpenStreetMap ways (c) OpenStreetMap contributors, ODbL 1.0; dy from the USGS 3DEP lidar',
+                tracks={k: v for k, v in by_track.items() if v})
+
+
+CONSTANTS = dict(
+    gauge=1.676, railCentres=1.7435, rail='119 lb (119RE), canted 1:40',
+    platformEdge=1.616, platformHeight={'bart': 0.991, 'ebart': 0.635, 'oac': 0.991}, platformLength=213.4,
+    thirdRail=dict(offset=1.4986, top=0.1715,
+                   note='contact rail centreline 26 in outside the near running rail gauge line (33 in + 26 in = 1.4986 m from the '
+                        'track centre), contact surface 6 3/4 in above top of rail, cover board over it; side per sample (tracks.bin plane 5)'),
+    cars=dict(bartDE=21.336, gtwUnit=40.89, oacCar=None),
+    sources=['BART Facilities Standards R3.2.3 (2025), 34 05 17 Table 2 (gauge, platform edge 39 in / 30 5/8 in, third rail 26 in / 6 3/4 in)',
+             'bart.gov history/facts (D/E cars 70 ft)', 'Stadler GTW 2/6 datasheet (40.89 m)', 'stations workstream (GTW sill 0.635 m)'])
 
 SOURCES = [
     'Track geometry, platforms, entrances: (c) OpenStreetMap contributors, ODbL 1.0 (Overpass API extract, see data/raw/metro/osm).',

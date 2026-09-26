@@ -44,6 +44,13 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   over the main entrance so its walkway leaves square to the line. Walk floors/walls follow (checked with `floorAt`
   along a WDUB landing); walkway supports stand clear of the streets; keep-out kinds `bridge`/`column`/`landing`.
 - **Per-vehicle platforms**: eBART (Antioch DMU) and airport people-mover faces use TRAINS' floor heights and widths.
+- **Coliseum's airport-connector station** is built (it was left out of COLS): a separate record `COLS~OAC` beside the
+  BART station (the Oakland Airport design: white capsule roof, lobby under, **platform screen doors** on both
+  connector stations). `spawnPoint('COLS', '3' | its GTFS id)`, `setBoard('COLS', '3', …)` and `limits('COLS')`
+  route to it (limits now include the connector track H1.1).
+- **Market Street entrance canopies** (EMBR, MONT, POWL, CIVC; the 2018–27 design): thin flat white roof on slender
+  stainless posts over the head of each stair, glass sides, a roll-down gate housing over the mouth, a stainless
+  pylon with the station name and an amber live-display strip, a light under the roof (`CFG.canopyEnt`).
 
 - **Keep-out zones (lead request, 02:10)**: every station's ground-level footprint is a keep-out zone for Towns
   buildings and infill houses, trees, grass, parked cars and moving traffic (API and hooks below). Verified at WOAK,
@@ -133,16 +140,19 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   measured from the lobby's entrance end, at street level), `{ "name", "wait": 25000 }` + `--hash "mst=WOAK"` (the
   page's own camera, e.g. the lead's link).
 
-## Costs (measured, High, 1600x900, GPU shared with other workstreams' Chromes, so indicative)
+## Costs (measured 2026-09-26 05:30, High, 1600x900; draw calls and triangles are exact, the GPU times are not: six
+## workstreams' headless Chromes share the GPU, frames swing 45–270 ms)
 
-| view | +draw calls | +triangles | GPU with / without |
-|---|---|---|---|
-| Montgomery platform (crowd) | +40 | +0.72 M (incl. people) | +21 % |
-| Bay Fair platform | +24 | +0.10 M | +3 % |
-| West Oakland platform | +26 | +0.16 M | +24 % |
-| Bay Fair from 120 m | +24 | +0.06 M | noisy (to re-measure) |
+| view | +draw calls | +triangles (incl. crowd) |
+|---|---|---|
+| Montgomery platform, AM peak crowd | +30 | +0.70 M |
+| 12th St lower level (stacked) | +32 | +0.27 M |
+| West Oakland street, lobby | +27 | +0.20 M |
+| Bay Fair from 120 m | +27 | +0.09 M |
+| West Dublin from the air (footbridge, walkways) | +25 | +0.08 M |
 
-Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-station budgets checked at every hero.
+Builds: 0.4–1.5 s of time-sliced jobs per station (<= 3 ms a frame); all 51 footprints and ground pads at network
+load: ~230 ms once. Keep-out queries ~0.25 µs. Next: far LOD silhouettes for aerial stations, shadow-caster trims.
 
 ## Requests
 

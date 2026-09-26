@@ -18,13 +18,15 @@
 const Under = (() => {
   const enabled = typeof Metro !== 'undefined' ? Metro.on : (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();   // (the switch: 18_metro.js)
   const state = { cell: null, failsafe: null, depth: 0, outsideVisible: true, visible: new Set(), daylight: 1, exposure: 1.0, maxBoost: 4.0 };
-  const stats = { cells: 0, portals: 0, cuts: 0, visCells: 0, mapDraws: 0, mapMs: 0, culled: 0, walk: 0 };
+  const stats = { cells: 0, portals: 0, cuts: 0, visCells: 0, mapDraws: 0, mapMs: 0, culled: 0, walk: 0, failsafe: null };
   if (!enabled) {
     const nop = () => {};
     return { enabled: false, state, stats, addCell: nop, addPortal: nop, addCut: nop, remove: nop, cellAt: () => null, cutAt: () => false, keep: nop, outdoor: nop, update: nop, preRender: nop, postRender: nop,
       dayAt: () => 1, cells: new Map(), debug: {} };
   }
   const R = Env.renderer;
+  // developer diagnostics (#debug in the hash or ?dev in the query): a visitor's console stays clean
+  const DEBUG = (() => { try { return /(^|&)debug(=|&|$)/.test(location.hash.slice(1)) || /(^|&|\?)dev(=|&|$)/.test(location.search); } catch (e) { return false; } })();
   const INTERIOR_EXPOSURE = 1.0, MAX_BOOST = 4.0;       // the contract with STATIONS (notes/bart/infra.md, "Exposure")
   const PAD = 6.5;                                        // max footprint dilation (m, level 1): bboxes include it
   const NONE = -1e5;                                      // "no value" sentinel in footprint attributes
@@ -34,8 +36,13 @@ const Under = (() => {
   const keepSet = new WeakSet();
   const GRID = 64, grid = new Map();                      // 64 m buckets -> Set of cell ids (bbox overlap)
   const gk = (i, j) => i * 100003 + j;
-  function gridAdd(c) { for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const k = gk(i, j); let s = grid.get(k); if (!s) grid.set(k, s = new Set()); s.add(c.id); } }
-  function gridDel(c) { for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const s = grid.get(gk(i, j)); if (s) { s.delete(c.id); if (!s.size) grid.delete(gk(i, j)); } } }
+  // coarse counts (2 km cells) of everything registered, so "anything near the camera" is O(1): away from it the map,
+  // the shaders' map reads and the terrain cut test are all off
+  const CG2 = 2048, coarse = new Map();
+  function coarseAdd(bb, k) { for (let i = Math.floor(bb[0] / CG2); i <= Math.floor(bb[2] / CG2); i++) for (let j = Math.floor(bb[1] / CG2); j <= Math.floor(bb[3] / CG2); j++) { const key = gk(i, j), v = (coarse.get(key) || 0) + k; if (v > 0) coarse.set(key, v); else coarse.delete(key); } }
+  function anyNear(x, z) { const ci = Math.floor(x / CG2), cj = Math.floor(z / CG2); for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) if (coarse.has(gk(ci + a, cj + b))) return true; return false; }
+  function gridAdd(c) { coarseAdd(c.bb, 1); for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const k = gk(i, j); let s = grid.get(k); if (!s) grid.set(k, s = new Set()); s.add(c.id); } }
+  function gridDel(c) { coarseAdd(c.bb, -1); for (let i = Math.floor(c.bb[0] / GRID); i <= Math.floor(c.bb[2] / GRID); i++) for (let j = Math.floor(c.bb[1] / GRID); j <= Math.floor(c.bb[3] / GRID); j++) { const s = grid.get(gk(i, j)); if (s) { s.delete(c.id); if (!s.size) grid.delete(gk(i, j)); } } }
   let dirty = true;
 
   function bboxOf(pts2) { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const p of pts2) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; const z = p.length === 3 ? p[2] : p[1]; if (z < z0) z0 = z; if (z > z1) z1 = z; } return [x0, z0, x1, z1]; }
@@ -56,8 +63,8 @@ const Under = (() => {
     if (c.strip) { c.rows = stripRows(c.strip); c.half = c.strip.half || 3; const b = bboxOf(c.strip.pts); c.bb = [b[0] - c.half - PAD, b[1] - c.half - PAD, b[2] + c.half + PAD, b[3] + c.half + PAD];
       c.floor = Math.min(...c.rows.map(r => r.floor)); c.ceil = Math.max(...c.rows.map(r => r.ceil)); }
     else if (c.poly && c.poly.length >= 3) { const b = bboxOf(c.poly); c.bb = [b[0] - PAD, b[1] - PAD, b[2] + PAD, b[3] + PAD]; }
-    else { console.warn('Under.addCell: a cell needs poly or strip', o.id); return; }
-    if (!(isFinite(c.floor) && isFinite(c.ceil))) { console.warn('Under.addCell: floor/ceil', o.id); return; }
+    else { if (DEBUG) console.warn('Under.addCell: a cell needs poly or strip', o.id); return; }
+    if (!(isFinite(c.floor) && isFinite(c.ceil))) { if (DEBUG) console.warn('Under.addCell: floor/ceil', o.id); return; }
     c.mesh = footprintMesh(c, false); if (c.mesh) fpScene.add(c.mesh);
     cells.set(c.id, c); gridAdd(c);
     stats.cells = cells.size; dirty = true; cutList = null;
@@ -85,12 +92,12 @@ const Under = (() => {
     if (cuts.has(o.id)) remove(o.id);
     const c = { id: o.id, poly: o.poly, below: +o.below, bb: bboxOf(o.poly) };
     c.mesh = footprintMesh(c, true); if (c.mesh) fpScene.add(c.mesh);
-    cuts.set(c.id, c); stats.cuts = cuts.size; dirty = true; cutList = null;
+    cuts.set(c.id, c); coarseAdd(c.bb, 1); stats.cuts = cuts.size; dirty = true; cutList = null;
   }
   function remove(id) {
     if (cells.has(id)) return removeCell(id);
     if (portals.has(id)) { portals.delete(id); stats.portals = portals.size; return true; }
-    if (cuts.has(id)) { const c = cuts.get(id); fpScene.remove(c.mesh); c.mesh.geometry.dispose(); cuts.delete(id); stats.cuts = cuts.size; dirty = true; cutList = null; return true; }
+    if (cuts.has(id)) { const c = cuts.get(id); fpScene.remove(c.mesh); c.mesh.geometry.dispose(); coarseAdd(c.bb, -1); cuts.delete(id); stats.cuts = cuts.size; dirty = true; cutList = null; return true; }
     return false;
   }
   function keep(obj) { if (obj) { keepSet.add(obj); obj.userData.blUnderKeep = true; } return obj; }
@@ -352,8 +359,9 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   // Terrain nodes over a cut or over a cell that meets the ground (terrain !== false) draw with the cut variant of the
   // terrain material (fragments inside volumes / above cut floors are discarded); every other node keeps today's program.
   let cutList = null, cutBox = null;
-  function terrainNeedsCut(x0, z0, x1, z1) {
-    if (!uK.value.x) return false;
+  function terrainNeedsCut(x0, z0, x1, z1) { try { return needsCut(x0, z0, x1, z1); } catch (e) { fail('terrain cut test', e); return false; } }
+  function needsCut(x0, z0, x1, z1) {
+    if (broken || !uK.value.x) return false;
     if (!cutList) { cutList = []; cutBox = [1e9, 1e9, -1e9, -1e9];
       for (const c of cuts.values()) cutList.push(c.bb); for (const c of cells.values()) if (c.terrain) cutList.push(c.bb);
       for (const b of cutList) { cutBox[0] = Math.min(cutBox[0], b[0]); cutBox[1] = Math.min(cutBox[1], b[1]); cutBox[2] = Math.max(cutBox[2], b[2]); cutBox[3] = Math.max(cutBox[3], b[3]); } }
@@ -448,7 +456,11 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   // It still counts as underground: every lit material sees an unlit interior (map flag), the outdoor world is culled,
   // the cells around stay drawn, the interior exposure applies, and a warning names the place once, so a mismatch shows
   // as a dark interior rather than as a street seen from below. Returns a description, or null.
-  const _fsF = {}, fsWarned = new Set(); let fsAt = null, fsHit = null;
+  // (the warning is for developers: only with #debug / ?dev, once per place, and only when the state has lasted 3 s at
+  // the same spot, so spawning or teleporting before a module's cells register stays silent; state.failsafe and
+  // stats.failsafe report it always)
+  const _fsF = {}, fsWarned = new Set(); let fsAt = null, fsHit = null, fsSince = 0, fsPos = null;
+
   function failsafeAt(x, y, z) {
     if (typeof MetroNet === 'undefined' || !MetroNet.ready || !MetroNet.nearAll) return null;
     if (fsAt && Math.abs(fsAt[0] - x) + Math.abs(fsAt[1] - y) + Math.abs(fsAt[2] - z) < 0.5) return fsHit;       // (unchanged camera)
@@ -462,16 +474,37 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
         if (st) hit = 'near station ' + st.station.id;
         else for (const q of MetroNet.nearAll(x, z, 40)) { const F = MetroNet.frame(q.track, q.s, _fsF); if (F && MetroNet.UNDER[F.struct] && Math.abs(F.y - y) < 25) { hit = 'near track ' + q.track.id + ' s ' + Math.round(q.s) + ' (' + F.structName + ')'; break; } }
       }
-      if (hit) { hit += ', ' + below.toFixed(1) + ' m below the ground';
-        const key = hit.replace(/ s \d+| \(.*$|, .*$/g, ''); if (!fsWarned.has(key)) { fsWarned.add(key);
-          console.warn('Under: the camera is underground at ' + [x, y, z].map(v => v.toFixed(1)).join(', ') + ' (' + hit + ') but no cell claims it; rendering it as underground (fail-safe). The cell for that place is missing, or the data and the geometry disagree.'); } }
+      if (hit) hit += ', ' + below.toFixed(1) + ' m below the ground';
     }
     fsAt = [x, y, z]; fsHit = hit; return hit;
   }
+  function failsafeNote(hit, x, y, z) {
+    const now = performance.now();
+    if (!hit) { fsPos = null; return; }
+    if (!fsPos || Math.hypot(fsPos[0] - x, fsPos[2] - z) > 20) { fsPos = [x, y, z]; fsSince = now; return; }
+    stats.failsafe = hit;
+    if (!DEBUG || now - fsSince < 3000) return;
+    const key = hit.replace(/ s \d+| \(.*$|, .*$/g, ''); if (fsWarned.has(key)) return; fsWarned.add(key);
+    console.warn('Under (debug): the camera is underground at ' + [x, y, z].map(v => v.toFixed(1)).join(', ') + ' (' + hit + ') but no cell claims it; rendering it as underground (fail-safe). The cell for that place is missing, or the data and the geometry disagree.');
+  }
 
   // ------------------------------------------------------------------ per frame
-  let lastCam = new THREE.Vector3(1e9, 0, 0);
-  function update(cam) {
+  let lastCam = new THREE.Vector3(1e9, 0, 0), wasNear = false;
+  // (failure isolation: an exception anywhere in Under resets it to "outdoors, nothing hidden, no map", logs one
+  // warning, and after three Under stays off; the main loop never sees it)
+  let broken = false, errN = 0;
+  function fail(where, e) {
+    errN++; try { resetState(); } catch (e2) {}
+    if (errN === 1) console.warn('Under: ' + where + ' failed; underground rendering off for this frame' + (errN >= 3 ? '' : ''), e);
+    if (errN >= 3) broken = true;
+  }
+  function resetState() {
+    state.cell = null; state.failsafe = null; state.depth = 0; state.daylight = 1; state.outsideVisible = true; state.visible.clear();
+    uK.value.x = 0; uK.value.y = 0; postRender();
+    if (typeof Post !== 'undefined' && Post.under) { Post.under.on = false; Post.under.depth = 0; Post.under.outside = true; }
+  }
+  function update(cam) { if (broken) return; try { update1(cam); } catch (e) { fail('update', e); } }
+  function update1(cam) {
     const cp = cam.position;
     // clipmap levels follow the camera (snapped to 8 texels so the map doesn't swim)
     for (const q of [...LV, FL]) {
@@ -479,7 +512,8 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
         const snap = q.texel * 8; q.cx = Math.round(cp.x / snap) * snap; q.cz = Math.round(cp.z / snap) * snap; q.refY = Math.round(cp.y / 32) * 32; dirty = true;
       }
     }
-    const any = cells.size + cuts.size > 0;
+    const any = cells.size + cuts.size > 0 && anyNear(cp.x, cp.z);
+    if (any && !wasNear) dirty = true; wasNear = any;
     if (dirty && any) { drawMaps(cam); dirty = false; if (!aliased) aliased = aliasMap(); if (!aliasedF) aliasedF = aliasFine(); }
     uXf0.value.set(LV[0].cx, LV[0].cz, 1 / LV[0].half, LV[0].refY); uXf1.value.set(LV[1].cx, LV[1].cz, 1 / LV[1].half, LV[1].refY);
     uXfF.value.set(FL.cx, FL.cz, 1 / FL.half, FL.refY);
@@ -487,7 +521,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     // the camera's cell and how deep inside it is
     state.cell = any ? cellAt(cp.x, cp.y, cp.z) : null;
     const c = state.cell ? cells.get(state.cell) : null;
-    state.failsafe = !c && any ? failsafeAt(cp.x, cp.y, cp.z) : null;
+    state.failsafe = !c && any ? failsafeAt(cp.x, cp.y, cp.z) : null; failsafeNote(state.failsafe, cp.x, cp.y, cp.z);
     uK.value.y = state.failsafe ? 1 : 0;
     state.daylight = c ? dayAt(c, cp.x, cp.y, cp.z) : state.failsafe ? 0 : 1;
     const target = c || state.failsafe ? 1 - state.daylight : 0;
@@ -508,7 +542,8 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   }
   // around the draw: hide cells nobody can see and, while no opening to the outdoors is in view, the outdoor world
   const hidden = [], anc = new Set();
-  function preRender() {
+  function preRender() { if (broken) return; try { preRender1(); } catch (e) { fail('preRender', e); } }
+  function preRender1() {
     hidden.length = 0;
     if (!cells.size) return;
     const under = !!(state.cell || state.failsafe);
@@ -526,7 +561,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     }
     stats.culled = hidden.length;
   }
-  function postRender() { for (const o of hidden) o.visible = true; hidden.length = 0; }
+  function postRender() { for (const o of hidden) { try { o.visible = true; } catch (e) {} } hidden.length = 0; }
 
   const debug = {
     // read back the map at a world point (QA): { a: [...], b: [...] } of the finest level (stalls: debug only)

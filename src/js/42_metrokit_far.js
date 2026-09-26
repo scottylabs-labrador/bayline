@@ -110,14 +110,20 @@
   // kind 'bart' types 'D' | 'E'; 'dmu' / 'apm' types as their builders define. Cars use each design's LOD2 geometry.
   function createFarBatch(scene, o = {}) {
     const maxCars = o.maxCars || 1200, S = K.carUniforms();
-    S.mkAge.value = 0.4; S.mkSign.value = null; S.mkAtlas.value = K.decalAtlas ? K.decalAtlas() : null;
+    S.mkAge.value = 0.4; S.mkSign.value = null; S.mkAtlas.value = K.decalAtlas ? K.decalAtlas(K.atlasRes()) : null;
     const mat = K.palMaterial('lod', S), meshes = new Map(), glow = makeGlow(o.maxLamps || 600);
     scene.add(glow.mesh);
+    // (on a quality change the batch drops its instanced meshes, rebuilt lazily from the new designs, and takes the
+    // new atlas, so nothing of the old quality stays alive)
+    const reg = { atlas: S.mkAtlas.value, designs: new Set(), reset() {
+      for (const m of meshes.values()) { scene.remove(m); m.dispose(); } meshes.clear(); reg.designs.clear();
+      S.mkAtlas.value = reg.atlas = K.decalAtlas ? K.decalAtlas(K.atlasRes()) : null; } };
+    if (K.farBatches) K.farBatches.add(reg);
     const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YZX'), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
     function meshFor(kind, type, flip) {
       const key = kind + ':' + type + (flip ? ':f' : '');
       let m = meshes.get(key); if (m) return m;
-      const d = K.getDesign(kind, type), b = K.builders[kind];
+      const d = K.getDesign(kind, type), b = K.builders[kind]; reg.designs.add(d);
       if (!d.lod2) d.lod2 = b.lod(d, 2);
       const geo = flip ? d.lod2.clone().applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI)) : d.lod2;
       m = new THREE.InstancedMesh(geo, mat, maxCars); m.count = 0; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = false;
@@ -141,7 +147,7 @@
         glow.mesh.geometry.instanceCount = glow.n; glow.pos.needsUpdate = true; glow.col.needsUpdate = true; glow.mesh.visible = glow.n > 0;
         if (res) glow.mesh.material.uniforms.uRes.value.copy(res);
       },
-      dispose() { for (const m of meshes.values()) { scene.remove(m); m.dispose(); } scene.remove(glow.mesh); glow.mesh.geometry.dispose(); glow.mesh.material.dispose(); mat.dispose(); },
+      dispose() { for (const m of meshes.values()) { scene.remove(m); m.dispose(); } scene.remove(glow.mesh); glow.mesh.geometry.dispose(); glow.mesh.material.dispose(); mat.dispose(); if (K.farBatches) K.farBatches.delete(reg); },
       meshes, glow,
     };
     return api;

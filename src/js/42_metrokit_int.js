@@ -36,10 +36,11 @@
   function seatUnit(mb, n, col, q, o = {}) {
     const W = n * SW, rn = q >= 3 ? 4 : q >= 1 ? 3 : 2, tilt = 0.17;
     // pan shell + cushions
-    mb.pal('seatShell'); rbox(mb, 0.03, 0.375, 0.0, 0.53, 0.43, W, 0.02, rn);
-    mb.pal(col); for (let i = 0; i < n; i++) rbox(mb, 0.07, 0.415, i * SW + 0.025, 0.51, 0.472, (i + 1) * SW - 0.025, 0.024, rn);
-    // back shell and back cushions, reclined about the rear edge of the pan
-    mb.at(mul(tr(0.05, 0.43, 0), rotZ(tilt)), m => {
+    mb.pal('seatShell'); rbox(mb, 0.09, 0.375, 0.0, 0.53, 0.43, W, 0.02, rn);
+    mb.pal(col); for (let i = 0; i < n; i++) rbox(mb, 0.12, 0.415, i * SW + 0.025, 0.51, 0.472, (i + 1) * SW - 0.025, 0.024, rn);
+    // back shell and back cushions, reclined about the rear edge of the pan; the pivot sits far enough forward that the
+    // reclined top stays inside the unit (back-to-back pairs stand 2 cm apart)
+    mb.at(mul(tr(0.14, 0.43, 0), rotZ(tilt)), m => {
       m.pal('seatShell'); rbox(m, -0.055, 0.0, 0.0, 0.0, 0.76, W, 0.02, rn);
       m.pal(col); for (let i = 0; i < n; i++) rbox(m, -0.005, 0.07, i * SW + 0.03, 0.04, 0.68, (i + 1) * SW - 0.03, 0.02, rn);
       // grab handle at the aisle end: a stainless loop over the shell's top corner
@@ -99,8 +100,9 @@
     }
     // hanging straps: dense at the doorways, a few along the aisle
     // a strap: a flat black band from the rail and a teardrop loop (0.1 m wide, 0.16 m tall)
-    const strapAt = (x, s) => { E.pal('strap'); E.box(x - 0.014, railY - 0.26, s * railZ - 0.003, x + 0.014, railY - 0.01, s * railZ + 0.003);
-      E.tube(Array.from({ length: 13 }, (_, i) => { const a = i / 12 * TAU, yy = Math.cos(a); return [x + Math.sin(a) * (0.05 - 0.018 * Math.max(0, yy)), railY - 0.26 - 0.08 + yy * 0.08, s * railZ]; }), 0.0065, 6, false); };
+    // (the loops hang to about the window tops, 1.72 m above the floor, as in the 2018 interior photos)
+    const strapAt = (x, s) => { E.pal('strap'); E.box(x - 0.013, railY - 0.15, s * railZ - 0.003, x + 0.013, railY - 0.01, s * railZ + 0.003);
+      E.tube(Array.from({ length: 13 }, (_, i) => { const a = i / 12 * TAU, yy = Math.cos(a); return [x + Math.sin(a) * (0.045 - 0.016 * Math.max(0, yy)), railY - 0.15 - 0.07 + yy * 0.07, s * railZ]; }), 0.006, 6, false); };
     for (const dc of F.DOORS) for (const s of [1, -1]) for (const dx of (dc === 0 ? [-0.9, -0.62, -0.34, 0.34, 0.62, 0.9] : [-0.75, -0.45, 0.45, 0.75])) strapAt(dc + dx, s);
     // ---------------- doorway partitions, grab poles, lamps, intercoms, screens
     for (let di = 0; di < 3; di++) {
