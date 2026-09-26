@@ -29,13 +29,13 @@ const StationHeroes = (() => {
 
   const CFG = {
     // ---------------------------------------------------------------- San Francisco (Market St: Muni over BART)
-    EMBR: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: TERR(0xb9b4aa, 3.0), wall: [0xe4e1da, K.TERRAZZO, 0], wallUp: [0xd8d4cc, K.TERRAZZO, 0], ceil: [0x4a4845, K.COFFER, 2.4],
+    EMBR: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: TERR(0xb9b4aa, 3.0), wall: [0xe4e1da, K.CIRCLES, 3.2], wallUp: [0xd8d4cc, K.CIRCLES, 3.2], ceil: [0x4a4845, K.COFFER, 2.4],
       cFloor: TERR(0xa8a296), cWall: BOARD(0x9d968a, 0.2), cCeil: [0x5a5854, K.GRATING, 0], light: [1.0, 0.93, 0.82], feature: ['circles'], hero: 1 },
     MONT: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7a3527), wall: [0xe8e6e0, K.PANEL, 1.6], wallUp: PAINT(0x3a3a3c), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
-      cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome',
+      cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome', benches: 'bullseye',
       cFloor: [0xd6ceb9, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0xe8e4dc, K.COFFER, 1.2], hero: 1 },
     POWL: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7d3a2b), wall: [0xe9dfc8, K.PANEL, 1.6], wallUp: PAINT(0xc2462f), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
-      cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome',
+      cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome', benches: 'bullseye',
       cFloor: [0xcfc8b8, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0x2a2a2c, K.GRATING, 0], muniCol: 0xb3362a, hero: 1 },
     CIVC: { layout: 'island', type: 'subway', access: 'above', muni: true, floor: MARB(0xdcdad4), wall: [0xe6e3dc, K.PANEL, 1.5], wallUp: PAINT(0x1c2c4a), ceil: [0xe9e7e2, K.PANEL, 0.15],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 0.9, depth: 0.5, col: 0x1a1a1b, kind: K.GRANITE }, cFloor: MARB(0xd6d3cc), cWall: BRICK(0x6e6358, 1), cCeil: [0xe2e0dc, K.PANEL, 0.15], hero: 1 },

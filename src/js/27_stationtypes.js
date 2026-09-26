@@ -102,8 +102,8 @@ const StationTypes = (() => {
     // ---------------------------------------------------------------- platform faces -> platforms
     // platform faces; a face whose range is short or far from the first face's (v0 data maps some GTFS stops onto the
     // wrong stretch of a track) takes the first face's range: both sides of a station are the same 213 m
-    const ref0 = plan.plats[0]; const refC = (ref0.u0 + ref0.u1) / 2, refL = Math.min(216, Math.max(150, ref0.u1 - ref0.u0));
-    for (const p of plan.plats) { const c = (p.u0 + p.u1) / 2, l = p.u1 - p.u0; if (l < 150 || Math.abs(c - refC) > 40) { p.u0 = refC - refL / 2; p.u1 = refC + refL / 2; } }
+    const ref0 = plan.plats[0]; const refC = (ref0.u0 + ref0.u1) / 2, refL = plan.isOac ? Math.max(30, ref0.u1 - ref0.u0) : Math.min(216, Math.max(150, ref0.u1 - ref0.u0));
+    if (!plan.isOac) for (const p of plan.plats) { const c = (p.u0 + p.u1) / 2, l = p.u1 - p.u0; if (l < 150 || Math.abs(c - refC) > 40) { p.u0 = refC - refL / 2; p.u1 = refC + refL / 2; } }
     // a known layout (research) corrects the sides the v0 data inferred: side platforms extend away from the other
     // track, island faces toward it
     if ((H.layout === 'side' || H.layout === 'island') && plan.plats.length >= 2 && new Set(plan.plats.map(q => q.t)).size === 2) {
@@ -432,9 +432,24 @@ const StationTypes = (() => {
     T.cells.push({ zone: 'plat', under: { id: `st:${T.st.id}:plat`, kind: 'station', poly: poly.map(([x, zz]) => W2(x, zz)), floor: yRail - 1.2, ceil: ceilY + 0.9, ambient: ambOf(S) } });
     // lights: continuous troughs over each platform (both edges of an island) + wall-wash coves along both track walls
     const LC = S.light, I = S.lightI; const trough = M([0x34332f, K.PAINT]);
+    const pend = T.H.pendants === 'dome';
     for (const p of plats) {
       const um0 = p.u0 + 3, um1 = p.u1 - 3; const f0 = frameAt(um0), f1 = frameAt(um1); const umid = (um0 + um1) / 2;
       const vs = p.kind === 'island' ? [p.eL(umid) + 1.4, p.eR(umid) - 1.4] : [(p.eL(umid) + p.eR(umid)) / 2];
+      if (pend && p.kind === 'island') {
+        // rows of white dome pendants on stems (Montgomery, Powell): the fixtures; two long line lights stand in for them
+        const cv0 = (p.eL(umid) + p.eR(umid)) / 2, off = Math.min(4.0, (p.eR(umid) - p.eL(umid)) / 2 - 1.3); const yL = ceilY - 1.15;
+        for (const s of [-1, 1]) {
+          z.lights.add({ a: [f0.x - f0.tz * (cv0 + s * off), yL, f0.z + f0.tx * (cv0 + s * off)], b: [f1.x - f1.tz * (cv0 + s * off), yL, f1.z + f1.tx * (cv0 + s * off)], color: [LC[0] * I * 0.9, LC[1] * I * 0.9, LC[2] * I * 0.9], range: 24, radius: 0.3, dir: [0, -1, 0], focus: 1 });
+          for (let u = um0 + 2.6; u < um1; u += 5.2) {
+            const vv = (p.eL(u) + p.eR(u)) / 2 + s * off;
+            T.place(z.d.sk, u, vv, ceilY, 0); z.d.sk.mat(0x2a2a2c, K.PAINT); z.d.sk.cyl(0, -1.0, 0, 0.012, 0.012, 1.0, 6, false);
+            z.d.sk.mat(0xf2f1ec, K.PLAIN, 0.35); z.d.sk.cyl(0, -1.28, 0, 0.36, 0.08, 0.28, 18, true); z.d.sk.pop();
+            T.place(z.d.glow, u, vv, ceilY - 1.285, 0); z.d.glow.mat(LC); z.d.glow.cyl(0, -0.01, 0, 0.3, 0.3, 0.01, 18, true); z.d.glow.pop();
+          }
+        }
+        continue;
+      }
       for (const v of vs) {
         z.lights.add({ a: [f0.x - f0.tz * v, ceilY - 0.2, f0.z + f0.tx * v], b: [f1.x - f1.tz * v, ceilY - 0.2, f1.z + f1.tx * v], color: [LC[0] * I, LC[1] * I, LC[2] * I], range: 26, radius: 0.12, dir: [0, -1, 0], focus: 1 });
         const fr2 = frames(um0, um1);
@@ -771,8 +786,11 @@ const StationTypes = (() => {
     T.roofHoles = roofHoles;
     // floor (with the wells), ceiling, walls, end walls
     slab(T, g, cu0, cu1, vl, vr, yCF, holes, M(S.cFloor), true);
-    slab(T, g, cu0, cu1, vl, vr, yCC, roofHoles, M(S.cCeil), false);
+    const vault = T.H.vault === 'ribs' && !roofHoles.length && yCC - yCF > 3.2;
+    if (vault) yield* vaultCeiling(T, g, cu0, cu1, vl, vr, yCC);
+    else slab(T, g, cu0, cu1, vl, vr, yCC, roofHoles, M(S.cCeil), false);
     for (const h of roofHoles) holeRim(T, g, h, yCC, yCC + 0.9, M(S.cWall));
+    if (T.H.mural) yield* tileMurals(T, zC, cu0, cu1, vl, vr, yCF);
     const fr = frames(cu0, cu1);
     const mW = M(S.cWall), mL = M(S.wallLow);
     g.sweep(fr, (i, f) => { const v = vl(f.u); return [[v, yCC, yCC, mW], [v, yCF + 0.15, yCF + 0.15, mL], [v, yCF, yCF]]; });
@@ -826,6 +844,52 @@ const StationTypes = (() => {
     // roof slab over the concourse
     slab(T, g, cu0, cu1, (u) => vl(u) - 0.5, (u) => vr(u) + 0.5, yCC + 0.9, roofHoles, M([0x77746e, K.CONCRETE]), true);
     yield* streetEntrances(T, cu0, cu1);
+  }
+
+  // 16th/24th St: a segmental vault of wood slats between cream precast arch ribs on splayed brackets, lit along the ribs
+  function* vaultCeiling(T, g, cu0, cu1, vl, vr, yCC) {
+    const { S, M, frames, zC } = T; const rise = 1.1, spring = yCC - rise;
+    const mS = M(S.cCeil), mR = M([0xd9cfb8, K.CONCRETE, 0]);
+    const arc = (u, t) => { const a = vl(u), b = vr(u); return [a + (b - a) * t, spring + rise * Math.sin(Math.PI * t)]; };
+    const N = 10;
+    g.sweep(frames(cu0, cu1), (i, f) => { const P = []; for (let k = N; k >= 0; k--) { const [v, y] = arc(f.u, k / N); P.push([v, y, null, k > 0 ? mS : undefined]); } return P; });
+    // ribs every 3.2 m: a deeper band under the vault, springing from splayed brackets on the walls
+    for (let u = cu0 + 1.6; u < cu1 - 1; u += 3.2) {
+      const fr = frames(u - 0.18, u + 0.18);
+      // the rib's underside (facing down: traversed right to left) and its two faces across u
+      g.sweep(fr, (i, f) => { const P = []; for (let k = N; k >= 0; k--) { const [v, y] = arc(f.u, k / N); P.push([v, y - 0.32, null, k > 0 ? mR : undefined]); } return P; });
+      g.set(mR);
+      for (const [uu, face] of [[u - 0.18, -1], [u + 0.18, 1]]) {
+        const ff = T.frameAt(uu); const W3 = (v, y) => [ff.x - ff.tz * v, y, ff.z + ff.tx * v];
+        for (let k = 0; k < N; k++) { const [v0, y0] = arc(uu, k / N), [v1, y1] = arc(uu, (k + 1) / N);
+          const q = [W3(v0, y0 - 0.32), W3(v1, y1 - 0.32), W3(v1, y1), W3(v0, y0)];
+          if (face > 0) g.quad(q[0], q[1], q[2], q[3], [v0, 0, v1, 0, v1, 0.32, v0, 0.32]); else g.quad(q[1], q[0], q[3], q[2], [v1, 0, v0, 0, v0, 0.32, v1, 0.32]); }
+      }
+      for (const side of [0, 1]) { const [v, y] = arc(u, side); T.place(g, u, v + (side ? -0.25 : 0.25), y - 0.9, 0); g.mat(0xd9cfb8, K.CONCRETE, 0); g.cbox(0, 0, 0, 0.36, 0.9, 0.5); g.pop(); }
+    }
+    const LC = S.light; const f0 = T.frameAt(cu0 + 1), f1 = T.frameAt(cu1 - 1);
+    for (const t of [0.22, 0.78]) { const [va, ya] = arc(cu0 + 1, t), [vb, yb] = arc(cu1 - 1, t);
+      zC.lights.add({ a: [f0.x - f0.tz * va, ya - 0.4, f0.z + f0.tx * va], b: [f1.x - f1.tz * vb, yb - 0.4, f1.z + f1.tx * vb], color: LC.map(c => c * 1.1), range: 18, radius: 0.1, dir: [0, -1, 0], focus: 0 }); }
+    yield;
+  }
+  // Janet Bennett-style tile murals on the concourse walls: panels of small glazed tiles in the station's palette, laid in
+  // flowing bands (a serpentine at 24th St)
+  function* tileMurals(T, zC, cu0, cu1, vl, vr, yCF) {
+    const pal = T.H.mural.map(c => lin(c)); const g = zC.d.sk;
+    for (let u0 = cu0 + 6; u0 < cu1 - 8; u0 += 14) {
+      for (const side of [-1, 1]) {
+        for (let du = 0; du < 7.2; du += 0.6) for (let y = 0.9; y < 2.7; y += 0.6) {
+          const u = u0 + du; const v = side < 0 ? vl(u) + 0.012 : vr(u) - 0.012; const f = T.frameAt(u);
+          const k = Math.floor(pal.length * (0.5 + 0.5 * Math.sin(du * 0.55 + y * 1.3 + u0 * 0.7 + side))) % pal.length;
+          g.mat(pal[k], K.MOSAIC, 0.05);
+          const P = (uu, yy) => { const ff = T.frameAt(uu); const vv = side < 0 ? vl(uu) + 0.012 : vr(uu) - 0.012; return [ff.x - ff.tz * vv, yCF + yy, ff.z + ff.tx * vv]; };
+          const q = [P(u, y), P(u + 0.6, y), P(u + 0.6, y + 0.6), P(u, y + 0.6)];
+          if (side > 0) g.quad(q[1], q[0], q[3], q[2], [u + 0.6, y, u, y, u, y + 0.6, u + 0.6, y + 0.6]); else g.quad(q[0], q[1], q[2], q[3], [u, y, u + 0.6, y, u + 0.6, y + 0.6, u, y + 0.6]);
+          void f; void v;
+        }
+      }
+      yield;
+    }
   }
 
   // ---------------------------------------------------------------- street entrances (subway)
@@ -1026,7 +1090,15 @@ const StationTypes = (() => {
       const faceYaw = island ? 0 : (p.sideV > 0 ? Math.PI : 0);
       for (let u = p.u0 + 18; u < p.u1 - 14; u += 32) {
         if (busy(p, u, cv(u), 2.5)) continue;
-        if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); }
+        if (T.H.benches === 'bullseye' || T.H.benches === 'drum') {
+          // round benches: terrazzo "bullseyes" (Montgomery, Powell) or precast concrete drums (Bay Fair, Orinda)
+          const bull = T.H.benches === 'bullseye'; const r = bull ? 0.8 : 0.5;
+          place(gd, u, island ? cv(u) : backV(u) + (p.sideV > 0 ? -0.5 : 0.5), p.y, 0);
+          if (bull) { gd.mat(0xcfc6b4, K.TERRAZZO, 0); gd.cyl(0, 0, 0, r, r, 0.46, 28, true); gd.mat(0x7a6f60, K.TERRAZZO, 0); gd.cyl(0, 0.46, 0, r * 0.62, r * 0.62, 0.006, 28, true); gd.mat(0xcfc6b4, K.TERRAZZO, 0); gd.cyl(0, 0.466, 0, r * 0.4, r * 0.4, 0.004, 28, true); }
+          else { gd.mat(0xaaa59a, K.CONCRETE, 0); gd.cyl(0, 0, 0, r, r, 0.45, 22, true); }
+          gd.pop();
+        }
+        else if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); }
         else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); }
         if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); }
         const [bx, bz] = T.L2(u, island ? cv(u) : backV(u)); void bx; void bz;

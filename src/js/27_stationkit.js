@@ -51,6 +51,7 @@ const StationKit = (() => {
     HERRING: 25,   // herringbone brick; w: brick width m
     MARBLE: 26,    // veined marble slabs; w: slab size m
     BUBBLE: 27,    // domed hexagon tiles; w: tile size m
+    CIRCLES: 28,   // line reliefs of large overlapping circles on a pale wall (Embarcadero); w: circle scale
   };
 
   // ------------------------------------------------------------------------------------------------ geometry buffer
@@ -382,6 +383,18 @@ const StationKit = (() => {
         float vein2 = 1.0 - smoothstep(0.0, 0.03, abs(sin((r.x * 0.35 - r.y * 1.1 + n * 3.0) * 5.0)));
         col *= 0.96 + 0.06 * skN(q * 2.0); col = mix(col, col * vec3(0.55, 0.56, 0.58), clamp(vein * 0.55 + vein2 * 0.25, 0.0, 1.0));
         col *= 1.0 - 0.25 * j; gRough = mix(0.12, 0.6, j) + 0.05 * vein; gBump = -j * 0.001; return col;
+      }
+      if (k < 28.5 && k > 27.5) {                           // overlapping circle line reliefs: jittered circles per 3 m cell
+        float sc = w > 0.0 ? w : 3.0; vec2 cq = q / sc; vec2 cb = floor(cq); float dmin = 1e3;
+        for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+          vec2 c = cb + vec2(float(i), float(j)); float h1 = skH(c * 1.7 + 3.1), h2 = skH(c * 2.3 + 7.7), h3 = skH(c * 0.9 + 1.3);
+          vec2 ctr = c + vec2(h1, h2); float r = 0.35 + 0.75 * h3;
+          dmin = min(dmin, abs(length(cq - ctr) - r) * sc);
+          if (h3 > 0.55) dmin = min(dmin, abs(length(cq - ctr) - r * 0.55) * sc);
+        }
+        float aa = clamp(0.01 / fw, 0.0, 1.0); float line = (1.0 - smoothstep(0.018, 0.03, dmin)) * aa;
+        float n = skF(q * 0.7); col *= 0.93 + 0.08 * n; col = mix(col, col * 0.78, line * 0.6);
+        gBump = line * 0.012 + (skN(q * 30.0) - 0.5) * 0.0004; gRough = 0.55 - 0.1 * line; return col;
       }
       if (k < 27.5) {                                       // domed hexagon "bubble" tiles
         float s = w > 0.0 ? w : 0.15; vec2 p = q / s; vec2 rr = vec2(1.0, 1.7320508); vec2 h = rr * 0.5;
