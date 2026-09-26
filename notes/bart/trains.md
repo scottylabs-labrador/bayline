@@ -156,7 +156,8 @@ Yellow Line to Antioch through the Tube after 21:40 on 2026-09-29 (`__m.day` pin
   and a pre-roll in capture mode (below). BART-like screens face the driver, so a near-vertical windscreen cannot show
   them: it mirrors the cab behind the driver (the door window onto the lit saloon, the desk lit by its screens).
 - **Climax hero `p_nose_hero`**: West Oakland, platform 2, the same train pulling out: 90 mm, 13 m ahead of the stopped
-  nose, 2.55 m right of the track, 1.5 m above the rail, panning with the nose (eased, capped at ~26 deg), 780 frames at
+  nose, 2.55 m right of the track, 1.5 m above the rail, aimed 1.5 deg above the nose (the lit top bar inside the 2.39
+  band), panning with the nose (eased, capped at ~26 deg), 780 frames at
   120 fps; the cab dark, lamps at 0.7 and their glow billboards at 0.45 so the pods keep their shape in the bloom.
 
 MetroKit for shots (`src/js/42_metrokit_cine.js`):

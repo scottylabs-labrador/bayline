@@ -7,6 +7,7 @@ import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
 const DATE = '2026-09-29', AFTER = 21 * 3600 + 46 * 60;
 const AHEAD = 13, SIDE = 2.55, HCAM = 1.5, FOV = 15.2;      // (90 mm: vertical fov 2 atan(12 / 90) = 15.2 deg)
+const TILT = 1.5;                                            // deg above the nose: the lit top bar inside the 2.39 band
 const LEAD = 1.2;                                            // s before the departure when the capture starts
 export default {
   hash: '#auto&t=21:46&q=ultra&w=clear&ll=37.8038,-122.2931,14,280,-0.05', warm: 50, frames: 780, fps: 120,
@@ -35,7 +36,9 @@ export default {
     B.MetroKit.look({ cab: 0.03, lamps: 0.7, glow: 0.45 });
     // pre-roll in capture mode with the clock held (MetroKit builds the lead car for this camera; the game's loop
     // doesn't draw the free camera before the first captured frame)
-    B.capture.cam = (t, c) => { __cine.aim(c, cam, nose0, ${FOV}, 0); };
+    const up = (q, r) => ({ x: q.x, y: q.y + r * Math.tan(${TILT} * Math.PI / 180), z: q.z });
+    window.__hero.up = up;
+    B.capture.cam = (t, c) => { __cine.aim(c, cam, up(nose0, Math.hypot(nose0.x - cam.x, nose0.z - cam.z)), ${FOV}, 0); };
     B.capture.on = true;
     for (let i = 0; i < 8; i++) { B.Env.setClock(d.t); __m.focus(d.key); __cine.put(cam, nose0); if (B.MetroKit.viewHint) B.MetroKit.viewHint(cam, ${FOV}); B.stepFrame(1); await new Promise(r => setTimeout(r, 30)); }
     B.Env.setClock(d.t);
@@ -50,6 +53,6 @@ export default {
     let da = ((a1 - a0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI; da = Math.sign(da) * Math.min(Math.abs(da), 0.46) * 0.92;
     const r = Math.hypot(n.x - c.x, n.z - c.z), aim = a0 + da, k = C.ease(t / 2.5);
     const p = { x: c.x - H.right.x * 0.25 * k, y: c.y, z: c.z - H.right.z * 0.25 * k };
-    const q = { x: p.x + Math.sin(aim) * r, y: n.y - 0.1, z: p.z + Math.cos(aim) * r };
+    const q = H.up({ x: p.x + Math.sin(aim) * r, y: n.y - 0.1, z: p.z + Math.cos(aim) * r }, r);
     C.aim(cam, p, q, ${FOV}, 0); }`,
 };
