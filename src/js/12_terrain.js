@@ -28,12 +28,36 @@ const Terrain = (() => {
   let mat = null;
 
   const tileSize = (L) => SIZE / (1 << L);
-  const K = (L, x, y) => (L * 512 + y) * 512 + x;
+  const K = (L, x, y) => (L * 1024 + y + 256) * 1024 + x;       // (rows -256..767: the north strip's negative rows too)
   function exists(L, x, y) {
-    const n = 1 << L; if (x < 0 || y < 0 || x >= n || y >= n) return false;
+    const n = 1 << L; if (x < 0 || x >= n || y >= n) return false;
+    if (y < 0) return North.exists(L, x, y);
     if (L <= 5) return !!index || L <= 5;          // 0–5 always exist (if tiles are published at all)
     return !!(index && index[L] && index[L].has(K(L, x, y)));
   }
+  // ---------- the north strip (Bayline Metro; notes/bart/world.md) ----------
+  // The world square ends at lat 37.8429; the grid continues north with NEGATIVE tile rows (same tile formulas): the
+  // strip is Z in [Z0 - SIZE/4, Z0) over the square's full width (to lat 38.0736), rows ty = -1 .. -(2^L / 4) at L >= 2.
+  // tiles/index.json lists it under `north` (old clients never read it): { z0, complete: [2, 5], levels: { "6": [[x, y]], ... } }.
+  // Its quadtree roots are the four L2 tiles (0..3, -1); L0/L1 have no strip tiles.
+  const North = {
+    on: false, lo: 2, hi: 5, z0: Z0 - SIZE / 4,
+    rows: (L) => L >= 2 ? (1 << L) >> 2 : 0,
+    has(L, x, y) { return this.on && L >= 2 && x >= 0 && x < (1 << L) && y < 0 && y >= -this.rows(L); },
+    exists(L, x, y) {
+      if (!this.has(L, x, y)) return false;
+      if (L <= this.hi) return L >= this.lo;
+      return !!(index && index[L] && index[L].has(K(L, x, y)));
+    },
+    // merge idx.north into the level sets (called once the square's sets exist)
+    read(idx) {
+      const n = idx && idx.north; if (!n || !n.complete) return;
+      this.on = true; this.lo = n.complete[0]; this.hi = n.complete[1];
+      for (const L of [6, 7, 8, 9]) for (const [x, y] of (n.levels && n.levels[L]) || []) index[L].add(K(L, x, y));
+    },
+    roots() { const r = []; if (this.on) for (let x = 0; x < 4; x++) r.push([2, x, -1]); return r; },
+    contains(x, z) { return this.on && x >= X0 && x < X0 + SIZE && z >= this.z0 && z < Z0; },
+  };
 
   // ---------- loading the fallback + index ----------
   async function load(onProgress) {
@@ -63,25 +87,26 @@ const Terrain = (() => {
       const idx = await Stream.json('tiles/index.json', 0);
       index = {};
       for (const L of [6, 7, 8, 9]) { const s = new Set(); for (const [x, y] of (idx.levels && idx.levels[L]) || []) s.add(K(L, x, y)); index[L] = s; }
-      index.meta = idx;
+      index.meta = idx; North.read(idx);
     } catch (e) { console.warn('terrain: no tile index, fallback field only', e && e.message); index = null; }
     if (index && new URLSearchParams(location.hash.slice(1)).get('h9') !== '0') {
       try {
         const hi = await Stream.json('tiles/h9/index.json', 0);
         const s8 = new Set(), s9 = new Set(), off = new Map();
-        for (const [x, y, m, o] of hi.l8 || []) { s8.add(K(8, x, y)); off.set(K(8, x, y), o || 0); for (let b = 0; b < 4; b++) if (m & (1 << b)) s9.add(K(9, 2 * x + (b & 1), 2 * y + (b >> 1))); }
+        for (const [x, y, m, o] of (hi.l8 || []).concat(North.on && hi.l8n || [])) { s8.add(K(8, x, y)); off.set(K(8, x, y), o || 0); for (let b = 0; b < 4; b++) if (m & (1 << b)) s9.add(K(9, 2 * x + (b & 1), 2 * y + (b >> 1))); }
         h9 = { 8: s8, 9: s9, off, qs: (hi.q && hi.q.scale) || 64, attribution: hi.attribution };
         HMAX = s9.size ? 9 : 8;
       } catch (e) { h9 = null; HMAX = LH; }                // not published (yet): base terrain only
     }
     if (index && new URLSearchParams(location.hash.slice(1)).get('mat') !== '0') {
-      try { const mi = await Stream.json('tiles/mat/index.json', 0); mat = new Set((mi.tiles || []).map(([x, y]) => K(LH, x, y))); if (!mat.size) mat = null; }
+      try { const mi = await Stream.json('tiles/mat/index.json', 0); mat = new Set((mi.tiles || []).concat(North.on && mi.north || []).map(([x, y]) => K(LH, x, y))); if (!mat.size) mat = null; }
       catch (e) { mat = null; }
     }
     buildShared();
     if (index) { // warm the top of the pyramid so there is always a photo underneath
       const warm = [];
       for (let L = 0; L <= 2; L++) for (let y = 0; y < (1 << L); y++) for (let x = 0; x < (1 << L); x++) { warm.push(needImg(L, x, y, 0), needHgt(L, x, y, 0)); }
+      for (const [L, x, y] of North.roots()) warm.push(needImg(L, x, y, 0), needHgt(L, x, y, 0), needMsk(L, x, y, 0));
       let done = 0; await Promise.all(warm.map(p => p.then(() => { done++; if (onProgress) onProgress(0.6 + 0.4 * done / warm.length); }, () => {})));
     }
     Env.scene.add(group); ready = true;
@@ -376,8 +401,11 @@ const Terrain = (() => {
     if (!matDummy) { matDummy = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat, THREE.UnsignedByteType); matDummy.minFilter = matDummy.magFilter = THREE.NearestFilter; matDummy.needsUpdate = true; }
     return matDummy;
   }
-  function makeMaterial() {
-    const u = {
+  // cut: the variant used by nodes over underground openings (Bayline Metro, 24_metrounder.js; Terrain.cutTest is null
+  // without #metro=1): fragments inside an underground volume or above a cut floor are discarded (portals, trench wells,
+  // station entrances). It shares the node's uniforms (u), so a node switches between the two for free.
+  function makeMaterial(cut, uShared) {
+    const u = uShared || {
       hTex: { value: texFH }, hUV: { value: new THREE.Vector4(0, 0, 1, 1) }, hTC: { value: new THREE.Vector2(1, 0) }, hInfo: { value: new THREE.Vector3(0, 64, 1 / 1600) },
       iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 1.0 }, iSize: { value: 512 },
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
@@ -387,7 +415,8 @@ const Terrain = (() => {
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
-    m.customProgramCacheKey = () => 'bayline-terrain-v5';
+    if (cut) m.defines = { BL_CUT: 1 };
+    m.customProgramCacheKey = () => cut ? 'bayline-terrain-v5-cut' : 'bayline-terrain-v5';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
@@ -480,6 +509,9 @@ const Terrain = (() => {
           // (xy) and the unresolved slope variance inside the pixel footprint (z)
 `)
         .replace('#include <color_fragment>', `#include <color_fragment>
+          #ifdef BL_CUT
+          if (blUnder(vW).w > 0.5) discard;
+          #endif
           {
             // ---- normal from the height data (per pixel) ----
             vec2 tc = (hUV.xy + vUV * hUV.zw) * hTC.x + hTC.y; float e = hInfo.z;
@@ -675,7 +707,7 @@ const Terrain = (() => {
   }
   function getNode(i) {
     let n = nodes[i];
-    if (!n) { const mat = makeMaterial(); const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.matrixAutoUpdate = false; group.add(mesh); n = nodes[i] = { mesh, mat, u: mat.userData.u }; }
+    if (!n) { const mat = makeMaterial(); const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.matrixAutoUpdate = false; group.add(mesh); n = nodes[i] = { mesh, mat, u: mat.userData.u, matCut: null }; }
     return n;
   }
 
@@ -695,7 +727,7 @@ const Terrain = (() => {
     cp.copy(cam.position);
     pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
     const k = lodFactor.value; sel.length = 0;
-    const stack = [[0, 0, 0]];
+    const stack = [[0, 0, 0], ...North.roots()];
     while (stack.length) {
       const [L, x, y] = stack.pop(); const T = tileSize(L); const x0 = X0 + x * T, z0 = Z0 + y * T;
       const [mn, mx] = hRange(L, x, y);
@@ -718,6 +750,11 @@ const Terrain = (() => {
       const [L, x, y, d] = sel[i]; const n = getNode(i); const T = tileSize(L); const u = n.u;
       n.mesh.visible = true;
       const g = fine && L > LH && geoFine ? geoFine : geo; if (n.mesh.geometry !== g) n.mesh.geometry = g;
+      if (api.cutTest) {                   // (Bayline Metro: openings in the ground over tunnels and stations)
+        const cut = api.cutTest(X0 + x * T, Z0 + y * T, X0 + (x + 1) * T, Z0 + (y + 1) * T);
+        if (cut && !n.matCut) n.matCut = makeMaterial(true, n.u);
+        const want = cut ? n.matCut : n.mat; if (n.mesh.material !== want) n.mesh.material = want;
+      }
       n.mesh.matrix.makeScale(T, 1, T); n.mesh.matrix.setPosition(X0 + (x + 0.5) * T, 0, Z0 + (y + 0.5) * T); n.mesh.matrixWorldNeedsUpdate = true;
       const prio = 2 + Math.min(40, d / 800) + (L < 3 ? -2 : 0);
       if (index) { // request this node's own data (the quadtree only visits nodes that exist)
@@ -806,7 +843,7 @@ const Terrain = (() => {
       let L = top, x = tx, y = ty; while (L > LH && !hExists(L, x, y)) { L--; x >>= 1; y >>= 1; }
       if (L > LH) { add(L, x, y); const q = L - LH; x >>= q; y >>= q; L = LH; }
       while (L > 5 && !exists(L, x, y)) { L--; x >>= 1; y >>= 1; }
-      if (x < 0 || y < 0 || x >= (1 << L) || y >= (1 << L)) continue;
+      if (x < 0 || x >= (1 << L) || y >= (1 << L) || (y < 0 && !North.has(L, x, y))) continue;
       add(L, x, y);
     }
     return out;
@@ -840,9 +877,18 @@ const Terrain = (() => {
   const isWater = (x, z) => maskAt(x, z, 0) > 0.5;
   const urbanAt = (x, z) => { const v = maskAt(x, z, 1); return v; };
   function setTownFade() {}
-  return { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, materialAt, update, setTownFade, setFine, lodFactor, stats, group,
+  const api = { load, h, hBase, hasDetail, ensure, imagery, retain, release, isWater, urbanAt, maskAt, materialAt, update, setTownFade, setFine, lodFactor, stats, group,
     groundDetail: groundDetailTexture, GROUND_TILE: GTILE, waveTexture, WATER_GLSL,
     get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH },
     get HMAX() { return HMAX; }, get materials() { return mat ? { tiles: mat.size, loaded: [...matRec.values()].filter(r => r.state === 2).length } : null; }, get lidar() { return h9 ? { tiles8: h9[8].size, tiles9: h9[9].size, attribution: h9.attribution } : null; },
     get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; } };
+  // ---- Bayline Metro north strip (world workstream, notes/bart/world.md): the area this terrain draws (the square, plus
+  // the strip once its tiles are published: [x0, z0, x1, z1]; the Globe leaves exactly that to it), the strip's extent
+  Object.defineProperties(api, {
+    area: { get: () => [X0, North.on ? North.z0 : Z0, X0 + SIZE, Z0 + SIZE], enumerable: true },
+    north: { get: () => North.on ? { z0: North.z0, lo: North.lo, hi: North.hi } : null, enumerable: true },
+  });
+  api.covers = (x, z) => (x >= X0 && x < X0 + SIZE && z >= Z0 && z < Z0 + SIZE) || North.contains(x, z);
+  api.cutTest = null;           // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
+  return api;
 })();

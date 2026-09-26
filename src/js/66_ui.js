@@ -17,6 +17,7 @@ const UI = (() => {
       ['Driving: W / S', 'Power / brake notches (W also closes the doors)'], ['X', 'Coast (neutral)'], ['O', 'Doors open / close'], ['Space', 'Horn'], ['G', 'Bell'], ['Q', 'Reverser (when stopped)'], ['Backspace', 'Emergency brake (R to release)'], ['A', 'Autopilot'],
       ['Flying: ↑ ↓ ← →', 'Pitch (↓ = nose up) and roll'], ['W / S', 'Throttle (Shift: faster; past 100 % = afterburner)'], ['A / D', 'Rudder · nose-wheel steering'], ['F / R', 'Flaps extend / retract'], ['G', 'Landing gear'], ['Space · B', 'Wheel brakes · parking brake'], ['T', 'Thrust reverse (on the ground)'], ['Z', 'Speed brakes'],
       ['Y · U', 'Autopilot · autothrottle'], ['I', 'Approach: capture the runway ahead and autoland'], ['[ ] , . ; \'', 'Heading · altitude · speed targets'], ['C · 1-5 · Tab', 'Cameras: cockpit, chase, orbit, tower, flyby'], ['X', 'Handling: assisted · fly-by-wire · direct'], ['Home / End', 'Trim (direct handling)'], ['M', 'World map: click an airport to fly there direct, a live aircraft to join it'], ['N / Shift+N', 'Sim rate ×1-×16 (cruise, autopilot on)'], ['L (flying)', 'Copy a link that puts a friend in your aircraft, right here'], ['Helicopter: W / S', 'Climb / descend (released: hold the height); let go of the stick and it holds its speed, hovers when slow'], ['Esc', 'Flight menu']];
+    if (typeof MetroSim !== 'undefined' && MetroSim.enabled) K.splice(15, 0, ['N', 'Bayline Metro system map'], ['Metro driving: W', 'ATO start / power · S brake (switches to manual) · A ATO on/off · O doors · Q change ends']);
     el.keys.innerHTML = K.map(([k, v]) => `<div><span>${v}</span><kbd>${k}</kbd></div>`).join('');
     initMap();
     // touch joystick: drives the same WASD keys the keyboard does (walk, fly, onboard)
@@ -32,14 +33,17 @@ const UI = (() => {
     // on-screen driving controls (mouse / touch): taps send the same keys as the keyboard; hold buttons hold
     el.drivebar.querySelectorAll('button').forEach(b => {
       const k = b.dataset.k;
-      const down = (e) => { e.preventDefault(); if (b.dataset.hold) { Player.keys.add(k); b.classList.add('on'); } else Game.driveKeys(k); };
+      const down = (e) => { e.preventDefault(); if (b.dataset.hold) { Player.keys.add(k); b.classList.add('on'); } else if (metroDrive()) MetroATC.driveKeys(k); else Game.driveKeys(k); };
       const up = () => { if (b.dataset.hold) { Player.keys.delete(k); b.classList.remove('on'); } };
       b.addEventListener('pointerdown', down); b.addEventListener('pointerup', up); b.addEventListener('pointerleave', up);
     });
     el.strip.addEventListener('click', (e) => { const r = el.stripc.getBoundingClientRect(); const y = (e.clientY - r.top) / r.height; const s = U.clamp((y - 0.03) / 0.94, 0, 1) * Track.length; const st = Track.stationNear(s, 3000); if (st) openBoard(st.idx); });
   }
-  function closeAll() { for (const id of ['board', 'mapov', 'missions', 'result', 'help']) el[id].hidden = true; }
-  const anyOpen = () => ['board', 'mapov', 'missions', 'result', 'help'].some(id => !el[id].hidden);
+  const extra = [];                       // overlays other modules add (Bayline Metro's system map and boards)
+  function addOverlay(o) { if (o && !extra.includes(o)) extra.push(o); }
+  function closeAll() { for (const id of ['board', 'mapov', 'missions', 'result', 'help']) el[id].hidden = true; for (const o of extra) o.hidden = true; }
+  const anyOpen = () => ['board', 'mapov', 'missions', 'result', 'help'].some(id => !el[id].hidden) || extra.some(o => !o.hidden);
+  const metroDrive = () => typeof MetroSim !== 'undefined' && MetroSim.enabled && !!MetroSim.drive;
   function toast(msg, t = 3.2) { el.toast.textContent = msg; el.toast.classList.add('show'); toastT = t; }
 
   // ---------- departure board ----------
@@ -69,9 +73,10 @@ const UI = (() => {
   function openMissions(filter) {
     closeAll();
     const L = Game.missionList().filter(m => !filter || m.kind === filter || filter === 'all');
-    el.mlist.innerHTML = L.map((m, i) => `<button class="m" data-i="${i}"><b>${m.title}</b><small>${m.sub}</small><div style="margin-top:6px"><span class="tag ${m.kind === 'drive' ? 'E' : m.kind === 'commute' ? 'Lim' : 'SC'}">${m.kind.toUpperCase()}</span></div></button>`).join('')
+    const L2 = filter === 'drive' ? L.concat(Game.missionList().filter(m => m.kind === 'metro' && m.drive)) : L;
+    el.mlist.innerHTML = L2.map((m, i) => `<button class="m" data-i="${i}"><b>${m.title}</b><small>${m.sub}</small><div style="margin-top:6px"><span class="tag ${m.kind === 'drive' ? 'E' : m.kind === 'commute' ? 'Lim' : m.kind === 'metro' ? 'W' : 'SC'}">${m.tag || m.kind.toUpperCase()}</span></div></button>`).join('')
       + `<button class="m" data-free="1"><b>Any train</b><small>Pick any departure from any station's board. Shift+click to drive it.</small></button>`;
-    el.mlist.querySelectorAll('.m').forEach(b => b.addEventListener('click', () => { closeAll(); if (b.dataset.free) { const st = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; openBoard(st.idx); return; } Game.startMission(L[+b.dataset.i]); }));
+    el.mlist.querySelectorAll('.m').forEach(b => b.addEventListener('click', () => { closeAll(); if (b.dataset.free) { const st = Stations.nearest(Env.camera.position, 1e9) || Stations.list[0]; openBoard(st.idx); return; } Game.startMission(L2[+b.dataset.i]); }));
     el.missions.hidden = false; Player.releaseLock();
   }
   function showResult(r) {
@@ -146,7 +151,7 @@ const UI = (() => {
       while (L < 8 && Terrain.tileSize(L) * pxPerM > 420) L++;
       const T = Terrain.tileSize(L), n = 1 << L;
       const wx0 = map.cx - W / 2 / pxPerM, wz0 = map.cz - H / 2 / pxPerM, wx1 = map.cx + W / 2 / pxPerM, wz1 = map.cz + H / 2 / pxPerM;
-      const tx0 = Math.max(0, Math.floor((wx0 - T0.X0) / T)), tx1 = Math.min(n - 1, Math.floor((wx1 - T0.X0) / T)), ty0 = Math.max(0, Math.floor((wz0 - T0.Z0) / T)), ty1 = Math.min(n - 1, Math.floor((wz1 - T0.Z0) / T));
+      const tx0 = Math.max(0, Math.floor((wx0 - T0.X0) / T)), tx1 = Math.min(n - 1, Math.floor((wx1 - T0.X0) / T)), ty0 = Math.max(Terrain.north ? -(n >> 2) : 0, Math.floor((wz0 - T0.Z0) / T)), ty1 = Math.min(n - 1, Math.floor((wz1 - T0.Z0) / T));
       g.imageSmoothingQuality = 'high';
       for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
         // draw the finest cached image at or above this level
@@ -212,6 +217,7 @@ const UI = (() => {
       const t = placeFn && placeFn(p.x, p.z); if (t) return t;
       const ll = Globe.w2ll(p.x, p.z); return `${Math.abs(ll.lat).toFixed(3)}° ${ll.lat >= 0 ? 'N' : 'S'}  ${Math.abs(ll.lon).toFixed(3)}° ${ll.lon >= 0 ? 'E' : 'W'}`;
     }
+    if (typeof MetroUI !== 'undefined') { const mt = MetroUI.whereText(p); if (mt) return mt; }
     const n = Track.nearest(p.x, p.z, 4000);
     if (!n) { const st = Stations.nearest(p, 1e9); return st ? `${(Math.hypot(st.x - p.x, st.z - p.z) / 1000).toFixed(1)} km from ${st.name}` : ''; }
     const st = Track.stationNear(n.s, 400); if (st) return st.name;
@@ -227,18 +233,20 @@ const UI = (() => {
       el.hclock.innerHTML = Env.clockText(tl).replace(' ', `<span style="font-size:15px;color:var(--ink-dim)">:${String(s).padStart(2, '0')} </span>`) + (away ? `<span style="font-size:12px;color:var(--ink-faint);margin-left:8px">local, UTC${Env.utcOffsetHere() >= 0 ? '+' : '−'}${Math.abs(Env.utcOffsetHere())}</span>` : '');
       el.hwhere.textContent = whereText();
       const tr = Player.focusTrain(); let sub = '';
-      if (tr) { const ns = tr.plan && tr.seg ? tr.trip.stops[Sim.nextStopK(tr.plan, tr.seg)] : null; sub = `${Sim.routeShort(tr.trip)} ${tr.trip.id} → ${(Sim.TT.names[Sim.TT.stations[(tr.trip.stops[tr.trip.stops.length - 1] || [0])[0]]] || '')} · ${Math.round(tr.v / Sim.MPH)} mph${ns ? ' · next ' + Sim.TT.names[Sim.TT.stations[ns[0]]] : ''}`; }
+      if (tr && tr.metro) sub = MetroUI.subText(tr);
+      else if (tr) { const ns = tr.plan && tr.seg ? tr.trip.stops[Sim.nextStopK(tr.plan, tr.seg)] : null; sub = `${Sim.routeShort(tr.trip)} ${tr.trip.id} → ${(Sim.TT.names[Sim.TT.stations[(tr.trip.stops[tr.trip.stops.length - 1] || [0])[0]]] || '')} · ${Math.round(tr.v / Sim.MPH)} mph${ns ? ' · next ' + Sim.TT.names[Sim.TT.stations[ns[0]]] : ''}`; }
       else sub = `${Sim.running.length} trains running · ${Env.serviceDay().kind === 'wkday' ? 'weekday' : 'weekend'} timetable`;
       el.hsub.textContent = away || (typeof Flight !== 'undefined' && Flight.active) ? (subFn ? subFn() || '' : '') : sub;
       const names = { cab: 'Cab', onboard: 'Onboard', chase: 'Chase', trackside: 'Trackside', heli: 'Helicopter', walk: 'On foot', fly: 'Flying', orbit: 'Overview' };
-      el.hmode.textContent = typeof Flight !== 'undefined' && Flight.active ? 'Flying · ' + Flight.type.short : (Sim.drive ? 'Driving · ' : '') + (names[Player.mode] || Player.mode);
+      el.hmode.textContent = typeof Flight !== 'undefined' && Flight.active ? 'Flying · ' + Flight.type.short : (Sim.drive || metroDrive() ? 'Driving · ' : '') + (names[Player.mode] || Player.mode);
       el.hspeed.textContent = Env.time.live && Env.time.scale === 1 ? 'Live' : (Env.time.scale + '×');
       { const fl = typeof Flight !== 'undefined' && Flight.active; el.hspeed.hidden = fl; el.hnet.parentElement.hidden = fl; }
       if (typeof Net !== 'undefined') { el.hnet.textContent = Net.status.text || 'Solo'; el.hdot.classList.toggle('on', !!Net.status.online); }
       drawStrip();
       // cab panel
-      const D = Sim.drive; const showCab = !!D || Player.mode === 'onboard';   // riding in the cab: the desk displays say it all
-      el.cab.hidden = !showCab; el.drivebar.hidden = !D; el.strip.hidden = !!D || (typeof Globe !== 'undefined' && !Globe.frame.bay) || stripOff;
+      const D = Sim.drive; const metroFocus = !!(tr && tr.metro) || metroDrive();   // (metro trains: MetroUI's own panels)
+      const showCab = (!!D || Player.mode === 'onboard') && !metroFocus;   // riding in the cab: the desk displays say it all
+      el.cab.hidden = !showCab; el.drivebar.hidden = !D && !metroDrive(); el.strip.hidden = !!D || (typeof Globe !== 'undefined' && !Globe.frame.bay) || stripOff || (metroFocus && (Player.mode === 'onboard' || Player.mode === 'cab' || metroDrive()));
       if (showCab) {
         const trr = D ? Sim.trainByKey(D.plan.key) : tr; const v = D ? D.v : trr ? trr.v : 0; const s = D ? D.s : trr ? trr.s : 0;
         el.cspeed.textContent = Math.round(v / Sim.MPH); el.climit.textContent = 'limit ' + Math.round(Track.limit(s) / Sim.MPH);
@@ -274,5 +282,5 @@ const UI = (() => {
     if (!el.mapov.hidden) drawMap();
   }
   const setPlaceFn = (f) => { placeFn = f; }, setSubFn = (f) => { subFn = f; }, setStripOff = (v) => { stripOff = !!v; };
-  return { setPlaceFn, setSubFn, setStripOff, init, update, toast, openBoard, openMissions, openMap, showResult, closeAll, anyOpen, get boardStation() { return boardStation; } };
+  return { setPlaceFn, setSubFn, setStripOff, init, update, toast, openBoard, openMissions, openMap, showResult, closeAll, anyOpen, addOverlay, get boardStation() { return boardStation; } };
 })();

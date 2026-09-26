@@ -71,7 +71,32 @@ def _ballast(tx, ty, n):
                 continue
             P = np.stack([(X[r] - x0) * s, (Z[r] - z0) * s], 1)
             cv2.polylines(out, [np.round(P * 16).astype(np.int32)], False, 1, thickness=max(1, int(round(2 * BALLAST_HALF * s))), lineType=cv2.LINE_8, shift=4)
+    # Bayline Metro: every BART track on the ground (grade, embankment, trench, median, portal): ballast +-3.2 m per track
+    for P, m in _bart_ground(x0, z0):
+        for run in np.split(np.arange(len(m)), np.nonzero(np.diff(m.astype(int)) != 0)[0] + 1):
+            if len(run) < 2 or not m[run[0]]:
+                continue
+            Q = np.stack([(P[run, 0] - x0) * s, (P[run, 2] - z0) * s], 1)
+            cv2.polylines(out, [np.round(Q * 16).astype(np.int32)], False, 1, thickness=max(1, int(round(2 * BART_BALLAST_HALF * s))), lineType=cv2.LINE_8, shift=4)
     return out.astype(bool)
+
+
+BART_BALLAST_HALF = 3.2
+_BT = None
+
+
+def _bart_ground(x0, z0):
+    """[(P (n,3), on-the-ground mask)] of the BART tracks passing near this L7 tile (tools/tiles/metro.py network)."""
+    global _BT
+    if _BT is None:
+        try:
+            from . import metro
+            _BT = [(t['P'], np.isin(t['struct'], [0, 3, 4, 5, 6])) for t in metro.network_tracks()]
+        except Exception:
+            _BT = []
+    T7 = T(7)
+    return [(P, m) for (P, m) in _BT if m.any() and P[:, 0].max() > x0 - 50 and P[:, 0].min() < x0 + T7 + 50
+            and P[:, 2].max() > z0 - 50 and P[:, 2].min() < z0 + T7 + 50]
 
 
 def classify(tx, ty):
