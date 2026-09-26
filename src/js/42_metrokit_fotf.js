@@ -6,8 +6,8 @@
 
   // ------------------------------------------------------------------------------------------ dimensions
   const F = {
-    L: 21.336, HL: 10.668, BODY: 10.47, W: 1.6, FLOOR: 0.991, ROOF: 3.864, SKIRT: 0.62, CANT: 3.02, YC: 2.95, NSE: 3.0,
-    DOORS: [-5.33, 0, 5.33], PORTAL: 0.68, PORTAL_TOP: 2.93, LEAF: 0.83, LEAF_Y0: 0.975, LEAF_Y1: 2.945, LEAF_T: 0.035,
+    L: 21.336, HL: 10.668, BODY: 10.47, W: 1.6, FLOOR: 0.991, ROOF: 3.864, SKIRT: 0.62, CANT: 2.905, YC: 2.93, NSE: 3.0,
+    DOORS: [-5.33, 0, 5.33], PORTAL: 0.68, PORTAL_TOP: 2.86, LEAF: 0.83, LEAF_Y0: 0.975, LEAF_Y1: 2.895, LEAF_T: 0.035,
     LWIN: 0.58, LWIN_M: 0.045, LWIN_Y0: 1.93, LWIN_Y1: 2.84,
     WIN_W: 0.97, WIN_Y0: 1.89, WIN_Y1: 2.84, WIN_R: 0.13, GASKET: 0.05,
     END_R: 0.10, NOSE_XC: 10.10, NOSE_R: 0.30,
@@ -29,7 +29,11 @@
     // vertical side to YC, then a superellipse quadrant (the rounded eaves and a nearly flat, cambered roof)
     const YC = F.YC, B = F.ROOF - YC, e = 2 / F.NSE;
     for (let i = 0; i <= 600; i++) { const th = (i / 600) * Math.PI / 2; dense.push([YC + B * Math.pow(Math.sin(th), e), 1.6 * Math.pow(Math.cos(th), e)]); }
-    // arc length and normals of the dense curve
+    return profileFrom(dense, q);
+  }
+  // a profile object from a dense right-half section curve [[y, z], ...] (skirt bottom -> roof centre, z = 0 last):
+  // arc length, normals, and the adaptive sample rows (denser where the curve turns). Shared by every car design.
+  function profileFrom(dense, q) {
     const n = dense.length, t = [0];
     for (let i = 1; i < n; i++) t.push(t[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]));
     const nrm = dense.map((p, i) => { const a = dense[Math.max(0, i - 1)], b = dense[Math.min(n - 1, i + 1)]; const dy = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dy, dz) || 1; return [-dz / l, dy / l]; });   // [ny, nz]
@@ -125,7 +129,14 @@
 
   // ------------------------------------------------------------------------------------------ bones
   // 0 body; 1, 2 bogies (+X, -X); 3..6 wheelsets (bogie 1: +, -; bogie 2: +, -); 7..18 door leaves; 19, 20 wipers
-  const BONE = { body: 0, bogie: [1, 2], axle: [3, 4, 5, 6], leaf: (d, s, k) => 7 + d * 4 + (s > 0 ? 0 : 2) + (k < 0 ? 0 : 1), wiper: [19, 20], handle: 21, N: 22 };
+  const BONE = { body: 0, bogie: [1, 2], axle: [3, 4, 5, 6], leaf: (d, s, k) => 7 + d * 4 + (s > 0 ? 0 : 2) + (k < 0 ? 0 : 1), wiper: [19, 20], handle: 21,
+    shoe: (b, s) => 22 + b * 2 + (s > 0 ? 0 : 1), N: 26 };
+  // collector shoe gear (infra's published contact rail: top contact +0.171 m above top of rail, centreline 1.499 m
+  // from the track centre, 76 mm head; coverboard underside +0.239 m from lat 1.339 m outward): the paddle's contact
+  // face sits at +0.171 over lat 1.43-1.57; its arm pivots about a longitudinal pin on the truck's shoe beam, inboard
+  // of the coverboard (lat 1.28, +0.228), so a free shoe hangs tilted ~8 cm lower and the rail's end ramps lift it on
+  const SHOE = { TOP: 0.171, LAT: 1.5, HW: 0.07, LEN: 0.38, T: 0.034, PY: 0.228, PZ: 1.28, FREE: -0.08 };
+  K.FOTF_SHOE = SHOE;
   K.FOTF_BONE = BONE;
 
 
@@ -373,7 +384,7 @@
   }
   // Dellner-type coupler: draft gear under the end, shank, head (face at +-HL), electrical head, DC warning plate (fronts)
   function coupler(E, e, front) {
-    E.bone = 0; const y = 0.6, xf = e * F.HL;
+    E.bone = 0; const y = front ? 0.8 : 0.78, xf = e * F.HL;
     E.pal('frame'); E.box(e * (F.BODY - 0.9), y - 0.14, -0.22, e * (F.BODY - 0.15), y + 0.14, 0.22);
     E.pal('coupler'); E.cyl([e * (F.BODY - 0.2), y, 0], [xf - e * 0.12, y, 0], 0.07, 0.07, 10);
     E.box(xf - e * 0.13, y - 0.19, -0.17, xf, y + 0.19, 0.17);
@@ -387,59 +398,75 @@
   // ------------------------------------------------------------------------------------------ the D-car nose
   // The body section closed by a rounded edge of radius NOSE_R into a gently convex, raked front face.
   // D(y, z): x offset of the face (bulge in plan, rake back toward the top), blended into the fillet.
-  const noseD = (y, z) => 0.07 * (1 - (z / 1.35) ** 2) - 0.05 * Math.max(0, y - 1.0);
+  // the face bulges forward in plan (0.11 m at the centre) and rakes back progressively toward the top (0.19 m at 3.5 m)
+  const noseD = (y, z) => 0.11 * (1 - (z / 1.4) ** 2) - 0.03 * Math.max(0, y - 1.0) ** 2;
+  // the fillet into the face is elliptical: a constant 0.30 m along the car, 0.30 m in the section (0.52 m at the top)
+  const RYZ = y => 0.3 + 0.22 * clamp((y - 3.15) / 0.6, 0, 1) ** 2;
   const faceX = (y, z) => F.NOSE_XC + F.NOSE_R + noseD(y, z);
   function faceN(y, z) { const e = 1e-3; const dy = (faceX(y + e, z) - faceX(y - e, z)) / (2 * e), dz = (faceX(y, z + e) - faceX(y, z - e)) / (2 * e); const l = Math.hypot(1, dy, dz); return [1 / l, -dy / l, -dz / l]; }
   const faceAt = (z, y, off = 0) => { const n = faceN(y, z); return { p: [faceX(y, z) + n[0] * off, y + n[1] * off, z + n[2] * off], n }; };
   // mask bottom edge (the black glazed band starts here), rising toward the sides
-  const MASK_Y0 = 2.05, maskY0 = z => MASK_Y0;
+  const MASK_Y0 = 2.08, maskY0 = z => MASK_Y0;
 
   function nose(E, G, P) {
     E.bone = 0; G.bone = 0;
     const R = F.NOSE_R, xs = F.NOSE_XC, L = sectionLoop(P), n = L.length, A = 8;
-    // fillet ring (blending the face deformation in with w = 1 - cos a)
-    const base = E.count, ringPts = [];
+    // fillet ring (blending the face deformation in with w = 1 - cos a); normals from finite differences of the grid
+    const Pp = [], Nn = [], cols = A + 1;
     for (let i = 0; i < n; i++) for (let j = 0; j <= A; j++) {
-      const a = (j / A) * Math.PI / 2, off = R * (1 - Math.cos(a)), p = L[i], w = 1 - Math.cos(a);
+      const a = (j / A) * Math.PI / 2, p = L[i], off = RYZ(p.y) * (1 - Math.cos(a)), w = 1 - Math.cos(a);
       const y = p.y - p.ny * off, z = p.z - p.nz * off;
-      E.pal('cap');
-      E.v(xs + R * Math.sin(a) + w * noseD(y, z), y, z, Math.sin(a), p.ny * Math.cos(a), p.nz * Math.cos(a), 0, 0, 0);
+      Pp.push([xs + R * Math.sin(a) + w * noseD(y, z), y, z]); Nn.push([Math.sin(a), p.ny * Math.cos(a), p.nz * Math.cos(a)]);
     }
-    // normals of the ring from finite differences of its own grid (the deformation tilts them)
-    const idx = (i, j) => base + i * (A + 1) + j;
+    const idx = (i, j) => i * cols + j;
     for (let i = 0; i < n; i++) for (let j = 0; j <= A; j++) {
-      const P0 = mbP(E, idx(Math.min(n - 1, i + 1), j)), P1 = mbP(E, idx(Math.max(0, i - 1), j)), Q0 = mbP(E, idx(i, Math.min(A, j + 1))), Q1 = mbP(E, idx(i, Math.max(0, j - 1)));
+      const P0 = Pp[idx(Math.min(n - 1, i + 1), j)], P1 = Pp[idx(Math.max(0, i - 1), j)], Q0 = Pp[idx(i, Math.min(A, j + 1))], Q1 = Pp[idx(i, Math.max(0, j - 1))];
       const du = [P0[0] - P1[0], P0[1] - P1[1], P0[2] - P1[2]], dv = [Q0[0] - Q1[0], Q0[1] - Q1[1], Q0[2] - Q1[2]];
       let nx = du[1] * dv[2] - du[2] * dv[1], ny = du[2] * dv[0] - du[0] * dv[2], nz = du[0] * dv[1] - du[1] * dv[0]; const l = Math.hypot(nx, ny, nz) || 1;
-      const k = idx(i, j) * 3; const old = [E.N[k], E.N[k + 1], E.N[k + 2]]; if (nx * old[0] + ny * old[1] + nz * old[2] < 0) { nx = -nx; ny = -ny; nz = -nz; }
-      E.N[k] = nx / l; E.N[k + 1] = ny / l; E.N[k + 2] = nz / l;
+      const o = Nn[idx(i, j)]; if (nx * o[0] + ny * o[1] + nz * o[2] < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      Nn[idx(i, j)] = [nx / l, ny / l, nz / l];
     }
-    for (let i = 0; i < n - 1; i++) for (let j = 0; j < A; j++) { const a = idx(i, j), b = idx(i + 1, j); E.quadA(a, b, b + 1, a + 1); }
+    E.gridQuads(Pp, Nn, n, cols, (i, j) => (L[i].y < 0.86 && j > 2) ? 'frame' : 'cap');
+    // the cab's inner lining behind the fillet (seen from the cab): the same grid pushed 6 cm inward, facing in
+    { const Pi = Pp.map((q, k) => [q[0] - Nn[k][0] * 0.06, q[1] - Nn[k][1] * 0.06, q[2] - Nn[k][2] * 0.06]), Ni = Nn.map(q => [-q[0], -q[1], -q[2]]);
+      E.gridQuads(Pi, Ni, n, cols, (i) => L[i].y > F.FLOOR ? 'wallInt2' : 'frame'); }
     // the face: the inner offset loop, closed at the bottom
-    const face = L.map(p => [p.z - p.nz * R, p.y - p.ny * R]);
+    const face = L.map(p => [p.z - p.nz * RYZ(p.y), p.y - p.ny * RYZ(p.y)]);
     const yBot = face[0][1];
     makeFaceTop(face);
     const outline = densify(face, 0.12);           // (z, y), goes right side up, over, left side down: counter-clockwise seen from +X? check below
     // regions: mask (black) with holes for the windscreens and door window; white cap with holes for the mask, the
     // headlight pods and the dark recess under the bumper (the coupler pocket)
     const mask = maskOutline();
-    const wsR = windscreen(1), wsL = windscreen(-1), dwin = rrect(-0.225, 2.09, 0.225, 3.24, 0.07, 5);
+    const wsR = windscreen(1), wsL = windscreen(-1), dwin = rrect(-0.19, 2.13, 0.19, 3.27, 0.06, 5);
     const podR = podOutline(1), podL = podOutline(-1);
     const pocket = [[-0.86, yBot - 0.01], [0.86, yBot - 0.01], [0.86, 1.07], [-0.86, 1.07]];
     const ccw = poly => { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p[0] * q[1] - q[0] * p[1]; } return a > 0 ? poly : poly.slice().reverse(); };
     const cw = poly => ccw(poly).slice().reverse();
-    // the face outline with the pocket cut into its bottom edge (a notch), so the white face ends at the pocket
-    const dz = densify(face, 0.12), inPocket = q => Math.abs(q[0]) < 0.86 && q[1] < 1.07, out2 = [];
-    for (let i = 0; i < dz.length; i++) {
-      const q = dz[i], nx = dz[(i + 1) % dz.length];
-      if (!inPocket(q)) out2.push(q);
-      if (!inPocket(q) && inPocket(nx)) { const dir = Math.sign(nx[0] - q[0]) || 1; const zA = -dir * 0.86, zB = dir * 0.86;
-        out2.push([zA, q[1]], [zA, 1.07], [zB, 1.07], [zB, q[1]]); }
-    }
+    // the white face ends at y = FACE_Y0 (0.87): below it the lower front is dark (the underframe and equipment show),
+    // and the coupler pocket is notched into its bottom edge under the bumper
+    const FACE_Y0 = 0.87, clipY = (poly, c, keepAbove) => {           // Sutherland-Hodgman against y = c
+      const out = []; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], ia = keepAbove ? a[1] >= c : a[1] <= c, ib = keepAbove ? b[1] >= c : b[1] <= c;
+        if (ia) out.push(a); if (ia !== ib) { const t = (c - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, c]); } } return out; };
+    const faceD = densify(face, 0.12), upper = clipY(faceD, FACE_Y0, true), lower = clipY(faceD, FACE_Y0, false);
+    // notch: replace the bottom edge's middle (|z| < 0.86) with a step up to 1.07
+    const out2 = []; for (const q of upper) { if (Math.abs(q[1] - FACE_Y0) < 1e-6 && Math.abs(q[0]) < 0.86) continue; out2.push(q); }
+    { let k = -1; for (let i = 0; i < out2.length; i++) { const a = out2[i], b = out2[(i + 1) % out2.length]; if (Math.abs(a[1] - FACE_Y0) < 1e-6 && Math.abs(b[1] - FACE_Y0) < 1e-6 && Math.sign(a[0]) !== Math.sign(b[0])) { k = i; break; } }
+      if (k >= 0) { const dir = Math.sign(out2[(k + 1) % out2.length][0] - out2[k][0]); out2.splice(k + 1, 0, [-dir * 0.86, FACE_Y0], [-dir * 0.86, 1.07], [dir * 0.86, 1.07], [dir * 0.86, FACE_Y0]); } }
     E.pal('cap');
     E.shape(ccw(out2), [cw(mask), cw(podR), cw(podL)], (z, y) => faceAt(z, y));
+    // inner lining of the face (the cab's front wall) with the windscreen and door-window openings, facing into the cab
+    { const lining = clipY(faceD, F.FLOOR, true), inward = (z, y) => { const f = faceAt(z, y, -0.07); return { p: f.p, n: [-f.n[0], -f.n[1], -f.n[2]] }; };
+      E.pal('wallInt2'); E.shape(ccw(lining), [cw(wsR), cw(wsL), cw(dwin)], inward);
+      // window reveals from the lining to the glass
+      for (const w of [wsR, wsL, dwin]) { E.pal('rubberInt'); for (let i = 0; i < w.length; i++) { const a = w[i], b = w[(i + 1) % w.length];
+        const A1 = faceAt(a[0], a[1], -0.012).p, B1 = faceAt(b[0], b[1], -0.012).p, C1 = faceAt(b[0], b[1], -0.07).p, D1 = faceAt(a[0], a[1], -0.07).p;
+        const nn = fnorm(A1, B1, C1); const ids = [A1, B1, C1, D1].map(q => E.v(q[0], q[1], q[2], nn[0], nn[1], nn[2])); E.quad(ids[0], ids[1], ids[2], ids[3]); E.quad(ids[0], ids[3], ids[2], ids[1]); } } }
+    const maskD = mask;
+    if (lower.length > 2) { E.pal('frame'); E.shape(ccw(lower), [], (z, y) => faceAt(z, y, -0.01)); }
+    void pocket;
     E.pal('mask');
-    E.shape(ccw(densify(mask, 0.15)), [cw(wsR), cw(wsL), cw(dwin)], (z, y) => faceAt(z, y, 0.0005));
+    E.shape(ccw(maskD), [cw(wsR), cw(wsL), cw(dwin)], (z, y) => faceAt(z, y, 0.0015));
     // windscreens and door window glass, set 1.2 cm in; thin rubber edges
     for (const ws of [wsR, wsL, dwin]) {
       G.pal('lensClear'); G.shape(ccw(ws), [], (z, y) => faceAt(z, y, -0.012));
@@ -453,18 +480,19 @@
       E.box(x0, 1.05, -0.86, faceX(1.07, 0), 1.07, 0.86);
       for (const zs of [-1, 1]) { const x1 = faceX(1.0, zs * 0.86); E.box(x0, y0, zs * 0.86 - 0.01, x1, 1.07, zs * 0.86 + 0.01); } }
     // headlight pods: recessed black bowls with two LED lamps each
+    // (no cover glass: the glass mesh is the interior-mapped glazing, a cover there would show the cab behind it)
     for (const s of [1, -1]) headPod(E, s);
     // centre door (white lower part) seams, the small hatch left of it
     E.pal('seam');
     const seamLine = (pts, w) => { for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1], dz = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dz, dy) || 1, oz = -dy / l * w / 2, oy = dz / l * w / 2;
       const c = [[a[0] + oz, a[1] + oy], [b[0] + oz, b[1] + oy], [b[0] - oz, b[1] - oy], [a[0] - oz, a[1] - oy]].map(([z, y]) => faceAt(z, y, 0.0015));
       const ids = c.map(f => E.v(f.p[0], f.p[1], f.p[2], f.n[0], f.n[1], f.n[2])); E.quad(ids[0], ids[3], ids[2], ids[1]); E.quad(ids[0], ids[1], ids[2], ids[3]); } };
-    for (const zs of [-1, 1]) seamLine([[zs * 0.495, 1.265], [zs * 0.495, MASK_Y0 + 0.01]], 0.013);
+    for (const zs of [-1, 1]) seamLine([[zs * 0.45, 1.265], [zs * 0.45, MASK_Y0 + 0.01]], 0.013);
     seamLine([[0.6, 1.79], [0.73, 1.79], [0.73, 1.93], [0.6, 1.93], [0.6, 1.79]], 0.008);
     // bumper: a dark grey bar across the pocket's top, with a ridge
     { const bx = faceX(1.16, 0);
-      E.pal('bumper'); E.box(bx - 0.2, 1.065, -0.87, bx + 0.07, 1.265, 0.87);
-      E.pal('frame'); E.box(bx + 0.07, 1.15, -0.85, bx + 0.078, 1.19, 0.85); }
+      E.pal('bumper'); K.rbox(E, bx - 0.2, 1.065, -0.87, bx + 0.035, 1.265, 0.87, 0.03, 3);
+      E.pal('frame'); E.box(bx + 0.02, 1.15, -0.84, bx + 0.038, 1.18, 0.84); }
     // lower lamp pods (tail + marker) at the bottom corners: glossy black angled pods, flush with the face
     for (const s of [1, -1]) {
       const zc = s * 1.1, yc = 0.99, x = faceX(yc, zc);
@@ -474,13 +502,12 @@
       E.pal('markerLamp'); E.cyl([x + 0.01, yc - 0.02, zc - s * 0.08], [x + 0.018, yc - 0.02, zc - s * 0.08], 0.033, 0.031, 14);
     }
     // top light bar on the brow, camera dome
-    const barY = 3.72, ca = Math.acos(clamp(1 - (F.ROOF - barY) / F.NOSE_R, -1, 1)), barX = F.NOSE_XC + F.NOSE_R * Math.sin(ca) + (1 - Math.cos(ca)) * noseD(barY, 0);
+    const barY = 3.7, rt = RYZ(F.ROOF), ca = Math.acos(clamp(1 - (F.ROOF - barY) / rt, -1, 1)), barX = F.NOSE_XC + F.NOSE_R * Math.sin(ca) + (1 - Math.cos(ca)) * noseD(barY, 0);
     E.at(mul(tr(barX, barY, 0), rotZ(-(Math.PI / 2 - ca) * 0.8)), m => {
-      m.pal('frame'); m.box(-0.045, -0.06, -0.49, 0.012, 0.06, 0.49);
-      m.pal('topBar'); m.box(0.0, -0.045, -0.47, 0.016, 0.045, 0.47); });
-    E.pal('camDome'); { const f = faceAt(0.66, 3.44, 0.0); E.cyl([f.p[0] - 0.01, 3.44, 0.66], [f.p[0] + 0.025, 3.44, 0.66], 0.05, 0.042, 14); }
+      m.pal('frame'); m.box(-0.045, -0.06, -0.43, 0.012, 0.06, 0.43);
+      m.pal('topBar'); m.box(0.0, -0.042, -0.41, 0.016, 0.042, 0.41); });
+    E.pal('camDome'); { const cy = Math.min(3.58, maskTop(0.56) - 0.03), f = faceAt(0.56, cy, 0.0); E.cyl([f.p[0] - 0.01, cy, 0.56], [f.p[0] + 0.03, cy, 0.56], 0.05, 0.044, 14); }
     for (const s of [1, -1]) wiper(E, s);
-    signFront(E);
     // corner strip panels (two tall recessed covers on each front corner): outlined as seams on the fillet
     E.pal('seam');
     for (const s of [1, -1]) for (const [y0, y1] of [[1.08, 2.0], [2.12, 3.18]]) {
@@ -501,18 +528,19 @@
       let lo = 0, hi = up.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (up[m][0] <= z) lo = m; else hi = m; }
       const f = (z - up[lo][0]) / ((up[hi][0] - up[lo][0]) || 1); return up[lo][1] + (up[hi][1] - up[lo][1]) * f; };
   }
-  const maskTop = z => Math.min(3.5, faceTopFn(z) - 0.045);
+  const maskTop = z => Math.min(3.62, faceTopFn(z) - 0.11);
   function maskOutline() {
-    const pts = [], ZM = 1.27;
+    const pts = [], ZM = 1.3;
     for (let i = 0; i <= 24; i++) { const z = ZM - 2 * ZM * i / 24; pts.push([z, maskY0(z)]); }                 // bottom, right to left
-    for (let i = 0; i <= 40; i++) { const z = -ZM + 2 * ZM * i / 40; pts.push([z, Math.max(maskY0(z) + 0.05, maskTop(z))]); }   // top, left to right
+    for (let i = 0; i <= 64; i++) { const z = -ZM + 2 * ZM * i / 64; pts.push([z, Math.max(maskY0(z) + 0.05, maskTop(z))]); }   // top, left to right
+    // round the two bottom corners (r 0.1)
     return pts;
   }
   function windscreen(s) {
-    // between the door frame (z = 0.535) and z = 1.2, above the mask bottom (+0.07), under the mask top (-0.08)
-    const zi = 0.535, zo = 1.2, pts = [];
-    const bot = z => maskY0(z) + 0.03, top = z => maskTop(z) - 0.08;
-    const rb = 0.14;
+    // between the door frame (z = 0.475) and the corner pillar (z = 1.265), above the mask bottom, under the mask top
+    const zi = 0.475, zo = 1.265, pts = [];
+    const bot = z => maskY0(z) + 0.03, top = z => maskTop(z) - 0.07;
+    const rb = 0.13;
     for (let i = 0; i <= 12; i++) { const z = zi + 0.04 + (zo - rb - zi - 0.04) * i / 12; pts.push([z, bot(z)]); }
     const cz = zo - rb, cy = bot(zo - rb) + rb;
     for (let i = 1; i <= 6; i++) { const a = -Math.PI / 2 + (i / 6) * Math.PI / 2; pts.push([cz + rb * Math.cos(a), cy + rb * Math.sin(a)]); }
@@ -528,14 +556,16 @@
     return s > 0 ? pts : pts.map(([z, y]) => [-z, y]).reverse();
   }
   function headPod(E, s) {
-    const out = podOutline(s), cz = s * 1.12, cy = 1.82, depth = 0.07;
-    // bowl walls: from the outline on the face inward (shrinking), then the back plate
-    E.pal('podBlack');
-    const inner = out.map(([z, y]) => [cz + (z - cz) * 0.9, cy + (y - cy) * 0.93]);
-    for (let i = 0; i < out.length; i++) { const i2 = (i + 1) % out.length;
-      const A = faceAt(out[i][0], out[i][1]).p, B = faceAt(out[i2][0], out[i2][1]).p, C = faceAt(inner[i2][0], inner[i2][1], -depth).p, D = faceAt(inner[i][0], inner[i][1], -depth).p;
-      const nn = fnorm(A, B, C); const ids = [A, B, C, D].map(p => E.v(p[0], p[1], p[2], nn[0], nn[1], nn[2])); E.quad(ids[0], ids[1], ids[2], ids[3]); E.quad(ids[0], ids[3], ids[2], ids[1]); }
-    E.shape(inner.slice(), [], (z, y) => faceAt(z, y, -depth));
+    const out = podOutline(s), cz = s * 1.12, cy = 1.82, depth = 0.045;
+    // bowl: a black gasket at the face, then silver reflector walls down to a silver back plate (the real housings read
+    // bright behind their clear covers)
+    const mid = out.map(([z, y]) => [cz + (z - cz) * 0.975, cy + (y - cy) * 0.98]), inner = out.map(([z, y]) => [cz + (z - cz) * 0.9, cy + (y - cy) * 0.93]);
+    const ring = (a, b, da, db, pal) => { E.pal(pal);
+      for (let i = 0; i < a.length; i++) { const i2 = (i + 1) % a.length;
+        const A = faceAt(a[i][0], a[i][1], da).p, B = faceAt(a[i2][0], a[i2][1], da).p, C = faceAt(b[i2][0], b[i2][1], db).p, D = faceAt(b[i][0], b[i][1], db).p;
+        const nn = fnorm(A, B, C); const ids = [A, B, C, D].map(p => E.v(p[0], p[1], p[2], nn[0], nn[1], nn[2])); E.quad(ids[0], ids[1], ids[2], ids[3]); E.quad(ids[0], ids[3], ids[2], ids[1]); } };
+    ring(out, mid, 0, -0.012, 'podBlack'); ring(mid, inner, -0.012, -depth, 'podSilver');
+    E.pal('podSilver'); E.shape(inner.slice(), [], (z, y) => faceAt(z, y, -depth));
     E.shape(inner.slice().reverse(), [], (z, y) => faceAt(z, y, -depth));
     // two lamp modules (reflector cup + LED lens with the honeycomb cluster), upper slightly outboard
     for (const [lz, ly, r] of [[s * 1.175, 1.96, 0.075], [s * 1.08, 1.7, 0.068]]) {
@@ -543,7 +573,6 @@
       E.pal('chrome'); E.cyl([x, ly, lz], [x + 0.03, ly, lz], r * 1.12, r * 1.0, 18);
       E.pal('headLamp'); E.cyl([x + 0.03, ly, lz], [x + 0.042, ly, lz], r * 0.92, r * 0.9, 18);
     }
-    // clear outer cover over the pod (flush with the face) goes into the glass mesh: omitted (the bowl reads better)
   }
   function wiper(E, s) {
     // parked along the bottom of the windscreen, pivot near the outer lower corner; bone 19 (right) / 20 (left)
@@ -552,11 +581,11 @@
     E.pal('wiper');
     E.cyl([f.p[0] - 0.02, py, pz], [f.p[0] + 0.015, py, pz], 0.022, 0.018, 10);
     // arm and blade toward the centre, rising slightly
-    const tip = [-s * 0.16, 0.6];
+    const tip = [-s * 0.12, 0.52];
     const g = faceAt(pz + tip[0], py + tip[1], 0.025);
-    E.cyl([f.p[0] + 0.01, py, pz], g.p, 0.009, 0.007, 6, false);
-    const h0 = faceAt(pz + tip[0] * 0.25, py + tip[1] * 0.25 - 0.02, 0.018).p, h1 = faceAt(pz + tip[0] * 1.35, py + tip[1] * 1.35 + 0.02, 0.018).p;
-    E.cyl(h0, h1, 0.008, 0.008, 6);
+    E.cyl([f.p[0] + 0.01, py, pz], g.p, 0.007, 0.006, 6, false);
+    const h0 = faceAt(pz + tip[0] * 0.2, py + tip[1] * 0.2, 0.016).p, h1 = faceAt(pz + tip[0] * 1.15, py + tip[1] * 1.15, 0.016).p;
+    E.cyl(h0, h1, 0.0065, 0.0065, 6);
     E.bone = 0;
   }
   // front destination sign (behind the left windscreen, top): LED module; uv1 maps into the sign canvas' front region
@@ -605,47 +634,102 @@
   // Modern outboard-bearing H-frame truck, built around its pivot at (+-TRUCK, 0, 0); bones 1/2 for the frame, 3..6
   // for the wheelsets (spin). Collector shoes on both sides.
   function bogie(E, b) {
-    const bx = b === 0 ? F.TRUCK : -F.TRUCK, bone = BONE.bogie[b], WR = F.WR, hb = F.WB / 2;
+    const bx = b === 0 ? F.TRUCK : -F.TRUCK, bone = BONE.bogie[b], WR = F.WR, hb = F.WB / 2, q = K.Q();
     E.bone = bone;
-    const zf = 1.08;
+    const zf = 1.08, sfT = 0.075, cs = q >= 3 ? 12 : 8, hi = q >= 3;   // (most of the truck hides behind the skirt: fine detail only at high quality)
+    // side-frame elevation (x from the truck centre, y): a fabricated box section, high over the axle boxes (the
+    // primary springs under its ends), a swan neck down to the low middle that carries the air spring
+    const SF = [[-1.39, 0.64], [-1.39, 0.8], [-1.34, 0.845], [-0.88, 0.845], [-0.68, 0.725], [0.68, 0.725], [0.88, 0.845], [1.34, 0.845], [1.39, 0.8], [1.39, 0.64],
+      [1.34, 0.6], [0.93, 0.6], [0.74, 0.47], [-0.74, 0.47], [-0.93, 0.6], [-1.34, 0.6]];
     for (const s of [1, -1]) {
-      const z0 = s * zf - 0.08, z1 = s * zf + 0.08;
-      // side frame: raised over the axle boxes, dipped in the middle for the air spring
       E.pal('frame');
-      E.box(bx - hb - 0.32, 0.58, Math.min(z0, z1), bx - hb + 0.3, 0.82, Math.max(z0, z1));
-      E.box(bx + hb - 0.3, 0.58, Math.min(z0, z1), bx + hb + 0.32, 0.82, Math.max(z0, z1));
-      E.box(bx - hb + 0.3, 0.46, Math.min(z0, z1), bx + hb - 0.3, 0.7, Math.max(z0, z1));
-      for (const k of [-1, 1]) { const x = bx + k * (hb - 0.3), x2 = bx + k * (hb - 0.62); const pts = [[x, 0.58, 0], [x2, 0.46, 0]];
-        E.q4([pts[0][0], 0.82, z1 * 1], [pts[1][0], 0.7, z1], [pts[1][0], 0.7, z0], [pts[0][0], 0.82, z0]); }
-      // air spring (secondary) on the frame's dip
-      E.pal('rubber'); E.cyl([bx, 0.71, s * zf], [bx, 0.9, s * zf], 0.24, 0.24, 18);
-      E.pal('frameLt'); E.cyl([bx, 0.9, s * zf], [bx, 0.93, s * zf], 0.26, 0.26, 18);
+      E.at(tr(bx, 0, 0), m => m.prism(SF, [], s * (zf - sfT), s * (zf + sfT)));
+      // top and bottom cover plates (a little wider than the webs) and the welded spring seats over the axle boxes
+      E.pal('frameLt');
+      for (const [xa, xb2, y] of [[-1.34, -0.88, 0.845], [0.88, 1.34, 0.845], [-0.68, 0.68, 0.725]]) E.box(bx + xa, y, s * (zf - sfT - 0.012), bx + xb2, y + 0.014, s * (zf + sfT + 0.012));
+      for (const k of [-1, 1]) E.box(bx + k * hb - 0.24, 0.585, s * (zf - sfT - 0.01), bx + k * hb + 0.24, 0.6, s * (zf + sfT + 0.01));
+      // lifting lugs / bump stops on the outer web, a data plate
+      E.pal('frame'); for (const k of [-1, 1]) E.box(bx + k * 1.1 - 0.05, 0.72, s * (zf + sfT), bx + k * 1.1 + 0.05, 0.8, s * (zf + sfT + 0.03));
+      E.pal('steel'); E.box(bx - 0.18, 0.56, s * (zf + sfT), bx + 0.02, 0.64, s * (zf + sfT + 0.004));
+      // air spring (secondary): rubber bellows between the frame's low middle and the bolster plate
+      E.pal('rubber');
+      E.at(tr(bx, 0.725, s * zf), m => m.lathe([[0.16, 0], [0.225, 0.02], [0.262, 0.07], [0.265, 0.1], [0.255, 0.14], [0.225, 0.172], [0.19, 0.185]], hi ? 22 : 14));
+      E.pal('frameLt'); E.cyl([bx, 0.905, s * zf], [bx, 0.93, s * zf], 0.26, 0.26, 18);
+      E.pal('frame'); E.cyl([bx, 0.72, s * zf], [bx, 0.735, s * zf], 0.2, 0.2, 14);
+      // levelling valve and its link rod
+      E.pal('frameLt'); E.box(bx + 0.34, 0.76, s * (zf + 0.1), bx + 0.44, 0.84, s * (zf + 0.16));
+      E.pal('frame'); E.cyl([bx + 0.42, 0.8, s * (zf + 0.13)], [bx + 0.42, 0.93, s * (zf + 0.13)], 0.008, 0.008, 5, false);
       for (const k of [-1, 1]) {
         const ax = bx + k * hb;
-        // axle box (outboard), primary coil springs, vertical damper, speed sensor
-        E.pal('frameLt'); E.cyl([ax, WR, s * (zf - 0.07)], [ax, WR, s * (zf + 0.13)], 0.125, 0.125, 16);
-        E.pal('steel'); E.cyl([ax, WR, s * (zf + 0.13)], [ax, WR, s * (zf + 0.155)], 0.1, 0.09, 16);
-        E.pal('coil'); for (const dx of [-0.13, 0.13]) E.cyl([ax + dx, WR + 0.08, s * zf], [ax + dx, 0.6, s * zf], 0.07, 0.07, 10);
-        E.pal('frame'); E.cyl([ax + k * 0.22, WR - 0.02, s * (zf + 0.1)], [ax + k * 0.22, 0.72, s * (zf + 0.1)], 0.026, 0.026, 8);
-        // tread brake unit on the outer side of each wheel
-        E.pal('frameLt'); E.box(ax + k * 0.46, WR - 0.08, s * 0.74, ax + k * 0.64, WR + 0.12, s * 0.95);
-        E.pal('frame'); E.box(ax + k * 0.37, WR - 0.14, s * 0.78, ax + k * 0.43, WR + 0.12, s * 0.92);
-        // collector shoe gear: fibreglass beam between the axle boxes, paddle down to the contact rail
+        // axle box (outboard bearing): housing, a ribbed end cover with bolts; one carries the speed sensor, the other the
+        // earthing brush, each with its cable in a loop up to the frame
+        E.pal('frameLt'); E.cyl([ax, WR, s * (zf - 0.07)], [ax, WR, s * (zf + 0.12)], 0.125, 0.125, 18);
+        E.pal('frame'); E.cyl([ax, WR, s * (zf + 0.02)], [ax, WR, s * (zf + 0.035)], 0.135, 0.135, 18);
+        E.pal('steel'); E.cyl([ax, WR, s * (zf + 0.12)], [ax, WR, s * (zf + 0.14)], 0.11, 0.1, 18);
+        if (hi) for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + 0.3; E.cyl([ax + Math.cos(a) * 0.085, WR + Math.sin(a) * 0.085, s * (zf + 0.14)], [ax + Math.cos(a) * 0.085, WR + Math.sin(a) * 0.085, s * (zf + 0.152)], 0.012, 0.012, 6); }
+        E.pal('frame'); E.cyl([ax, WR, s * (zf + 0.14)], [ax, WR, s * (zf + 0.19)], 0.04, 0.035, 10);
+        E.pal('strap'); E.tube([[ax, WR + 0.02, s * (zf + 0.19)], [ax + k * 0.08, WR + 0.03, s * (zf + 0.2)], [ax + k * 0.16, WR + 0.12, s * (zf + 0.17)], [ax + k * 0.2, 0.62, s * (zf + 0.1)]], 0.009, 6);
+        // primary suspension: two coil springs on seats (rubber pads) either side of the box
+        for (const dx of [-0.14, 0.14]) {
+          E.pal('frame'); E.cyl([ax + dx, WR + 0.06, s * zf], [ax + dx, WR + 0.08, s * zf], 0.085, 0.085, 12);
+          E.pal('coil'); E.cyl([ax + dx, WR + 0.08, s * zf], [ax + dx, 0.585, s * zf], 0.072, 0.072, cs);
+          E.pal('rubber'); E.cyl([ax + dx, 0.575, s * zf], [ax + dx, 0.585, s * zf], 0.08, 0.08, 10);
+        }
+        // vertical (primary) damper, pinned eye to eye
+        E.pal('frame'); E.cyl([ax + k * 0.26, WR - 0.02, s * (zf + 0.09)], [ax + k * 0.26, 0.74, s * (zf + 0.09)], 0.03, 0.03, 10);
+        E.pal('steel'); E.cyl([ax + k * 0.26, 0.5, s * (zf + 0.09)], [ax + k * 0.26, 0.74, s * (zf + 0.09)], 0.034, 0.034, 10);
+        // tread brake unit on the frame end: body, actuator cylinder, the brake block on the wheel tread, its air hose
+        const g = F.GAUGE / 2, tz0 = s * (g + 0.025), tz1 = s * (g + 0.125);
+        E.pal('frameLt'); E.box(ax + k * 0.47, WR - 0.07, s * 0.78, ax + k * 0.68, WR + 0.15, s * 1.0);
+        E.pal('frame'); E.cyl([ax + k * 0.58, WR + 0.04, s * 1.0], [ax + k * 0.58, WR + 0.04, s * 1.06], 0.07, 0.07, 12);
+        E.pal('frameLt'); E.box(ax + k * 0.4, WR - 0.03, s * 0.86, ax + k * 0.47, WR + 0.09, s * 0.95);
+        E.pal('shoe');
+        { const a0 = k > 0 ? -0.34 : Math.PI - 0.34, a1 = a0 + 0.68, rIn = WR + 0.004, rOut = WR + 0.055;
+          E.surface([a0, (a0 + a1) / 2, a1], [0, 1], (u, v, o) => { o[0] = ax + Math.cos(u) * rOut; o[1] = WR + Math.sin(u) * rOut; o[2] = tz0 + (tz1 - tz0) * v; }, { flip: s * k < 0 });
+          E.surface([a0, (a0 + a1) / 2, a1], [0, 1], (u, v, o) => { o[0] = ax + Math.cos(u) * rIn; o[1] = WR + Math.sin(u) * rIn; o[2] = tz0 + (tz1 - tz0) * v; }, { flip: s * k > 0 });
+          for (const a of [a0, a1]) E.q4([ax + Math.cos(a) * rIn, WR + Math.sin(a) * rIn, tz0], [ax + Math.cos(a) * rOut, WR + Math.sin(a) * rOut, tz0], [ax + Math.cos(a) * rOut, WR + Math.sin(a) * rOut, tz1], [ax + Math.cos(a) * rIn, WR + Math.sin(a) * rIn, tz1]);
+          for (const a of [a0, a1]) E.q4([ax + Math.cos(a) * rIn, WR + Math.sin(a) * rIn, tz1], [ax + Math.cos(a) * rOut, WR + Math.sin(a) * rOut, tz1], [ax + Math.cos(a) * rOut, WR + Math.sin(a) * rOut, tz0], [ax + Math.cos(a) * rIn, WR + Math.sin(a) * rIn, tz0]); }
+        E.pal('strap'); E.tube([[ax + k * 0.6, WR + 0.15, s * 0.92], [ax + k * 0.66, WR + 0.3, s * 0.95], [ax + k * 0.5, 0.78, s * 0.98], [ax + k * 0.3, 0.86, s * 0.99]], 0.011, 6);
+        // shoe-beam hanger from the axle box down to the beam
+        E.pal('frame'); E.box(ax - 0.035, 0.25, s * 1.2 - 0.03, ax + 0.035, WR - 0.08, s * 1.2 + 0.03);
       }
-      E.pal('beam'); E.box(bx - hb + 0.1, 0.3, s * 1.24, bx + hb - 0.1, 0.4, s * 1.3);
-      E.box(bx - 0.08, 0.26, s * 1.3, bx + 0.08, 0.36, s * 1.46);
-      E.pal('shoe'); E.box(bx - 0.18, 0.19, s * 1.38, bx + 0.18, 0.23, s * 1.52);
-      E.pal('copper'); E.cyl([bx, 0.34, s * 1.27], [bx + 0.3, 0.6, s * 1.25], 0.012, 0.012, 5, false);
-      // yaw damper
-      E.pal('frame'); E.cyl([bx - 0.55, 0.78, s * 1.22], [bx + 0.35, 0.82, s * 1.26], 0.035, 0.035, 8);
+      // collector shoe gear: fibreglass beam between the axle boxes (inboard of the coverboard), the pivot pin's bracket
+      E.pal('beam'); E.box(bx - hb + 0.1, 0.25, s * 1.16, bx + hb - 0.1, 0.33, s * 1.25);
+      E.box(bx - 0.17, 0.2, Math.min(s * 1.22, s * SHOE.PZ), bx + 0.17, 0.26, Math.max(s * 1.22, s * SHOE.PZ));
+      E.pal('steel'); E.cyl([bx - 0.2, SHOE.PY, s * SHOE.PZ], [bx + 0.2, SHOE.PY, s * SHOE.PZ], 0.022, 0.022, 10);
+      E.pal('copper'); E.tube([[bx - 0.12, 0.3, s * 1.2], [bx - 0.3, 0.33, s * 1.22], [bx - 0.45, 0.45, s * 1.2], [bx - 0.5, 0.62, s * 1.16]], 0.012, 5);
+      // the shoe on its own bone (pivots about the pin): paddle (cast slipper, ends turned up for the ramps), two arms,
+      // the shunt braid
+      E.bone = BONE.shoe(b, s);
+      const sz0 = s * (SHOE.LAT - SHOE.HW), sz1 = s * (SHOE.LAT + SHOE.HW), y0 = SHOE.TOP, y1 = SHOE.TOP + SHOE.T, hl = SHOE.LEN / 2;
+      E.pal('shoe'); K.rbox(E, bx - hl + 0.04, y0, Math.min(sz0, sz1), bx + hl - 0.04, y1, Math.max(sz0, sz1), 0.008, 2);
+      for (const k of [-1, 1]) E.q4([bx + k * (hl - 0.04), y0, sz0], [bx + k * hl, y0 + 0.03, sz0], [bx + k * hl, y0 + 0.03, sz1], [bx + k * (hl - 0.04), y0, sz1]);
+      for (const k of [-1, 1]) E.q4([bx + k * (hl - 0.04), y0, sz1], [bx + k * hl, y0 + 0.03, sz1], [bx + k * hl, y0 + 0.03, sz0], [bx + k * (hl - 0.04), y0, sz0]);
+      E.pal('frame'); for (const dx of [-0.11, 0.11]) E.cyl([bx + dx, y1 - 0.004, s * (SHOE.LAT - SHOE.HW + 0.02)], [bx + dx, SHOE.PY, s * SHOE.PZ], 0.013, 0.013, 6);
+      E.pal('copper'); E.cyl([bx, y1, s * (SHOE.LAT - 0.02)], [bx, SHOE.PY + 0.01, s * (SHOE.PZ - 0.02)], 0.009, 0.009, 5, false);
+      E.bone = bone;
+      // yaw damper (frame to bolster), lateral bump stop
+      E.pal('frame'); E.cyl([bx - 0.62, 0.79, s * 1.23], [bx + 0.32, 0.83, s * 1.25], 0.035, 0.035, 10);
+      E.pal('steel'); E.cyl([bx - 0.3, 0.8, s * 1.235], [bx + 0.32, 0.83, s * 1.25], 0.04, 0.04, 10);
     }
-    // transom and traction motors (one per axle, inboard), gearboxes
-    E.pal('frame'); E.box(bx - 0.28, 0.46, -zf, bx + 0.28, 0.66, zf);
+    // transom (two tubes between the side frames), traction centre with its links, lateral damper
+    E.pal('frame');
+    for (const dx of [-0.2, 0.2]) E.cyl([bx + dx, 0.56, -(zf - sfT)], [bx + dx, 0.56, zf - sfT], 0.085, 0.085, 14);
+    E.box(bx - 0.14, 0.5, -0.3, bx + 0.14, 0.7, 0.3);
+    E.pal('frameLt'); E.box(bx - 0.1, 0.7, -0.22, bx + 0.1, 0.93, 0.22);
+    E.pal('frame'); for (const s of [1, -1]) E.cyl([bx - 0.12, 0.62, s * 0.26], [bx - 0.62, 0.62, s * 0.3], 0.03, 0.03, 8);
+    E.pal('steel'); E.cyl([bx + 0.12, 0.66, -0.55], [bx + 0.12, 0.7, 0.4], 0.035, 0.035, 10);
+    // traction motors (one per axle, inboard, frame hung), terminal boxes and their cables, couplings, gearboxes
     for (const k of [-1, 1]) {
       const mx = bx + k * 0.52;
-      E.pal('frameLt'); E.cyl([mx, 0.47, -0.45], [mx, 0.47, 0.38], 0.23, 0.23, 18);
-      E.pal('louver'); E.cyl([mx, 0.47, 0.38], [mx, 0.47, 0.42], 0.2, 0.18, 18);
+      E.pal('frameLt'); E.cyl([mx, 0.47, -0.45], [mx, 0.47, 0.38], 0.23, 0.23, 20);
+      E.pal('louver'); E.cyl([mx, 0.47, 0.38], [mx, 0.47, 0.42], 0.2, 0.18, 20);
+      if (hi) { E.pal('frame'); for (let i = 0; i < 4; i++) { const zz = -0.38 + i * 0.2; E.cyl([mx, 0.47, zz], [mx, 0.47, zz + 0.025], 0.24, 0.24, 20, false); } }
+      E.pal('frame'); E.box(mx - 0.1, 0.66, -0.3, mx + 0.1, 0.76, -0.1);
+      E.pal('strap'); for (const dz of (hi ? [-0.26, -0.2, -0.14] : [-0.2])) E.tube([[mx, 0.76, dz], [mx + k * 0.05, 0.86, dz - 0.02], [mx - k * 0.12, 0.94, dz - 0.05], [mx - k * 0.3, 0.97, dz - 0.05]], 0.016, 6);
+      E.pal('steel'); E.cyl([mx, 0.47, 0.42], [mx, 0.47, 0.5], 0.09, 0.09, 12);
       E.pal('frame'); E.box(bx + k * (hb - 0.28), WR - 0.2, 0.42, bx + k * (hb + 0.22), WR + 0.2, 0.66);
+      E.pal('frameLt'); E.box(bx + k * (hb - 0.24), WR - 0.16, 0.66, bx + k * (hb + 0.18), WR + 0.16, 0.68);
     }
     // wheelsets on their own bones (spin about the axle)
     for (const k of [1, -1]) {
@@ -726,6 +810,19 @@
   }
   K.fotfLayout = seatLayout; K.fotfSeats = seatsFrom;
 
+  // LED destination signs behind the glass (drawn by the glass shader from outside, real quads in the interior):
+  // side signs at the top of the window next to doors 1 and 3 (toward the car centre), the front sign at the top of the
+  // left windscreen. a = [axis (0: plane x = c, 1: plane z = c), c, a0, a1], b = [y0, y1, u direction]
+  const SIDE_SIGN = { y0: 2.655, y1: 2.775, hw: 0.36, zin: 1.53 };
+  function SIGNS(isD) {
+    const out = [];
+    for (const xc of [-3.149, 3.149]) for (const s of [1, -1]) out.push({ a: [1, s * SIDE_SIGN.zin, xc - SIDE_SIGN.hw, xc + SIDE_SIGN.hw], b: [SIDE_SIGN.y0, SIDE_SIGN.y1, s] });
+    if (isD) out.push({ a: [0, FRONT_SIGN.x, FRONT_SIGN.z0, FRONT_SIGN.z1], b: [FRONT_SIGN.y0, FRONT_SIGN.y1, -1] });
+    return out;
+  }
+  const FRONT_SIGN = { z0: -1.1, z1: -0.56, y0: 3.07, y1: 3.19, x: 10.27 };
+  K.SIDE_SIGN = SIDE_SIGN; K.FRONT_SIGN = FRONT_SIGN;
+
   // ------------------------------------------------------------------------------------------ registration
   K.builders.bart = function (type, q) {
     const isD = type === 'D', b = buildFotf(type, q);
@@ -737,29 +834,56 @@
     const wipers = [];
     for (const s of [1, -1]) { const bi = BONE.wiper[s > 0 ? 0 : 1], pz = s * 0.93, py = MASK_Y0 + 0.1, n = faceN(py, pz);
       bones[bi] = { pivot: [faceX(py, pz), py, pz] }; if (isD) wipers.push({ bone: bi, pivot: [faceX(py, pz), py, pz], axis: n }); }
-    bones[BONE.handle] = { pivot: [9.64, F.FLOOR + 0.83, 0.33] };
+    bones[BONE.handle] = { pivot: [9.64, F.FLOOR + 0.81, 1.09] };
+    const shoes = [];
+    for (let b = 0; b < 2; b++) for (const s of [1, -1]) { const bi = BONE.shoe(b, s), px = b === 0 ? F.TRUCK : -F.TRUCK;
+      bones[bi] = { pivot: [px, SHOE.PY, s * SHOE.PZ] }; shoes.push({ bone: bi, bogie: b, side: s, pivot: [px, SHOE.PY, s * SHOE.PZ], lever: SHOE.LAT - SHOE.PZ, top: SHOE.TOP, free: SHOE.FREE }); }
     for (let i = 0; i < BONE.N; i++) if (!bones[i]) bones[i] = { pivot: [0, 0, 0] };
     const units = seatLayout(type), seats = seatsFrom(units);
-    // interior-mapping seat rows (signed z ranges)
-    const rows = [];
-    for (const [k, x0, x1, side, face] of units) if (k === 'T') {
-      const xb = face > 0 ? x0 + 0.05 : x1 - 0.05, zi = 0.44, zo = 1.45;
-      rows.push(new THREE.Vector4(xb, side > 0 ? zi : -zo, side > 0 ? zo : -zi, face));
+    // interior impression drawn by the exterior glass (41_metrokit.js): rows [x, zA, zB, code] (transverse seat pairs:
+    // back at x, code = facing x 1 | 2 lime; longitudinal benches [x0, x1, 0, side x 3 | 4 lime]; doorway partitions
+    // [x, zA, zB, 5]), the ceiling section (right half, wall top -> centre, convex), the LED band (|z| in, out, rim),
+    // far-wall window apertures [x0, x1, y0, y1], doors [x, half portal, top], leaf windows [|dx| in, out, y0, y1],
+    // grab poles [x, z, r, top], overhead rails [y, |z|, r], ads / screens [x, y, side, 1 | 2], standing spots, cab
+    const imRows = [];
+    for (const [k, x0, x1, side, face, col] of units) {
+      if (k === 'T') { const xb = face > 0 ? x0 + 0.05 : x1 - 0.05; imRows.push([xb, side > 0 ? 0.44 : -1.45, side > 0 ? 1.45 : -0.44, face * (col === 'lime' ? 2 : 1)]); }
+      else imRows.push([x0, x1, 0, side * (col === 'lime' ? 4 : 3)]);
     }
+    for (const dc of F.DOORS) for (const s of [1, -1]) for (const k of [-1, 1]) imRows.push([dc + k * 0.72, s > 0 ? 1.07 : -1.44, s > 0 ? 1.44 : -1.07, 5]);
+    const imPoles = [];
+    for (const dc of F.DOORS) for (const s of [1, -1]) for (const k of [-1, 1]) imPoles.push([dc + k * 0.7, s * 1.03, 0.017, 2.88]);
+    for (const dc of [F.DOORS[0], F.DOORS[2]]) imPoles.push([dc, 0, 0.019, 3.1]);
+    const imPanels = [];
+    for (const dc of F.DOORS) for (const s of [1, -1]) imPanels.push([dc - s * 1.18, F.FLOOR + 1.62, s, 1], [dc + s * 1.18, 2.62, s, 2]);
+    const imap = {
+      rows: imRows, sec: [[1.475, 2.894], [0.5, 3.118], [0, 3.14]], band: [0.58, 1.08, 0.5, 0],
+      win: (isD ? F.WIN_D : F.WIN_E).map(xc => [xc - F.WIN_W / 2 + F.GASKET, xc + F.WIN_W / 2 - F.GASKET, F.WIN_Y0 + F.GASKET, F.WIN_Y1 - F.GASKET]),
+      doors: F.DOORS.map(dc => [dc, F.PORTAL, F.PORTAL_TOP, 0]), doorWin: [F.LWIN_M, F.LWIN_M + F.LWIN, F.LWIN_Y0 + 0.04, F.LWIN_Y1 - 0.04],
+      poles: imPoles, rail: [2.88, 0.5, 0.016, 0], panels: imPanels,
+      standAll: F.DOORS.flatMap(dc => [[-0.35, 0.55], [0.35, -0.55], [0.05, 0.95], [-0.1, -0.95], [-0.45, -0.1], [0.45, 0.15], [0.2, 0.72], [-0.2, -0.72]].map(([dx, z]) => [dc + dx, z])),
+      cab: isD ? [F.CAB_BACK, 9.5, F.FLOOR + 0.8, 1] : null,
+    };
     const doors = []; for (const dc of F.DOORS) for (const s of [1, -1]) doors.push({ x: dc, side: s, width: 1.36, sillY: F.FLOOR });
     const xEnd = F.BODY - 1.0, xCabDoor = 8.98;
     const floorRegions = [{ name: 'saloon', x0: -xEnd, x1: isD ? F.CAB_BACK : xEnd, z0: -1.37, z1: 1.37, y: F.FLOOR },
       { name: 'endR', x0: -(F.BODY - 0.23), x1: -xEnd, z0: -0.5, z1: 0.5, y: F.FLOOR }];
     if (!isD) floorRegions.push({ name: 'endF', x0: xEnd, x1: F.BODY - 0.23, z0: -0.5, z1: 0.5, y: F.FLOOR });
-    else floorRegions.push({ name: 'cabDoor', x0: F.CAB_BACK, x1: xCabDoor, z0: -0.45, z1: 0.45, y: F.FLOOR }, { name: 'cab', x0: xCabDoor, x1: 9.85, z0: -1.25, z1: 1.25, y: F.FLOOR });
+    else floorRegions.push({ name: 'cabDoor', x0: F.CAB_BACK, x1: xCabDoor, z0: -0.45, z1: 0.45, y: F.FLOOR }, { name: 'cab', x0: xCabDoor, x1: 9.45, z0: -1.25, z1: 1.25, y: F.FLOOR });
     const gangways = { rear: { x: -F.HL, z0: -0.38, z1: 0.38, y: F.FLOOR, emergency: true }, front: isD ? null : { x: F.HL, z0: -0.38, z1: 0.38, y: F.FLOOR, emergency: true } };
-    const cabEye = isD ? [9.3, F.FLOOR + 1.27, 0.72] : null;
+    const cabEye = isD ? [8.98, F.FLOOR + 1.27, 0.72] : null;
+    // standing spots (feet on the floor) for crowds: door vestibules first, then the aisle; yaw faces across the car
+    const standSpots = [];
+    for (const dc of F.DOORS) for (const [dx, z] of [[-0.35, 0.55], [0.35, -0.55], [0, 0.95], [0, -0.95], [-0.45, -0.1], [0.45, 0.1], [0.2, 0.75], [-0.2, -0.75]]) standSpots.push({ x: dc + dx, y: F.FLOOR, z, yaw: z > 0 ? -Math.PI / 2 : Math.PI / 2 });
+    for (let x = -8.6; x <= (isD ? 7.6 : 8.6); x += 0.75) { if (F.DOORS.some(dc => Math.abs(x - dc) < 1.0)) continue; standSpots.push({ x, y: F.FLOOR, z: ((Math.round(x / 0.75) % 2) ? 0.16 : -0.16), yaw: Math.round(x) % 2 ? 0 : Math.PI }); }
     return {
       ext: b.ext, glass: b.glass, tris: b.tris, length: F.L, width: 2 * F.W, height: F.ROOF, profile: b.P,
       sphere: new THREE.Sphere(new THREE.Vector3(0, 1.9, 0), 11.3),
-      bones, boneIdx: { bogie: [1, 2], axlesOf: [[3, 4], [5, 6]], handle: isD ? BONE.handle : undefined }, leaves, wipers,
-      meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye },
-      units, rows, halfW: 1.47, floorY: F.FLOOR, ceilY: 3.12,
+      bones, boneIdx: { bogie: [1, 2], axlesOf: [[3, 4], [5, 6]], handle: isD ? BONE.handle : undefined }, leaves, wipers, shoes,
+      meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye, standSpots },
+      units, imap, halfW: 1.47, floorY: F.FLOOR, ceilY: 3.12, signs: SIGNS(isD),
+      lamps: isD ? [[1.175, 1.96, 'head'], [1.08, 1.7, 'head'], [1.17, 0.99, 'tail'], [1.02, 0.97, 'marker']].flatMap(([z, y, k]) => [1, -1].map(s => ({ p: [faceX(y, s * z) + 0.03, y, s * z], kind: k })))
+        .concat([{ p: [10.3, 3.7, 0], kind: 'bar' }]) : [],
       cabBox: new THREE.Vector4(-(F.BODY - 1.0), isD ? F.CAB_BACK : F.BODY - 1.0, 0, 0),
     };
   };
@@ -767,5 +891,5 @@
   K.builders.bart.interior = (d, q) => K.buildFotfInterior(d, q);
   K.builders.bart.lod = (d, level) => K.fotfLod(d, level);
   K.buildFotf = buildFotf; K.sideGrid = sideGrid; K.rrXT = rrXT; K.ring = ring; K.fill = fill;
-  K.fotfProfile = { makeProfile, profAt, tAtY, bodyAt };
+  K.fotfProfile = { makeProfile, profAt, tAtY, bodyAt, profileFrom, sectionLoop };
 })();

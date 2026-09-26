@@ -10,13 +10,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(HERE)
 ROOT = os.path.dirname(TOOLS)
 RAW = os.path.join(ROOT, 'data', 'raw', 'metro')
-PUB = os.path.join(ROOT, 'data', 'pub', 'v2', 'metro')
+PUB = os.environ.get('METRO_PUB') or os.path.join(ROOT, 'data', 'pub', 'v2', 'metro')   # METRO_PUB=.../metro-next for work-in-progress bakes
+PUB_DIR = os.path.basename(PUB.rstrip('/'))                                            # 'metro' or 'metro-next' (relative to DATA)
 GTFS_DIR = os.path.join(RAW, 'gtfs')
 OSM_JSON = os.path.join(RAW, 'osm', 'bart_osm.json')
 
 LAT0, LON0, MLAT, MLON = 37.40, -122.10, 110985.1, 88542.2
 GAUGE = 1.676                  # BART broad gauge, m (rail centre to rail centre ~ 1.676 + 0.07)
-GAUGE_STD = 1.435              # eBART (Stadler FLIRT DMU) and the airport connector guideway (cable, nominal)
+GAUGE_STD = 1.435              # eBART (Stadler GTW 2/6 DMU units) and the airport connector guideway (cable, nominal)
 RAIL_CC = 1.676 + 0.0727       # rail centre-to-centre for 1676 mm gauge (gauge is measured at the inner faces)
 MPH = 0.44704
 
@@ -129,3 +130,24 @@ def poly_project(p, x, z):
     k = int(np.argmin(d))
     s = cumlen(p)
     return float(d[k]), float(s[k] + t[k] * math.sqrt(L2[k])), k, float(t[k])
+
+
+def write_hashed(pub_dir, stem, data, keep_hours=48):
+    """Content-addressed binary: <pub_dir>/<stem>.<sha256[:10]>.bin (zlib). Also keeps <stem>.bin (legacy name) and
+    deletes older <stem>.*.bin files after keep_hours (clients mid-session keep resolving the previous name).
+    Returns the file name."""
+    import hashlib, glob
+    z = zlib.compress(data, 9)
+    h = hashlib.sha256(z).hexdigest()[:10]
+    name = f'{stem}.{h}.bin'
+    os.makedirs(pub_dir, exist_ok=True)
+    for fn in (name, f'{stem}.bin'):
+        tmp = os.path.join(pub_dir, fn + '.tmp')
+        with open(tmp, 'wb') as f:
+            f.write(z)
+        os.replace(tmp, os.path.join(pub_dir, fn))
+    now = time.time()
+    for old in glob.glob(os.path.join(pub_dir, f'{stem}.*.bin')):
+        if os.path.basename(old) != name and now - os.path.getmtime(old) > keep_hours * 3600:
+            os.remove(old)
+    return name
