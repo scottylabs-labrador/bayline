@@ -642,6 +642,9 @@ const MetroSim = (() => {
       quietT = 0.5;
     } else quietOn = false;
     const t = Env.time.sec; running.length = 0;
+    // a long lens (a trailer's 120 mm, the helicopter's zoom) magnifies: level of detail and the near budget go by the
+    // apparent distance (the real one over the magnification against the game's 55 degree view), never beyond the real one
+    const fov = Env.camera && Env.camera.fov ? Env.camera.fov : 55, zoom = Math.max(1, Math.tan(27.5 * Math.PI / 180) / Math.tan(fov * Math.PI / 360));
     for (const p of plans) {
       if (p.tStart > t + 1) break; if (p.tEnd < t) continue;
       const l = legAt(p, t); if (!l) continue;
@@ -655,7 +658,7 @@ const MetroSim = (() => {
     netOthers(t);
     // world position of every head + distance to the camera
     for (const tr of running) { tr.leg.path.at(tr.s, HF); tr.x = HF.x; tr.y = HF.y; tr.z = HF.z; const hl = Math.hypot(HF.tx, HF.tz) || 1; tr.hx = HF.tx / hl; tr.hz = HF.tz / hl;
-      tr.underground = isUnder(HF.st); tr.dist = Math.hypot(HF.x - camPos.x, HF.z - camPos.z, (HF.y - camPos.y) * 0.5); tr.lim = HF.lim;
+      tr.underground = isUnder(HF.st); tr.dist = Math.hypot(HF.x - camPos.x, HF.z - camPos.z, (HF.y - camPos.y) * 0.5); tr.seen = tr.dist / zoom; tr.lim = HF.lim;
       tr.buried = tr.underground && (tr.dist > farDist + 1000 || isUnder(tr.leg.path.at(tr.s - tr.len, F2).st)); }   // (head and tail both under the street; far away the head decides)
     running.sort((a, b) => (b.key === focusKey) - (a.key === focusKey) || a.dist - b.dist);
     if (quiet) { for (const tr of running) tr.entry = null; stats.running = running.length; stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05; return; }
@@ -673,7 +676,7 @@ const MetroSim = (() => {
       if (!own && ((tr.buried && !camUnder) || (camUnder && !seenFromUnder(tr)))) { tr.entry = null; nHidden++;
         if (wantDots && dN < DMAX) { const c = lineCol(tr.line); dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; dc[dN * 3] = c.r; dc[dN * 3 + 1] = c.g; dc[dN * 3 + 2] = c.b; dN++; }
         continue; }
-      const near = own || (nNear < maxNear && tr.dist < 1500);
+      const near = own || (nNear < maxNear && tr.seen < 1500);
       const e = near ? acquire(tr.kind, tr.key, tr.cars) : null; tr.entry = e;
       if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead); setupConsist(tr, e, dt, night); }
       else if (tr.dist < farDist) {
@@ -773,10 +776,10 @@ const MetroSim = (() => {
     c.setLights({ head: 1, tail: 1, interior: 0.5 + 0.5 * night, cab: 0.5, lead }); if (c.setLeadEnd) c.setLeadEnd(lead);
     c.setNight(night);
     c.speed = tr.lead === 0 ? tr.v : -tr.v;
-    const lod = tr.dist < 180 ? 0 : (tr.dist >= 700 && (c.placeholder || kitLod2(e.kind))) ? 2 : 1; if (e.lod !== lod) { c.setLOD(lod); e.lod = lod; }   // (MetroKit: 0 full, 1 one mesh per car, 2 the far prism)
+    const sn = tr.seen !== undefined ? tr.seen : tr.dist, lod = sn < 180 ? 0 : (sn >= 700 && (c.placeholder || kitLod2(e.kind))) ? 2 : 1; if (e.lod !== lod) { c.setLOD(lod); e.lod = lod; }   // (MetroKit: 0 full, 1 one mesh per car, 2 the far prism)
     const inside = tr.key === focusKey && typeof Player !== 'undefined' && (Player.onboard() || Player.inCab());
     const iv = inside || tr.dist < 60; if (e.iv !== iv) { c.setInteriorVisible(iv); e.iv = iv; }
-    if ((tr.key === focusKey || tr.dist < 250) && c.setDisplay) pisFor(tr, e, c);
+    if ((tr.key === focusKey || sn < 250) && c.setDisplay) pisFor(tr, e, c);
     if (tr.key === focusKey && typeof MetroATC !== 'undefined' && MetroATC.cabDisplay) { const cd = MetroATC.cabDisplay(tr); if (cd && c.setCab) c.setCab(cd); }
     c.update(dt); e.shown = 1;
     paxFor(e, tr, iv && (tr.key === focusKey || tr.dist < 70));
