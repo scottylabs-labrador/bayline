@@ -18,8 +18,18 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   the platform, e.g. 12th St lower level); they now hang across the platform facing the people walking up to the bank
   (an up bank from behind its foot, a down bank's well from its head), and a street stair's sign faces the concourse
   (or its passage beside the box). Convention checked numerically; before/after views once the GPU is free.
-- **Platform end faces** (working tree, to verify): the transverse face at each end of every platform faced into the
-  platform (culled from the track and the cab: a platform's end showed its hollow); turned outward.
+- **Platform end faces** (0568fc1): the transverse face at each end of every platform faced into the platform (culled
+  from the track and the cab: a platform's end showed its hollow); turned outward. Offline raycast from the trackway 12 m
+  past every platform end of all 52 stations: 365 of 408 rays met a back face before, 0 after (2 at Orinda hit a small
+  detail part near the end, not the end face).
+- **MacArthur's roof** (0568fc1): the all-track box roof was built once per island (two coincident roofs with posts,
+  beams and doubled line lights); built once, its lights carry both (the same brightness), -1.2 k triangles.
+- **Offline QA without the GPU**: `tools/metro_offline.mjs` runs the real stations stack in a Node vm (stubs for the DOM,
+  renderer, terrain and world; real data): every station built (exceptions, steps, walk data, triangles), platform
+  end faces, walk gaps, any page probe, Peninsula layouts and a geometry hash of every Peninsula station built,
+  top-down plans (SVG). Results for M3.4 so far (against db6f2d8): all 52 stations build, only MLBR and MCAR change
+  in size; walk gaps 0 on all 52; with the metro off all 31 Peninsula stations are identical (layouts and geometry
+  hashes); with the metro on only place_MLBR changes; the Millbrae walk check passes (below).
 - **Millbrae cross-platform island** (2fde725, WIP, written while the GPU is reserved; not yet run, not for merge).
   Facts from the data: the Peninsula lanes spread 5.4-7.4 m at Millbrae (the fallback island was 2-4 m wide);
   platform 3's back runs 5.6-7.6 m east of the northbound edge; Caltrain's rails are 1.3 m over the metro's, so a
@@ -35,9 +45,16 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   ramp with a landing, walk data (the strip 3 cm under the face's edge: no gap), platform 3's back open onto the strip,
   its roof carried across the strip (lapped under the face's canopy edge), the vault springing from between Caltrain's
   tracks with its columns on the strip and between the tracks, the footbridge supports clear of the steps, keep-out
-  zones for the strip and the new southbound platform. QA to run: the walk across at every opening (and blocked between
-  them), the ramp, before/after views metro on and off (`#metro=0` must be pixel-identical), the Peninsula suite with
-  `METRO=1`/`METRO=0` (stops, door sides, boarding), P14b's framing.
+  zones for the strip and the new southbound platform. Later: the seam is the research's "turquoise fence down the
+  middle" (posts, rails, bars) rather than glass; transfer panels over the steps; on Caltrain's side the footbridge's
+  stairs come down past the new southbound platform (they would have landed on it, and crossed over its track).
+  Offline (the build as the page makes it, flat ground): strip 1.4-2.6 m; openings at u 42, 0, -34, -61 (rises
+  0.46-0.56 m, 3 risers each), the ramp at -86 (landing, 6.6 m at 1:12 northward); a walker crosses at every opening
+  both ways (4.9 -> 5.37-5.47 m and back), the fence stops it between openings, the ramp climbs 4.9 -> 5.46 smoothly,
+  the strip's ends stop it, platform 3's back opens onto the strip; the west landing's stair top now 1.7 m past the
+  southbound platform (foot 14 m further west).
+  Still to run on the GPU: before/after views metro on and off, the Peninsula suite with `METRO=1`/`METRO=0` (stops,
+  door sides, boarding), the terrain under the strip (the gap's ground must stay below 4.9 m).
 
 ## Since the M3 report (09:10)
 
