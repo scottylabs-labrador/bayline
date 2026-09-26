@@ -1,6 +1,6 @@
 # Bayline Metro data: format spec (the contract)
 
-Owner: data workstream (`bart-data`). Version: **v0** (2026-09-26, M1). This file is authoritative for everything
+Owner: data workstream (`bart-data`). Version: **M2** (2026-09-26; v0 was M1). Changes since v0 are marked **(M2)**. This file is authoritative for everything
 under `data/pub/v2/metro/` and for the runtime loader `src/js/21_metronet.js` (`MetroNet`). Consumers should use
 `MetroNet` rather than parse the files; the files may change shape between versions, the API will not (additions only).
 
@@ -8,9 +8,10 @@ under `data/pub/v2/metro/` and for the runtime loader `src/js/21_metronet.js` (`
 
 | path (under `DATA` = `data/pub/v2/`) | what | size (v0) |
 |---|---|---|
-| `metro/network.json` | tracks (metadata), junctions, stations, lines, patterns (track paths + stops) | ~0.3 MB |
-| `metro/tracks.bin` | zlib; per-track sample arrays (positions + attribute planes) | ~1.1 MB |
-| `metro/timetable.json` | services (calendars), every trip with per-leg stop times, consist lengths, bus bridges | ~1.3 MB |
+| `metro/network.json` | tracks (metadata), junctions, stations, lines, patterns (track paths + stops) | ~0.4 MB |
+| `metro/tracks.<sha256[:10]>.bin` **(M2)** | zlib; per-track sample arrays (positions + attribute planes). Content-addressed: the name comes from `network.json.tracksBin.path`; `tracks.bin` (same bytes) is kept for older loaders; old hashed files are removed after 48 h | ~1.1 MB |
+| `metro/timetable.json` | services (calendars), every trip with per-leg stop times, consist lengths, bus bridges | ~1.35 MB |
+| `metro/validation.json` **(M2)** | the profile validator's summary + findings + researched-height residuals (not loaded by the game) | ~15 kB |
 
 Built by `tools/metro/` (see "Rebuilding"). Raw inputs are cached under `data/raw/metro/` (shared).
 
@@ -57,14 +58,26 @@ Built by `tools/metro/` (see "Rebuilding"). Raw inputs are cached under `data/ra
                    "tracks": [["M1.1", 0.0], ["K-main.9", 111.14], ["K-main.12", 626.5]] } ],   // every track touching the point, at its s
   "stations": [ {
       "id": "EMBR", "name": "Embarcadero", "code": "M16", "lat": .., "lon": .., "x": .., "z": ..,
-      "type": "subway" | "aerial" | "surface" | "median" | "trench",
-      "layout": "island" | "side" | "stacked" | "split",
-      "hero": true,                                        // hand-authored hero station candidate
-      "levels": { "street": 3.5, "platform": -8.1 },       // m above sea level (v0: platform = rail + 1.02)
-      "platforms": [ { "gtfs": "M16-1", "code": "1", "track": "M1.1", "s": 9471.2, "s0": 9364.5, "s1": 9577.9,
-                       "side": "left" | "right",           // side of the track (facing +s) the platform edge is on
-                       "y": -8.1, "rail": -9.1, "structure": "cutcover", "osmPts": 62 } ],
+      "type": "subway" | "aerial" | "surface" | "median" | "trench",       // (M2) curated per station, reasoning in "note"
+      "layout": "island" | "side" | "stacked" | "split",                   // split = mixed (Daly City, Colma, SFO)
+      "platformStructure": "embankment",                                   // (M2, optional) SHAY/UCTY/FRMT: "aerial" per BART but on fill
+      "hero": true,
+      "levels": { "street": 3.5, "rail": -16.5, "platform": -15.5,         // m above sea level; platform = rail + 0.991 (M2)
+                  "byLevel": { "upper": {"rail": .., "platform": ..}, "lower": {..} } },   // (M2) stacked stations only
+      "platforms": [ {
+          "gtfs": "M16-1", "code": "1", "track": "M1.1", "level": "main" | "upper" | "lower",
+          "s0": 10851.2, "s1": 11065.4, "s": 10958.3,       // (M2) extent along the track from the OSM platform geometry
+          "side": "left" | "right",                          // side of the track (facing +s) the platform edge is on
+          "edge": 1.616,                                     // (M2) track centre -> platform edge (m)
+          "y": -15.5, "rail": -16.5,                         // platform top / top of rail at the platform centre
+          "structure": "cutcover",
+          "berth": { "+": 11063.4, "-": 10853.2 },           // (M2) front-of-train stop for travel toward +s / -s
+          "src": "osm" | "station", "sys": "bart" } ],
       "entrances": [ { "name": "A1 Market & Drumm Street (NE) Entrance / Exit", "lat": .., "lon": .., "x": .., "z": .., "src": "gtfs" | "osm" } ],
+      "note": "why type/layout/levels are what they are", "src": ["A", "STW", ...],   // (M2) keys: tools/metro/stations_curated.py
+      "research": { "opened": 1976, "architect": "...", "era": "...", "recognisable": "what a rider recognises",
+                    "structure_notes": "...", "platformsDetail": "...", "entrances": "...", "sources": [urls] },   // (M2)
+      "ridership": { "weekdayExits": 18924, "weekdayExitsFY2026": 20372, "source": "..." },                    // (M2)
       "url": "https://www.bart.gov/stations/embr"         // data provenance only; never render
   } ],
   "lines": [ { "id": "yellow", "name": "Yellow Line", "colour": "#ffff33", "text": "#000000",
@@ -76,8 +89,8 @@ Built by `tools/metro/` (see "Rebuilding"). Raw inputs are cached under `data/ra
       "legs": [ {                                           // one vehicle run each: eBART DMU leg, then BART EMU leg
           "sys": "ebart", "vehicle": "dmu" | "emu" | "apm", "osmRelation": 8237283, "length": 13918.4,
           "path": [["E2", 13168.1, 0.0], ["E-main.1", 788.5, 38.2]],     // [track, s_from, s_to]; s_to < s_from = running toward -s
-          "stops": [ { "station": "ANTC", "gtfs": "E30-2", "track": "E2", "s": 13168.1, "d": 0.0 },
-                     { "station": "PITT-T", "gtfs": "C80-T", "track": "E-main.1", "s": 38.2, "d": 13918.4 } ]
+          "stops": [ { "station": "ANTC", "gtfs": "E30-2", "track": "E2", "s": 13046.0, "d": 124.0 },
+                     { "station": "PITT-T", "gtfs": "E10-T", "track": "E-main.1", "s": 40.2, "d": 13918.4 } ]
           // d = distance along the leg path; "reverse": true on a stop where the train reverses (SFO)
       } ]
   } ]
@@ -88,13 +101,20 @@ Notes:
 - **Tracks are physical tracks**: one centreline per track (both mains, pocket/tail tracks, crossovers, yard tracks),
   split where another main track diverges (so the Oakland Wye, MacArthur, Bay Fair, Daly City and SFO junction legs are
   separate tracks joined by junctions). Consecutive path segments always meet at a junction or reverse in place.
-- **Stop positions** (`stops[].s`, platform `s`) in v0 are the track point nearest the station's GTFS coordinate (or
-  the OSM `stop_position` of the matching route relation); platform ranges are `s ± 106.7 m` (700 ft). M2 replaces
-  them with OSM platform extents and berth marks (10-car stop at the leaving end).
+- **(M2) Stops are berths**: `stops[].s` / `d` is where the FRONT of the train stops: 2 m short of the platform end in
+  the direction of travel (BART berths 10-car trains to fill the platform; shorter trains may stop there too). Each leg's
+  path starts at the REAR end of its first platform, so the whole train stands on the path at its first stop (d of the
+  first stop ~ platform length). At a reversal (SFO) the path turns at the berth; the train's other end becomes the
+  front. `platforms[].berth` gives the same positions per direction.
+- **(M2) PITT-T**: the eBART transfer platform is a station record (`id: "PITT-T"`, code `C80T`) with two faces:
+  `C80-T` (BART side, track `CT`) and `E10-T` (eBART side). GTFS has neither; the ids are ours.
+- **(M2) Platform extents**: every one of the 105 platforms comes from the OSM platform geometry (areas, lines, edges)
+  projected on its track; both faces of an island share one extent. Sides from the same geometry.
 
-## tracks.bin
+## tracks.<sha>.bin
 
-zlib (inflate first; `Stream.bin` does it). For each track, at byte `off` (from `tracks[]`), `n` samples:
+zlib (inflate first; `Stream.bin` does it). For each track, at byte `off` (from `tracks[]`), `n` samples, `planes`
+attribute planes (5 since M2; absent = 4):
 
 ```
 f32 x, y, z   × n   (interleaved, little endian)          12·n bytes
@@ -102,6 +122,8 @@ u8  struct    × n   (index into structCodes)                n bytes
 u8  vlimMph   × n   civil speed limit, mph                  n bytes
 u8  cant      × n   (value - 128) · 2 mm, + = right rail lower
 u8  cover     × n   m: ground above top of rail (underground/portal) or top of rail above ground (aerial/bridge), 0 otherwise
+u8  third     × n   (M2) contact-rail side: 0 none (turnout gaps, eBART, connector), 1 left, 2 right (facing +s)
+padding to a multiple of 4 bytes (so the next track's floats stay aligned)
 ```
 
 Decoder (what MetroNet does):
@@ -109,15 +131,51 @@ Decoder (what MetroNet does):
 ```js
 const u8 = await Stream.bin('metro/tracks.bin'); const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
 for (const h of net.tracks) {
-  const P = new Float32Array(buf, h.off, h.n * 3), A = new Uint8Array(buf, h.off + h.n * 12, h.n * 4);
-  const struct = A.subarray(0, h.n), vlimMph = A.subarray(h.n, 2 * h.n), cant = A.subarray(2 * h.n, 3 * h.n), cover = A.subarray(3 * h.n);
+  const np = h.planes || 4, P = new Float32Array(buf, h.off, h.n * 3), A = new Uint8Array(buf, h.off + h.n * 12, h.n * np);
+  const struct = A.subarray(0, h.n), vlimMph = A.subarray(h.n, 2 * h.n), cant = A.subarray(2 * h.n, 3 * h.n), cover = A.subarray(3 * h.n, 4 * h.n);
+  const third = np > 4 ? A.subarray(4 * h.n, 5 * h.n) : null;
   // sample i: x = P[3i], y = P[3i+1], z = P[3i+2]; s = i * h.step; cant_m = (cant[i] - 128) * 0.002
 }
 ```
 
 Structure codes: `0 grade, 1 aerial, 2 bridge (short span < 90 m), 3 embankment, 4 trench (open cut), 5 median
-(freeway median), 6 portal (the last ~35 m of a tunnel, transition), 7 cutcover (cut-and-cover box), 8 bored,
+(freeway median), 6 portal (the last ~40 m of a tunnel > 150 m, transition), 7 cutcover (cut-and-cover box), 8 bored,
 9 tube (Transbay immersed tube)`. `MetroNet.isUnderground(code)` is true for 6–9.
+
+**(M2) How structure is classified** (tools/metro/profile2.py `classify`):
+- OSM `tunnel` → cutcover; the Berkeley Hills section → bored; the **Transbay Tube** by geometry: immersed `tube` for
+  5.83 km from the SF vent structure (on the tracks ~137 m off the Ferry Building) toward Oakland, `bored` for the twin
+  compressed-air bores from the SF vent to the Embarcadero box (560 m), the ~1.1 km Oakland box to the portal near 7th St
+  stays `cutcover`. Open gaps < 60 m between covered runs are covered (station lids, OSM tag gaps).
+- OSM `bridge` → aerial (bridge if < 90 m), then refined by the lidar: aerial samples whose rail sits within 2.5 m of
+  the bare-earth ground are on fill, not a viaduct → `embankment` (OSM often tags a whole station as bridge where only a
+  street span is).
+- Open track: `median` where OSM motorway/trunk carriageways run parallel on both sides within 45 m; `trench` where
+  the lidar bed is > 3 m below the ground 16–24 m either side (or OSM `cutting`); `embankment` > 2 m above (or OSM).
+
+**(M2) Vertical profile** (`profile2.solve`, OSQP; ~8 min; `METRO_QP=ls` = a fast approximate solver for iteration):
+one quadratic program over every 5 m sample of every track (103k unknowns):
+- data: open track follows the USGS 3DEP 1 m bare-earth lidar trackbed + 0.25 m (median-filtered over 45 m against
+  overpass decks); aerial ≥ ground + 5.5 m (1 m at abutments growing 3 %/m) and ≥ ground + 7.0–8.0 m where OSM roads /
+  rails cross under; cut-and-cover ≤ street − 7.5 m (ramping 3 %/m from portals), bored ≤ ground − 12 m, tube ≤ bay
+  floor − 7 m; these bounds are soft (slack), everything below is hard;
+- hard: grade ≤ 4 % (3 % in the Tube), vertical curves ≥ 800 m radius on main tracks, equal height at every junction,
+  every track of a station level equal along the platform and level from 15 m before to 15 m after it;
+- stiff (soft): grade separations ≥ 5.6 m rail-to-rail where OSM layers say one track crosses over another (Oakland Wye,
+  MacArthur flyover, 12th/19th St two levels);
+- anchors: researched station depths/heights (stations_curated.py, with sources), the SF vent structure (tracks at
+  −85 ft), the 1965 Transbay Tube general profile (digitized), the Berkeley Hills Tunnel's as-built grades (1.75 % up
+  from the west portal to a summit 1,550 m inside the east portal, −0.3 % after);
+- plan fixes: Transbay Tube track centres 8.03 m (OSM draws 5.07 m).
+The validator (printed on every bake, saved in `validation.json`) checks platform rail equality, grades, vertical
+curves, open track below the lidar ground, aerial clearance, tunnel cover, junction steps, and lists researched heights
+the solution misses by > 1 m (each explained in notes/bart/data.md).
+
+**(M2) Speed limits** (mph plane): curvature (1.4 m/s² with cant on main track, 0.65 m/s² on turnouts/crossovers/yards,
+yards ≤ 15 mph) capped by OSM `maxspeed` (mapped from BART's civil speed codes: 18 mph through the Oakland Wye, 36 at
+Balboa Park and Daly City, 27 on the curve south of Daly City, ...), quantised down to BART's train-control codes
+6/18/27/36/50/70 mph. eBART: 75 mph max, airport connector 30 mph, 5 mph steps. Cant: equilibrium for the limit minus
+75 mm deficiency, ≤ 150 mm, main track only.
 
 ## timetable.json
 
@@ -130,7 +188,7 @@ Structure codes: `0 grade, 1 aerial, 2 bridge (short span < 90 m), 3 embankment,
                 "days": [1,1,1,1,1,0,0],               // Mon..Sun
                 "start": "20260810", "end": "20270108", "add": ["YYYYMMDD"], "remove": ["20260907", ...] } },
   "transfer": { "emuTransferToStation": 120, "dmuTransferAllowance": 180 },
-  "consist": "how cars are chosen (heuristic v0)",
+  "consist": "how cars are chosen (M2: BART's 2026 train sizing, see below)",
   "trips": [ { "id": "1965164", "svc": "2026_08_10-DX-MVS-Weekday-015", "line": "yellow", "dir": 1, "pat": "yellow-S-0",
                "head": "San Francisco International Airport", "cars": [2, 8],       // per leg
                "legs": [[arr0, dep0, arr1, dep1, ...], [...]] } ],               // seconds after the service day's midnight, aligned with patterns[pat].legs[k].stops
@@ -147,6 +205,11 @@ Structure codes: `0 grade, 1 aerial, 2 bridge (short span < 90 m), 3 embankment,
   leaves PITT-T 120 s before its PITT arrival and the DMU arrives at PITT-T 180 s before that; northbound, the EMU reaches
   PITT-T 120 s after leaving PITT and the DMU leaves 180 s after the EMU arrives (capped 240 s before its next stop).
 - The airport connector (grey) runs its own short trips (every few minutes, 516 a day per direction on weekdays).
+- **(M2) Consists** (`cars`, per leg): BART's train sizing from 2026-07-20 (bart.gov, carried into the 10 Aug 2026
+  schedule): Red 10 in the weekday peaks / 5 off-peak; Yellow 9, the 8 busiest AM and 6 busiest PM peak trains 10;
+  Green 6, six AM-peak trains toward SF 8; Blue 6, five PM-peak trains toward the East Bay 8; Orange 6, four trains 5
+  (the last four of the day, assumed). Weekends use the weekday off-peak lengths (not published). eBART: Stadler GTW 2/6
+  units (40.9 m each; `cars` counts units): 2 in the weekday peaks, 1 otherwise. Airport connector: 3-car trains.
 
 ## MetroNet (src/js/21_metronet.js)
 
@@ -154,10 +217,11 @@ Loads through `Stream` in the game (priority 2) or `fetch(base + path)` in plain
 No dependency on THREE or U.
 
 ```js
-await MetroNet.load();                       // network.json + tracks.bin (≈ 1.4 MB over the wire)
-MetroNet.tracks[i] / byId[id]                // {id, n, step, length, sys, cls, gauge, X, Y, Z (Float32Array), ST, VL, CV (Uint8Array), CA (Float32Array, m), bbox, prev, next, structure}
+await MetroNet.load({ base, dir, prio });    // network.json, then the tracks binary it names (≈ 1.5 MB over the wire);
+                                             // dir: 'metro/' (default) or a staged bake ('metro-next/', also #metrodir=)
+MetroNet.tracks[i] / byId[id]                // {id, n, step, length, sys, cls, gauge, X, Y, Z (Float32Array), ST, VL, CV, TR (Uint8Array), CA (Float32Array, m), bbox, prev, next, structure}
 MetroNet.frame(track | id, s, out)           // {x,y,z, tx,ty,tz (unit 3D tangent along +s), rx,ry,rz (banked right), ux,uy,uz (banked up),
-                                             //  grade, cant, bank, struct, structName, vlim (m/s), cover, s, track, i}
+                                             //  grade, cant, bank, struct, structName, vlim (m/s), cover, third (-1 left, +1 right, 0 none), s, track, i}
 MetroNet.point(track, s, lat, up, out)       // a point lat m to the right and up m above top of rail, in the banked frame
 MetroNet.nearest(x, z, maxR = 200, filter)   // {track, s, dist, lat} (lat > 0 right of +s) | null
 MetroNet.nearAll(x, z, r = 50, filter)       // best projection per track within r, nearest first
@@ -181,12 +245,18 @@ Hash options: `pat=yellow-S-0|1`, `c=struct|line|speed|grade|cls`, `ll=lat,lon,p
 ## Rebuilding
 
 ```bash
-python3 tools/metro/bake_network.py     # OSM + GTFS -> network.json, tracks.bin (fetches terrain tiles on first run)
-python3 tools/metro/bake_timetable.py   # GTFS -> timetable.json (reads network.json)
+python3 tools/metro/fetch.py            # GTFS + Overpass BART extract (cached)
+python3 tools/metro/osm_pbf.py          # roads/waterways/rails within 60 m of the tracks from the NorCal PBF (needs pyosmium)
+python3 tools/metro/bake_network.py     # -> network.json, tracks.<sha>.bin, validation.json   (METRO_PUB=<dir> to stage)
+python3 tools/metro/bake_timetable.py   # -> timetable.json (reads network.json)
+python3 tools/metro/validate.py overlay|profiles       # NAIP overlays / profile plots -> notes/bart/shots/data/
+python3 tools/metro/whatmoved.py [new_dir] [old_dir]   # station level / structure changes between two bakes
+python3 tools/metro/debugprof.py TRACK s0 s1 [step]    # inspect the last solve (bounds, targets, separations)
 ```
 
-Raw inputs (cached, shared): `data/raw/metro/google_transit_20260810-20270108_v02.zip` + `gtfs/`, `data/raw/metro/osm/bart_osm.json`
-(Overpass query in `q_bart.overpassql`, OSM base 2026-09-26T04:24Z), terrarium z15 tiles in `data/raw/terrarium/15/`.
+Extra Python packages (installed into `data/raw/metro/pylib`, which the tools add to `sys.path`):
+`pip install --target data/raw/metro/pylib osqp qdldl osmium`. Lidar: the world bake's L8 cache in
+`data/raw/lidar3dep/8/` (I added the ~610 L8 tiles along BART, north of the square too: negative `ty`).
 
 ## Sources and terms
 
@@ -196,25 +266,37 @@ Raw inputs (cached, shared): `data/raw/metro/google_transit_20260810-20270108_v0
   with the plan: nothing rendered carries the BART name or logo (in-game brand: Bayline Metro).
 - **OpenStreetMap** (ODbL 1.0, © OpenStreetMap contributors): track centrelines, service tracks, platforms, entrances,
   tunnel/bridge tags, route relations (PTv2).
-- **AWS Terrain Tiles** (terrarium z15; USGS 3DEP and others): ground heights for the profile.
+- **AWS Terrain Tiles** (terrarium z15; USGS 3DEP and others): fallback ground and the Bay's bathymetry.
+- **USGS 3DEP** 1 m bare-earth lidar (public domain) via the 3DEPElevation ImageServer (the world bake's cache).
+- Research (sources listed per fact in `tools/metro/research/*.json`): Wikipedia, bart.gov (station pages, news, BART
+  Facilities Standards R3.2.3, ridership reports, EIRs), NTSB RAR-79-05, Rogers & Peck / geolith.com (Engineering
+  Geology of BART), VTA BART Silicon Valley documents, Architectural Record 1974, the stations workstream (1966-68
+  contract drawings, Oakland Fire Dept manual).
 
-## Known limitations (v0) → planned fixes
+## Known limitations (M2)
 
-- Vertical profile is rough: ground + structure offsets, 4 % clamp, smoothing. Tunnel depths, portal positions, station
-  levels, aerial heights and the Tube are not yet researched (M2: constrained solve with lidar and known depths).
-- Structure comes from OSM `tunnel`/`bridge` tags only; freeway medians (SR-24, I-580, SR-4, I-980) are still `grade`.
-- Speed limits = curvature only (1.4 m/s² total lateral, cap 70 mph); service tracks capped (yard 10, crossover 27 mph).
-- Platform sides/layouts are inferred from OSM platform geometry (mostly right; a few stations are marked `split` where
-  the inference failed, e.g. BERY, SHAY, SFIA). Levels, concourses, descriptions, ridership: M2.
-- Consist lengths are a heuristic (see timetable `consist`).
+- Researched station depths the geometry cannot meet (≤ 4 % from the nearest portal) are reported, not forced:
+  19th St lower level +3.0 m (the 23rd St portal is 460 m away), Daly City +5.5 m (plat anchor was a guess), North
+  Berkeley −3.2 m. See validation.json `anchors`.
+- Aerial heights come from clearance rules + the lidar at the ends, not surveyed decks; typical 1970s aerials come out
+  6–10 m above ground (West Oakland approach ~22 ft per the EQS EA).
+- The Oakland Wye's seven bores are solved as a consistent 3D arrangement from OSM topology + layers; the real levels
+  may differ by a few metres.
+- Berkeley Hills bore spacing: OSM ~20 m kept (sources say 15.2 m (Wikipedia) or 30 m narrowing to 17 m (Rogers & Peck)).
+- Third-rail sides are rule-based (away from platforms, field side on double track), not surveyed.
+- Consist rules approximate "busiest trains" by time of day; weekend lengths assumed.
 - Track naming: helper tracks at junctions are `X-main.N`; names can change between versions (use `pathFor`, not ids).
 
 ## Assumptions log
 
 | # | assumption | why / source |
 |---|---|---|
-| A1 | Platform length 213.4 m (700 ft), platform top 1.02 m above top of rail (level boarding) | bart-plan.md; height refined in M2 |
-| A2 | eBART transfer: EMU PITT-T ↔ PITT 120 s, cross-platform allowance 180 s | GTFS has one Pittsburg/Bay Point stop; OSM stop_position "Pittsburg/Bay Point Transfer" ~0.9 km east |
-| A3 | Max grade 4 % | BART design criteria (plan) |
-| A4 | Speed limit from curvature with 1.4 m/s² (≈ 6 in cant + 3 in deficiency), cap 70 mph (BART max operating speed) | v0 heuristic |
-| A5 | Consists: see timetable.json `consist` | no public per-trip data in GTFS |
+| A1 | Platform 213.4 m (700 ft); platform edge 0.991 m above top of rail, 1.616 m from the track centre | BART Facilities Standards R3.2.3 Table 2 (39 in; gauge line + 30 5/8 in) |
+| A2 | eBART transfer: EMU PITT-T ↔ PITT 120 s, cross-platform allowance 180 s | GTFS has one Pittsburg/Bay Point stop; the transfer platform is ~0.97 km east (EIR) |
+| A3 | Max grade 4 % (3 % Tube); vertical curves ≥ 800 m | BART design (Garbutt via Wikipedia; Tube: Rogers & Peck); curve radius is our choice (no source) |
+| A4 | Top of rail 0.25 m above the lidar bare-earth trackbed | rail 0.17 m + plate over ballast/slab |
+| A5 | Aerial clearance ≥ 5.5 m (≥ 7.0–8.0 m over roads/rails); cut-and-cover cover ≥ 7.5 m | structure depth + legal road clearance |
+| A6 | Grade separation ≥ 5.6 m rail to rail | car 3.9 m (12 ft 8 in) + clearance + thin deck |
+| A7 | 1965 "MSL" = NGVD29; NAVD88 = +0.8 m in SF | NOAA datum offsets at the SF tide station |
+| A8 | Consists as in the timetable `consist` text | bart.gov 2026 train sizing |
+| A9 | Third rail away from platforms, field side on double track | BART practice (Tube: outer wall, NTSB) |

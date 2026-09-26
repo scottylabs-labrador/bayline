@@ -35,7 +35,7 @@ OPEN = {S['grade'], S['median'], S['trench'], S['embankment']}
 AER = {S['aerial'], S['bridge']}
 
 G_MAX = 0.040
-R_V_MIN = 1000.0              # m, minimum vertical curve radius enforced (main line); validator reports < 1500 m
+R_V_MIN = 800.0               # m, minimum vertical curve radius enforced (main line); validator reports < 1500 m
 TOR_ABOVE_BED = 0.25          # top of rail above the lidar bare-earth trackbed (ballast top / slab)
 AER_CLEAR = 5.5               # rail above the ground envelope, interior of aerial runs
 AER_TARGET = 8.5
@@ -44,6 +44,8 @@ CC_TARGET = 11.0
 BORED_COVER = 12.0
 TUBE_COVER = 7.0
 RAMP = 0.03                  # clearance / cover requirements grow at 3 % from a structure end (a 4 % track can meet them)
+SF_BORES = 560.0             # m of twin compressed-air bores from the SF vent structure to the Embarcadero box
+TUBE_GMAX = 0.03             # Transbay Tube grades: 3 % max (infra research)
 SEP_RAIL = 5.6               # m rail-to-rail where one track crosses over / is stacked above another (car 3.2 m + clearance + thin deck)
 OFFS = np.array([-24, -16, -10, -6, -3, 0, 3, 6, 10, 16, 24], np.float64)
 C0 = 5                        # index of offset 0
@@ -218,13 +220,14 @@ def classify(Sm, H, SRC, roads, zones=None):
         la, lo = lat[a:b], lon[a:b]
         und = c == S['cutcover']
         c[und & in_box(la, lo, BERKELEY_HILLS)] = S['bored']
-        c[und & in_box(la, lo, TRANSBAY) & (H[a:b, C0] < -1.0)] = S['tube']
-        # tube: within each contiguous underground run that goes under water, everything between the first and the
-        # last wet sample is the immersed tube (the terrarium bay floor is patchy near the shores)
-        for (p, q, v) in rle(tun.astype(np.uint8)):
-            if v and (c[p:q] == S['tube']).any() and (q - p) * Sm.step[k] > 2000:
-                wet = np.where(c[p:q] == S['tube'])[0]
-                c[p + wet[0]:p + wet[-1] + 1] = S['tube']
+        if tr.get('tube'):
+            lo_, hi_, s_sf, s_oak = tr['tube']
+            ss_ = Sm.s[a:b]
+            c[tun & (ss_ >= lo_) & (ss_ <= hi_)] = S['tube']
+            dsf = (ss_ - s_sf) * (1 if s_sf > s_oak else -1)           # > 0 on the SF side of the vent
+            c[tun & (dsf > 0) & (dsf < SF_BORES)] = S['bored']
+        else:
+            c[und & in_box(la, lo, TRANSBAY) & (H[a:b, C0] < -1.0)] = S['tube']
         # open-air subtypes from the lidar cross-section: trench (bed well below both sides), embankment (above both)
         op = c == S['grade']
         gc = H[a:b, C0]
@@ -244,6 +247,12 @@ def classify(Sm, H, SRC, roads, zones=None):
                     nb = runs[idx - 1][2] if idx > 0 else runs[idx + 1][2]
                     if nb in OPEN:
                         c[p:q] = nb
+        # open gaps < 60 m between two covered runs are covered too (station lids, OSM tag gaps)
+        runs = rle(c)
+        for idx, (p, q, cc) in enumerate(runs):
+            if 0 < idx < len(runs) - 1 and cc in OPEN and (q - p) * L < 60 and runs[idx - 1][2] in (S['cutcover'], S['bored']) \
+                    and runs[idx + 1][2] in (S['cutcover'], S['bored']):
+                c[p:q] = S['cutcover']
         # short aerial runs -> bridge
         for (p, q, cc) in rle(c):
             if cc == S['aerial'] and (q - p) * L < 90:
@@ -370,17 +379,18 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
         d_und = run_distance(code, k, Sm, lambda v: v in UNDER)
         lid = SRC[a:b, C0] == 1
         st_k = Sm.step[k]
+        gmed = ndimage.median_filter(gc[a:b], size=9, mode='nearest') if b - a > 9 else gc[a:b]
         gsm = ndimage.gaussian_filter1d(gc[a:b], max(1.0, 10.0 / st_k), mode='nearest')     # street/ground over tunnels
         gbay = ndimage.gaussian_filter1d(gc[a:b], max(1.0, 80.0 / st_k), mode='nearest')    # bay floor over the tube
         for i in range(b - a):
             g = a + i; cc = int(c[i])
             if cc in OPEN:
-                tgt[g] = gc[g] + TOR_ABOVE_BED; wd[g] = 1.0 if lid[i] else 0.15
+                tgt[g] = gmed[i] + TOR_ABOVE_BED; wd[g] = 1.0 if lid[i] else 0.15
             elif cc in AER:
                 clear = min(AER_CLEAR, 1.0 + d_aer[i] * RAMP)
                 if cc == S['bridge']:
                     clear = min(clear, 3.0)
-                lower[g] = max(genv[g] + clear, gc[g] + need[g]) if need[g] > 0 else genv[g] + clear
+                lower[g] = max(gc[g] + clear, gc[g] + need[g])
                 tgt[g] = gc[g] + AER_TARGET; wd[g] = 0.01
             elif cc == S['portal'] or cc == S['cutcover']:
                 cover = min(CC_COVER, d_und[i] * RAMP)
@@ -402,11 +412,35 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
         a, b = Sm.off[k], Sm.off[k + 1]
         if b - a < 3:
             continue
-        lam = 400.0 if tr['service'] is None else 60.0
+        lam = 2000.0 if tr['service'] is None else 150.0
         i = np.arange(a + 1, b - 1)
         cols = np.stack([i - 1, i, i + 1], 1)
         vals = np.tile([1.0, -2.0, 1.0], (len(i), 1))
         sysm.rows_arrays(cols, vals, np.zeros(len(i)), np.full(len(i), lam))
+    # ---- per-sample grade limits (Tube 3 %) and the Berkeley Hills Tunnel's as-built grades: 1.75 % rising from the
+    # west portal to a summit 1.55 km (5,100 ft) inside the east portal, then 0.3 % falling to the east portal
+    # (Rogers & Peck / geolith.com via research B; the Wikipedia infobox gives 1.2 % (2 % max))
+    gmax = np.full(N, G_MAX)
+    gmax[code == S['tube']] = TUBE_GMAX
+    Sm.gmax = gmax
+    for k, tr in enumerate(tracks):
+        a, b = Sm.off[k], Sm.off[k + 1]
+        c = code[a:b]
+        for (p_, q_, v_) in rle((c == S['bored']).astype(np.uint8)):
+            if not v_ or (q_ - p_) * Sm.step[k] < 4000:
+                continue
+            lo_ = w2ll(Sm.x[a + p_], Sm.z[a + p_])[1]; hi_ = w2ll(Sm.x[a + q_ - 1], Sm.z[a + q_ - 1])[1]
+            west_first = lo_ < hi_                     # the run's first sample is the west portal
+            n_ = q_ - p_
+            h_ = Sm.step[k]
+            for j in range(n_ - 1):
+                dist_w = (j + 0.5) * h_ if west_first else (n_ - 1.5 - j) * h_      # from the west portal
+                dist_e = n_ * h_ - dist_w
+                g_ = 0.0175 if dist_e > 1550.0 else -0.003
+                slope = g_ if west_first else -g_                 # per +s
+                g0 = int(a + p_ + j)
+                sysm.row([g0, g0 + 1], [-1.0, 1.0], slope * h_, 2e3)
+            log(f'  Berkeley Hills template on {tr["id"]}: {n_ * h_ / 1000:.2f} km bored run')
     # ---- junctions
     tid = {tr['id']: k for k, tr in enumerate(tracks)}
     nj = 0
@@ -522,10 +556,30 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
         sysm.row(ca, va, yc, an['w']); nan_ += 1
         anchors['resolved'].append(dict(an, ground=round(gref, 2), y=round(yc, 2)))
     log(f'system: {sysm.m} least-squares rows ({nj} junction, {npar} parallel, {nst} platform, {nan_} anchor couplings)')
-    if os.environ.get('METRO_QP') == 'osqp':
+    mode = os.environ.get('METRO_QP')
+    if not mode:
+        try:
+            _osqp(); mode = 'osqp'                     # exact QP (~3-4 min); the fast penalty solver otherwise
+        except ImportError:
+            mode = 'ls'
+    if mode == 'osqp':
         y = solve_qp(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, upper, base)
-    else:
+    elif mode == 'as':
         y = solve_as(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, upper, base)
+    else:
+        y = solve_ls(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, upper, base)
+    # OSM often tags a whole station or approach as bridge where only a street span is: aerial samples whose rail is
+    # within 2.5 m of the lidar ground (fill under the track) become embankment, keeping runs >= 20 m
+    refined = 0
+    for k, tr in enumerate(tracks):
+        a, b = Sm.off[k], Sm.off[k + 1]
+        c = code[a:b]
+        fill = np.isin(c, list(AER)) & (SRC[a:b, C0] == 1) & (y[a:b] - gc[a:b] < 2.5)
+        for (p_, q_, v_) in rle(fill.astype(np.uint8)):
+            if v_ and (q_ - p_) * Sm.step[k] >= 20:
+                c[p_:q_] = S['embankment']; refined += q_ - p_
+        code[a:b] = c
+    log(f'aerial samples on lidar fill reclassified as embankment: {refined}')
     # write back
     for k, tr in enumerate(tracks):
         a, b = Sm.off[k], Sm.off[k + 1]
@@ -533,7 +587,18 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
         p['y'] = y[a:b].copy(); p['g'] = gc[a:b].copy(); p['genv'] = genv[a:b].copy(); p['struct'] = code[a:b].copy()
         p['gsrc'] = SRC[a:b, C0].copy(); p['need'] = need[a:b].copy(); p['lower'] = lower[a:b].copy(); p['upper'] = upper[a:b].copy()
         p['H'] = H[a:b].copy()
+    for an in anchors.get('resolved', []):
+        k = tid[an['track']]
+        ca, va = interp_cols(Sm, k, 0.5 * (an['s0'] + an['s1']))
+        an['solved'] = round(float(sum(y[c_] * v_ for c_, v_ in zip(ca, va))), 2)
+        an['delta'] = round(an['solved'] - an['y'], 2)
     log(f'profile v2 solved in {time.time() - t0:.0f} s')
+    try:
+        np.savez_compressed(os.path.join(RAW, 'cache', 'profile_debug.npz'), y=y, gc=gc, genv=genv, lower=lower, upper=upper, code=code,
+                            tgt=tgt, wd=wd, need=need, x=Sm.x, z=Sm.z, s=Sm.s, tk=Sm.tk, off=Sm.off, layer=Sm.layer,
+                            ids=np.array([t['id'] for t in tracks]), sep=np.array(sep if len(sep) else np.zeros((0, 2), int)))
+    except Exception as e:
+        log('debug dump failed', e)
     return Sm
 
 
@@ -582,7 +647,7 @@ def solve_qp(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, uppe
     same = np.ones(N - 1, bool); same[Sm.off[1:-1] - 1] = False
     step_g = Sm.step[Sm.tk]
     gi = np.where(same)[0]
-    gm = G_MAX * step_g[gi]
+    gm = Sm.gmax[gi] * step_g[gi]
     R0 = r
     rows.extend(np.repeat(np.arange(R0, R0 + len(gi)), 2).tolist()); cols.extend(np.stack([gi, gi + 1], 1).ravel().tolist())
     vals.extend(np.tile([-1.0, 1.0], len(gi)).tolist()); lo.extend((-gm).tolist()); hi.extend(gm.tolist()); r += len(gi)
@@ -604,11 +669,12 @@ def solve_qp(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, uppe
         if not ks:
             continue
         k0, s0, s1 = ks[0]
+        L0 = (Sm.off[k0 + 1] - Sm.off[k0] - 1) * Sm.step[k0]
+        for ss in np.arange(max(0.0, s0 - 15.0), min(L0, s1 + 15.0) - 9.99, 5.0):          # level, 15 m beyond each end
+            ca, va = interp_cols(Sm, k0, ss); cn, vn = interp_cols(Sm, k0, ss + 10.0)
+            soft(ca + cn, va + [-v for v in vn], -0.02, 0.02, 2e4, 100.0, ('level', grp['station']))
         for ss in np.arange(s0, s1 + 0.1, 10.0):
             ca, va = interp_cols(Sm, k0, ss)
-            if ss + 10.0 <= s1:
-                cn, vn = interp_cols(Sm, k0, ss + 10.0)
-                soft(ca + cn, va + [-v for v in vn], -0.03, 0.03, 2e4, 100.0, ('level', grp['station']))
             f = (ss - s0) / max(1e-6, s1 - s0)
             for (k2, u0, u1) in ks[1:]:
                 cb, vb = interp_cols(Sm, k2, u0 + f * (u1 - u0))
@@ -701,7 +767,7 @@ def solve_as(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, uppe
     gi = np.where(same)[0]
     n_ineq0 = ineq.m
     ineq.rows_arrays(np.stack([gi, gi + 1], 1), np.tile([-1.0, 1.0], (len(gi), 1)), np.zeros(len(gi)), np.full(len(gi), 1e7))
-    L_ += (-G_MAX * step_g[gi]).tolist(); U_ += (G_MAX * step_g[gi]).tolist(); W_ += [1e7] * len(gi); TAG += [('grade',)] * len(gi)
+    L_ += (-Sm.gmax[gi] * step_g[gi]).tolist(); U_ += (Sm.gmax[gi] * step_g[gi]).tolist(); W_ += [1e7] * len(gi); TAG += [('grade',)] * len(gi)
     same2 = same[:-1] & same[1:] & Sm.main[1:-1]
     vi = np.where(same2)[0]
     km = step_g[vi + 1] ** 2 / R_V_MIN
@@ -776,6 +842,134 @@ def solve_as(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, uppe
     return y
 
 
+# ====================================================================== fast solver v2 (default)
+def solve_ls(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, upper, base, maxrounds=60):
+    """Least squares + inequalities by a monotone penalty active set.
+    Equalities as stiff LS rows: junctions (1e7), platform levels across tracks (1e6) and level along the platform
+    (1e5). Inequalities: grade limits (1e7; 4 %, Tube 3 %), ground cover/clearance (1e3), grade separations (1e5).
+    Vertical curves come from the smoothing term (validator reports radii < 1500 m). Each round adds every violated
+    inequality (plus the neighbours of violated grades on the same side, which otherwise propagate one sample per
+    round); a final round releases, once, the constraints the solution over-satisfies."""
+    t0 = time.time()
+    N = Sm.N
+    A, bvec, w = sysm.matrices()
+    eq = System(N)
+    for j in junctions:
+        mem = [(tid[t], s_) for t, s_ in j['tracks'] if t in tid]
+        for k_ in range(1, len(mem)):
+            ca, va = interp_cols(Sm, *mem[0]); cb, vb = interp_cols(Sm, *mem[k_])
+            eq.row(ca + cb, va + [-v for v in vb], 0.0, 1e7)
+    for grp in platform_groups:
+        ks = [(tid[t], s0, s1) for t, s0, s1 in grp['members'] if t in tid]
+        if not ks:
+            continue
+        k0, s0, s1 = ks[0]
+        L0 = (Sm.off[k0 + 1] - Sm.off[k0] - 1) * Sm.step[k0]
+        for ss in np.arange(max(0.0, s0 - 15.0), min(L0, s1 + 15.0) - 9.99, 5.0):          # level, 15 m beyond each end
+            ca, va = interp_cols(Sm, k0, ss); cn, vn = interp_cols(Sm, k0, ss + 10.0)
+            eq.row(ca + cn, va + [-v for v in vn], 0.0, 1e5)
+        for ss in np.arange(s0, s1 + 0.1, 10.0):
+            ca, va = interp_cols(Sm, k0, ss)
+            f = (ss - s0) / max(1e-6, s1 - s0)
+            for (k2, u0, u1) in ks[1:]:
+                cb, vb = interp_cols(Sm, k2, u0 + f * (u1 - u0))
+                eq.row(ca + cb, va + [-v for v in vb], 0.0, 1e6)
+    Aq, bq, wq = eq.matrices()
+    N0 = (A.T @ sp.diags(w) @ A + Aq.T @ sp.diags(wq) @ Aq).tocsr()
+    r0 = A.T @ (w * bvec) + Aq.T @ (wq * bq)
+    # inequality rows
+    same = np.ones(N - 1, bool); same[Sm.off[1:-1] - 1] = False
+    step_g = Sm.step[Sm.tk]
+    gi = np.where(same)[0]
+    gm = Sm.gmax[gi] * step_g[gi]
+    rows = [np.repeat(np.arange(len(gi)), 2)]; cols = [np.stack([gi, gi + 1], 1).ravel()]; vals = [np.tile([-1.0, 1.0], len(gi))]
+    L_ = [-gm]; U_ = [gm]; W_ = [np.full(len(gi), 1e7)]; K_ = [np.zeros(len(gi), np.int8)]
+    m0 = len(gi)
+    iu = np.where(upper < 1e8)[0]; il = np.where(lower > -1e8)[0]
+    rows.append(m0 + np.arange(len(iu))); cols.append(iu); vals.append(np.ones(len(iu)))
+    L_.append(np.full(len(iu), -np.inf)); U_.append(upper[iu]); W_.append(np.full(len(iu), 1e3)); K_.append(np.full(len(iu), 1, np.int8))
+    m0 += len(iu)
+    rows.append(m0 + np.arange(len(il))); cols.append(il); vals.append(np.ones(len(il)))
+    L_.append(lower[il]); U_.append(np.full(len(il), np.inf)); W_.append(np.full(len(il), 1e3)); K_.append(np.full(len(il), 2, np.int8))
+    m0 += len(il)
+    sp_ = np.array(sep, int).reshape(-1, 2)
+    rows.append(np.repeat(m0 + np.arange(len(sp_)), 2)); cols.append(sp_.ravel()); vals.append(np.tile([1.0, -1.0], len(sp_)))
+    L_.append(np.full(len(sp_), SEP_RAIL)); U_.append(np.full(len(sp_), np.inf)); W_.append(np.full(len(sp_), 1e5)); K_.append(np.full(len(sp_), 3, np.int8))
+    m0 += len(sp_)
+    same2 = same[:-1] & same[1:] & Sm.main[1:-1]
+    vi = np.where(same2)[0]
+    km = step_g[vi + 1] ** 2 / R_V_MIN
+    rows.append(np.repeat(m0 + np.arange(len(vi)), 3)); cols.append(np.stack([vi, vi + 1, vi + 2], 1).ravel()); vals.append(np.tile([1.0, -2.0, 1.0], len(vi)))
+    L_.append(-km); U_.append(km); W_.append(np.full(len(vi), 1e7)); K_.append(np.full(len(vi), 4, np.int8))
+    m0 += len(vi)
+    C = sp.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))), shape=(m0, N))
+    Lb = np.concatenate(L_); Ub = np.concatenate(U_); Wc = np.concatenate(W_); KIND = np.concatenate(K_)
+    is_grade = (KIND == 0) | (KIND == 4)
+    act_lo = np.zeros(m0, bool); act_hi = np.zeros(m0, bool)
+
+    def solve_act():
+        act = act_lo | act_hi
+        tgt = np.where(act_lo, Lb, Ub)
+        Ca = C[act]; wa = Wc[act]
+        return spl.spsolve((N0 + Ca.T @ sp.diags(wa) @ Ca).tocsc(), r0 + Ca.T @ (wa * tgt[act]))
+
+    y = spl.spsolve(N0.tocsc(), r0)
+    log(f'LS solve: {N} unknowns, {m0} inequalities ({len(gi)} grade, {len(vi)} vertical curve, {len(iu)} cover, {len(il)} clearance, {len(sp_)} separation), first solve {time.time() - t0:.0f} s')
+    for rnd in range(maxrounds):
+        cy = C @ y
+        add_lo = (cy < Lb - 2e-3) & ~act_lo
+        add_hi = (cy > Ub + 2e-3) & ~act_hi
+        n_add = int(add_lo.sum() + add_hi.sum())
+        if n_add == 0:
+            break
+        # anticipate grade chains: neighbours within 3 samples that are within 85 % of the same limit
+        near_lo = np.zeros(m0, bool); near_hi = np.zeros(m0, bool)
+        gl, gh = add_lo & is_grade, add_hi & is_grade
+        for sh in (-3, -2, -1, 1, 2, 3):
+            near_lo |= np.roll(gl, sh); near_hi |= np.roll(gh, sh)
+        add_lo |= near_lo & is_grade & (cy < 0.85 * Lb) & ~act_lo
+        add_hi |= near_hi & is_grade & (cy > 0.85 * Ub) & ~act_hi
+        flip = (add_lo & act_hi) | (add_hi & act_lo)          # rows flipping sides are conflicts: freeze them where they are
+        add_lo &= ~flip; add_hi &= ~flip
+        if not (add_lo.any() or add_hi.any()):
+            break
+        act_lo |= add_lo; act_hi |= add_hi & ~act_lo
+        y = solve_act()
+        if rnd % 5 == 0:
+            log(f'  round {rnd}: +{n_add} -> {int((act_lo | act_hi).sum())} active ({time.time() - t0:.0f} s)')
+    # release over-satisfied once, then re-add anything that breaks
+    cy = C @ y
+    rel = (act_lo & (cy > Lb + 1e-4)) | (act_hi & (cy < Ub - 1e-4))
+    if rel.any():
+        act_lo &= ~rel; act_hi &= ~rel
+        y = solve_act()
+        for rnd in range(maxrounds):
+            cy = C @ y
+            add_lo = (cy < Lb - 2e-3) & ~act_lo
+            add_hi = (cy > Ub + 2e-3) & ~act_hi
+            if not (add_lo.any() or add_hi.any()):
+                break
+            act_lo |= add_lo; act_hi |= add_hi & ~act_lo
+            y = solve_act()
+    cy = C @ y
+    viol = np.maximum(Lb - cy, cy - Ub)
+    try:
+        act = act_lo | act_hi
+        # sample index per inequality row (grade rows: first sample; separations: upper track sample)
+        samp = np.concatenate([gi, iu, il, sp_[:, 0] if len(sp_) else np.zeros(0, int), vi + 1])
+        np.savez_compressed(os.path.join(RAW, 'cache', 'active_debug.npz'), act=act, kind=KIND, samp=samp, viol=viol, cy=cy, Lb=Lb, Ub=Ub)
+    except Exception as e:
+        log('active dump failed', e)
+    names = ['grade', 'cover', 'clear', 'sep', 'vcurve']
+    rep = []
+    for kd in range(5):
+        m = (KIND == kd) & (viol > 0.05)
+        if m.any():
+            rep.append(f'{names[kd]} {int(m.sum())} (worst {viol[m].max():.2f} m)')
+    log('  inequalities violated by > 5 cm: ' + (', '.join(rep) or 'none') + f'; {int((act_lo | act_hi).sum())} active; solved in {time.time() - t0:.0f} s')
+    return y
+
+
 # ====================================================================== speed, cant, depth, segments
 def finish(tracks, vcap=None):
     for tr in tracks:
@@ -785,15 +979,31 @@ def finish(tracks, vcap=None):
         kap = curvature(x, z, step, win)
         kap = ndimage.gaussian_filter1d(kap, max(1.0, 10.0 / step), mode='nearest')
         R = 1.0 / np.maximum(np.abs(kap), 1e-6)
-        vmax = {'bart': 70 * MPH, 'ebart': 70 * MPH, 'oac': 31 * MPH}.get(tr['sys'], 70 * MPH)
+        vmax = {'bart': 70 * MPH, 'ebart': 75 * MPH, 'oac': 30 * MPH}.get(tr['sys'], 70 * MPH)   # eBART 75 mph max, OAC 30 mph (research)
         # turnouts / crossovers / yards carry no cant: unbalanced lateral acceleration only
         a_lat = 1.40 if tr['service'] in (None, 'siding') else 0.65
         if tr['service'] == 'yard':
             vmax = min(vmax, 15 * MPH)
         v = np.minimum(vmax, np.sqrt(a_lat * R))
+        # OSM maxspeed (mapped from BART's civil speed codes: 18 mph through the Oakland Wye, 36 at Balboa Park / Daly
+        # City, 27 on the curve south of Daly City, ...) caps the geometric limit
+        cap = np.full(len(v), np.inf)
+        for i, t in enumerate(p['tags']):
+            ms = t.get('maxspeed')
+            if ms:
+                try:
+                    val = float(str(ms).split()[0].split(';')[0])
+                    cap[i] = val * MPH if 'mph' in str(ms) else val / 3.6          # OSM: bare numbers are km/h
+                except ValueError:
+                    pass
+        v = np.minimum(v, cap)
         v = ndimage.minimum_filter1d(v, max(1, int(round(120.0 / step))), mode='nearest')
-        v = np.floor(v / MPH / 5.0) * 5.0 * MPH
-        v = np.maximum(v, 10 * MPH)
+        if tr['sys'] == 'bart':        # BART's train control speed codes (mph)
+            codes = np.array([6, 18, 27, 36, 50, 70]) * MPH
+            v = np.array([codes[codes <= vv + 1e-6].max() if (codes <= vv + 1e-6).any() else codes[0] for vv in v])
+        else:
+            v = np.floor(v / MPH / 5.0) * 5.0 * MPH
+            v = np.maximum(v, 10 * MPH)
         if vcap is not None:
             v = np.minimum(v, vcap(tr, p))
         cant = np.zeros_like(v)
@@ -814,7 +1024,8 @@ def finish(tracks, vcap=None):
 
 # ====================================================================== validator
 def validate(tracks, stations, junctions, platform_groups):
-    """Checks the lead asked for; returns (summary lines, report dict)."""
+    """Checks the lead asked for; returns (summary lines, report dict). Each finding: [track, s of the worst sample,
+    worst value, number of samples]."""
     rep = {'platform_mismatch': [], 'grade': [], 'vcurve': [], 'buried_open': [], 'aerial_low': [], 'tunnel_shallow': [], 'junction': []}
     byid = {t['id']: t for t in tracks}
 
@@ -822,13 +1033,20 @@ def validate(tracks, stations, junctions, platform_groups):
         t = byid[tid]; p = t['pub']; f = np.clip(s / p['step'], 0, len(p['y']) - 1.000001); i = int(f); a = f - i
         return p['y'][i] * (1 - a) + p['y'][i + 1] * a
 
+    def interior(mask, st, margin):
+        d = np.zeros(len(mask))
+        for a_, b_, c_ in rle(mask.astype(np.uint8)):
+            if c_:
+                ii = np.arange(a_, b_); d[a_:b_] = np.minimum(ii - a_, b_ - 1 - ii) * st
+        return mask & (d > margin)
+
     for grp in platform_groups:
         mem = grp['members']
         if len(mem) < 2:
             continue
         worst = 0.0
-        for f in np.linspace(0, 1, 11):
-            ys = [yat(t, s0 + f * (s1 - s0)) - grp.get('dyid', {}).get(t, 0.0) for t, s0, s1 in mem]
+        for f in np.linspace(0.05, 0.95, 10):
+            ys = [yat(t, s0 + f * (s1 - s0)) for t, s0, s1 in mem]
             worst = max(worst, max(ys) - min(ys))
         if worst > 0.05:
             rep['platform_mismatch'].append([grp['station'], round(float(worst), 2), [m[0] for m in mem]])
@@ -838,48 +1056,100 @@ def validate(tracks, stations, junctions, platform_groups):
             continue
         gr = np.diff(y) / st
         if t['service'] is None:
-            k = int(np.abs(gr).argmax())
-            if abs(gr[k]) > G_MAX + 0.001:
-                rep['grade'].append([t['id'], round(float(k * st), 1), round(float(gr[k]) * 100, 2)])
+            lim = np.where(code[:-1] == S['tube'], TUBE_GMAX, G_MAX) + 0.001
+            bad = np.where(np.abs(gr) > lim)[0]
+            if len(bad):
+                k = bad[int(np.abs(gr[bad]).argmax())]
+                rep['grade'].append([t['id'], round(float(k * st), 1), round(float(gr[k]) * 100, 2), int(len(bad))])
             d2 = (y[:-2] - 2 * y[1:-1] + y[2:]) / st ** 2
             bad = np.where(np.abs(d2) > 1 / 1500.0)[0]
             if len(bad):
                 k = bad[int(np.abs(d2[bad]).argmax())]
                 rep['vcurve'].append([t['id'], round(float((k + 1) * st), 1), round(float(1 / abs(d2[k])), 0), int(len(bad))])
-        g = p['g']; ge = p['genv']
-        op = np.isin(code, list(OPEN))
-        bur = op & (y < g - 1.0)
-        if bur.any():
-            k = np.where(bur)[0]
-            rep['buried_open'].append([t['id'], round(float(k[0] * st), 1), round(float((g - y)[k].max()), 2), int(len(k))])
-        aer = np.isin(code, [S['aerial']])
-        dist = np.zeros(len(y))
-        for a_, b_, c_ in rle(aer.astype(np.uint8)):
-            if c_:
-                ii = np.arange(a_, b_); dist[a_:b_] = np.minimum(ii - a_, b_ - 1 - ii) * st
-        low = aer & (dist > 60) & (y - ge < 5.0)
-        if low.any():
-            k = np.where(low)[0]
-            rep['aerial_low'].append([t['id'], round(float(k[0] * st), 1), round(float((y - ge)[k].min()), 2), int(len(k))])
-        und = np.isin(code, [S['cutcover'], S['bored'], S['tube']])
-        dist = np.zeros(len(y))
-        for a_, b_, c_ in rle(und.astype(np.uint8)):
-            if c_:
-                ii = np.arange(a_, b_); dist[a_:b_] = np.minimum(ii - a_, b_ - 1 - ii) * st
-        sh = und & (dist > 80) & (g - y < 6.0)
-        if sh.any():
-            k = np.where(sh)[0]
-            rep['tunnel_shallow'].append([t['id'], round(float(k[0] * st), 1), round(float((g - y)[k].min()), 2), int(len(k))])
+        g = p['g']; src = p.get('gsrc', np.ones(len(y)))
+        grob = ndimage.median_filter(g, size=13, mode='nearest') if len(g) > 13 else g     # overpass decks kept in bare earth
+        op = interior(np.isin(code, list(OPEN)), st, 30.0) & (src == 1)
+        dep = np.where(op, grob - y, -1e9)
+        bad = np.where(dep > 1.0)[0]
+        if len(bad):
+            k = bad[int(dep[bad].argmax())]
+            rep['buried_open'].append([t['id'], round(float(k * st), 1), round(float(dep[k]), 2), int(len(bad))])
+        aer = interior(code == S['aerial'], st, 60.0)
+        cl = np.where(aer, y - g, 1e9)
+        bad = np.where(cl < 5.0)[0]
+        if len(bad):
+            k = bad[int(cl[bad].argmin())]
+            rep['aerial_low'].append([t['id'], round(float(k * st), 1), round(float(cl[k]), 2), int(len(bad))])
+        und = interior(np.isin(code, [S['cutcover'], S['bored'], S['tube']]), st, 80.0)
+        gsm = ndimage.gaussian_filter1d(g, max(1.0, 10.0 / st), mode='nearest')
+        cv = np.where(und, gsm - y, 1e9)
+        bad = np.where(cv < 6.0)[0]
+        if len(bad):
+            k = bad[int(cv[bad].argmin())]
+            rep['tunnel_shallow'].append([t['id'], round(float(k * st), 1), round(float(cv[k]), 2), int(len(bad))])
     for j in junctions:
         ys = [yat(t, s) for t, s in j['tracks'] if t in byid]
         if ys and max(ys) - min(ys) > 0.05:
             rep['junction'].append([j['id'], round(float(max(ys) - min(ys)), 2)])
+
+    def line(name, key, fmt):
+        L = rep[key]
+        return f'  {name}: {len(L)}' + (f' (worst {fmt(L)})' if L else '')
     lines = ['profile validator:',
-             f"  platform rail mismatch > 5 cm: {len(rep['platform_mismatch'])}" + (f" (worst {max(rep['platform_mismatch'], key=lambda r: r[1])})" if rep['platform_mismatch'] else ''),
-             f"  main tracks with grade > 4 %: {len(rep['grade'])}" + (f" (worst {max(rep['grade'], key=lambda r: abs(r[2]))})" if rep['grade'] else ''),
-             f"  main tracks with vertical curve radius < 1500 m: {len(rep['vcurve'])}" + (f" (worst {min(rep['vcurve'], key=lambda r: r[2])})" if rep['vcurve'] else ''),
-             f"  open track > 1 m below the lidar ground: {len(rep['buried_open'])}" + (f" (e.g. {rep['buried_open'][:3]})" if rep['buried_open'] else ''),
-             f"  aerial interiors with < 5 m clearance: {len(rep['aerial_low'])}" + (f" (e.g. {rep['aerial_low'][:3]})" if rep['aerial_low'] else ''),
-             f"  tunnel interiors with < 6 m cover: {len(rep['tunnel_shallow'])}" + (f" (e.g. {rep['tunnel_shallow'][:3]})" if rep['tunnel_shallow'] else ''),
-             f"  junction height mismatch > 5 cm: {len(rep['junction'])}" + (f" (worst {max(rep['junction'], key=lambda r: r[1])})" if rep['junction'] else '')]
+             line('platform rail mismatch > 5 cm (inner 90 %)', 'platform_mismatch', lambda L: max(L, key=lambda r: r[1])),
+             line('main tracks with grade > 4 % (3 % in the Tube)', 'grade', lambda L: max(L, key=lambda r: abs(r[2]))),
+             line('main tracks with vertical curve radius < 1500 m', 'vcurve', lambda L: min(L, key=lambda r: r[2])),
+             line('open track > 1 m below the lidar ground', 'buried_open', lambda L: max(L, key=lambda r: r[2])),
+             line('aerial interiors < 5 m above the ground', 'aerial_low', lambda L: min(L, key=lambda r: r[2])),
+             line('tunnel interiors with < 6 m cover', 'tunnel_shallow', lambda L: min(L, key=lambda r: r[2])),
+             line('junction height mismatch > 5 cm', 'junction', lambda L: max(L, key=lambda r: r[1]))]
     return lines, rep
+
+
+# ====================================================================== third rail side
+def third_rail(tracks, junctions, platforms):
+    """Per-sample contact (third) rail side: 1 = left, 2 = right (facing +s), 0 = none (gaps ~12 m either side of a
+    turnout / crossing). Rules (BART practice; the Transbay Tube check: outer side, away from the gallery walkway):
+      - along a platform: the side away from the platform edge (island stations -> outside, side-platform stations ->
+        between the tracks), extended 60 m past each platform end, then
+      - double track: the field side, away from the nearest parallel track within 8 m,
+      - single track: the right side.
+    Changes of side happen where these rules change (real BART changes sides at stations and turnouts too)."""
+    from scipy.spatial import cKDTree
+    allxz = np.concatenate([np.stack([t['pub']['x'], t['pub']['z']], 1) for t in tracks])
+    owner = np.concatenate([np.full(len(t['pub']['x']), k) for k, t in enumerate(tracks)])
+    kd = cKDTree(allxz)
+    by_id = {t['id']: k for k, t in enumerate(tracks)}
+    jpos = {}
+    for j in junctions:
+        for tid_, s_ in j['tracks']:
+            jpos.setdefault(tid_, []).append(s_)
+    plat_on = {}
+    for pl in platforms.values():
+        plat_on.setdefault(pl['track'], []).append((pl['s0'] - 60.0, pl['s1'] + 60.0, pl['side']))
+    for k, tr in enumerate(tracks):
+        p = tr['pub']
+        n = len(p['x'])
+        x, z = p['x'], p['z']
+        gx = np.gradient(x); gz = np.gradient(z); L = np.hypot(gx, gz) + 1e-12; gx /= L; gz /= L
+        side = np.full(n, 2, np.uint8)                        # right by default
+        lists = kd.query_ball_point(np.stack([x, z], 1), 8.0)
+        for i, lst in enumerate(lists):
+            best = None
+            for q in lst:
+                if owner[q] == k:
+                    continue
+                lat = (allxz[q, 0] - x[i]) * (-gz[i]) + (allxz[q, 1] - z[i]) * gx[i]
+                if abs(lat) > 2.5 and (best is None or abs(lat) < abs(best)):
+                    best = lat
+            if best is not None:
+                side[i] = 1 if best > 0 else 2                 # neighbour on the right -> rail on the left (field side)
+        for (a, b, sd) in plat_on.get(tr['id'], []):
+            i0, i1 = max(0, int(a / p['step'])), min(n, int(b / p['step']) + 1)
+            side[i0:i1] = 1 if sd > 0 else 2                   # platform on the right -> rail on the left
+        for s_ in jpos.get(tr['id'], []):
+            i0, i1 = max(0, int((s_ - 12.0) / p['step'])), min(n, int((s_ + 12.0) / p['step']) + 1)
+            side[i0:i1] = 0
+        if tr['sys'] != 'bart':
+            side[:] = 0                                         # eBART diesel, cable-hauled connector: no contact rail
+        p['third'] = side

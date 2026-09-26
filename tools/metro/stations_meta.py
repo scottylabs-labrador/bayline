@@ -146,6 +146,10 @@ def build2(parents, plats, ents, tracks, platforms, E, code_of, curated, extra_s
     from metro.profile2 import STRUCT_NAMES
     from metro.dem import ground as dem_ground
     research = _research()
+    try:
+        eng = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'research', 'engineering.json')))['ridership']
+    except Exception:
+        eng = {}
     by_id = {t['id']: t for t in tracks}
     ent_osm = []
     for e in E:
@@ -208,6 +212,9 @@ def build2(parents, plats, ents, tracks, platforms, E, code_of, curated, extra_s
             st['platformStructure'] = cur['platformStructure']
         if res:
             st['research'] = res
+        if eng.get('avg_weekday_exits_cy2025', {}).get(sid) is not None:
+            st['ridership'] = dict(weekdayExits=eng['avg_weekday_exits_cy2025'][sid], weekdayExitsFY2026=eng.get('avg_weekday_exits_fy2026_jul2025_jun2026', {}).get(sid),
+                                   source='BART ridership reports (origin-destination 2025; monthly FY2026), average weekday exits')
         stations.append(st)
     log(f'stations: {len(stations)}; platforms {sum(len(s["platforms"]) for s in stations)}; entrances {sum(len(s["entrances"]) for s in stations)}')
     return stations
