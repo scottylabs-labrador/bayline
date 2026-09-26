@@ -111,6 +111,27 @@ const MetroSim = (() => {
     markCache.set(key, out); return out;
   }
   function stName0(id) { const s = stById.get(id); return s ? s.short : (NAMES_SHORT[id] || id); }
+  // which side of its track (facing +s: +1 right) a platform is on: the stations workstream's geometry when it is in the
+  // build (that is what is drawn, and what the doors must open onto), else MetroNet's platform data
+  const sideCache = new Map();
+  function platformSide(stationId, gtfs) {
+    const key = stationId + '|' + gtfs; if (sideCache.has(key)) return sideCache.get(key);
+    const S = MN.stationById[stationId], pf = S && (S.platforms || []).find(p => p.gtfs === gtfs); if (!pf) return 0;
+    let side = pf.side === 'right' ? 1 : -1, src = 'data';
+    if (typeof MetroStations !== 'undefined' && MetroStations.spawnPoint) {
+      try { const sp = MetroStations.spawnPoint(stationId, pf.code || String(gtfs).split('-')[1]);
+        const t = MN.byId[pf.track]; if (sp && t) { const q = MN.nearest(sp.x, sp.z, 12, (tt) => tt === t); if (q && Math.abs(q.lat) > 0.8) { side = q.lat > 0 ? 1 : -1; src = 'stations'; } } } catch (e) { /* keep the data side */ }
+    }
+    if (src === 'stations' || !(typeof MetroStations !== 'undefined')) sideCache.set(key, side);
+    return side;
+  }
+  // travel-relative side (+1: right, facing the direction of travel) of stop k of a leg
+  function stopSide(leg, k) {
+    const s = leg.stops[k]; if (!s) return 1; if (s.sideT && s.sideSrc) return s.sideT;
+    const q = leg.path.leg.locate(Math.max(0, s.ps - 2), LQ), side = platformSide(s.st, s.sid);
+    if (!side) return s.side || 1;
+    const t = side * q.sign; if (sideCache.has(s.st + '|' + s.sid)) { s.sideT = t; s.sideSrc = 1; } return t;
+  }
 
   // ---------------------------------------------------------------- runs: minimum-time profiles, capped to fill a time
   // A run is tabulated at n+1 points ds apart: v[i] (m/s) and t[i] (s since departure). Between points the train
@@ -517,7 +538,9 @@ const MetroSim = (() => {
 
   // ---------------------------------------------------------------- far trains: one instanced batch + light points + dots
   let far = null, lights = null, dots = null; const FARMAX = 1600, LMAX = 800, DMAX = 400;
+  let kitFar = null;                                   // MetroKit's far batch (real car silhouettes + billboard lamps) when present
   function initFar() {
+    if (typeof MetroKit !== 'undefined' && MetroKit._k && MetroKit._k.createFarBatch) { try { kitFar = MetroKit._k.createFarBatch(Env.scene, { maxCars: FARMAX, maxLamps: LMAX }); } catch (e) { console.warn('MetroKit far batch', e); kitFar = null; } }
     const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0);
     const m = new THREE.MeshStandardMaterial({ color: 0xdadfe3, metalness: 0.5, roughness: 0.4 });
     m.onBeforeCompile = (sh) => {
@@ -581,6 +604,7 @@ const MetroSim = (() => {
     for (const e of pool) e.busy = false;
     const night = U.uNight.value, maxNear = nearBudget();
     let nNear = 0, fN = 0, lN = 0, dN = 0;
+    if (kitFar) kitFar.begin();
     const fp = far.instanceMatrix.array, lp = lights.geometry.attributes.position.array, lc = lights.geometry.attributes.color.array, dp = dots.geometry.attributes.position.array, dc = dots.geometry.attributes.color.array;
     const camUnder = !!(typeof Under !== 'undefined' && Under.state && Under.state.cell) || (typeof Terrain !== 'undefined' && camPos.y < Terrain.h(camPos.x, camPos.z) - 3);
     let nHidden = 0;
@@ -596,7 +620,9 @@ const MetroSim = (() => {
       if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead); setupConsist(tr, e, dt, night); }
       else if (tr.dist < 60000) {
         // far: one instance per car, posed at its centre along the path (cars beyond 12 km are merged in pairs)
-        const P = PERF[tr.kind], pair = tr.dist > 12000 && tr.cars > 3 ? 2 : 1, n = Math.ceil(tr.cars / pair), L = P.carLen * pair;
+        const P = PERF[tr.kind];
+        if (kitFar && !kitBad.has(tr.kind) && farKit(tr, P, night)) { /* drawn by MetroKit */ } else {
+        const pair = tr.dist > 12000 && tr.cars > 3 ? 2 : 1, n = Math.ceil(tr.cars / pair), L = P.carLen * pair;
         _c.set(lineColor(tr.line));
         for (let i = 0; i < n && fN < FARMAX; i++) {
           tr.leg.path.at(tr.s - (i + 0.5) * L, F1); const h = Math.hypot(F1.tx, F1.tz) || 1;
@@ -609,11 +635,13 @@ const MetroSim = (() => {
           lp[lN * 3] = tr.x; lp[lN * 3 + 1] = tr.y + 1.4; lp[lN * 3 + 2] = tr.z; lc[lN * 3] = 1; lc[lN * 3 + 1] = 0.95; lc[lN * 3 + 2] = 0.85; lN++;
           lp[lN * 3] = F1.x; lp[lN * 3 + 1] = F1.y + 1.4; lp[lN * 3 + 2] = F1.z; lc[lN * 3] = 0.9; lc[lN * 3 + 1] = 0.08; lc[lN * 3 + 2] = 0.05; lN++;
         }
+        }
       }
       if (dN < DMAX) { dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; _c.set(tr.remote ? (tr.remote.color || '#ffffff') : lineColor(tr.line)); dc[dN * 3] = _c.r; dc[dN * 3 + 1] = _c.g; dc[dN * 3 + 2] = _c.b; dN++; }
     }
     for (const e of pool) if (!e.busy && e.shown !== 0) { for (const car of e.consist.cars) car.group.visible = false; e.shown = 0; }
     far.count = fN; far.instanceMatrix.needsUpdate = true; if (far.instanceColor) far.instanceColor.needsUpdate = true;
+    if (kitFar) kitFar.end(night);
     lights.geometry.setDrawRange(0, lN); lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
     dots.geometry.setDrawRange(0, dN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
     const alt = camPos.y - (typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0); dots.visible = alt > 350; dots.material.opacity = U.smooth(350, 1200, alt);
@@ -621,6 +649,21 @@ const MetroSim = (() => {
     stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05;
   }
   let quality = 'high';
+  // one far train through MetroKit's batch: D cars at the ends (the last one turned round), E cars between; lamps
+  const FK = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 }, kitBad = new Set();
+  function farKit(tr, P, night) {
+    const n = tr.cars, path = tr.leg.path, kind = tr.kind === 'apm' ? 'apm' : tr.kind;
+    for (let i = 0; i < n; i++) {
+      const c = tr.s - (i + 0.5) * P.carLen; path.at(c, F1); const h = Math.hypot(F1.tx, F1.tz) || 1;
+      // car i counted from the head; physical car index from car 0 depends on which end leads
+      const pi = tr.lead === 0 ? i : n - 1 - i, type = kind === 'bart' ? (pi === 0 || pi === n - 1 ? 'D' : 'E') : (pi === 0 || pi === n - 1 ? 'D' : 'E');
+      const flip = (pi === n - 1 && n > 1) !== (tr.lead !== 0);
+      FK.x = F1.x; FK.y = F1.y; FK.z = F1.z; FK.yaw = Math.atan2(-F1.tz, F1.tx); FK.pitch = Math.atan2(F1.ty, h);
+      try { kitFar.addCar(kind, type, FK, flip); } catch (e) { kitBad.add(tr.kind); return false; }   // (a kind MetroKit doesn't build yet: ours)
+    }
+    if (night > 0.05 && !tr.underground) { kitFar.addLamp(tr.x, tr.y + 1.4, tr.z, 'head'); path.at(tr.s - n * P.carLen, F1); kitFar.addLamp(F1.x, F1.y + 1.4, F1.z, 'tail'); }
+    return true;
+  }
   function nearBudget() { return quality === 'low' ? 4 : quality === 'medium' ? 6 : 8; }
   // with the camera underground (INFRA's portal visibility draws only the cells you can see): a train is drawn when a
   // cell under its head or tail is visible, or it is on the surface near a portal; without Under, anything within 350 m
@@ -639,7 +682,7 @@ const MetroSim = (() => {
     const st = S.stopK >= 0 ? l.stops[S.stopK] : null;
     tr.stationId = st ? st.st : null;
     // doors open on the platform side: travel-relative side from the platform data (default: right), then car-local
-    const trav = st && st.side ? (st.side > 0 ? 1 : -1) : 1;
+    const trav = st ? stopSide(l, S.stopK) : 1;
     tr.doorSide = (trav > 0) === (l.lead === 0) ? 'right' : 'left';
     tr.doorsOpen = S.doorT > 0.6;
   }
@@ -653,7 +696,7 @@ const MetroSim = (() => {
     c.setLights({ head: 1, tail: 1, interior: 0.5 + 0.5 * night, cab: 0.5, lead }); if (c.setLeadEnd) c.setLeadEnd(lead);
     c.setNight(night);
     c.speed = tr.lead === 0 ? tr.v : -tr.v;
-    const lod = tr.dist < 180 ? 0 : tr.dist < 700 ? 1 : 2; if (e.lod !== lod) { c.setLOD(lod); e.lod = lod; }
+    const lod = tr.dist < 180 ? 0 : (c.placeholder && tr.dist >= 700) ? 2 : 1; if (e.lod !== lod) { c.setLOD(lod); e.lod = lod; }   // (MetroKit: 0 full, 1 one mesh per car)
     const inside = tr.key === focusKey && typeof Player !== 'undefined' && (Player.onboard() || Player.inCab());
     const iv = inside || tr.dist < 60; if (e.iv !== iv) { c.setInteriorVisible(iv); e.iv = iv; }
     if (tr.key === focusKey || tr.dist < 250) c.setDisplay && c.setDisplay({ line: lineName(tr.line), color: lineColor(tr.line), nextStop: nextStopName(tr), destination: termName(tr), clock: Env.clockText(Env.time.sec) });
@@ -839,7 +882,7 @@ const MetroSim = (() => {
   const api = { enabled, init, update, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
-    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH, netKey, resolveNet,
+    stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, nextStopName, PERF, MPH, netKey, resolveNet, platformSide, stopSide,
     get plans() { return plans; }, get busTrips() { return busTrips; }, busTodayList: () => busToday, get stats() { return stats; }, get net() { return MN; },
     legState, legAt, getRun, runAt, smoothTimes, envelope, timeOf, MPath, legPath,
     replan: () => replan(true) };

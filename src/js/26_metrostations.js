@@ -44,8 +44,14 @@ const MetroStations = (() => {
   const DU = 2;
   const F = {}, F2 = {};
   function makePlan(rec) {
-    const P = (rec.platforms || []).filter(p => p.track);
+    // the airport connector's platform at Coliseum is its own small station (a hero feature); a station that is only
+    // connector (Oakland Airport) keeps its short platform
+    const sysOf = (p) => { const t = MetroNet.byId[p.track]; return t ? t.sys : 'bart'; };
+    let P = (rec.platforms || []).filter(p => p.track && MetroNet.byId[p.track]);
+    const main = P.filter(p => sysOf(p) !== 'oac'); const oac = P.filter(p => sysOf(p) === 'oac');
+    if (main.length) P = main;
     if (!P.length) return null;
+    const isOac = !main.length;
     const ref = P[0]; const sc = (ref.s0 + ref.s1) / 2;
     if (!N.frame(ref.track, sc, F)) return null;
     const cx = F.x, cz = F.z, tx = F.dx, tz = F.dz;
@@ -55,8 +61,8 @@ const MetroStations = (() => {
     const offs = {};
     for (const id of tids) { const n = N.nearestOn(id, cx, cz); if (!n) { offs[id] = 0; continue; } N.frame(id, n.s, F2); offs[id] = (F2.x - cx) * -tz + (F2.z - cz) * tx; }
     // the station length along the reference track: all platform extents mapped to u
-    const halfL = Math.max(...P.map(p => (p.s1 - p.s0) / 2), 107);
-    const margin = 40;
+    const halfL = Math.max(...P.map(p => (p.s1 - p.s0) / 2), isOac ? 22 : 107);
+    const margin = isOac ? 15 : 40;
     const u0 = -halfL - margin, u1 = halfL + margin;
     const vShift = tids.length > 1 ? (Math.min(...Object.values(offs)) + Math.max(...Object.values(offs))) / 2 : 0;
     // spine samples: along the reference track, shifted by vShift to the station middle
@@ -98,7 +104,7 @@ const MetroStations = (() => {
       if (pu0 > pu1) { pu0 = -halfL; pu1 = halfL; }
       return { key: p.code || String(k + 1), gtfs: p.gtfs, track: p.track, sideV, u0: pu0, u1: pu1, t, yRail: stacked ? t.y[mid] : yRail, dataY: p.y, structure: p.structure };
     });
-    return { id: rec.id, spine, tracks, plats, u0, u1, halfL, yRail, spread, stacked, cx: spine[mid].x, cz: spine[mid].z, tx, tz, vShift, ref: ref.track };
+    return { id: rec.id, spine, tracks, plats, u0, u1, halfL, yRail, spread, stacked, cx: spine[mid].x, cz: spine[mid].z, tx, tz, vShift, ref: ref.track, oac: oac.length && main.length ? oac : null, isOac };
   }
   // spine interpolation: world point at (u, v, y) and the frame there
   function spineAt(plan, u, out = {}) {

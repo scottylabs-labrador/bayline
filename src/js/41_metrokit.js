@@ -29,7 +29,7 @@ const MetroKit = (() => {
   //   D: sheen / secondary colour (sRGB, pattern-specific), alpha = interior flag (receives the fake interior lighting)
   const PAT = { none: 0, aluE: 1, aluD: 2, aluDoor: 3, paint: 4, roof: 5, rubber: 6, grille: 7, louver: 8, tread: 9, floor: 10,
     vinyl: 11, fabric: 12, plastic: 13, cast: 14, wheel: 15, coil: 16, lens: 17, led: 18, lcd: 19, decal: 20, topbar: 21, pole: 22,
-    wall: 23, ceil: 24, mask: 25, glow: 26, aluDmu: 27, paintDmu: 28, apmBody: 29, num: 30 };
+    wall: 23, ceil: 24, mask: 25, glow: 26, aluDmu: 27, paintDmu: 28, apmBody: 29, num: 30, lodwin: 31 };
   // emissive light groups (per-car levels in mkLv[8])
   const G = { none: 0, interior: 1, head: 2, tail: 3, marker: 4, bar: 5, doorR: 6, sign: 7, doorL: 8, cab: 9, idoorR: 10, idoorL: 11 };
   const NLV = 12;
@@ -84,6 +84,7 @@ const MetroKit = (() => {
   pal('numK', '#16181b', 0.4, 0, { cc: 0.3, pat: PAT.num, gr: 0.8 });
   pal('camDome', '#101214', 0.05, 0.2, { cc: 1 });
   pal('wiper', '#141517', 0.55, 0.3, { gr: 0.5 });
+  pal('lodWin', '#141b1f', 0.08, 0.1, { cc: 1, pat: PAT.lodwin, eg: G.interior, ew: 0.9, gr: 0.2 });
   pal('glowDummy', '#000000', 1, 0, {});
   // --- interior (inside = receives the fake interior lighting, dimmed sky light)
   const IN = { inside: true };
@@ -91,7 +92,7 @@ const MetroKit = (() => {
   pal('wallInt2', '#d3d3cf', 0.5, 0, { ...IN, pat: PAT.plastic, gr: 0.2 });
   pal('lime', '#b8c43a', 0.5, 0, { ...IN, pat: PAT.plastic, gr: 0.15 });
   pal('ceil', '#e8e8e4', 0.6, 0, { ...IN, pat: PAT.ceil, gr: 0.1 });
-  pal('lightStrip', '#fffdf5', 0.3, 0, { ...IN, eg: G.interior, ew: 1 });
+  pal('lightStrip', '#fffdf5', 0.3, 0, { ...IN, eg: G.interior, ew: 3.2 });
   pal('floor', '#56595d', 0.72, 0, { ...IN, pat: PAT.floor, gr: 0.5 });
   pal('floorDecal', '#e9eaea', 0.6, 0, { ...IN, pat: PAT.floor, gr: 0.4 });
   pal('seatBlue', '#1b679d', 0.42, 0, { ...IN, cc: 0.35, pat: PAT.vinyl, gr: 0.3 });
@@ -224,16 +225,18 @@ const MetroKit = (() => {
       return r;
     }
     // interior light: two long LED strips in the sloped ceiling (|z| = mkLamp.x, y = mkLamp.y, |x| < mkLamp.z) + bounce
+    // two long LED line lights in the ceiling coves (|z| = mkLamp.x, y = mkLamp.y, |x| < mkLamp.z): irradiance from a
+    // line source falls off as 1/d; plus the multi-bounce fill of a white cabin (floor bounce lights the ceiling)
     float mkIntLight(vec3 p, vec3 n) {
       float e = 0.0;
       for (int k = 0; k < 2; k++) {
         vec3 L = vec3(0.0, mkLamp.y, k == 0 ? mkLamp.x : -mkLamp.x) - vec3(0.0, p.y, p.z);
-        float d2 = dot(L, L) + 0.02; L = normalize(L);
+        float d = length(L) + 0.08; L /= d;
         float along = smoothstep(mkLamp.z + 0.8, mkLamp.z - 0.8, abs(p.x));
-        e += max(dot(n, L), 0.0) * along / (0.35 + 1.35 * sqrt(d2));
+        e += max(dot(n, L), 0.0) * along * 0.42 / d;
       }
-      float bounce = 0.22 + 0.12 * clamp(n.y, -1.0, 1.0);
-      return e * 0.55 + bounce;
+      float fill = 0.34 + 0.1 * n.y + 0.2 * max(-n.y, 0.0);
+      return e + fill;
     }
     // height field of a pattern (metres) for bump normals
     float mkHt(vec3 p, float pat) {
@@ -296,9 +299,9 @@ const MetroKit = (() => {
         vec2 q = p.xz * 9.0; vec2 f = fract(q + vec2(floor(q.y) * 0.5, 0.0)) - 0.5;
         float ridge = 1.0 - smoothstep(0.08, 0.22, abs(f.x * 0.6 + f.y * 0.9)); col *= 0.85 + 0.25 * ridge * fade; mkRough -= 0.1 * ridge;
       } else if (mkPat == 10.0) {                                // speckled resilient floor (Marmoleum)
-        float s1 = mkH(floor(p.xz * 150.0)), s2 = mkF(p.xz * 2.3);
-        col *= 0.88 + 0.16 * s2; col = mix(col, vec3(0.62, 0.62, 0.6), step(0.93, s1) * 0.55 * fade);
-        col = mix(col, vec3(0.12), step(s1, 0.05) * 0.5 * fade);
+        float s1 = mkH(floor(p.xz * 190.0)), s2 = mkF(p.xz * 2.3);
+        col *= 0.9 + 0.12 * s2; col = mix(col, vec3(0.5, 0.5, 0.49), step(0.955, s1) * 0.35 * fade);
+        col = mix(col, vec3(0.14), step(s1, 0.04) * 0.35 * fade);
         mkRough -= 0.15 * smoothstep(0.4, 0.9, mkF(p.xz * 0.6 + 5.0));       // scuffed wear path glosses
       } else if (mkPat == 11.0) {                                // vinyl upholstery: grain + stitch lines
         col *= 0.93 + 0.1 * mkV(p.xz * 60.0 + p.y * 40.0) * fade;
@@ -355,6 +358,10 @@ const MetroKit = (() => {
         col *= 1.0 - 0.2 * mkRep(p.x, 1.215, 0.004, fw) * fade;
       } else if (mkPat == 24.0) {                                // ceiling panels
         col *= 1.0 - 0.18 * mkRep(p.x, 0.61, 0.004, fw) * fade;
+      } else if (mkPat == 31.0) {                                // far-LOD window: lit cabin impression (ceiling glow, seat backs)
+        float yy = fract((p.y - 1.89) / 0.95), sb = step(yy, 0.35) * step(0.1, fract(p.x / 0.755 + 0.3));
+        mkEmW *= (0.35 + 0.65 * smoothstep(0.55, 1.0, yy)) * (1.0 - 0.6 * sb);
+        mkEmW *= 0.25 + 0.75 * mkNight;
       } else if (mkPat == 27.0 || mkPat == 29.0) {               // DMU / APM schemes (see 42_metrokit_*.js)
         col *= 0.95 + 0.08 * mkV(vec2(p.x * 1.3, p.y * 60.0)) * fade;
       }
@@ -800,11 +807,24 @@ const MetroKit = (() => {
       this.glass.renderOrder = v ? 2 : 0;
     }
     setLOD(level) {
-      level = level | 0; if (level === this.lod) return; this.lod = level;
+      level = clamp(level | 0, 0, 2); if (level === this.lod) return; this.lod = level;
+      if (level > 0 && !this['lodMesh' + level]) {
+        const d = this.design, b = builders[d.kind], k = 'lod' + level;
+        if (!d[k] && b.lod) d[k] = b.lod(d, level);
+        if (d[k]) { if (!this.matLod) this.matLod = palMaterial('lod', this.S); const m = new THREE.Mesh(d[k], this.matLod); m.name = 'lod' + level; m.castShadow = level === 1; m.receiveShadow = level === 1; this.root.add(m); this['lodMesh' + level] = m; }
+      }
       this.ext.visible = this.glass.visible = level === 0;
-      if (this.lodMesh) this.lodMesh.visible = level === 1;
-      if (level === 1 && !this.lodMesh && this.consist._buildLod) this.consist._buildLod(this);
+      if (this.lodMesh1) this.lodMesh1.visible = level === 1;
+      if (this.lodMesh2) this.lodMesh2.visible = level === 2;
       if (this.int) this.int.visible = this.intVisible && level === 0;
+      if (level === 0 && this.dirty) this._pose();
+    }
+    // bogie yaw from the two bogie-pivot frames (x, y, z, tx, tz), called after posing (TrainKit-style posing)
+    setBogies(F, R) {
+      const yawBody = Math.atan2(-(F.z - R.z), F.x - R.x);
+      const yF = U.wrapAngle(Math.atan2(-(F.tz || 0), F.tx === undefined ? 1 : F.tx) - yawBody), yR = U.wrapAngle(Math.atan2(-(R.tz || 0), R.tx === undefined ? 1 : R.tx) - yawBody);
+      const a = this.flip ? yR : yF, b = this.flip ? yF : yR;
+      if (Math.abs(a - this.yaw[0]) > 1e-5 || Math.abs(b - this.yaw[1]) > 1e-5) { this.yaw[0] = a; this.yaw[1] = b; this.dirty = true; }
     }
   }
   function copyMeta(m) { return JSON.parse(JSON.stringify(m)); }
@@ -881,11 +901,11 @@ const MetroKit = (() => {
       }
     }
     // { line, color, text } or a string. The front and side signs show a line-colour square and the terminal.
-    setDestination(o) {
-      if (typeof o === 'string') o = { text: o };
-      const line = (o.line || '').toLowerCase(), color = o.color || LINE_COLORS[line] || '#ffe400', text = String(o.text || '');
-      const key = color + '|' + text; if (key === this.dest) return; this.dest = key;
-      drawSign(this.signTex, color, text, this._next || '');
+    setDestination(o, color) {
+      if (typeof o === 'string' || o == null) o = { text: o || '', color };
+      const line = (o.line || '').toLowerCase(), col = o.color || LINE_COLORS[line] || '#ffe400', text = String(o.text || '');
+      const key = col + '|' + text; if (key === this.dest) return; this.dest = key;
+      drawSign(this.signTex, col, text, this._next || '');
     }
     setNextStop(text) { text = String(text || ''); if (text === this._next) return; this._next = text; const d = (this.dest || '|').split('|'); drawSign(this.signTex, d[0], d[1], text); }
     // TrainKit-compatible door control: side 'left' | 'right' | 'both' | 'none' (consist frame, +Z = right), t 0..1
@@ -901,6 +921,11 @@ const MetroKit = (() => {
     _emit(type, info) { if (this.onEvent) try { this.onEvent(type, info, this); } catch (e) { console.error(e); } }
     setInteriorVisible(v) { for (const c of this.cars) c.setInteriorVisible(v); }
     setLOD(level) { for (const c of this.cars) c.setLOD(level); }
+    // free the per-consist GPU resources (shared design geometry stays cached)
+    dispose() {
+      for (const c of this.cars) { for (const m of [c.mat, c.matGlass, c.matInt, c.matLod]) if (m) m.dispose(); if (c.skeleton) c.skeleton.dispose(); if (c.group.parent) c.group.parent.remove(c.group); }
+      this.signTex.dispose(); if (this.lcdTex) this.lcdTex.dispose(); this.glassClear.dispose();
+    }
     _lcd() {
       if (!this.lcdTex && K.makeLcdTexture) {
         this.lcdTex = K.makeLcdTexture(); for (const c of this.cars) c.S.mkLcd.value = this.lcdTex;
@@ -932,6 +957,10 @@ const MetroKit = (() => {
     // cab: { speedMph, atcCodeMph (authorized), targetMph (commanded), effort (-1 brake .. 1 power), mode ('ATO' |
     // 'MANUAL'), doors, nextStop, distFt, clock, cars, destination, lineColor, alarm, handle (-1..1) }. Redraws at ~8 Hz max.
     setCab(o = {}) {
+      if (o.codeMph !== undefined && o.atcCodeMph === undefined) o.atcCodeMph = o.codeMph;
+      if (o.notch !== undefined && o.effort === undefined) o.effort = Math.abs(o.notch) > 1 ? clamp(o.notch / 4, -1, 1) : o.notch;
+      if (o.atc !== undefined && o.alarm === undefined) o.alarm = { warn: 'OVERSPEED', brake: 'ATC BRAKE', penalty: 'PENALTY BRAKE' }[o.atc] || '';
+      if (o.color && !o.lineColor) o.lineColor = o.color;
       this._cab = Object.assign(this._cab || {}, o);
       const h = clamp(this._cab.handle !== undefined ? this._cab.handle : (this._cab.effort || 0), -1, 1);
       for (const c of this.cars) if (c.design.boneIdx.handle !== undefined && Math.abs((c.handleA || 0) - h) > 1e-3) { c.handleA = h; c.dirty = true; }
@@ -1024,7 +1053,7 @@ const MetroKit = (() => {
       const [bf, br] = car.bogieOffsets;
       frame(dc + bf, _F); frame(dc + br, _R);
       const bank = ((_F.bank || 0) + (_R.bank || 0)) / 2;
-      poseCar(car, _F, _R, -bank);
+      poseCar(car, _F, _R, bank);
       const yawBody = Math.atan2(-(_F.z - _R.z), _F.x - _R.x);
       const yF = Math.atan2(-_F.tz, _F.tx) - yawBody, yR = Math.atan2(-_R.tz, _R.tx) - yawBody;
       // bogie 0 of the design sits at +X; a flipped car's design +X is at its rear
@@ -1037,6 +1066,7 @@ const MetroKit = (() => {
   K.builders = builders; K.SIGN = SIGN; K.getDesign = getDesign; K.glassMaterial = glassMaterial; K.LINE_COLORS = LINE_COLORS; K.ledText = ledText;
   K.FONT = FONT; K.Consist = Consist; K.Car = Car;
 
-  return { _k: K, setQuality, createConsist, poseCar, poseOnTrack, LINE_COLORS, designs };
+  const createFarBatch = (scene, o) => K.createFarBatch(scene, o);
+  return { _k: K, setQuality, createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroKit = MetroKit;
