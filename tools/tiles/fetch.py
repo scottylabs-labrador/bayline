@@ -73,7 +73,29 @@ def naip(bbox, px, bands='rgb', quality=92):
     # metres, not in degrees), which misregisters every tile by up to ~50 m. Cache dir 'naip_aar0' so old fetches are never reused.
     key = f'{w:.7f}_{s:.7f}_{e:.7f}_{n:.7f}_{px}_{bands}'
     dest = os.path.join(RAW, 'naip_aar0', bands, str(px), key.replace('-', 'm') + '.jpg')
-    return get_cached(url, dest, min_bytes=500, validate=lambda r: r.headers.get('content-type', '').startswith('image/'))
+    return get_cached(url, dest, min_bytes=500, validate=lambda r: r.headers.get('content-type', '').startswith('image/') and
+                      (bands != 'rgb' or _rgb_ok(r.content)))
+
+
+def _rgb_ok(b):
+    """False when the ImageServer dropped a band in some block (magenta / yellow / cyan rectangles under load):
+    get_cached then retries (tools/metro_world/naip_dropouts.py)."""
+    try:
+        import io
+        import numpy as np
+        from PIL import Image
+        im = Image.open(io.BytesIO(b)); im.draft('RGB', (max(64, im.size[0] // 8), max(64, im.size[1] // 8)))
+        a = np.asarray(im.convert('RGB')).astype(np.float32); G = 16; n = a.shape[0] // G
+        if n < 2:
+            return True
+        B = a[:n * G, :n * G].reshape(G, n, G, n, 3)
+        mean = B.mean((1, 3)); hi = np.percentile(B.transpose(0, 2, 1, 3, 4).reshape(G, G, -1, 3), 98, axis=2)
+        bad = ((hi < 6) & (mean.max(2, keepdims=True) > 25)).any()
+        if bad:
+            log('NAIP band dropout in a response, retrying')
+        return not bad
+    except Exception:
+        return True
 
 
 def terrarium(z, x, y):
