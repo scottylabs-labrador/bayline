@@ -155,8 +155,9 @@ const MetroSim = (() => {
       if (j >= back) lim[j - back] = raw[dq[h]];
     }
     // a restriction starts one sample early (the profile is linear in v² between samples, so the head never enters a
-    // lower limit above it)
-    for (let i = n; i > 0; i--) if (lim[i - 1] > lim[i]) lim[i - 1] = lim[i];
+    // lower limit above it). Forward, so a restriction widens by exactly one sample (run backward, the lowered value
+    // cascaded to the start of the run: every run was capped at its lowest restriction)
+    for (let i = 1; i <= n; i++) if (lim[i - 1] > lim[i]) lim[i - 1] = lim[i];
     const vf = new Float32Array(n + 1); vf[0] = 0;
     for (let i = 0; i < n; i++) { const v = vf[i]; const a = tractA(P, v) - resist(P, v); let v2 = Math.sqrt(v * v + 2 * Math.max(0.05, a) * ds);
       if (v2 > v) { const vm = (v + v2) / 2, am = tractA(P, vm) - resist(P, vm); v2 = Math.sqrt(v * v + 2 * Math.max(0.05, am) * ds); }

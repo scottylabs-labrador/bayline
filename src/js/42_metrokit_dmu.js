@@ -127,7 +127,8 @@
   // one big windscreen, white cap below with the blue swoosh wrapping the lower corners, lamp clusters, dark apron.
   function nose(E, G, P, e) {
     const { sectionLoop } = K.fotfProfile, L = sectionLoop(P), n = L.length, A = 7, R = D.NOSE_R, xs = D.NOSE_XC;
-    const rake = y => -0.23 * clamp((y - 1.3) / 2.2, 0, 1) ** 1.3 + 0.05 * clamp((1.3 - y) / 0.7, 0, 1);
+    // the GTW's raked cab: the windscreen leans back ~0.7 m from the waist to the roof, the chin juts a little
+    const rake = y => -0.72 * clamp((y - 1.5) / 2.1, 0, 1) ** 1.15 + 0.06 * clamp((1.3 - y) / 0.7, 0, 1);
     const bulge = z => 0.12 * (1 - (z / 1.2) ** 2);
     const faceX = (y, z) => xs + R + rake(y) + bulge(z);
     const X = x => e * x, Z = z => e * z;                   // (end car B is the mirror image)
@@ -137,7 +138,7 @@
       const a = (j / A) * Math.PI / 2, p = L[i], off = R * (1 - Math.cos(a)), w = 1 - Math.cos(a), y = p.y - p.ny * off, z = p.z - p.nz * off;
       Pp.push([X(xs + R * Math.sin(a) + w * (rake(y) + bulge(z))), y, Z(z)]); Nn.push([e * Math.sin(a), p.ny * Math.cos(a), e * p.nz * Math.cos(a)]);
     }
-    E.gridQuads(Pp, Nn, n, A + 1, (i, j) => (L[i].y > 2.95 && j < 4) ? 'roof' : 'cap');
+    E.gridQuads(Pp, Nn, n, A + 1, (i, j) => (L[i].y > 2.95 && j < 4) ? 'roof' : (L[i].y < 2.0 ? 'paintDmu' : 'cap'));
     const face = L.map(p => [p.z - p.nz * R, p.y - p.ny * R]);
     const fn = (y, z) => { const ex = 1e-3, dy = (faceX(y + ex, z) - faceX(y - ex, z)) / (2 * ex), dz = (faceX(y, z + ex) - faceX(y, z - ex)) / (2 * ex), l = Math.hypot(1, dy, dz); return [e / l, -dy / l, -e * dz / l]; };
     const at = (z, y, off = 0) => { const nn = fn(y, z); return { p: [X(faceX(y, z)) + nn[0] * off, y + nn[1] * off, Z(z) + nn[2] * off], n: nn }; };
@@ -149,21 +150,23 @@
     for (let i = 0; i <= 40; i++) { const z = -1.12 + 2.24 * i / 40; band.push([z, Math.max(2.2, faceTop(z) - 0.14)]); }
     const ws = []; for (let i = 0; i <= 24; i++) { const z = 1.0 - 2.0 * i / 24; ws.push([z, 2.08 + 0.08 * (Math.abs(z) / 1.0) ** 3]); }
     for (let i = 0; i <= 30; i++) { const z = -1.0 + 2.0 * i / 30; ws.push([z, Math.max(2.3, faceTop(z) - 0.27)]); }
-    const lampL = rrect(0.78, 1.18, 1.14, 1.42, 0.08, 4), lampR = rrect(-1.14, 1.18, -0.78, 1.42, 0.08, 4);
-    const faceD = densify(face, 0.12).filter(q => q[1] > 0.92);
-    E.pal('cap'); E.shape(ccw(faceD), [cw(band), cw(lampL), cw(lampR)], (z, y) => at(z, y));
+    const lampL = rrect(0.7, 1.18, 1.16, 1.42, 0.09, 4), lampR = rrect(-1.16, 1.18, -0.7, 1.42, 0.09, 4);
+    const faceD = densify(face, 0.12).filter(q => q[1] > 0.5);
+    E.pal('paintDmu'); E.shape(ccw(faceD), [cw(band), cw(lampL), cw(lampR)], (z, y) => at(z, y));
     E.pal('mask'); E.shape(ccw(band), [cw(ws)], (z, y) => at(z, y, 0.0015));
     G.pal('lensClear'); G.shape(ccw(ws), [], (z, y) => at(z, y, -0.012));
     // lamp clusters: black housings with a white head lamp and a red tail lamp each
     for (const s of [1, -1]) {
-      const zc = s * 0.96, yc = 1.3, c = at(zc, yc, -0.02);
-      E.pal('podBlack'); E.at(mul(tr(c.p[0], yc, c.p[2]), rotY(e > 0 ? 0 : Math.PI)), m => m.box(-0.02, -0.12, -0.18, 0.02, 0.12, 0.18));
-      E.pal(e > 0 ? 'headLamp' : 'headLampB'); E.at(mul(tr(c.p[0], yc, c.p[2] - e * s * 0.07), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.015, 0, 0], [0.03, 0, 0], 0.075, 0.07, 16));
-      E.pal(e > 0 ? 'tailLamp' : 'tailLampB'); E.at(mul(tr(c.p[0], yc, c.p[2] + e * s * 0.1), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.015, 0, 0], [0.03, 0, 0], 0.05, 0.048, 14));
+      // lamp clusters: a rounded black housing with two white head lamps (inboard) and a red tail lamp (outboard)
+      const zc = s * 0.93, yc = 1.3, c = at(zc, yc, -0.02);
+      E.pal('podBlack'); E.at(mul(tr(c.p[0], yc, c.p[2]), rotY(e > 0 ? 0 : Math.PI)), m => K.rbox(m, -0.03, -0.12, -0.225, 0.02, 0.12, 0.225, 0.05, 3));
+      for (const dz of [-0.14, -0.02]) { E.pal(e > 0 ? 'headLamp' : 'headLampB'); E.at(mul(tr(c.p[0], yc, c.p[2] + e * s * dz), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.012, 0, 0], [0.03, 0, 0], 0.062, 0.058, 16)); }
+      E.pal(e > 0 ? 'tailLamp' : 'tailLampB'); E.at(mul(tr(c.p[0], yc, c.p[2] + e * s * 0.13), rotY(e > 0 ? 0 : Math.PI)), m => m.cyl([0.012, 0, 0], [0.03, 0, 0], 0.048, 0.045, 14));
     }
     // dark apron under the face, anticlimbers, Scharfenberg coupler, destination sign behind the windscreen (in glass shader)
-    E.pal('frame'); E.box(Math.min(X(xs), X(xs + R + 0.1)), 0.3, -1.35, Math.max(X(xs), X(xs + R + 0.1)), 0.93, 1.35);
-    E.pal('bumper'); for (const s of [1, -1]) E.box(Math.min(X(xs + R + 0.1), X(xs + R + 0.28)), 0.62, s * 0.8 - 0.28, Math.max(X(xs + R + 0.1), X(xs + R + 0.28)), 0.9, s * 0.8 + 0.28);
+    // below the face: a black valance with the coupler pocket, slim anticlimber plates either side of it
+    E.pal('frame'); E.box(Math.min(X(xs), X(xs + R + 0.12)), 0.3, -1.3, Math.max(X(xs), X(xs + R + 0.12)), 0.52, 1.3);
+    E.pal('bumper'); for (const s of [1, -1]) K.rbox(E, Math.min(X(xs + R + 0.1), X(xs + R + 0.2)), 0.5, Math.min(s * 0.42, s * 0.95), Math.max(X(xs + R + 0.1), X(xs + R + 0.2)), 0.64, Math.max(s * 0.42, s * 0.95), 0.02, 2);
     E.pal('coupler'); E.cyl([X(xs + 0.2), 0.62, 0], [X(D.HL - 0.1), 0.62, 0], 0.06, 0.06, 10); E.box(Math.min(X(D.HL - 0.14), X(D.HL)), 0.48, -0.16, Math.max(X(D.HL - 0.14), X(D.HL)), 0.76, 0.16);
     E.pal('topBar'); { const c = at(0, faceTop(0) - 0.07, 0.01); E.box(c.p[0] - 0.02, c.p[1] - 0.03, -0.3, c.p[0] + 0.02, c.p[1] + 0.03, 0.3); }
   }
@@ -245,6 +248,22 @@
     return { geo: E.geometry(), glass: G.geometry(), tris: E.I.length / 3 };
   }
 
+  // interior impression (see 42_metrokit_fotf.js for the fields): facing bays, the sloped cove, the LED strips,
+  // the far wall's windows and doors, door poles, standing spots in the door vestibules
+  function dmuImap() {
+    const rows = [], win = [], stand = [], poles = [];
+    for (const e of [1, -1]) {
+      for (const [a, bb] of [[e * 3.3, e * 5.2], [e * 8.0, e * 15.6]]) { const la = Math.min(a, bb), lb = Math.max(a, bb), nb = Math.floor((lb - la) / 1.75);
+        for (let i = 0; i < nb; i++) { const xb = la + 0.1 + i * 1.75;
+          for (const s of [1, -1]) { const zr = s > 0 ? [0.42, 1.34] : [-1.34, -0.42]; rows.push([xb + 0.05, zr[0], zr[1], 1], [xb + 1.57, zr[0], zr[1], i === 0 ? -2 : -1]); } } }
+      for (const xc of D.WINS) win.push([e * xc - 0.66, e * xc + 0.66, D.WIN_Y0 + 0.04, D.WIN_Y1 - 0.04]);
+      for (const s of [1, -1]) for (const k of [-1, 1]) poles.push([e * D.DOOR + k * 0.75, s * 0.95, 0.017, 2.95]);
+      for (const [dx, z] of [[-0.3, 0.45], [0.35, -0.5], [0.1, 0.0], [-0.45, -0.2]]) stand.push([e * D.DOOR + dx, z]);
+    }
+    return { rows: rows.slice(0, 40), sec: [[1.36, 2.45], [1.1, 2.95], [0, 3.0]], band: [0.49, 0.61, 0, 0], win: win.slice(0, 16),
+      doors: [[D.DOOR, D.PORTAL, D.LEAF_Y1, 0], [-D.DOOR, D.PORTAL, D.LEAF_Y1, 0]], doorWin: [0.06, 0.58, 1.3, 2.35], poles, rail: [0, 0, 0, 0], panels: [], standAll: stand, cab: null };
+  }
+
   // ------------------------------------------------------------------------------------------ registration
   K.builders.dmu = function (type, q) {
     const b = build(type, q), hb = D.WB / 2;
@@ -269,9 +288,9 @@
       artic: { joints: [D.JOINT, -D.JOINT], mid: 0, pivots: [D.BOG_A, -D.BOG_A] },
       leaves, wipers: [], plugOut: 0.03, slide: 0.66,
       meta: { bogieOffsets: [D.BOG_A, -D.BOG_A], doors, floorRegions, ramps: [], gangways: { front: null, rear: null }, seats, cabEye: [D.CAB_BACK + 0.9, D.FLOOR + 1.9, 0.55] },
-      rows: [], halfW: 1.36, floorY: D.FLOOR, ceilY: 3.0, cabBox: new THREE.Vector4(-D.CAB_BACK, D.CAB_BACK, 1, 0),
+      imap: dmuImap(), lamp: [0.55, 2.995, 17.6], halfW: 1.36, floorY: D.FLOOR, ceilY: 3.0, cabBox: new THREE.Vector4(-D.CAB_BACK, D.CAB_BACK, 1, 0),
       signs: [{ a: [0, D.NOSE_XC + 0.08, -0.95, -0.35], b: [2.84, 2.96, -1] }, { a: [0, -(D.NOSE_XC + 0.08), 0.35, 0.95], b: [2.84, 2.96, 1] }],
-      lamps: [1, -1].flatMap(e => [1, -1].flatMap(s => [{ p: [e * (D.NOSE_XC + 0.62), 1.3, e * s * 0.89], kind: e > 0 ? 'head' : 'headB' }, { p: [e * (D.NOSE_XC + 0.62), 1.3, e * s * 1.06], kind: e > 0 ? 'tail' : 'tailB' }])),
+      lamps: [1, -1].flatMap(e => [1, -1].flatMap(s => [{ p: [e * (D.NOSE_XC + 0.44), 1.3, e * s * 0.85], kind: e > 0 ? 'head' : 'headB' }, { p: [e * (D.NOSE_XC + 0.42), 1.3, e * s * 1.06], kind: e > 0 ? 'tail' : 'tailB' }])),
     };
   };
   K.builders.dmu.interior = (d, q) => interior(d, q);
