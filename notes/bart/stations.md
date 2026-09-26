@@ -5,6 +5,36 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## Status (2026-09-26 06:45 EDT) — M2b re-verified (STATIONS M2b OK), M3 gate items under way
+
+- **M2b (`#metrodir=metro-next/`) re-verified**: all 51 stations + `COLS~OAC` build (audit: same flags as M2, all
+  known: SHAY/FRMT/PITT/MCAR low decks, GLEN/NBRK/SSAN `ends` access, COLM "trench" at street level); every side
+  platform now lies outside its track (M2's inverted sides are gone: FTVL SANL HAYW SHAY UCTY WCRK PHIL WOAK PLZA DELN
+  MLPT and SFO's Y10-2), Daly City's M90-1 centre / M90-3 west faces, Berryessa and Antioch departure faces, the
+  11.1 m islands at ASHB DBRK NBRK GLEN (full escalator banks again), Milpitas +6.6 m, West Dublin +1.8 m, PITT-T's
+  226 m transfer island (one walking surface) and Antioch's island all build and look right (overview + platform
+  views of the 25 stations M2b touched). New check `tools/metro_plat_check.js` (every platform's body against every
+  track, storage and pocket tracks included): clean on M2b.
+- **Platform faces never stand over another track** (new guard in `StationTypes.setup`, reported in
+  `info.guard`): the data puts Millbrae's platform 3 (`W40-3`, "right" of W3) over storage track W-yd5, 4.4 m away,
+  and San Bruno's "island" between tracks 5.0 m apart (both M2 and M2b). A face whose side is blocked moves to the
+  other side of its track if that is clear, else narrows. Millbrae's platform 3 now faces **west, the Caltrain side**
+  (the real cross-platform: BART platform 3 and Caltrain platform 4 share one island, one elevator serves both);
+  San Bruno is two outside side platforms until DATA spreads its tracks (see To DATA / To SIM).
+- **Market St entrances (lead bug 1)**: the stair tops out on the paved surface round it (Towns' sidewalk or plaza
+  lift over the base ground, `surfLift`), the collar follows that surface with a curb face where it stands proud and
+  paves over narrow ways (the dark strip with a centre line into Montgomery's stair was a narrow OSM way; it is paved
+  over for 6 m before the mouth and its traffic lane is cut at the opening: road pad 0.3 m for `entrance` zones).
+  Checked at MONT (3 entrances), POWL, CIVC, EMBR.
+- **No more Towns.dispose() (lead)**: once the stations near the camera have footprints, their rects are re-placed
+  with WORLD's `Towns.refresh(rects)` (background rebuild, old meshes stay until the swap) and `Flora.adjust(rects,
+  null)` (+ a Flora drop filter); `dispose()` is only a fallback for older modules. `MetroStations.worldRefresh`
+  shows what ran.
+- **Known, being fixed next (pre-existing on M2 as well)**: San Bruno and Milpitas platforms can render black
+  (their tracks are `cutcover` under an un-carved ground, so Under's fail-safe culls the outdoors while the station is
+  an outdoor object), and Balboa Park's platform sees the terrain inside its trench. Fix under way: trench stations
+  open the ground over their trench (Under cut + floor + headwalls), covered parts as cells.
+
 ## Status (2026-09-26 04:42 EDT) — M1 done, keep-out zones done, M2 profile re-verified, M2 under way
 
 - **M2 profile (data promoted 03:30): every station re-verified and fixed** (`tools/metro_station_audit.js` builds
@@ -44,6 +74,13 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   over the main entrance so its walkway leaves square to the line. Walk floors/walls follow (checked with `floorAt`
   along a WDUB landing); walkway supports stand clear of the streets; keep-out kinds `bridge`/`column`/`landing`.
 - **Per-vehicle platforms**: eBART (Antioch DMU) and airport people-mover faces use TRAINS' floor heights and widths.
+- **Coliseum's airport-connector station** is built (it was left out of COLS): a separate record `COLS~OAC` beside the
+  BART station (the Oakland Airport design: white capsule roof, lobby under, **platform screen doors** on both
+  connector stations). `spawnPoint('COLS', '3' | its GTFS id)`, `setBoard('COLS', '3', …)` and `limits('COLS')`
+  route to it (limits now include the connector track H1.1).
+- **Market Street entrance canopies** (EMBR, MONT, POWL, CIVC; the 2018–27 design): thin flat white roof on slender
+  stainless posts over the head of each stair, glass sides, a roll-down gate housing over the mouth, a stainless
+  pylon with the station name and an amber live-display strip, a light under the roof (`CFG.canopyEnt`).
 
 - **Keep-out zones (lead request, 02:10)**: every station's ground-level footprint is a keep-out zone for Towns
   buildings and infill houses, trees, grass, parked cars and moving traffic (API and hooks below). Verified at WOAK,
@@ -115,7 +152,7 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   | lamp | 1 | 2 | 2 | 0.5 | 1.5 | 1 | 0.8 |
   | grass | -1 | 0.3 | 0.3 | 0 | 0.3 | -1 | 0.3 |
   | car (parked) | -1 | 2 | 2.5 | 1 | 1.2 | -1 | 1.2 |
-  | road (traffic) | -1 | 0.5 | 0.5 | -1 | 0.8 | -1 | -1 |
+  | road (traffic) | -1 | 0.5 | 0.5 | -1 | 0.8 | -1 | 0.3 |
 
 - **Consumer hooks in shared files** (each one or two lines, all behind `MetroStations.enabled`, so the default path is
   untouched; lead: please review at the next integration):
@@ -126,23 +163,27 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
     curbside and parking-lot cars are skipped inside `'car'` zones.
   - `61_flora.js` `loadTile`: trees skipped inside `'tree'` zones (only for tiles `keepOutAny` says can be touched).
   - `63_ground.js` `rasterRoads`: `'grass'` zones rasterised into the no-grass grid.
-  - When the stations become known, whatever was placed before is placed again (`Towns.dispose`, `Flora.dispose`, a
-    traffic re-stream) unless MetroGround is about to do the same.
+  - When the stations near the camera have their footprints, whatever was placed there before is placed again:
+    `Towns.refresh(rects)` and `Flora.adjust(rects, null)` (WORLD, ebd8fba), a traffic re-stream; `dispose()` only
+    when those are missing.
 - QA: `tools/metro_keepout_map.js` (plan map; run with `metro_shots.mjs`, `{ "name", "evalFile":
   "tools/metro_keepout_map.js", "args": { "id": "WOAK", "r": 170 } }`), `shot(id, { lobby: -22, gh: 1.7 })` (camera
   measured from the lobby's entrance end, at street level), `{ "name", "wait": 25000 }` + `--hash "mst=WOAK"` (the
   page's own camera, e.g. the lead's link).
 
-## Costs (measured, High, 1600x900, GPU shared with other workstreams' Chromes, so indicative)
+## Costs (measured 2026-09-26 05:30, High, 1600x900; draw calls and triangles are exact, the GPU times are not: six
+## workstreams' headless Chromes share the GPU, frames swing 45–270 ms)
 
-| view | +draw calls | +triangles | GPU with / without |
-|---|---|---|---|
-| Montgomery platform (crowd) | +40 | +0.72 M (incl. people) | +21 % |
-| Bay Fair platform | +24 | +0.10 M | +3 % |
-| West Oakland platform | +26 | +0.16 M | +24 % |
-| Bay Fair from 120 m | +24 | +0.06 M | noisy (to re-measure) |
+| view | +draw calls | +triangles (incl. crowd) |
+|---|---|---|
+| Montgomery platform, AM peak crowd | +30 | +0.70 M |
+| 12th St lower level (stacked) | +32 | +0.27 M |
+| West Oakland street, lobby | +27 | +0.20 M |
+| Bay Fair from 120 m | +27 | +0.09 M |
+| West Dublin from the air (footbridge, walkways) | +25 | +0.08 M |
 
-Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-station budgets checked at every hero.
+Builds: 0.4–1.5 s of time-sliced jobs per station (<= 3 ms a frame); all 51 footprints and ground pads at network
+load: ~230 ms once. Keep-out queries ~0.25 µs. Next: far LOD silhouettes for aerial stations, shadow-caster trims.
 
 ## Requests
 
@@ -165,7 +206,20 @@ Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-stati
 3. Daly City: two long thin OSM polygons beside the deck (bus-bay canopies?) are drawn as solid ~3 m boxes; if they are
    canopies, your MetroGround canopy rule may want them (they are outside my deck footprint, so I keep them).
 
-### To DATA — M2 re-verification, 2026-09-26 04:40
+### To DATA — M2b, 2026-09-26 06:45
+
+- **Millbrae `W40-3` side**: "right" of W3 puts the face over storage track W-yd5 (4.4 m east). Research (BART:
+  "Platform 3 elevator … use the Caltrain Platform 4/Northbound elevator"; the 1999 section drawing) says platform 3
+  is the west face, shared with Caltrain northbound: please make it `left` (I already build it there; SIM opens doors
+  from your side field). Your side audit may skip yard tracks: this one is a yard track.
+- **San Bruno**: please spread W1/M2 to 11.1 m along the platform like ASHB/DBRK/NBRK/GLEN (the pocket-track
+  turnouts can move with them). Until then the guard builds two outside side platforms (no platform over a track).
+- **Trench stations on `cutcover` track**: SBRN (all cutcover), MLPT (cutcover/portal/trench mix), BALB (cutcover in
+  the middle, trench/portal at the ends): the research says open cut at the ends (SBRN, BALB) and an open U-trench
+  under a building (MLPT). I open the ground over my trench myself; if the structure codes can say `trench` where it
+  is open to the sky, MetroGround and INFRA will agree with the stations.
+
+### To DATA — M2 re-verification, 2026-09-26 04:40 (M2b: island widths done, except San Bruno)
 
 - **Island widths**: with M2 track spacing some subway islands are too narrow for their escalators: GLEN 4.18 m,
   DBRK 4.39, NBRK 3.40, 24TH 5.83, 16TH 6.77 (and ASHB comes out as two 5.2 m side platforms). Real BART subway
@@ -299,6 +353,12 @@ when a station builds (≤ 1.5 km) and removed with `Under.remove` when it is dr
   design notes), 25 mm below your assumed 0.635 m sill; I use your 0.635 (a 25 mm step up is within the ADA
   tolerance), tell me if you move the sill. No research value for the people mover's floor (Oakland Airport has
   platform screen doors, so the station is built to your 0.36).
+
+### To SIM — M2b, 2026-09-26 06:45
+
+- Millbrae: the platform is now west of W3 (data says right; asked DATA to fix): doors at MLBR should open on the
+  left of W3 once DATA changes the side field. San Bruno: two outside side platforms until DATA spreads the tracks
+  (data sides still point inward).
 
 ### To SIM
 

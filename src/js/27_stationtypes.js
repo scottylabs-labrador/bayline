@@ -44,7 +44,7 @@ const StationTypes = (() => {
     COLM: '1990s', SSAN: '2000s', SBRN: '2000s', SFIA: '2000s', MLBR: '2000s', WOAK: '1970s', '12TH': '1970s', '19TH': '1970s', MCAR: '1970s', ASHB: '1970s', DBRK: '1970s',
     NBRK: '1970s', PLZA: '1970s', DELN: '1970s', RICH: '1970s', ROCK: '1970s', ORIN: '1970s', LAFY: '1970s', WCRK: '1970s', PHIL: '1970s', CONC: '1970s', NCON: '1990s',
     PITT: '1990s', PCTR: '2010s', ANTC: '2010s', LAKE: '1970s', FTVL: '1970s', COLS: '1970s', SANL: '1970s', BAYF: '1970s', HAYW: '1970s', SHAY: '1970s', UCTY: '1970s',
-    FRMT: '1970s', WARM: '2010s', MLPT: '2020s', BERY: '2020s', CAST: '1990s', WDUB: '2010s', DUBL: '1990s', OAKL: '2010s' };
+    FRMT: '1970s', WARM: '2010s', MLPT: '2020s', BERY: '2020s', CAST: '1990s', WDUB: '2010s', DUBL: '1990s', OAKL: '2010s', 'COLS~OAC': '2010s' };
   function styleFor(st) {
     const era = ERA[st.id] || '1970s'; const under = st.type === 'subway';
     let S;
@@ -116,6 +116,11 @@ const StationTypes = (() => {
         p.sideV = (H.layout === 'side' ? -1 : 1) * Math.sign(dv);
       }
     }
+    // a face never stands over another track: where the data put a platform on the side of a storage or pocket track
+    // (Millbrae's platform 3 would face its storage track 4.4 m away; San Bruno's "island" lies between tracks 5 m
+    // apart) the face goes to the other side of its track when that side is clear, else it narrows to what fits
+    // (plan.guard lists what moved)
+    guardFaces(plan, tv, C);
     const faces = plan.plats.map(p => ({ p, e: (u) => tv(p.t, u) + p.sideV * (p.edge || EDGE) }));
     const plats = []; const used = new Set();
     for (let i = 0; i < faces.length; i++) {
@@ -141,7 +146,7 @@ const StationTypes = (() => {
         const yA = A.p.yRail + (A.p.ph || PH), yB = B.p.yRail + (B.p.ph || PH);
         plats.push({ kind: 'island', u0, u1, eL: Lf.e, eR: Rf.e, y: (yA + yB) / 2, ph: ((A.p.ph || PH) + (B.p.ph || PH)) / 2, keys: [Lf.p.key, Rf.p.key], faces: [Lf, Rf], tracks: [Lf.p.t, Rf.p.t], holes: [] });
       } else {
-        used.add(i); const w = under ? 5.2 : 6.5;
+        used.add(i); const w = Math.min(under ? 5.2 : 6.5, A.p.maxW || 99);
         const e = A.e; const sv = A.p.sideV;
         plats.push({ kind: 'side', u0: A.p.u0, u1: A.p.u1, eL: sv > 0 ? e : (u) => e(u) - w, eR: sv > 0 ? (u) => e(u) + w : e, y: A.p.yRail + (A.p.ph || PH), ph: A.p.ph || PH, keys: [A.p.key], faces: [A], sideV: sv, tracks: [A.p.t], holes: [] });
       }
@@ -191,28 +196,114 @@ const StationTypes = (() => {
       allT, under, C, street, groundC, groundSide, esc: [], cells: [], portals: [], cuts: [], occupied: [], ceilY: yT + (S.ceilH || 4.6) };
     // streets under the station (the build hands them over from Towns): lobbies and bents keep clear of them
     T.roads = st.roads ? roadsUV(T, st.roads) : [];
+    T.bridgeRoads = st.roads ? roadsUV(T, st.roads, true) : [];            // (Towns draws these on their own decks)
+    T.areas = (st.areas || []).map(a => { const P = a.pts; let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+      for (let i = 0; i < P.length; i += 2) { x0 = Math.min(x0, P[i]); x1 = Math.max(x1, P[i]); z0 = Math.min(z0, P[i + 1]); z1 = Math.max(z1, P[i + 1]); }
+      return { P, x0, z0, x1, z1, lift: 0.11 + 0.07 * (1 - Math.min(1, Math.max(x1 - x0, z1 - z0) / 400)) + (a.kind === 3 || a.kind === 4 ? 0.02 : 0) }; });
     // ---------------------------------------------------------------- circulation plan (before any slab is built)
     planCirculation(T);
     groundPlan(T);
+    if (T.effType === 'trench') trenchPlan(T);
     return T;
+  }
+  // ------------------------------------------------------------------------------------------------ trench stations
+  // A trench station stands in its own cut between retaining walls, over a ballast floor. Its open stretches are Under
+  // cuts (the ground and Towns' ground above the floor go; the base the towns stand on keeps its streets). Covered
+  // stretches are Under cells under a soffit at street level (the ground over them stays: streets, the headhouse's
+  // plaza), with portals to the daylight at both ends: where the data's structure is cut-and-cover inside an otherwise
+  // open station (Balboa Park under Geneva Ave and the headhouse, Milpitas under its building), the middle half of a
+  // station that is covered all along (San Bruno: "roof cut away toward the platform ends"), and every street crossing
+  // (a Towns bridge brings its own deck and stays uncut). Where the track runs on covered beyond the station, a
+  // headwall closes the cut above the tunnel mouth. With cells the station is no longer an outdoor object: it stays
+  // drawn under its covers. (M2: San Bruno and Milpitas rendered black: the ground over their "cutcover" track was never
+  // opened, so Under's fail-safe took the platform for a buried tunnel and culled the station with the outdoors.)
+  const COVERED = { cutcover: 1, bored: 1, tube: 1 };
+  function trenchPlan(T) {
+    const { edgeV, boxU0, boxU1, plan, C } = T;
+    const vl = (u) => edgeV(u, -1) - 0.5, vr = (u) => edgeV(u, 1) + 0.5;            // the walls' inner faces
+    const U0 = plan.spine[0].u, n = plan.spine.length;
+    const structAt = (u) => plan.spine[Math.max(0, Math.min(n - 1, Math.round((u - U0) / C.DU)))].structure;
+    const lids = [];
+    // covered stretches (runs of cut-and-cover inside the box), or the middle half of an all-covered station
+    let anyOpen = false, cur = null; const runs = [];
+    for (let u = boxU0; u <= boxU1 + 1e-6; u += 3) { const c = !!COVERED[structAt(u)]; if (!c) anyOpen = true;
+      if (c) { if (!cur) runs.push(cur = [u, u]); else cur[1] = u; } else cur = null; }
+    if (!anyOpen) { runs.length = 0; runs.push([T.uc - T.Lp / 4, T.uc + T.Lp / 4]); }
+    for (const r of runs) if (r[1] - r[0] >= 12) lids.push({ u0: r[0], u1: r[1], kind: 'cover' });
+    // street crossings: a deck under each street (Towns' bridges are decks already: no lid, no cut)
+    const cross = (roads, kind) => { for (const r of roads) { const L = Math.hypot(r.u1 - r.u0, r.v1 - r.v0), m = Math.max(1, Math.ceil(L)); let a = 1e9, b = -1e9;
+      for (let k = 0; k <= m; k++) { const t = k / m, u = r.u0 + (r.u1 - r.u0) * t, v = r.v0 + (r.v1 - r.v0) * t;
+        if (u < boxU0 - r.hw || u > boxU1 + r.hw) continue; if (v > vl(u) - r.hw && v < vr(u) + r.hw) { a = Math.min(a, u); b = Math.max(b, u); } }
+      if (b >= a) { const e = r.hw / Math.max(0.3, Math.abs(r.v1 - r.v0) / (L || 1)) + 1.5; lids.push({ u0: a - e, u1: b + e, kind }); } } };
+    cross(T.roads || [], 'street'); cross(T.bridgeRoads || [], 'bridge');
+    // a footbridge at street level is the lid over its own stretch
+    if (T.mode === 'bridge' && T.ub0 !== undefined && Math.abs(T.yCF - T.street) < 1) for (const L of lids) if (L.kind === 'cover') {
+      if (T.ub0 <= L.u0 && T.ub1 >= L.u1) L.u1 = L.u0; else if (T.ub0 > L.u0 && T.ub1 < L.u1) lids.push({ u0: T.ub1, u1: L.u1, kind: 'cover' }), L.u1 = T.ub0;
+      else if (T.ub0 <= L.u0) L.u0 = Math.max(L.u0, T.ub1); else L.u1 = Math.min(L.u1, T.ub0); }
+    const keep = lids.map(L => ({ ...L, u0: Math.max(boxU0, L.u0), u1: Math.min(boxU1, L.u1) })).filter(L => L.u1 - L.u0 > 2).sort((a, b) => a.u0 - b.u0);
+    // merged stretches the cut leaves alone (lids and Towns bridges)
+    const closed = []; for (const L of keep) { const c = closed[closed.length - 1]; if (c && L.u0 <= c[1] + 0.5) c[1] = Math.max(c[1], L.u1); else closed.push([L.u0, L.u1]); }
+    const open = []; let u = boxU0; for (const [a, b] of closed) { if (a - u > 1) open.push([u, a]); u = Math.max(u, b); } if (boxU1 - u > 1) open.push([u, boxU1]);
+    const yTB = T.yRail - 0.6;
+    T.trench = { vl, vr, yTB, lids: keep, open, below: yTB - 0.15,
+      heads: { lo: !!COVERED[structAt(boxU0 - 6)], hi: !!COVERED[structAt(boxU1 + 6)] } };
+  }
+  // the nearest other track centre on side sv of platform p's track over its length (same level: rail within 3 m)
+  function nbrDist(plan, p, sv, tv, C) {
+    const U0 = plan.spine[0].u; let d = 1e9;
+    for (let u = p.u0 + 4; u <= p.u1 - 4; u += 8) {
+      const i = Math.max(0, Math.min(plan.spine.length - 1, Math.round((u - U0) / C.DU))), tp = tv(p.t, u);
+      for (const t of plan.tracks) { if (t === p.t || Math.abs(t.y[i] - p.t.y[i]) > 3) continue; const dv = (tv(t, u) - tp) * sv; if (dv > 0.5) d = Math.min(d, dv); }
+      for (const o of plan.others || []) { const v = o.v[i]; if (!(v === v) || Math.abs(o.y[i] - p.t.y[i]) > 3) continue; const dv = (v - tp) * sv; if (dv > 0.5) d = Math.min(d, dv); }
+    }
+    return d;
+  }
+  function guardFaces(plan, tv, C) {
+    if (plan.guarded) return; plan.guarded = true; plan.guard = [];
+    for (const p of plan.plats) {
+      const e = p.edge || EDGE, env = 1.676 + 0.15, need = e + 2.5 + env;        // edge + the least platform + a train
+      const dS = nbrDist(plan, p, p.sideV, tv, C); if (dS >= need) { if (dS < e + 6.5 + env) p.maxW = dS - e - env; continue; }
+      const dO = nbrDist(plan, p, -p.sideV, tv, C);
+      if (dO >= need) { p.sideV = -p.sideV; p.flipped = true; if (dO < e + 6.5 + env) p.maxW = dO - e - env; plan.guard.push(`${p.gtfs || p.key}: to the other side of ${p.t.id} (a track ${dS.toFixed(1)} m away)`); }
+      else { p.maxW = Math.max(1.2, dS - e - env); plan.guard.push(`${p.gtfs || p.key}: narrowed to ${p.maxW.toFixed(1)} m`); }
+    }
   }
   // world roads ({ pts: [x, y, z, ...], width, lanes, bridge }) -> segments in station coordinates near the spine,
   // { u0, v0, u1, v1, hw } (hw: half the carriageway)
-  function roadsUV(T, roads) {
+  function roadsUV(T, roads, bridges = false) {
     const out = [];
     for (const rd of roads) {
-      if (rd.bridge) continue;
-      const P = rd.pts, n = P.length / 3; const hw = (rd.width || Math.max(1, rd.lanes || 2) * 3.4) / 2;
+      if (!!rd.bridge !== bridges) continue;
+      const P = rd.pts, n = P.length / 3; const hw = (rd.width || Math.max(1, rd.lanes || 2) * 3.4) / 2, c = rd.cls ?? 8;
+      // (Towns' urban streets carry curbs and sidewalks: `walk` m wide, 0.15 over a carriageway lifted `lift` over the ground)
+      const walk = rd.urban && c >= 4 && c <= 12 && c !== 5 && c !== 7 && c !== 9 ? (c <= 8 ? 3.8 : 3.4) : 0, lift = TOWNS_LIFT[Math.min(c, 14)];
       let prev = null;
       for (let i = 0; i < n; i++) {
         const uv = toUV(T, P[i * 3] - T.OX, P[i * 3 + 2] - T.OZ);
         if (prev && uv && (Math.abs(prev[1]) < 80 || Math.abs(uv[1]) < 80) && Math.max(prev[0], uv[0]) > T.boxU0 - 40 && Math.min(prev[0], uv[0]) < T.boxU1 + 40)
-          out.push({ u0: prev[0], v0: prev[1], u1: uv[0], v1: uv[1], hw });
+          out.push({ u0: prev[0], v0: prev[1], u1: uv[0], v1: uv[1], hw, walk, lift });
         prev = uv;
       }
     }
     return out;
   }
+  const TOWNS_LIFT = [0.40, 0.36, 0.38, 0.35, 0.33, 0.31, 0.30, 0.29, 0.28, 0.27, 0.25, 0.24, 0.24, 0.22, 0.23];   // = Towns' LIFT
+  // the Towns surface over the base ground at (u, v): a street's sidewalk (curb 0.15-0.16 over the carriageway), a lot or
+  // plaza polygon (0.11-0.2), or nothing (0: bare ground)
+  function surfLift(T, u, v) {
+    let best = 0;
+    for (const r of T.roads || []) { if (!r.walk) continue; const d = segDist(r, u, v); if (d > r.hw - 0.2 && d < r.hw + r.walk + 0.3) best = Math.max(best, r.lift + 0.16); }
+    if (best > 0 || !T.areas || !T.areas.length) return best;
+    const [x, z] = T.WUV(u, v);
+    for (const a of T.areas) { if (x < a.x0 || x > a.x1 || z < a.z0 || z > a.z1 || a.lift <= best) continue; const P = a.P; let c = false;
+      for (let i = 0, n = P.length / 2, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; }
+      if (c) best = a.lift; }
+    return best;
+  }
+  // an entrance's collar lies on the highest paved surface round its opening (sidewalk, plaza) 3 cm proud, following
+  // the base ground at that lift (Towns builds on it), never under the drawn ground
+  function headLift(T, pts) { let s = 0; for (const [u, v] of pts) s = Math.max(s, surfLift(T, u, v)); return s > 0 ? s + 0.03 : 0.035; }
+  function surfY(T, u, v, lift) { const [x, z] = T.WUV(u, v); return Math.max(Terrain.hBase(x, z) + lift, Terrain.h(x, z) + 0.035); }
   // distance from (u, v) to a road segment's centreline
   function segDist(r, u, v) { const du = r.u1 - r.u0, dv = r.v1 - r.v0; const L2 = du * du + dv * dv || 1; const t = U.clamp(((u - r.u0) * du + (v - r.v0) * dv) / L2, 0, 1); return Math.hypot(r.u0 + du * t - u, r.v0 + dv * t - v); }
   const roadAt = (T, u, v, clear) => T.roads.some(r => segDist(r, u, v) < r.hw + clear);
@@ -244,6 +335,7 @@ const StationTypes = (() => {
     yield;
 
     // ---------------------------------------------------------------- platforms (sweeps with per-face materials, openings)
+    st._phase = 'platforms';
     const covered = (u) => under ? 0 : (u > pu0 + 8 && u < pu1 - 8 ? 0.45 : 1);     // sky under the canopy (aerial/surface)
     for (const p of plats) {
       const yP = p.y, yLip = yP - LIP, yTB = yP - p.ph - 0.6;
@@ -280,6 +372,7 @@ const StationTypes = (() => {
         if (dir > 0) g.quad([pa[0], yb, pa[1]], [pb[0], yb, pb[1]], [pb[0], yP, pb[1]], [pa[0], yP, pa[1]], [a, yb, b, yb, b, yP, a, yP]);
         else g.quad([pb[0], yb, pb[1]], [pa[0], yb, pa[1]], [pa[0], yP, pa[1]], [pb[0], yP, pb[1]], [b, yb, a, yb, a, yP, b, yP]);
       }
+      yield;
       // walk: floor strips (minus the openings) + edge walls
       for (let i = 0; i + 1 < fr.length; i++) {
         const f0 = fr[i], f1 = fr[i + 1]; const um = (f0.u + f1.u) / 2; const inside = holeAt(f1.u);
@@ -304,6 +397,7 @@ const StationTypes = (() => {
     }
 
     // ---------------------------------------------------------------- trackways
+    st._phase = 'trackways';
     for (const t of allT) {
       const fr = frames(boxU0, boxU1);
       const mTB = M(S.trackbed), mPl = M([0x8f8b84, K.CONCRETE, 0]), mTr = M([0x4a4845, K.CONCRETE, 0]);
@@ -317,6 +411,7 @@ const StationTypes = (() => {
     }
 
     // ---------------------------------------------------------------- structure by archetype
+    st._phase = 'structure';
     if (under) yield* subwayBox(T);
     else if (T.elevated) yield* aerialDeck(T);
     else yield* atGrade(T, T.effType);
@@ -325,18 +420,22 @@ const StationTypes = (() => {
     if (under && H.cols) yield* platformColumns(T);
     yield;
     // ---------------------------------------------------------------- circulation, concourse, entrances
+    st._phase = 'circulation';
     yield* buildCirculation(T);
     // ---------------------------------------------------------------- platform furniture, signs, boards
+    st._phase = 'furnish';
     yield* furnish(T);
 
     // ---------------------------------------------------------------- finalise: meshes per zone
+    st._phase = 'finalize';
     const env = under ? interiorEnv(C.renderer) : null;
+    yield;
     const res = { root, near, walk, cells: T.cells, portals: T.portals, cuts: T.cuts, boards: [], limits: [boxU0, boxU1], zones: {}, update: null, footprint: footprintT(T),
-      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated,
+      info: { mode: T.mode, yT, yRail, yCF: T.yCF, yCC: T.yCC, ceilY: T.ceilY, rise: T.rise, street, cu0: T.cu0, cu1: T.cu1, gOff: T.gOff, elevated: T.elevated, guard: st.plan.guard,
         landDbg: T.landDbg, landings: (T.landings || []).map(L => ({ foot: T.W2(...L.foot), top: T.W2(...L.top), dir: L.dir, rise: +L.rise.toFixed(2), gy: L.gy, segs: L.segs.length, name: L.name })), plats: plats.map(p => [p.kind, +p.u0.toFixed(1), +p.u1.toFixed(1), +(p.eR(uc) - p.eL(uc)).toFixed(2), (p.groups || []).map(g => [g.kinds.join('+'), +g.uFoot.toFixed(1), +g.uHead.toFixed(1), +g.vc.toFixed(1)])]),
         ceilHoles: (T.ceilHoles || []).map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)]), platHoles: plats.map(p => p.holes.map(h => [+h.u0.toFixed(1), +h.u1.toFixed(1), +h.v0.toFixed(1), +h.v1.toFixed(1)])) } };
     const shared = sharedMats();
-    const atlas = MetroSigns.stationAtlas(st);
+    const atlas = yield* MetroSigns.stationAtlasGen(st);
     const signMats = [];
     const matsToTick = [];
     for (const z of zones) {
@@ -351,7 +450,7 @@ const StationTypes = (() => {
       mk(z.m.glow, shared.glow, grp, false); mk(z.d.glow, shared.glow, grpN, false);
       if (z.signs.length) { const sm = new THREE.MeshStandardMaterial({ map: atlas.tex, emissiveMap: atlas.tex, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.0 });
         signMats.push({ m: sm, z }); const geo = signGeometry(z.signs, atlas.rect); const m = new THREE.Mesh(geo, sm); m.receiveShadow = true; grpN.add(m); }
-      for (const b of z.boards) { const bd = MetroSigns.newBoard(st, b.key); const m = new THREE.Mesh(b.geo, new THREE.MeshBasicMaterial({ map: bd.tex, toneMapped: false })); m.material.color.setScalar(1.6); grpN.add(m); res.boards.push(bd); b.mat = m.material; }
+      for (const b of z.boards) { const bd = MetroSigns.newBoard(st, b.key); const m = new THREE.Mesh(b.geo, new THREE.MeshBasicMaterial({ map: bd.tex, toneMapped: false })); m.material.color.setScalar(1.6); grpN.add(m); res.boards.push(bd); b.mat = m.material; yield; }
       yield;
     }
     if (T.esc.length) { const m = SP.escSteps(T.esc); if (m) { (T.levels.length > 1 ? near : res.zones.plat.near).add(m); zP.lights.bind(m, root); } }
@@ -614,8 +713,9 @@ const StationTypes = (() => {
     } else {
       const m = T.type === 'median' ? 1.8 : 1.5; const n0 = out.length;
       strip('track', boxU0, boxU1, (u) => edgeV(u, -1) - m, (u) => edgeV(u, 1) + m);
-      // a street well below the track bed passes under it (a station on an embankment or a freeway bridge)
-      for (let i = n0; i < out.length; i++) out[i].under = T.yRail - 0.6 - 4.5;
+      // a street well below the track bed passes under it (a station on an embankment or a freeway bridge); a trench's
+      // zone drops only buildings standing in it (one reaching over its rim, like San Bruno's garage, stays)
+      for (let i = n0; i < out.length; i++) { out[i].under = T.yRail - 0.6 - 4.5; if (T.effType === 'trench') out[i].soft = true; }
       if (T.hasConc && T.mode === 'bridge') {
         strip('bridge', T.ub0 - 0.5, T.ub1 + 0.5, (u) => edgeV(u, -1) - 2.5, (u) => edgeV(u, 1) + 2.5, 15);
         for (const [u, v] of bridgeSupports(T)) quad('column', u - 0.4, u + 0.4, v - 0.4, v + 0.4);
@@ -750,7 +850,8 @@ const StationTypes = (() => {
         const cv0 = (p.eL(umid) + p.eR(umid)) / 2, off = Math.min(4.0, (p.eR(umid) - p.eL(umid)) / 2 - 1.3); const yL = ceilY - 1.15;
         for (const s of [-1, 1]) {
           z.lights.add({ a: [f0.x - f0.tz * (cv0 + s * off), yL, f0.z + f0.tx * (cv0 + s * off)], b: [f1.x - f1.tz * (cv0 + s * off), yL, f1.z + f1.tx * (cv0 + s * off)], color: [LC[0] * I * 0.9, LC[1] * I * 0.9, LC[2] * I * 0.9], range: 24, radius: 0.3, dir: [0, -1, 0], focus: 1 });
-          for (let u = um0 + 2.6; u < um1; u += 5.2) {
+          for (let u = um0 + 2.6, n = 0; u < um1; u += 5.2) {
+            if ((++n & 7) === 0) yield;
             const vv = (p.eL(u) + p.eR(u)) / 2 + s * off;
             T.place(z.d.sk, u, vv, ceilY, 0); z.d.sk.mat(0x2a2a2c, K.PAINT); z.d.sk.cyl(0, -1.0, 0, 0.012, 0.012, 1.0, 6, false);
             z.d.sk.mat(0xf2f1ec, K.PLAIN, 0.35); z.d.sk.cyl(0, -1.28, 0, 0.36, 0.08, 0.28, 18, true); z.d.sk.pop();
@@ -965,7 +1066,8 @@ const StationTypes = (() => {
     const mBal = M([0x8a847a, K.BALLAST, 0], { sky: 1 });
     g.sweep(fr, (i, f) => { const vl = edgeV(f.u, -1); return [[vl - 1.5, yTB - 0.7, null, mBal], [vl, yTB, null, mBal], [vl + 0.3, yTB]]; });
     g.sweep(fr, (i, f) => { const vr = edgeV(f.u, 1); return [[vr - 0.3, yTB, null, mBal], [vr, yTB, null, mBal], [vr + 1.5, yTB - 0.7]]; });
-    if (type === 'trench') {
+    if (type === 'trench' && T.trench) yield* trenchBuild(T, fr, mBal);
+    else if (type === 'trench') {
       const mRW = M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 });
       for (const side of [-1, 1]) g.sweep(fr, (i, f) => { const v = edgeV(f.u, side) + side * 0.5; const top = U.clamp(Terrain.h(f.x - f.tz * v + T.OX, f.z + f.tx * v + T.OZ) + 1.1, yTB + 2, Math.max(yTB + 2.5, T.street + 1.2));
         return side < 0 ? [[v, top, top, mRW], [v, yTB, yTB]] : [[v, yTB, yTB, mRW], [v, top, top]]; });
@@ -980,6 +1082,73 @@ const StationTypes = (() => {
     yield;
   }
 
+  function* trenchBuild(T, fr, mBal) {
+    const { zones, M, frames, WUV, L2 } = T, tr = T.trench, z = zones[0], g = z.m.sk, { vl, vr, yTB } = tr;
+    const mRW = M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 }), mLid = M([0x9c978e, K.CONCRETE, 0.1], { sky: 1 }), mSoff = M([0x8f8a82, K.BOARDFORM, 0.1], { sky: 0.4 });
+    const lidAt = (u) => tr.lids.find(L => L.kind !== 'bridge' && u >= L.u0 - 1e-3 && u <= L.u1 + 1e-3);
+    const base = (u, v) => { const [x, zz] = WUV(u, v); return Terrain.hBase(x, zz); };
+    // the ground over a cover (outside the walls: MetroGround may have carved the middle), its soffit >= 4.9 m over the
+    // rails (a train and its clearance) and <= 1.2 m under the ground
+    const lidTop = (u) => Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08;
+    const soffit = (u) => Math.max(T.yRail + 4.9, lidTop(u) - 1.2);
+    // the floor, wall to wall, under the trackbeds and platforms
+    g.sweep(fr, (i, f) => [[vl(f.u), yTB - 0.03, null, mBal], [vr(f.u), yTB - 0.03]]);
+    // retaining walls 0.5 m thick with a coping 1.1 m over the ground outside (under a lid: up to its soffit)
+    const cuts = []; for (const L of tr.lids) if (L.kind !== 'bridge') cuts.push(L.u0 - 0.03, L.u0, L.u1, L.u1 + 0.03);
+    const frw = frames(T.boxU0, T.boxU1, cuts);
+    // (the coping line: the ground 0.8 m outside, its highest within 6 m either way, so the top runs level-ish)
+    const gOutAt = (u, side) => { const v = (side < 0 ? vl(u) - 0.5 : vr(u) + 0.5) + side * 0.8; let m = -1e9; for (let d = -6; d <= 6; d += 3) { const [x, zz] = WUV(u + d, v); m = Math.max(m, Terrain.h(x, zz)); } return m; };
+    for (const side of [-1, 1]) g.sweep(frw, (i, f) => {
+      const vIn = side < 0 ? vl(f.u) : vr(f.u), vOut = vIn + side * 0.5; const gOut = gOutAt(f.u, side);
+      const L = lidAt(f.u); const top = L ? soffit(f.u) : U.clamp(gOut + 1.1, yTB + 2, Math.max(yTB + 2.5, T.street + 1.2)), vC = vOut + side * 1.0;
+      // (the coping overhangs the ground by 1 m: the cut's raster edge may open a slot beside the wall)
+      return side < 0 ? [[vOut, yTB, null, mRW], [vOut, top - 0.25, null, mRW], [vC, top - 0.25, null, mRW], [vC, top, null, mRW], [vIn, top, null, mRW], [vIn, yTB]]
+        : [[vIn, yTB, null, mRW], [vIn, top, null, mRW], [vC, top, null, mRW], [vC, top - 0.25, null, mRW], [vOut, top - 0.25, null, mRW], [vOut, yTB]];
+    });
+    yield;
+    // covers: the soffit over the walls and the fascias at both ends (the ground over them is the terrain and Towns'
+    // streets), an Under cell under each (portals to the daylight at its ends), a light line along its middle
+    const P = (u, v, y) => { const [x, zz] = L2(u, v); return [x, y, zz]; };
+    let nC = 0;
+    for (const L of tr.lids) { if (L.kind === 'bridge') continue;
+      const fl = frames(L.u0, L.u1), a = (u) => vl(u) - 0.5, b = (u) => vr(u) + 0.5;
+      g.sweep(fl, (i, f) => [[b(f.u), soffit(f.u), null, mSoff], [a(f.u), soffit(f.u)]]);                       // soffit (down)
+      g.sweep(fl, (i, f) => [[a(f.u), lidTop(f.u), null, mLid], [b(f.u), lidTop(f.u)]]);                         // top (up; under the ground when that is there)
+      for (const [u, dir] of [[L.u0, -1], [L.u1, 1]]) { const yt = lidTop(u) + 0.06, yb = soffit(u); g.set(mSoff); // fascias, outward
+        if (dir < 0) g.quad(P(u, b(u), yb), P(u, b(u), yt), P(u, a(u), yt), P(u, a(u), yb), [0, yb, 0, yt, 1, yt, 1, yb]);
+        else g.quad(P(u, a(u), yb), P(u, a(u), yt), P(u, b(u), yt), P(u, b(u), yb), [0, yb, 0, yt, 1, yt, 1, yb]); }
+      const [ax, az] = L2(L.u0 + 1, (vl(L.u0) + vr(L.u0)) / 2), [bx, bz] = L2(L.u1 - 1, (vl(L.u1) + vr(L.u1)) / 2);
+      if (L.u1 - L.u0 > 6) z.lights.add({ a: [ax, soffit(L.u0) - 0.1, az], b: [bx, soffit(L.u1) - 0.1, bz], color: T.S.light.map(c => c * 0.8), range: 16, radius: 0.1, dir: [0, -1, 0], focus: 1 });
+      // the Under cell under it, and its two openings
+      const id = `st:${T.st.id}:cov${nC++}`, us = []; for (let u = L.u0; u < L.u1; u += 8) us.push(u); us.push(L.u1);
+      const poly = [...us.map(u => WUV(u, vl(u) - 0.25)), ...us.slice().reverse().map(u => WUV(u, vr(u) + 0.25))];
+      const ceil = Math.min(...us.map(soffit)) - 0.05;
+      T.cells.push({ under: { id, kind: 'station', poly, floor: yTB - 0.5, ceil, ambient: ambOf(T.S) } });
+      for (const u of [L.u0, L.u1]) T.portals.push({ id: `${id}:${u === L.u0 ? 'a' : 'b'}`, a: id, b: null,
+        quad: [[vl(u) - 0.25, yTB - 0.5], [vr(u) + 0.25, yTB - 0.5], [vr(u) + 0.25, ceil], [vl(u) - 0.25, ceil]].map(([v, y]) => P(u, v, y)).map(([x, y, zz]) => [x + T.OX, y, zz + T.OZ]) });
+      yield;
+    }
+    // headwalls where the track runs on covered beyond the box: a frame round the tunnel mouth up to the coping
+    const vT = (u, side) => side < 0 ? Math.min(...T.allT.map(t => T.tv(t, u))) : Math.max(...T.allT.map(t => T.tv(t, u)));
+    for (const [u, dir, on] of [[T.boxU0, 1, tr.heads.lo], [T.boxU1, -1, tr.heads.hi]]) { if (!on) continue;
+      const [x, zz] = WUV(u, (vl(u) + vr(u)) / 2), top = Math.max(Terrain.h(x, zz), T.street) + 1.1, yM = T.yRail + 4.75, m0 = vT(u, -1) - 2.6, m1 = vT(u, 1) + 2.6;
+      const a = vl(u) - 0.5, b = vr(u) + 0.5; g.set(mRW);
+      const face = (v0, v1, y0, y1) => { if (dir > 0) g.quad(P(u, v0, y0), P(u, v0, y1), P(u, v1, y1), P(u, v1, y0), [v0, y0, v0, y1, v1, y1, v1, y0]); else g.quad(P(u, v1, y0), P(u, v1, y1), P(u, v0, y1), P(u, v0, y0), [v1, y0, v1, y1, v0, y1, v0, y0]); };
+      face(a, b, yM, top); if (m0 > a) face(a, m0, yTB, yM); if (m1 < b) face(m1, b, yTB, yM);
+      const u2 = u - dir * 0.6;                                                                                  // the coping and the soffit over the mouth
+      const [c0, c1] = dir > 0 ? [a, b] : [b, a], [s0, s1] = dir > 0 ? [m0, m1] : [m1, m0];
+      g.quad(P(u2, c0, top), P(u2, c1, top), P(u, c1, top), P(u, c0, top), [c0, 0, c1, 0, c1, 0.6, c0, 0.6]);
+      g.set(mSoff); g.quad(P(u, s0, yM), P(u, s1, yM), P(u2, s1, yM), P(u2, s0, yM), [s0, 0, s1, 0, s1, 0.6, s0, 0.6]);
+    }
+    // the open stretches: Under cuts over the walls' middle lines (the ground and Towns' ground above the floor go; the
+    // raster edge is ragged by ~1 m either way: the coping hides a slot outside, a sliver inside is ground over the wall)
+    for (const [u0, u1] of tr.open) {
+      const us = []; for (let u = u0; u < u1; u += 8) us.push(u); us.push(u1);
+      const poly = [...us.map(u => WUV(u, vl(u) - 0.25)), ...us.slice().reverse().map(u => WUV(u, vr(u) + 0.25))];
+      T.cuts.push({ id: `st:${T.st.id}:trench:${T.cuts.length}`, poly, below: tr.below });
+    }
+    yield;
+  }
   // ------------------------------------------------------------------------------------------------ inlays and columns
   function* floorInlays(T) {
     const { plats, H, zones } = T;
@@ -1052,6 +1221,7 @@ const StationTypes = (() => {
           slopeUV(T, uFoot, dirRun, vcen, w / 2 - 0.1, yFoot, g.H, r.run);
           wallsUV(T, uFoot, dirRun, vcen, w / 2, yFoot, r.run, g.H);
         }
+        yield;
       }
       // guard railings around the opening on the upper level (three sides; the head end is open)
       const u0 = Math.min(g.uFoot, g.uHead), u1 = Math.max(g.uFoot, g.uHead);
@@ -1096,10 +1266,12 @@ const StationTypes = (() => {
     T.roofHoles = roofHoles;
     // floor (with the wells), ceiling, walls, end walls
     slab(T, g, cu0, cu1, vl, vr, yCF, holes, M(S.cFloor), true);
+    yield;
     const vault = T.H.vault === 'ribs' && !roofHoles.length && yCC - yCF > 3.2;
     if (vault) yield* vaultCeiling(T, g, cu0, cu1, vl, vr, yCC);
     else slab(T, g, cu0, cu1, vl, vr, yCC, roofHoles, M(S.cCeil), false);
     for (const h of roofHoles) holeRim(T, g, h, yCC, yCC + 0.9, M(S.cWall));
+    yield;
     if (T.H.mural) yield* tileMurals(T, zC, cu0, cu1, vl, vr, yCF);
     const fr = frames(cu0, cu1);
     const mW = M(S.cWall), mL = M(S.wallLow);
@@ -1165,7 +1337,9 @@ const StationTypes = (() => {
     const N = 10;
     g.sweep(frames(cu0, cu1), (i, f) => { const P = []; for (let k = N; k >= 0; k--) { const [v, y] = arc(f.u, k / N); P.push([v, y, null, k > 0 ? mS : undefined]); } return P; });
     // ribs every 3.2 m: a deeper band under the vault, springing from splayed brackets on the walls
-    for (let u = cu0 + 1.6; u < cu1 - 1; u += 3.2) {
+    yield;
+    for (let u = cu0 + 1.6, n = 0; u < cu1 - 1; u += 3.2) {
+      if ((++n & 7) === 0) yield;
       const fr = frames(u - 0.18, u + 0.18);
       // the rib's underside (facing down: traversed right to left) and its two faces across u
       g.sweep(fr, (i, f) => { const P = []; for (let k = N; k >= 0; k--) { const [v, y] = arc(f.u, k / N); P.push([v, y - 0.32, null, k > 0 ? mR : undefined]); } return P; });
@@ -1213,13 +1387,16 @@ const StationTypes = (() => {
       const uv = toUV(T, e.x - T.OX, e.z - T.OZ); if (!uv) continue;
       let [ue, ve] = uv; const inBox = ve > edgeV(ue, -1) + 1.8 && ve < edgeV(ue, 1) - 1.8;
       const dir = ue > T.uc ? -1 : 1;
-      const gy = Terrain.h(...T.WUV(ue, ve)); const topY = Math.max(gy, street - 1.5); const riseE = topY - yCF; if (riseE < 1.5) continue;
-      const runE = stairRun(riseE);
+      // (the stair tops out on the paved surface round it: a sidewalk stands 0.4-0.55 m over the ground, a plaza 0.1-0.2)
+      const lift = headLift(T, [[0, 0], [-1.5, 0], [0, -2.6], [0, 2.6], [5, -2.6], [5, 2.6], [10, -2.6], [10, 2.6]].map(([du, dv]) => [ue + dir * du, ve + dv]));
+      let topY = Math.max(surfY(T, ue, ve, lift), street - 1.5), riseE = topY - yCF; if (riseE < 1.5) continue;
+      let runE = stairRun(riseE);
       let uTop = ue, uBot = ue + dir * runE;
-      if (uBot < cu0 + 2 || uBot > cu1 - 2) { const shift = uBot < cu0 + 2 ? cu0 + 2 - uBot : cu1 - 2 - uBot; uTop += shift; uBot += shift; }
+      if (uBot < cu0 + 2 || uBot > cu1 - 2) { const shift = uBot < cu0 + 2 ? cu0 + 2 - uBot : cu1 - 2 - uBot; uTop += shift;
+        topY = Math.max(surfY(T, uTop, ve, lift), street - 1.5); riseE = topY - yCF; if (riseE < 1.5) continue; runE = stairRun(riseE); uBot = uTop + dir * runE; }
       // shafts that would overlap one already planned are dropped (duplicated corners, both sides of one exit)
       if (out.some(o => Math.abs(o.ve - ve) < W + 0.6 && Math.min(o.uTop, o.uBot) < Math.max(uTop, uBot) + 1 && Math.min(uTop, uBot) < Math.max(o.uTop, o.uBot) + 1)) continue;
-      out.push({ e, ue, ve, dir, uTop, uBot, topY, riseE, runE, inBox, W });
+      out.push({ e, ue, ve, dir, uTop, uBot, topY, riseE, runE, inBox, W, lift });
     }
     return out;
   }
@@ -1240,31 +1417,77 @@ const StationTypes = (() => {
       slopeUV(T, uBot, -dir, ve, W / 2 - 0.1, yCF, riseE, runE);
       wallsUV(T, uBot, -dir, ve, W / 2, yCF, runE, riseE);
       const ua = Math.min(uTop, uBot), ub = Math.max(uTop, uBot);
+      // the street surface round the opening (the collar): the paved surface's lift over the base ground, and 1 in 4 down
+      // from the head where the head was raised over the ground (a street above a low lot)
+      const Lf = P.lift ?? 0.035, hv0 = ve - W / 2 - 0.2, hv1 = ve + W / 2 + 0.2, raised = topY > surfY(T, uTop, ve, Lf) + 0.1 ? topY : -1e9;
+      const colY = (u, v) => Math.max(surfY(T, u, v, Lf), raised - 0.25 * Math.hypot(Math.max(ua - u, 0, u - ub), Math.max(hv0 - v, 0, v - hv1)));
+      yield;
       // shaft walls above the stair cheeks up to the street, the sloped soffit over the lower part
       for (const side of [-1, 1]) {
         const vv = ve + side * (W / 2 + 0.2);
-        g.sweep(T.frames(ua - 0.3, ub + 0.3), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const yb = yCF + riseE * t + 1.1; const yt = Math.max(yb + 0.3, topY + 0.02);
+        g.sweep(T.frames(ua - 0.3, ub + 0.3), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const yb = yCF + riseE * t + 1.1; const yt = Math.max(yb + 0.3, colY(f.u, vv) + 0.02);
           const mat = Object.assign(M(S.cWall), { sky: t });
           return side < 0 ? [[vv, yt, yt, mat], [vv, yb, yb]] : [[vv, yb, yb, mat], [vv, yt, yt]]; });
       }
-      g.sweep(T.frames(ua, ub), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const y = Math.min(yCF + riseE * t + 3.2, topY - 0.05);
-        if (y >= topY - 0.1 || (inBox && y < roofTop)) return [[ve + W / 2 + 0.2, y, null, 'skip'], [ve - W / 2 - 0.2, y]];
+      g.sweep(T.frames(ua, ub), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1), yS = colY(f.u, ve), y = Math.min(yCF + riseE * t + 3.2, yS - 0.05);
+        if (y >= yS - 0.1 || (inBox && y < roofTop)) return [[ve + W / 2 + 0.2, y, null, 'skip'], [ve - W / 2 - 0.2, y]];
         return [[ve + W / 2 + 0.2, y, null, Object.assign(M(S.cCeil), { sky: t * 0.5 })], [ve - W / 2 - 0.2, y]]; });
+      yield;
       // a paved collar around the opening, draped on the ground: the ground cut is a raster (~1 m texels near the
       // camera, 4 m beyond), so its edge is ragged and would show the void under the street
-      { const hu0 = ua, hu1 = ub, hv0 = ve - W / 2 - 0.2, hv1 = ve + W / 2 + 0.2, o = 3.0; const mPave = Object.assign(M([0xa8a49c, K.PAVING, 1.5]), { sky: 1 });
-        const gyAt = (u, v) => { const [x, z] = T.WUV(u, v); return Math.max(Terrain.h(x, z), topY - 0.6) + 0.035; };
+      // (in front of the mouth the apron runs 6 m further, so no path or cycle track on the sidewalk leads into the stair)
+      // (collar and apron stop short of a carriageway: they are sidewalk, never road)
+      // (streets only: a narrow way on the sidewalk, a cycle track or an alley, is paved over by the apron)
+      const streets = (T.roads || []).filter(r => r.hw >= 3.4);
+      const clear = (u, v, du, dv, maxD) => { if (!streets.length) return maxD; for (let d = 0.4; d <= maxD; d += 0.3) if (streets.some(r => segDist(r, u + du * d, v + dv * d) < r.hw + 0.3)) return Math.max(0.5, d - 0.4); return maxD; };
+      const mouthLo = dir > 0, uM = mouthLo ? ua : ub, sM = mouthLo ? -1 : 1;
+      const apr = Math.max(0, Math.min(...[ve - W / 2, ve, ve + W / 2].map(v => clear(uM, v, sM, 0, 6 + 3.8))) - 3.8);
+      const oS = [-1, 1].map(sd => Math.min(...[ua, (ua + ub) / 2, ub].map(u => clear(u, ve + sd * (W / 2 + 0.2), 0, sd, 3.8))));
+      const oE = Math.min(3.8, ...[ve - W / 2, ve, ve + W / 2].map(v => clear(mouthLo ? ub : ua, v, -sM, 0, 3.8)));
+      { const hu0 = ua, hu1 = ub, o = 3.8; const mPave = Object.assign(M([0xa8a49c, K.PAVING, 1.5]), { sky: 1 });
+        const gyAt = colY;
         const band = (ua0, ua1, va0, va1) => { const nu = Math.max(1, Math.ceil((ua1 - ua0) / 1.5)), nv = Math.max(1, Math.ceil((va1 - va0) / 1.5));
           for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) { const u0 = ua0 + (ua1 - ua0) * i / nu, u1 = ua0 + (ua1 - ua0) * (i + 1) / nu, v0 = va0 + (va1 - va0) * j / nv, v1 = va0 + (va1 - va0) * (j + 1) / nv;
             const P = (u, v) => { const [x, z] = T.L2(u, v); return [x, gyAt(u, v), z]; }; g.set(mPave);
             g.quad(P(u0, v1), P(u1, v1), P(u1, v0), P(u0, v0), [u0, v1, u1, v1, u1, v0, u0, v0]); } };
-        band(hu0 - o, hu1 + o, hv1, hv1 + o); band(hu0 - o, hu1 + o, hv0 - o, hv0);            // along both sides
-        band(hu0 - o, hu0, hv0, hv1); band(hu1, hu1 + o, hv0, hv1); }                          // across both ends
-      // street: railings on three sides, the totem at the head
-      for (const vv of [ve - W / 2 - 0.3, ve + W / 2 + 0.3]) { const pts = [[uBot, vv], [uTop - dir * 0.2, vv]].map(([u, v]) => { const [x, z] = T.L2(u, v); return [x, topY, z]; }); SP.railing(zE.d, pts, 1.07, 'bars'); }
-      { const [x0, z0] = T.L2(uBot - dir * 0.1, ve - W / 2 - 0.3), [x1, z1] = T.L2(uBot - dir * 0.1, ve + W / 2 + 0.3); SP.railing(zE.d, [[x0, topY, z0], [x1, topY, z1]], 1.07, 'bars'); }
-      const [tx, tz] = T.L2(uTop + dir * 0.9, ve + W / 2 + 0.7); zE.d.sk.push().at(tx, topY, tz, T.yawAt(uTop) + (dir > 0 ? 0 : Math.PI)); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 0, 0, 0.14, 3.2, 0.9); zE.d.sk.pop();
-      zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7, y: topY + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
+        const oM = Math.min(o, clear(uM, ve, sM, 0, o)) + apr;
+        const eu0 = mouthLo ? hu0 - oM : hu0 - oE, eu1 = mouthLo ? hu1 + oE : hu1 + oM;
+        band(eu0, eu1, hv1, hv1 + oS[1]); band(eu0, eu1, hv0 - oS[0], hv0);                  // along both sides
+        band(eu0, hu0, hv0, hv1); band(hu1, eu1, hv0, hv1); void o;                            // across both ends
+        // a curb face round the pad down into the ground (where there is no sidewalk around it)
+        const ev0 = hv0 - oS[0], ev1 = hv1 + oS[1], PT = (u, v, y) => { const [x, z] = T.L2(u, v); return [x, y, z]; }; g.set(M([0xa19c93, K.CONCRETE, 0], { sky: 1 }));
+        const skirt = (a, b) => { const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 1.5)); for (let i = 0; i < n; i++) { const p0 = [a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n], p1 = [a[0] + (b[0] - a[0]) * (i + 1) / n, a[1] + (b[1] - a[1]) * (i + 1) / n];
+          const y0 = gyAt(...p0), y1 = gyAt(...p1), b0 = Terrain.h(...T.WUV(...p0)) - 0.3, b1 = Terrain.h(...T.WUV(...p1)) - 0.3;
+          if (y0 - b0 > 0.4 || y1 - b1 > 0.4) g.quad(PT(p0[0], p0[1], y0), PT(p1[0], p1[1], y1), PT(p1[0], p1[1], b1), PT(p0[0], p0[1], b0), [0, y0, 1, y1, 1, b1, 0, b0]); } };
+        skirt([eu0, ev0], [eu1, ev0]); skirt([eu1, ev0], [eu1, ev1]); skirt([eu1, ev1], [eu0, ev1]); skirt([eu0, ev1], [eu0, ev0]); }
+      yield;
+      // street: railings on three sides (glass under a canopy), the totem at the head
+      const canopyEnt = !!T.H.canopyEnt && !P.link;
+      // (railings, posts and the pylon stand on the collar: on a sloping street they follow it)
+      const nR = Math.max(1, Math.round(Math.abs(uTop - dir * 0.2 - uBot) / 3));
+      for (const vv of [ve - W / 2 - 0.3, ve + W / 2 + 0.3]) { const pts = []; for (let k = 0; k <= nR; k++) { const u = uBot + (uTop - dir * 0.2 - uBot) * k / nR; const [x, z] = T.L2(u, vv); pts.push([x, colY(u, vv), z]); } SP.railing(zE.d, pts, 1.07, canopyEnt ? 'glass' : 'bars'); }
+      { const [x0, z0] = T.L2(uBot - dir * 0.1, ve - W / 2 - 0.3), [x1, z1] = T.L2(uBot - dir * 0.1, ve + W / 2 + 0.3); SP.railing(zE.d, [[x0, colY(uBot - dir * 0.1, ve - W / 2 - 0.3), z0], [x1, colY(uBot - dir * 0.1, ve + W / 2 + 0.3), z1]], 1.07, canopyEnt ? 'glass' : 'bars'); }
+      if (canopyEnt) {
+        // downtown canopy (2018-27): a thin flat white roof on slender posts over the head of the stair, glass sides, a
+        // roll-down gate housing over the mouth, a stainless pylon with the station name and a live-display strip
+        const Lc = Math.min(runE, 7.5), uA = uTop - dir * 0.9, uB = uTop + dir * Lc, hw = W / 2 + 0.55, yR = topY + 3.05;
+        const ua2 = Math.min(uA, uB), ub2 = Math.max(uA, uB);
+        { const [x, z] = T.L2((ua2 + ub2) / 2, ve); const gg = zE.m.sk; gg.push().at(x, 0, z, T.yawAt(uTop)); gg.mat(0xf2f1ec, K.PAINT); gg.box(-(ub2 - ua2) / 2, yR, -hw, (ub2 - ua2) / 2, yR + 0.16, hw);
+          gg.mat(0xb9bec3, K.STEEL); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, -hw - 0.02, (ub2 - ua2) / 2 + 0.02, yR, -hw + 0.1); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, hw - 0.1, (ub2 - ua2) / 2 + 0.02, yR, hw + 0.02);
+          gg.pop(); }
+        for (const uu of [uA + dir * 0.3, uB - dir * 0.2]) for (const sv of [-1, 1]) { const [x, z] = T.L2(uu, ve + sv * (W / 2 + 0.3)), yP = colY(uu, ve + sv * (W / 2 + 0.3)); zE.d.sk.push().at(x, yP, z, 0); zE.d.sk.mat(0xb9bec3, K.STEEL); zE.d.sk.cyl(0, 0, 0, 0.055, 0.055, yR - yP, 10, false); zE.d.sk.pop(); }
+        { const [x, z] = T.L2(uTop - dir * 0.35, ve); zE.d.sk.push().at(x, 0, z, T.yawAt(uTop)); zE.d.sk.mat(0x8f959a, K.STEEL); zE.d.sk.box(-0.22, yR - 0.5, -W / 2 - 0.3, 0.22, yR - 0.02, W / 2 + 0.3); zE.d.sk.pop(); }
+        zE.m.glow.mat(S.light); { const [x, z] = T.L2((ua2 + ub2) / 2, ve); zE.m.glow.push().at(x, 0, z, T.yawAt(uTop)); zE.m.glow.box(-(ub2 - ua2) / 2 + 0.4, yR - 0.035, -0.12, (ub2 - ua2) / 2 - 0.4, yR - 0.005, 0.12); zE.m.glow.pop(); }
+        // the pylon beside the mouth, facing the sidewalk
+        const pu = uTop - dir * 1.2, pv = ve + W / 2 + 0.95; const [px, pz] = T.L2(pu, pv), py = colY(pu, pv) - 0.05;
+        zE.d.sk.push().at(px, py, pz, T.yawAt(uTop)); zE.d.sk.mat(0xc3c8cc, K.STEEL); zE.d.sk.cbox(0, 0, 0, 0.62, 3.9, 0.34); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 3.9, 0, 0.66, 0.08, 0.38); zE.d.sk.pop();
+        zE.m.glow.mat(lin(0xffb030)); zE.m.glow.push().at(px, py, pz, T.yawAt(uTop)); for (const sd of [-1, 1]) zE.m.glow.box(-0.24, 1.55, sd * 0.172 - 0.004, 0.24, 1.95, sd * 0.172 + 0.004); zE.m.glow.pop();
+        zE.signs.push({ u: pu, v: pv, y: py + 3.2, yaw: T.yawAt(uTop) + Math.PI / 2, w: 0.56, h: 0.7, region: 'totem', both: true, T });
+        zE.lights.add({ a: (() => { const [x, z] = T.L2(ua2 + 0.5, ve); return [x, yR - 0.1, z]; })(), b: (() => { const [x, z] = T.L2(ub2 - 0.5, ve); return [x, yR - 0.1, z]; })(), color: S.light.map(c => c * 0.7), range: 7, radius: 0.08, dir: [0, -1, 0], focus: 1 });
+      } else {
+        const [tx, tz] = T.L2(uTop + dir * 0.9, ve + W / 2 + 0.7), ty = colY(uTop + dir * 0.9, ve + W / 2 + 0.7) - 0.05; zE.d.sk.push().at(tx, ty, tz, T.yawAt(uTop) + (dir > 0 ? 0 : Math.PI)); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 0, 0, 0.14, 3.2, 0.9); zE.d.sk.pop();
+        zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7, y: ty + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
+      }
       zE.signs.push({ u: uBot + dir * 0.5, v: ve, y: yCF + 2.6, yaw: T.yawAt(uBot) + (dir > 0 ? Math.PI : 0), w: 2.0, h: 0.5, region: 'exit', both: false, T });
       let door = null;
       if (!inBox) { const r = yield* passage(T, zE, uBot, ve, dir, W); door = r; }
@@ -1275,8 +1498,13 @@ const StationTypes = (() => {
       // (the cut is raster, ~1 m texels, and the shaft cell's volume (dilated ~1.5 texels) drops the ground over the
       // opening too; the collar covers the ragged rim)
       const cutPoly = rect(ua - 0.2, ub + 0.2, ve - W / 2 - 0.35, ve + W / 2 + 0.35);
-      const gOpen = minGround(T, ua - 1.2, ub + 1.2, () => ve - W / 2 - 1.3, () => ve + W / 2 + 1.3);
-      T.cuts.push({ id: `st:${st.id}:cut${k}`, poly: rect(ua - 0.5, ub + 0.5, ve - W / 2 - 0.6, ve + W / 2 + 0.6), below: Math.min(topY, gOpen) - 0.3 });
+      // (the cut also clears Towns' ground over the collar, so no street, path or lawn runs into the opening; the
+      // collar is the ground there)
+      // (the cut stays ~0.8 m inside the collar on every side: its raster edge is ragged by about a texel)
+      const cM = Math.max(0.3, Math.min(3.8, clear(uM, ve, sM, 0, 3.8)) + apr - 0.8), cE = Math.max(0.3, oE - 0.8), cS0 = Math.max(0.3, oS[0] - 0.8), cS1 = Math.max(0.3, oS[1] - 0.8);
+      const cu0 = mouthLo ? ua - cM : ua - cE, cu1 = mouthLo ? ub + cE : ub + cM;
+      const gOpen = minGround(T, cu0, cu1, () => ve - W / 2 - 0.2 - cS0, () => ve + W / 2 + 0.2 + cS1);
+      T.cuts.push({ id: `st:${st.id}:cut${k}`, poly: rect(cu0, cu1, ve - W / 2 - 0.2 - cS0, ve + W / 2 + 0.2 + cS1), below: Math.min(topY, gOpen) - 0.3 });
       const id = `st:${st.id}:ent${k}`;
       // (the cell stops under the street: the terrain drops fragments inside cell volumes, and the top of the stair is
       // simply outdoors; the cut opens the ground over the shaft)
@@ -1517,6 +1745,7 @@ const StationTypes = (() => {
         if (zC.lights.lights.length < StationKit.MAXL) { const p0 = P(0.5, 0), p1 = P(len - 0.5, 0); zC.lights.add({ a: [p0[0], yRoof - 0.1, p0[1]], b: [p1[0], yRoof - 0.1, p1[1]], color: LC.map(c => c * 0.7), range: 10, radius: 0.08, dir: [0, -1, 0], focus: 1 }); }
         addFloor(walk, [P(-0.3, -hw), P(len + 0.3, -hw), P(len + 0.3, hw), P(-0.3, hw)].map(q => W2(...q)), yCF);
         for (const z of [-hw, hw]) addWall(walk, W2(...P(-0.3, z)), W2(...P(len + 0.3, z)), yCF - 0.5, yRoof);
+        yield;
       }
       // supports (planned clear of the streets under the walkway)
       for (const q of L.supports) { const gyS = Math.min(Terrain.h(q[0] + T.OX, q[1] + T.OZ) - 0.3, yCF - 1.2); if (yCF - 0.7 - gyS > 30) continue;
@@ -1563,13 +1792,14 @@ const StationTypes = (() => {
   function planEndShafts(T) {
     const out = []; const { plats, street } = T;
     for (const p of plats) {
-      const rise = street - p.y; if (rise < 1.5) continue;
-      const runE = stairRun(rise);
       for (const end of [-1, 1]) {
-        const uTop = end < 0 ? p.u0 + 3 : p.u1 - 3, dir = -end, uBot = uTop + dir * runE;
+        const uTop = end < 0 ? p.u0 + 3 : p.u1 - 3, dir = -end, vm = (p.eL(uTop) + p.eR(uTop)) / 2;
+        const lift = headLift(T, [[uTop, vm], [uTop, vm - 2.6], [uTop, vm + 2.6], [uTop - dir * 1.5, vm], [uTop + dir * 5, vm - 2.6], [uTop + dir * 5, vm + 2.6]]);
+        const topS = Math.max(street, surfY(T, uTop, vm, lift)), rise = topS - p.y; if (rise < 1.5) continue;
+        const runE = stairRun(rise), uBot = uTop + dir * runE;
         if ((uBot - p.u0) * (p.u1 - uBot) < 0) continue;
         const ve = (p.eL(uBot) + p.eR(uBot)) / 2, W = U.clamp(Math.min(p.eR(uBot) - p.eL(uBot), p.eR(uTop) - p.eL(uTop)) - 2 * (p.kind === 'island' ? 1.4 : 1.0), 1.4, 3.0);
-        out.push({ e: null, ue: uTop, ve, dir, uTop, uBot, topY: street, riseE: rise, runE, inBox: true, W, yBot: p.y, roofY: T.ceilY + 0.8, link: 'plat', p });
+        out.push({ e: null, ue: uTop, ve, dir, uTop, uBot, topY: topS, riseE: rise, runE, inBox: true, W, yBot: p.y, roofY: T.ceilY + 0.8, link: 'plat', p, lift });
       }
     }
     return out;
@@ -1599,6 +1829,20 @@ const StationTypes = (() => {
         else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); }
         if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); }
         const [bx, bz] = T.L2(u, island ? cv(u) : backV(u)); void bx; void bz;
+      }
+      // platform screen doors (the airport connector): a glass wall on the edge with a door pair every car length
+      if (T.H.screenDoors) for (const side of island ? [-1, 1] : [p.sideV > 0 ? -1 : 1]) {
+        const edge = (u) => side < 0 ? p.eL(u) + 0.25 : p.eR(u) - 0.25, pitch = 9.7, dw = 1.8;
+        for (let u = p.u0 + 1; u < p.u1 - 1; u += pitch) {
+          const ua = u, ub = Math.min(p.u1 - 1, u + pitch), um = (ua + ub) / 2;
+          for (const [a, b] of [[ua, um - dw / 2], [um + dw / 2, ub]]) { if (b - a < 0.2) continue; const fr2 = T.frames(a, b);
+            B.glass.sweep(fr2, (i, f) => [[edge(f.u), p.y + 0.05], [edge(f.u), p.y + 2.25]]); B.glass.sweep(fr2, (i, f) => [[edge(f.u), p.y + 0.05], [edge(f.u), p.y + 2.25]], true); }
+          // the door leaves (closed) in a stainless frame, the header with its lamp
+          place(gd, um, edge(um), p.y, 0); gd.mat(0xb9bec3, K.STEEL); gd.cbox(0, 2.25, 0, dw + 0.3, 0.35, 0.18); for (const x of [-dw / 2 - 0.05, dw / 2 + 0.05]) gd.cbox(x, 0, 0, 0.1, 2.25, 0.16); gd.pop();
+          T.placeB(B, um, edge(um), p.y, 0); B.glass.quad([-dw / 2, 0.05, 0], [dw / 2, 0.05, 0], [dw / 2, 2.2, 0], [-dw / 2, 2.2, 0], [0, 0, 1, 0, 1, 1, 0, 1]); B.glass.quad([dw / 2, 0.05, 0], [-dw / 2, 0.05, 0], [-dw / 2, 2.2, 0], [dw / 2, 2.2, 0], [0, 0, 1, 0, 1, 1, 0, 1]);
+          B.glow.mat(lin(0x40e080)); B.glow.box(-0.15, 2.3, -0.1, 0.15, 2.36, 0.1); T.popB(B);
+          const [x0, z0] = T.WUV(ua, edge(ua)), [x1, z1] = T.WUV(ub, edge(ub)); addWall(T.walk, [x0, z0], [x1, z1], p.y - 0.5, p.y + 2.3);
+        }
       }
       const ceil = under ? (p.level && p.level.k ? p.level.ceilY : T.ceilY) : p.y + 4.4;
       for (let u = p.u0 + 10; u < p.u1 - 5; u += 36) {

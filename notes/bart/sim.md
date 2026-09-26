@@ -101,6 +101,19 @@ collide, live mode verified against the real feed. Earlier notes below still hol
 
 ## QA results
 
+### `bart` 4781c87 merged (round 3: MetroKit GTW DMU + Cable Liner APM, per-vehicle platforms, third rail), smoke test
+
+- All three vehicle kinds are MetroKit consists now (no placeholders): EMBR 5-car FOTF dwelling beside the walker;
+  `mst=PITT-T&mplat=E10-T`: the 1-unit Antioch Shuttle GTW at the eBART face, doors open, "Press E to board: Antioch
+  Shuttle to Antioch", passengers seated; `mst=OAKL`: the 3-car Cable Liner at the airport platform (y 10.8, on the
+  stations' floor). Far trains use MetroKit's per-builder car designs (`consist()` specs: GTW units, APM end/mid cars).
+- Missions: all seven start (drives in the cab incl. Airport Reversal; rides pick the GTW and the Cable Liner).
+- Ride flow: BALB → Daly City boarded, rode, alighted (y 92.87), announcements as before.
+- `mst=COLS&mplat=H10` (the connector's Coliseum platform): the walker ends in the parking lot at street level (y 3.82):
+  there is no stations walk floor at the data's platform height (16.75 m, track H1.1) and the stations' `spawnPoint`
+  for H10 is at street level; the runtime now ignores a spawn point more than 1.5 m off the data's platform height, holds
+  the walker there for 15 s, then gravity wins. Request to STATIONS below.
+
 ### M2 data + `bart` 62c83db merged (MetroKit v1), 2026-09-26 ~03:40–04:40, sim.html on bart-sim (Saturday timetable)
 
 What changed for M2: stops are berths (the runtime stops the head on `stops[].d`, i.e. `platforms[].berth`), the
@@ -271,6 +284,35 @@ location = /bartrt/tripupdate {
 API (`api.bart.gov/api/etd.aspx`, CORS `*`, public key), polled every 20 s by each client that turns Live on.
 The data is © BART under its developer license (free, as-is; no BART marks in the game).
 
+## Metro switch and failure isolation (M3 gate item 4, `src/js/18_metro.js`)
+
+- **The switch**: `Metro.on`. Every metro module reads it instead of the URL (one-line edits in `19_metroground.js`,
+  `23_metrotrack.js`, `24_metrounder.js`, `26_metrostations.js`: their `enabled` line only; owners please keep them).
+  **Ship = one line**: `const DEFAULT_ON = true;` in `18_metro.js`. `#metro=1` / `#metro=0` force it on / off.
+- **Boot gate**: `Metro.arm()` (90_main.js, before boot) makes `MetroNet.load` / `loadTimetable` wait for
+  `Metro.start()`, which runs right after the first frame is drawn. Measured (alternating, idle-ish GPU): first frame
+  5.6 s off / 5.4 s on (medians of 3, noise ±1 s); the first metro request starts ~0.8-1.0 s after the first frame.
+- **Failure isolation**: `Metro.fail(where, err)`: one `console.warn` ("Bayline Metro is off for this session: ... The
+  rest of the game is unaffected."), `Metro.on` false for the session, then every teardown: MetroSim (consists, far
+  batch, lights, dots), MetroUI (panels, overlays, the title card), MetroPlay (a player riding/following/driving a
+  metro train or standing in a station below the street is put in the open air, flying), MetroATC, MetroLive, and the
+  world (`tearDownWorld`): Under's cells/portals/cuts removed and its switch (`blUMK.x`) zeroed, `Terrain.cutTest` off,
+  MetroTrack's and MetroStations' groups out of the scene, the stations' keep-outs off, every terrain tile a metro
+  height filter touched reloaded (a no-op filter over each recorded rectangle), towns/trees/ground cover rebuilt.
+  Guards: the main loop's metro calls (`Metro.guard`), MetroNet's loads (a failed load resolves to a promise that never
+  settles, so callers stop quietly), `MetroTrack.init/update`, `MetroStations.init/update/floorAt/blocked/spawnPoint/
+  setBoard`, `Terrain.addHeightFilter` and `Towns.addDrop` (proxied: inert when off, a throw fails), MetroKit calls
+  (inside MetroSim's guard), MetroPlay/MetroUI entry points (`Metro.guardAll`).
+- **Fault injection**: `#metrofail=net|tracks|tt|build|stations|kit|sim|ground|under` (comma-separated): net = a real
+  404 on network.json, tracks = a corrupt tracks binary (parse error), tt = a real 404 on the timetable, the others a
+  throw ~150 frames after that part starts. `tools/qa_metro_isolation.sh` runs all of them at West Oakland: 11/11 PASS
+  (one warning, no console errors, nothing metro in the scene, frames advancing); shots:
+  `notes/bart/shots/sim/isolation_faults.jpg`.
+- Known side effect (world): `Towns.dispose()` (called by MetroGround and MetroStations when the metro data arrives,
+  and by the teardown) makes rebuilt building tiles render black for ~20-40 s until their photo textures reload (repro
+  with the metro off: `__bayline.Towns.dispose()`). With the gate the metro data arrives after the first frame, so a
+  visitor may see this briefly near the lines; WORLD: please keep a tile's imagery across dispose (or rebuild in place).
+
 ## Interfaces agreed with other workstreams
 
 ### STATIONS: walking in multi-level stations (agreed 2026-09-26, answering the request in `stations.md`)
@@ -370,6 +412,9 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
   ceiling, the street and its cars are seen from below and the outdoor world is not culled (shot:
   `notes/bart/shots/sim/m2_12th_lower.jpg`). Probably the stacked-station rebuild for M2's levels (12TH upper −3.8 /
   lower −13.7 rail) and/or the Under cells for the lower level. The upper level and the other five stations are fine.
+- **STATIONS**: the airport connector's Coliseum platform (`COLS` / `H10`, MetroNet track H1.1, platform top 16.75 m):
+  no walk floor there and `spawnPoint('COLS', 'H10')` returns a street-level point (y 3.82), so `#mst=COLS&mplat=H10`
+  and the Cable Train mission start in the parking lot (OAKL `H40` is fine).
 - **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above. Small one: the airport
   connector platforms (COLS `H10`, OAKL `H40`) return a `spawnPoint` more than 14 m from their MetroNet track (H1.1 /
   H1.2), so the side audit can't place them (the cable train's doors use the data side there).

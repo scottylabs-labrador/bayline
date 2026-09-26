@@ -10,9 +10,9 @@
 //   portal, cut-and-cover, bored, tube, aerial, bridge: untouched (infra cuts the openings with Under.addCut)
 //   platforms of ground-level stations (grade / embankment / median / trench): ground cut to the bed from the track
 //                                out to PLAT_W m on the platform side, over the platform's length + 5 m
-// Towns (the new tiles/b2 already do this at bake time; the older tiles/b near the lines need it at runtime): OSM
-// train_station buildings within 160 m of a BART station, canopies / sheds / garages within 22 m of an above-ground BART
-// track, and anything centred within 7 m of one are dropped (the stations and guideway draw those themselves).
+// Towns (tiles/b and tiles/b2 alike: b2 bakes only the Caltrain-era drops, so with the metro off every building is
+// there): OSM train_station buildings within 160 m of a BART station, canopies / sheds within 22 m of an above-ground
+// BART track, and anything centred within 7 m of one are dropped (the stations and guideway draw those themselves).
 //   MetroGround.stats      { segments, platforms, tiles, ms, dropped }
 //   MetroGround.carveAt(x, z, h)   the carved height for a natural height h (debug / QA)
 const MetroGround = (() => {
@@ -32,7 +32,9 @@ const MetroGround = (() => {
     if (b.kind === 6 && MetroNet.stationsNear(x, z, 160).length) drop = true;
     else {
       const n = MetroNet.nearest(x, z, 22);
-      if (n) { MetroNet.frame(n.track, n.s, fr); drop = !!ABOVE[fr.struct] && (n.dist < 7 || b.kind === 5 || b.kind === 6 || b.kind === 7); }
+      // anything centred within 7 m of an above-ground track; canopies / sheds / roofs (5) and station buildings (6)
+      // within 22 m (the guideway and stations draw their own); parking structures (7) only when in the way (7 m)
+      if (n) { MetroNet.frame(n.track, n.s, fr); drop = !!ABOVE[fr.struct] && (n.dist < 7 || b.kind === 5 || b.kind === 6); }
     }
     if (drop) stats.dropped++;
     return drop;
@@ -81,15 +83,15 @@ const MetroGround = (() => {
   // filter(L, x0, z0, T, h): see Terrain.addHeightFilter
   const tw = new Float32Array(129 * 129), tt = new Float32Array(129 * 129), tc = new Float32Array(129 * 129);
   function filter(L, x0, z0, T, h) {
-    if (L < 7 || !nS) return;
-    if (bbox && (x0 > bbox[2] || x0 + T < bbox[0] || z0 > bbox[3] || z0 + T < bbox[1])) return;
+    if (L < 7 || !nS) return false;
+    if (bbox && (x0 > bbox[2] || x0 + T < bbox[0] || z0 > bbox[3] || z0 + T < bbox[1])) return false;
     const t0 = performance.now(), step = T / 128;
     const seen = new Set(), cand = [];
     for (let cz = Math.floor(z0 / CELL); cz <= Math.floor((z0 + T) / CELL); cz++) for (let cx = Math.floor(x0 / CELL); cx <= Math.floor((x0 + T) / CELL); cx++) {
       const a = grid.get(ck(cx, cz)); if (!a) continue;
       for (const k of a) if (!seen.has(k)) { seen.add(k); cand.push(k); }
     }
-    if (!cand.length) return;
+    if (!cand.length) return false;
     tw.fill(0); tc.fill(1e9);
     for (const k of cand) {
       const o = k * SEG, ax = S[o], az = S[o + 1], bx = S[o + 2], bz = S[o + 3], ta = S[o + 4], tb = S[o + 5], kind = S[o + 6], side = S[o + 7];
@@ -121,13 +123,62 @@ const MetroGround = (() => {
         }
       }
     }
+    let changed = false;
     for (let q = 0; q < h.length; q++) {
       let v = h[q];
       if (tw[q] > 0) v += (tt[q] - v) * tw[q];
       if (tc[q] < v) v = tc[q];
-      h[q] = v;
+      if (v !== h[q]) { h[q] = v; changed = true; }
     }
     stats.tiles++; stats.ms += performance.now() - t0;
+    return changed;
+  }
+  // the carved height at one point for a natural height hn (the same rule as filter, without a grid)
+  function carvePoint(x, z, hn) {
+    const a = grid.get(ck(Math.floor(x / CELL), Math.floor(z / CELL))); if (!a) return hn;
+    let w0 = 0, t0 = 0, cut = 1e9;
+    for (const k of a) {
+      const o = k * SEG, ax = S[o], az = S[o + 1], bx = S[o + 2], bz = S[o + 3], ta = S[o + 4], tb = S[o + 5], kind = S[o + 6], side = S[o + 7];
+      const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz, len = Math.sqrt(L2) || 1;
+      let u = L2 > 1e-9 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const ex = x - (ax + dx * u), ez = z - (az + dz * u), d = Math.sqrt(ex * ex + ez * ez), tgt = ta + (tb - ta) * u;
+      if (kind === 0) {
+        const w = 1 - sstep(CORE, CORE + Math.min(SLOPE_MAX, Math.max(SLOPE_MIN, SLOPE * Math.abs(hn - tgt))), d);
+        if (w > w0) { w0 = w; t0 = tgt; }
+      } else if (kind === 1) {
+        const w = 1 - sstep(TRENCH_CORE, TRENCH_CORE + TRENCH_EDGE, d);
+        if (w > 0) cut = Math.min(cut, hn - Math.max(0, hn - tgt) * w);
+      } else {
+        const lat = ((x - ax) * -dz + (z - az) * dx) / len * side;
+        if (lat < PLAT_IN - PLAT_EDGE) continue;
+        const w = (1 - sstep(PLAT_W, PLAT_W + PLAT_EDGE, lat)) * sstep(PLAT_IN - PLAT_EDGE, PLAT_IN, lat) * (1 - sstep(0.5, 3, Math.abs(d - Math.abs(lat))));
+        if (w > 0) cut = Math.min(cut, hn - Math.max(0, hn - tgt) * w);
+      }
+    }
+    let v = hn; if (w0 > 0) v += (t0 - v) * w0; if (cut < v) v = cut;
+    return v;
+  }
+  // the 800 m tiles (Towns / Flora tiles, SPEC_v2 L7) where the carve or the drop filters change anything
+  function affected() {
+    const T7 = 800, X0 = -45056, Z0 = -49152, keys = new Set();
+    const mark = (x0, z0, x1, z1) => {
+      for (let tz = Math.floor((z0 - Z0) / T7); tz <= Math.floor((z1 - Z0) / T7); tz++) for (let tx = Math.floor((x0 - X0) / T7); tx <= Math.floor((x1 - X0) / T7); tx++) keys.add(tx + ',' + tz);
+    };
+    for (let k = 0; k < nS; k++) {
+      const o = k * SEG, r = S[o + 6] === 0 ? REACH : S[o + 6] === 1 ? TRENCH_CORE + TRENCH_EDGE : PLAT_W + PLAT_EDGE;
+      mark(Math.min(S[o], S[o + 2]) - r, Math.min(S[o + 1], S[o + 3]) - r, Math.max(S[o], S[o + 2]) + r, Math.max(S[o + 1], S[o + 3]) + r);
+    }
+    for (const t of MetroNet.tracks) for (let i = 0; i < t.n; i += 4) if (ABOVE[t.ST[i]]) mark(t.X[i] - 22, t.Z[i] - 22, t.X[i] + 22, t.Z[i] + 22);
+    for (const st of MetroNet.stations || []) mark(st.x - 160, st.z - 160, st.x + 160, st.z + 160);
+    return [...keys].map(k => { const [tx, tz] = k.split(',').map(Number); return [X0 + tx * T7, Z0 + tz * T7, X0 + (tx + 1) * T7, Z0 + (tz + 1) * T7]; });
+  }
+  // trees in the way of a BART structure above ground (the new tree tiles keep 6.5 m + half a crown clear at bake time;
+  // the older ones near the lines need it at runtime)
+  function dropTree(x, z, r) {
+    const n = MetroNet.nearest(x, z, 6.5 + r * 0.5 + 0.5);
+    if (!n) return false;
+    MetroNet.frame(n.track, n.s, fr);
+    return !!ABOVE[fr.struct] && n.dist < 6.5 + r * 0.5;
   }
   // (debug / QA) carved height at a point for a given natural height
   function carveAt(x, z, hn) { const h = new Float32Array(129 * 129).fill(hn); const T = 12.8; filter(9, x - T / 2, z - T / 2, T, h); return h[64 * 129 + 64]; }
@@ -135,23 +186,27 @@ const MetroGround = (() => {
   function install() {
     if (installed || typeof MetroNet === 'undefined' || !MetroNet.tracks || !MetroNet.tracks.length || typeof Terrain === 'undefined' || !Terrain.addHeightFilter) return false;
     installed = true; build();
-    Terrain.addHeightFilter(filter, bbox);
-    if (typeof Towns !== 'undefined' && Towns.addDrop) Towns.addDrop(dropBuilding);
-    // things already built on the old ground rebuild on the carved one
-    try { if (typeof Towns !== 'undefined' && Towns.dispose) Towns.dispose(); } catch (e) {}
-    try { if (typeof Flora !== 'undefined' && Flora.dispose) Flora.dispose(); } catch (e) {}
-    console.log('MetroGround: carving', stats.segments, 'segments,', stats.platforms, 'platforms');
+    const R = rects = affected(); stats.rects = R.length;
+    // what already stands near the lines is re-placed there only (no dispose: nothing elsewhere reloads or goes black):
+    // trees first, by the carve's height change under each (computed on the ground before the carve), and the drop filter
+    try { if (typeof Flora !== 'undefined' && Flora.adjust) { Flora.addDrop(dropTree); stats.flora = Flora.adjust(R, (x, z) => { const hn = Terrain.h(x, z); return carvePoint(x, z, hn) - hn; }); } } catch (e) { console.warn('MetroGround flora', e); }
+    // the terrain re-filters its loaded tiles in place (spread over frames), then the towns rebuild the touched tiles
+    Promise.resolve(Terrain.addHeightFilter(filter, bbox)).then(() => {
+      try { if (typeof Towns !== 'undefined' && Towns.refresh) { Towns.addDrop(dropBuilding); stats.towns = Towns.refresh(R); } } catch (e) { console.warn('MetroGround towns', e); }
+    });
+    console.log('MetroGround: carving', stats.segments, 'segments,', stats.platforms, 'platforms,', R.length, 'tiles re-placed');
     return true;
   }
   // self-start with #metro=1 (#mground=0 turns it off for QA): as soon as the terrain and MetroNet are there
-  if (typeof location !== 'undefined' && /(^|[#&])metro=1(&|$)/.test(location.hash) && !/(^|[#&])mground=0(&|$)/.test(location.hash)) {
+  if (typeof location !== 'undefined' && (typeof Metro !== 'undefined' ? Metro.on : /(^|[#&])metro=1(&|$)/.test(location.hash)) && !/(^|[#&])mground=0(&|$)/.test(location.hash)) {   // (the switch: 18_metro.js)
     const t = setInterval(() => {
       if (typeof Terrain === 'undefined' || !Terrain.tiled || typeof MetroNet === 'undefined') return;
       if (!MetroNet.tracks || !MetroNet.tracks.length) { if (MetroNet.load) MetroNet.load().catch(() => {}); return; }
       if (install()) clearInterval(t);
     }, 400);
   }
-  const api = { install, carveAt, stats, get installed() { return installed; } };
+  let rects = null;
+  const api = { install, carveAt, carvePoint, stats, get installed() { return installed; }, get rects() { return rects; } };
   if (typeof window !== 'undefined') (window.__baylineMods ||= {}).MetroGround = api;
   return api;
 })();

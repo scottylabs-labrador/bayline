@@ -1774,7 +1774,8 @@ const Towns = (() => {
       if (t.gndLvl) lodTouch(t, false);
       if (t.bldMesh) { const cs = d < shR; if (t.bldMesh.castShadow !== cs) { t.bldMesh.castShadow = cs; t.bldMesh.receiveShadow = cs; for (const m of t.houseMeshes) { m.castShadow = cs; m.receiveShadow = cs; } } }
       if (t.gndMesh) { const rs = d < shR; if (t.gndMesh.receiveShadow !== rs) t.gndMesh.receiveShadow = rs; }
-      if (t.gen || wb !== t.bldLvl || wg !== t.gndLvl) _jobs.push(t);
+      if (t.fresh && !t.gen) takeFresh(t);                                // (refresh: new data, rebuild both parts)
+      if (t.gen || wb !== t.bldLvl || wg !== t.gndLvl || t.forceB || t.forceG) _jobs.push(t);
     }
     // skyline tiles: shown only where the full tile has no buildings yet
     for (const s of [...skyTiles.values()]) {
@@ -1795,8 +1796,9 @@ const Towns = (() => {
       if (now() > deadline) break;
       if (!t.gen) {
         if (t.sky) { t.gen = buildSky(t); t.genKind = 's'; }
-        else if (t.wantB !== t.bldLvl && t.wantB > 0) { t.gen = buildBld(t, t.wantB); t.genKind = 'b'; }
-        else if (t.wantG !== t.gndLvl && t.wantG > 0) { t.gen = buildGnd(t, t.wantG); t.genKind = 'g'; }
+        else if ((t.wantB !== t.bldLvl || t.forceB) && t.wantB > 0) { t.forceB = false; t.gen = buildBld(t, t.wantB); t.genKind = 'b'; }
+        else if ((t.wantG !== t.gndLvl || t.forceG) && t.wantG > 0) { t.forceG = false; t.gen = buildGnd(t, t.wantG); t.genKind = 'g'; }
+        else if (t.forceB || t.forceG) { t.forceB = t.forceG = false; continue; }
         else continue;
       }
       if (t.genKind === 'g') occ = t.occ || occ;
@@ -1887,6 +1889,34 @@ const Towns = (() => {
   // stations draw themselves): fn(building, centroid x, z) -> true drops it when a tile decodes (call dispose() after)
   const dropFilters = [];
   const addDrop = (fn) => { dropFilters.push(fn); };
+  // re-place what stands inside rects (world [x0, z0, x1, z1]) after the ground or the drop filters changed there (Bayline
+  // Metro: MetroGround's carve, the stations' keep-outs). Only the loaded tiles that overlap are touched: they re-read
+  // their data (the drop filters apply at decode) and rebuild on the current ground in the background, while their
+  // current meshes, materials and photo textures stay on screen until the new ones swap in (no black roofs, no holes).
+  // Unlike dispose(), nothing else reloads. Tiles not loaded yet simply decode with the filters when they come.
+  function refresh(rects) {
+    const hit = (ox, oz) => rects.some(r => r[0] < ox + TILE && r[2] > ox && r[1] < oz + TILE && r[3] > oz);
+    for (const k of [...decoded.keys()]) { const d = decoded.get(k); if (d && hit(d.ox, d.oz)) decoded.delete(k); }
+    let n = 0;
+    for (const t of tiles.values()) {
+      if (!hit(t.ox, t.oz) || t.state === 'dead' || t.state === 'empty') continue;
+      if (t.state === 'new' || t.state === 'fetch' || t.state === 'decode') continue;     // (will decode with the filters)
+      n++; const my = t.refreshId = (t.refreshId || 0) + 1;
+      getBin(t.path, 2 + Math.round(t.dist / 400)).then(u8 => {
+        if (t.state === 'dead' || t.refreshId !== my) return;
+        try { t.fresh = decode(t.tx, t.ty, u8); } catch (e) { console.warn('[towns] refresh', t.key, e); }
+      }, () => {});
+    }
+    stats.refreshed = (stats.refreshed || 0) + n;
+    return n;
+  }
+  function takeFresh(t) {
+    t.data = t.fresh; t.fresh = null; remember(t.key, t.data);
+    t.hf = null; t.inter = null;
+    if (t.state === 'ground') return;                         // (its first build is still to come: it will use the new data)
+    if (t.bldLvl) t.forceB = true;
+    if (t.gndLvl) t.forceG = true;
+  }
   // world rects [x0, z0, x1, z1] of the Towns tiles overlapping a rectangle (WorldTiles leaves those to Towns)
   function rectsIn(x0, z0, x1, z1) {
     const out = [];
@@ -1909,6 +1939,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop,
+  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

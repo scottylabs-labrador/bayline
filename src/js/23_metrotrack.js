@@ -13,10 +13,10 @@
 // API: MetroTrack.enabled, init(), update(camPos, dt), group, stats, DIM, PAL, GB (geometry builder), frameAt(track, s, o),
 //      pairAt(track, s) -> { t2, s2, lat } | null, limits(track) (station ranges: STATIONS builds the box/deck there).
 const MetroTrack = (() => {
-  const enabled = (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();
+  const enabled = typeof Metro !== 'undefined' ? Metro.on : (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();   // (the switch: 18_metro.js)
   const group = new THREE.Group(); group.name = 'metro-infra';
-  const stats = { chunks: 0, far: 0, body: 0, detail: 0, jobs: 0, buildMs: 0, tris: 0, inst: 0 };
-  if (!enabled) return { enabled: false, init() {}, update() {}, group, stats };
+  const stats = { chunks: 0, far: 0, body: 0, detail: 0, jobs: 0, buildMs: 0, tris: 0, inst: 0, away: 0, slow: [], instMs: 0 };
+  if (!enabled) return { enabled: false, init() {}, update() {}, setQuality() {}, group, stats };
 
   // ---------------------------------------------------------------- dimensions (metres; research: notes/bart/infra.md)
   const DIM = {
@@ -58,21 +58,39 @@ const MetroTrack = (() => {
     fence: P(0x8b9094, 0.45, 0.6, 7), bearing: P(0x202020, 0.8, 0, 9), steel: P(0x4a4d50, 0.55, 0.55, 0),
     steelRing: P(0x55595c, 0.62, 0.55, 11), exitSign: P(0x2fb35a, 0.4, 0, 5), blueLamp: P(0x3a6cff, 0.3, 0, 5),
     doorYellow: P(0xe0b21e, 0.5, 0.2, 0), jacket: P(0x9a9d9e, 0.5, 0.55, 7), blueSign: P(0x1f4f8f, 0.4, 0.1, 0),
+    railMid: P(0x6a5a4e, 0.6, 0.5, 11), railMidTop: P(0xc8ccd0, 0.2, 0.9, 12),       // simple rails beyond the detail ring
     frog: P(0x6a5a50, 0.62, 0.6, 2), steelGreen: P(0x3b4a3e, 0.55, 0.35, 0), tie: P(0xa29e95, 0.9, 0, 1),
   };
 
   // ---------------------------------------------------------------- geometry builder
   // position, normal, colour (linear rgb), aM = (roughness, metalness, kind, wear), aT = (s, below the top edge, above the
   // ground, light group). `top` / `gnd` (heights, m) feed the rain-streak and base-grime terms; set them per part.
+  // (growable typed arrays: no per-vertex array pushes, no array-to-typed-array copies, little garbage while streaming)
+  const growF = (a, n) => { if (n <= a.length) return a; let m = Math.max(a.length * 2, 1024); while (m < n) m *= 2; const b = new Float32Array(m); b.set(a); return b; };
+  const growU = (a, n) => { if (n <= a.length) return a; let m = Math.max(a.length * 2, 2048); while (m < n) m *= 2; const b = new Uint32Array(m); b.set(a); return b; };
+  const F0A = new Float32Array(0), U0A = new Uint32Array(0);
   class GB {
-    constructor() { this.p = []; this.n = []; this.c = []; this.m = []; this.t = []; this.i = []; this.s = 0; this.top = 1e4; this.gnd = -1e4; this.lg = -1; this.wear = 0.5; }
-    get count() { return this.p.length / 3; }
+    constructor() { this.cap = 0; this.nv = 0; this.P = F0A; this.N = F0A; this.C = F0A; this.M = F0A; this.T = F0A; this.I = U0A; this.ni = 0; this.s = 0; this.top = 1e4; this.gnd = -1e4; this.lg = -1; this.wear = 0.5; }
+    get count() { return this.nv; }
+    get nIdx() { return this.ni; }
+    get pos() { return this.P.subarray(0, this.nv * 3); }                   // (views for post-processing: cullInside)
+    get idx() { return this.I.subarray(0, this.ni); }
+    setIdx(a) { this.I = a instanceof Uint32Array ? a : Uint32Array.from(a); this.ni = a.length; }
+    reserve(n) { if (n <= this.cap) return; let m = Math.max(this.cap * 2, 512); while (m < n) m *= 2;
+      this.P = growF(this.P, m * 3); this.N = growF(this.N, m * 3); this.C = growF(this.C, m * 3); this.M = growF(this.M, m * 4); this.T = growF(this.T, m * 4); this.cap = m; this.onGrow(m); }
+    onGrow(m) {}
     v(x, y, z, nx, ny, nz, C) {
-      this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(C[0], C[1], C[2]); this.m.push(C[3], C[4], C[5], this.wear);
-      this.t.push(this.s, Math.max(0, this.top - y), Math.max(0, y - this.gnd), this.lg); return this.p.length / 3 - 1;
+      const k = this.nv; if (k >= this.cap) this.reserve(k + 1);
+      const k3 = k * 3, k4 = k * 4, P = this.P, N = this.N, Cc = this.C, M = this.M, T = this.T;
+      P[k3] = x; P[k3 + 1] = y; P[k3 + 2] = z; N[k3] = nx; N[k3 + 1] = ny; N[k3 + 2] = nz; Cc[k3] = C[0]; Cc[k3 + 1] = C[1]; Cc[k3 + 2] = C[2];
+      M[k4] = C[3]; M[k4 + 1] = C[4]; M[k4 + 2] = C[5]; M[k4 + 3] = this.wear;
+      T[k4] = this.s; T[k4 + 1] = Math.max(0, this.top - y); T[k4 + 2] = Math.max(0, y - this.gnd); T[k4 + 3] = this.lg;
+      this.nv = k + 1; return k;
     }
-    q(a, b, c, d) { this.i.push(a, b, c, a, c, d); }
-    tri(a, b, c) { this.i.push(a, b, c); }
+    i3(a, b, c) { const n = this.ni; if (n + 3 > this.I.length) this.I = growU(this.I, n + 3); const I = this.I; I[n] = a; I[n + 1] = b; I[n + 2] = c; this.ni = n + 3; }
+    i6(a, b, c, d, e, f) { const n = this.ni; if (n + 6 > this.I.length) this.I = growU(this.I, n + 6); const I = this.I; I[n] = a; I[n + 1] = b; I[n + 2] = c; I[n + 3] = d; I[n + 4] = e; I[n + 5] = f; this.ni = n + 6; }
+    q(a, b, c, d) { this.i6(a, b, c, a, c, d); }
+    tri(a, b, c) { this.i3(a, b, c); }
     // planar quad a b c d (counter-clockwise seen from the outside), flat normal
     quad(a, b, c, d, C) {
       const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
@@ -102,7 +120,7 @@ const MetroTrack = (() => {
       for (let k = 0; k < n; k++) { const a0 = b + 2 * k; this.q(a0, a0 + 2, a0 + 3, a0 + 1); }
       const cap = (Pp, r, s) => { const c0 = this.v(Pp[0], Pp[1], Pp[2], wx * s, wy * s, wz * s, C), rb = this.count;
         for (let k = 0; k <= n; k++) { const t = k / n * Math.PI * 2, co = Math.cos(t), si = Math.sin(t); this.v(Pp[0] + (ux * co + vx * si) * r, Pp[1] + (uy * co + vy * si) * r, Pp[2] + (uz * co + vz * si) * r, wx * s, wy * s, wz * s, C); }
-        for (let k = 0; k < n; k++) { if (s > 0) this.i.push(c0, rb + k, rb + k + 1); else this.i.push(c0, rb + k + 1, rb + k); } };
+        for (let k = 0; k < n; k++) { if (s > 0) this.i3(c0, rb + k, rb + k + 1); else this.i3(c0, rb + k + 1, rb + k); } };
       if (capB) cap(B, r1, 1); if (capA) cap(A, r0, -1);
     }
     // sweep a cross-section along rows. rows[i] = { o: [x,y,z] origin, r: [x,y,z] lateral unit, u: [x,y,z] up unit, s }.
@@ -137,8 +155,8 @@ const MetroTrack = (() => {
         }
         if (i > 0) {
           const p0 = base[i - 1], p1 = b0;
-          if (flat) for (let k = 0; k < segs; k++) { const a0 = p0 + 2 * k, a1 = p1 + 2 * k; if (flip) this.i.push(a0, a1, a0 + 1, a0 + 1, a1, a1 + 1); else this.i.push(a0, a0 + 1, a1, a0 + 1, a1 + 1, a1); }
-          else for (let k = 0; k < segs; k++) { const k1 = (k + 1) % np, a0 = p0 + k, a1 = p1 + k, b0 = p0 + k1, b1 = p1 + k1; if (flip) this.i.push(a0, a1, b0, b0, a1, b1); else this.i.push(a0, b0, a1, b0, b1, a1); }
+          if (flat) for (let k = 0; k < segs; k++) { const a0 = p0 + 2 * k, a1 = p1 + 2 * k; if (flip) this.i6(a0, a1, a0 + 1, a0 + 1, a1, a1 + 1); else this.i6(a0, a0 + 1, a1, a0 + 1, a1 + 1, a1); }
+          else for (let k = 0; k < segs; k++) { const k1 = (k + 1) % np, a0 = p0 + k, a1 = p1 + k, b0 = p0 + k1, b1 = p1 + k1; if (flip) this.i6(a0, a1, b0, b0, a1, b1); else this.i6(a0, b0, a1, b0, b1, a1); }
         }
       }
       this.top = 1e4; this.gnd = -1e4;
@@ -151,16 +169,16 @@ const MetroTrack = (() => {
       let cl = 0, cu = 0; for (const p of prof) { cl += p[0]; cu += p[1]; } cl /= prof.length; cu /= prof.length;
       const c0 = this.v(o[0] + r[0] * cl + u[0] * cu, o[1] + r[1] * cl + u[1] * cu, o[2] + r[2] * cl + u[2] * cu, n[0], n[1], n[2], C);
       const b = this.count; for (const p of prof) this.v(o[0] + r[0] * p[0] + u[0] * p[1], o[1] + r[1] * p[0] + u[1] * p[1], o[2] + r[2] * p[0] + u[2] * p[1], n[0], n[1], n[2], C);
-      for (let k = 0; k < prof.length; k++) { const a = b + k, bb = b + (k + 1) % prof.length; if (dir > 0) this.i.push(c0, a, bb); else this.i.push(c0, bb, a); }
+      for (let k = 0; k < prof.length; k++) { const a = b + k, bb = b + (k + 1) % prof.length; if (dir > 0) this.i3(c0, a, bb); else this.i3(c0, bb, a); }
     }
     geometry() {
-      if (!this.i.length) return null;
-      const g = new THREE.BufferGeometry(), nv = this.count;
-      g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3)); g.setAttribute('aM', new THREE.Float32BufferAttribute(this.m, 4));
-      g.setAttribute('aT', new THREE.Float32BufferAttribute(this.t, 4));
-      g.setIndex(nv > 65535 ? new THREE.Uint32BufferAttribute(this.i, 1) : new THREE.Uint16BufferAttribute(this.i, 1));
-      g.computeBoundingSphere(); stats.tris += this.i.length / 3; return g;
+      if (!this.ni) return null;
+      const g = new THREE.BufferGeometry(), nv = this.nv;
+      g.setAttribute('position', new THREE.BufferAttribute(this.P.slice(0, nv * 3), 3)); g.setAttribute('normal', new THREE.BufferAttribute(this.N.slice(0, nv * 3), 3));
+      g.setAttribute('color', new THREE.BufferAttribute(this.C.slice(0, nv * 3), 3)); g.setAttribute('aM', new THREE.BufferAttribute(this.M.slice(0, nv * 4), 4));
+      g.setAttribute('aT', new THREE.BufferAttribute(this.T.slice(0, nv * 4), 4));
+      g.setIndex(new THREE.BufferAttribute(nv > 65535 ? this.I.slice(0, this.ni) : Uint16Array.from(this.I.subarray(0, this.ni)), 1));
+      g.computeBoundingSphere(); stats.tris += this.ni / 3; return g;
     }
   }
 
@@ -168,17 +186,19 @@ const MetroTrack = (() => {
   // frame (aLH) and the fixture line lighting it (aFix = lateral, height, spacing, phase). Set .ref = { o, r, u, t } (the
   // track centreline frame, chunk-local) before emitting; sweep() sets it per row from row.c (centreline) when present.
   class TGB extends GB {
-    constructor() { super(); this.tan = []; this.lh = []; this.fx = []; this.ref = null; this.fix = [0, 0, 0, 0]; }
+    constructor() { super(); this.TA = F0A; this.LH = F0A; this.FX = F0A; this.ref = null; this.fix = [0, 0, 0, 0]; }
+    onGrow(m) { this.TA = growF(this.TA, m * 3); this.LH = growF(this.LH, m * 4); this.FX = growF(this.FX, m * 4); }
     v(x, y, z, nx, ny, nz, C) {
-      const k = super.v(x, y, z, nx, ny, nz, C), R = this.ref;
-      if (R) { const dx = x - R.o[0], dy = y - R.o[1], dz = z - R.o[2]; this.tan.push(R.t[0], R.t[1], R.t[2]); this.lh.push(dx * R.r[0] + dy * R.r[1] + dz * R.r[2], dx * R.u[0] + dy * R.u[1] + dz * R.u[2], 0, 0); }
-      else { this.tan.push(1, 0, 0); this.lh.push(0, 0, 0, 0); }
-      this.fx.push(this.fix[0], this.fix[1], this.fix[2], this.fix[3]); return k;
+      const k = super.v(x, y, z, nx, ny, nz, C), R = this.ref, k3 = k * 3, k4 = k * 4, TA = this.TA, LH = this.LH, FX = this.FX, f = this.fix;
+      if (R) { const dx = x - R.o[0], dy = y - R.o[1], dz = z - R.o[2]; TA[k3] = R.t[0]; TA[k3 + 1] = R.t[1]; TA[k3 + 2] = R.t[2];
+        LH[k4] = dx * R.r[0] + dy * R.r[1] + dz * R.r[2]; LH[k4 + 1] = dx * R.u[0] + dy * R.u[1] + dz * R.u[2]; LH[k4 + 2] = 0; LH[k4 + 3] = 0; }
+      else { TA[k3] = 1; TA[k3 + 1] = 0; TA[k3 + 2] = 0; LH[k4] = 0; LH[k4 + 1] = 0; LH[k4 + 2] = 0; LH[k4 + 3] = 0; }
+      FX[k4] = f[0]; FX[k4 + 1] = f[1]; FX[k4 + 2] = f[2]; FX[k4 + 3] = f[3]; return k;
     }
     onRow(R) { this.ref = { o: R.c || R.o, r: R.r, u: R.u, t: R.t || [1, 0, 0] }; }
     geometry() {
-      const g = super.geometry(); if (!g) return null;
-      g.setAttribute('aTan', new THREE.Float32BufferAttribute(this.tan, 3)); g.setAttribute('aLH', new THREE.Float32BufferAttribute(this.lh, 4)); g.setAttribute('aFix', new THREE.Float32BufferAttribute(this.fx, 4));
+      const g = super.geometry(); if (!g) return null; const nv = this.nv;
+      g.setAttribute('aTan', new THREE.BufferAttribute(this.TA.slice(0, nv * 3), 3)); g.setAttribute('aLH', new THREE.BufferAttribute(this.LH.slice(0, nv * 4), 4)); g.setAttribute('aFix', new THREE.BufferAttribute(this.FX.slice(0, nv * 4), 4));
       return g;
     }
   }
@@ -242,11 +262,11 @@ const MetroTrack = (() => {
   // sides, a polished running band on rail heads, ballast stones), wet surfaces in rain, lamps. Tunnel geometry uses the
   // TUNNEL variant: its own fixtures light it per fragment (the periodic light line of each tunnel, evaluated with the
   // engine's own BRDF, so rails glint and the lining shows light pools), on top of the Under patch that removes daylight.
-  const uWet = { value: 0 }, uLampK = { value: 1 };
+  const uWet = { value: 0 }, uLampK = { value: 1 }, uRailSwitch = { value: 190 };
   const MATS = {};
   function infraMaterial(kind) {
     const tunnel = kind === 'tunnel', far = kind === 'far';
-    const u = { uConc: { value: concreteTexture() }, uBall: { value: ballastTexture() }, uBallMean: { value: ballastTexture().userData.mean }, uWet, uNight: U.uNight, uTime: U.uTime, uLampK };
+    const u = { uConc: { value: concreteTexture() }, uBall: { value: ballastTexture() }, uBallMean: { value: ballastTexture().userData.mean }, uWet, uNight: U.uNight, uTime: U.uTime, uLampK, uRailSwitch };
     if (far) u.uHide = { value: 0 };
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: 0.9 });
     m.userData.u = u;
@@ -280,7 +300,7 @@ const MetroTrack = (() => {
             vWp = (modelMatrix * wq).xyz; vWn = normalize(mat3(modelMatrix) * objectNormal); }`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
-          uniform sampler2D uConc; uniform sampler2D uBall; uniform vec3 uBallMean; uniform float uWet; uniform float uNight; uniform float uTime; uniform float uLampK;
+          uniform sampler2D uConc; uniform sampler2D uBall; uniform vec3 uBallMean; uniform float uWet; uniform float uNight; uniform float uTime; uniform float uLampK; uniform float uRailSwitch;
           varying vec4 vM; varying vec4 vT; varying vec3 vWp; varying vec3 vWn;
           #ifdef BL_TUNNEL
           varying vec3 vTan; varying vec4 vLH; varying vec4 vFix;
@@ -296,6 +316,13 @@ const MetroTrack = (() => {
             vec3 col = diffuseColor.rgb; float kind = floor(vM.z + 0.5); gKind = kind; gRough = vM.x; gMetal = vM.y; gEmis = vec3(0.0); gBump = 0.0; gBumpN = vec3(0.0);
             vec3 an = abs(vWn); float fw = fwidth(vWp.x) + fwidth(vWp.y) + fwidth(vWp.z);
             float dcam = distance(vWp, cameraPosition);
+            #ifndef BL_FAR
+            // rails: the detail layer's (kinds 2 / 3: rails, third rail, frogs) near, the body layer's simple rails (11 / 12)
+            // beyond uRailSwitch; a dithered 16 m band, so neither pops nor both draw
+            { float dth = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 16.0;
+              if ((kind == 2.0 || kind == 3.0) && dcam > uRailSwitch + dth) discard;
+              if (kind == 11.0 || kind == 12.0) { if (dcam < uRailSwitch + dth) discard; kind -= 9.0; gKind = kind; } }
+            #endif
             #ifndef BL_FAR
             if (kind == 1.0 || kind == 10.0) {                      // concrete
               vec3 w3 = pow(an, vec3(6.0)); w3 /= dot(w3, vec3(1.0));
@@ -438,7 +465,8 @@ const MetroTrack = (() => {
     for (let k = 1; k < out.length - 1; k++) if (out[k].s1 - out[k].s0 < 12 && out[k - 1].type === out[k + 1].type) { out[k - 1].s1 = out[k + 1].s1; out.splice(k, 2); k--; }
     return out;
   }
-  // pairing: per 10 m bin the nearest parallel track within 7.5 m (id, its s, lateral offset in my level frame, +right)
+  // pairing: per 10 m bin the nearest parallel track within 7.5 m at the same level (within 1.5 m; id, its s, lateral
+  // offset in my level frame, +right)
   const BIN = 10;
   function pairTracks() {
     const cell = 40, grid = new Map(), key = (i, j) => i * 100003 + j;
@@ -451,15 +479,16 @@ const MetroTrack = (() => {
         for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) {
           const l = grid.get(key(cx + a, cz + c)); if (!l) continue;
           for (let q = 0; q < l.length; q += 2) {
-            const R2 = TRACKS[l[q]]; if (R2 === R) continue; const t2 = R2.t, j = l[q + 1];
+            const R2 = TRACKS[l[q]]; if (R2 === R || R.cls === 'crossover' || R2.cls === 'crossover') continue; const t2 = R2.t, j = l[q + 1];   // (crossovers never share a structure)
             for (let jj = Math.max(0, j - 2); jj <= Math.min(t2.X.length - 2, j + 1); jj++) {
               const ax = t2.X[jj], az = t2.Z[jj], dx = t2.X[jj + 1] - ax, dz = t2.Z[jj + 1] - az, L2 = dx * dx + dz * dz || 1e-9;
               const uu = U.clamp(((F0.x - ax) * dx + (F0.z - az) * dz) / L2, 0, 1), px = ax + dx * uu, pz = az + dz * uu;
               const along = (px - F0.x) * F0.tx + (pz - F0.z) * F0.tz; if (Math.abs(along) > 1.5) continue;
               const par = Math.abs(dx * F0.tx + dz * F0.tz) / Math.sqrt(L2); if (par < 0.97) continue;
-              const lat = (px - F0.x) * F0.lx + (pz - F0.z) * F0.lz;
+              const lat = (px - F0.x) * F0.lx + (pz - F0.z) * F0.lz, dy = (t2.Y[jj] + (t2.Y[jj + 1] - t2.Y[jj]) * uu) - F0.y;
+              if (Math.abs(dy) > 3) continue;                                   // (stacked levels: 12th / 19th St, the Wye)
               if (Math.abs(lat) > 2.5 && Math.abs(lat) < Math.abs(nbl)) nbl = lat;
-              if (Math.abs(lat) < Math.abs(bl) && Math.abs(lat) > 2.5) { bl = lat; best = R2.k; bs = (jj + uu) * t2.step; bdy = (t2.Y[jj] + (t2.Y[jj + 1] - t2.Y[jj]) * uu) - F0.y; }
+              if (Math.abs(lat) < Math.abs(bl) && Math.abs(lat) > 2.5 && Math.abs(dy) < 1.5) { bl = lat; best = R2.k; bs = (jj + uu) * t2.step; bdy = dy; }
             }
           }
         }
@@ -539,8 +568,10 @@ const MetroTrack = (() => {
   // ---------------------------------------------------------------- chunks, layers, jobs
   // Each layer cuts every track into its own chunk length: DETAIL 400 m (≤ 480 m away), BODY 800 m (≤ 2.7 km), FAR 2 km
   // (≤ 11 km; five 400 m sub-pieces that hide themselves, per mesh, where a BODY chunk is already drawn).
-  const LAYERS = { detail: { CH: 800, R: 480, keep: 1.35 }, body: { CH: 800, R: 2700, keep: 1.25 }, far: { CH: 2000, R: 11000, keep: 1.12, SUB: 400 } };
+  // (the detail layer only needs to reach the rail switch; bodies to 1.6 km, far silhouettes beyond)
+  const LAYERS = { detail: { CH: 200, R: 240, keep: 1.35 }, body: { CH: 800, R: 1600, keep: 1.25 }, far: { CH: 2000, R: 11000, keep: 1.12, SUB: 400 } };
   const R_DETAIL = LAYERS.detail.R, R_BODY = LAYERS.body.R, R_FAR = LAYERS.far.R, CH = LAYERS.detail.CH, BUDGET = 3.2;
+  const SHADOW_R = 650, FENCE_R = 450;           // (structures cast shadows only this near; fences show only this near)
   const grids = { detail: new Map(), body: new Map(), far: new Map() }, CG = 1000;
   const built = { detail: new Set(), body: new Set(), far: new Set() };          // chunks with a group or a job
   function planChunks() {
@@ -563,11 +594,13 @@ const MetroTrack = (() => {
     }
   }
   const jobs = [];
+  // (stats.slow: the slowest job steps seen, [ms, stage], for QA: every step should stay well under a frame)
   function runJobs() {
     const t0 = performance.now(); jobs.sort((a, b) => a.d - b.d);
     while (jobs.length && performance.now() - t0 < BUDGET) {
-      const j = jobs[0]; let r;
+      const j = jobs[0]; let r; const ts = performance.now();
       try { r = j.gen.next(); } catch (e) { console.error('metrotrack job', j.ch.layer, j.ch.R.id, j.ch.k, e); r = { done: true }; j.ch.failed++; j.ch.job = null; }
+      const dt = performance.now() - ts; if (dt > 6) { stats.slow.push([+dt.toFixed(1), j.ch.layer + ':' + (j.ch.stage || '?') + ':' + j.ch.R.id + ':' + j.ch.k]); if (stats.slow.length > 40) { stats.slow.sort((a, b) => b[0] - a[0]); stats.slow.length = 20; } }
       if (r.done) jobs.shift();
     }
     stats.buildMs = +(performance.now() - t0).toFixed(2); stats.jobs = jobs.length;
@@ -632,13 +665,15 @@ const MetroTrack = (() => {
     for (const run of ch.R.runs) {
       if (run.s1 <= ch.s0 || run.s0 >= ch.s1) continue;
       const a = Math.max(run.s0, ch.s0), b = Math.min(run.s1, ch.s1);
-      if (UNDERGROUND.has(run.type)) { if (typeof MetroTube !== 'undefined') MetroTube.body(ctx, run, a, b); }
-      else if (typeof MetroGuide !== 'undefined') MetroGuide.body(ctx, run, a, b);
+      ch.stage = run.type;
+      if (UNDERGROUND.has(run.type)) { if (typeof MetroTube !== 'undefined') { const it = MetroTube.body(ctx, run, a, b); if (it && it.next) yield* it; } }
+      else if (typeof MetroGuide !== 'undefined') { for (const [u0, u1] of MetroGuide.bodySplit(run, a, b)) { MetroGuide.body(ctx, run, u0, u1); MetroGuide.midRails(ctx, B.infra, ch.R, u0, u1); yield; } }
       yield;
     }
-    const mi = addMesh(g, B.infra, MATS.infra); if (mi) outdoorMark(ch, mi);
-    if (B.fence) { const fm = B.fence.mesh(MATS.fence); if (fm) { g.add(fm); outdoorMark(ch, fm); } }
-    if (typeof MetroTube !== 'undefined') MetroTube.finish(ctx, g);
+    ch.stage = 'mesh'; const mi = addMesh(g, B.infra, MATS.infra); if (mi) { outdoorMark(ch, mi); mi.userData.caster = true; mi.castShadow = false; ch.shadow = false; }
+    if (B.fence) { const fm = B.fence.mesh(MATS.fence); if (fm) { fm.castShadow = false; g.add(fm); outdoorMark(ch, fm); ch.fence = fm; } }
+    yield;
+    ch.stage = 'cells'; if (typeof MetroTube !== 'undefined') { const it = MetroTube.finish(ctx, g); if (it && it.next) yield* it; }
     ch.g = g; ch.job = null; g.visible = false; group.add(g);
     if (typeof MetroTube !== 'undefined') MetroTube.commitCells(ch);
   }
@@ -647,15 +682,15 @@ const MetroTrack = (() => {
   function* detailJob(ch) {
     const g = makeLayer(ch, 'detail'), ctx = ctxFor(ch, 'detail');
     const B = { infra: new GB(), tunnel: new TGB() }; ctx.B = B;
-    if (typeof MetroGuide !== 'undefined') { for (const step of MetroGuide.detail(ctx)) yield; }
-    const mi = addMesh(g, B.infra, MATS.infra, { shadow: true }); if (mi) outdoorMark(ch, mi);
+    ch.stage = 'detail'; if (typeof MetroGuide !== 'undefined') { for (const step of MetroGuide.detail(ctx)) yield; }
+    ch.stage = 'mesh'; const mi = addMesh(g, B.infra, MATS.infra, { shadow: false }); if (mi) outdoorMark(ch, mi);
     if (B.tunnel.count) addMesh(g, B.tunnel, MATS.tunnel, { shadow: false });
     ch.g = g; ch.job = null; g.visible = false; group.add(g);
   }
   function* farJob(ch) {
     const g = makeLayer(ch, 'far'), ctx = ctxFor(ch, 'far'); const B = { infra: new GB() }; ctx.B = B;
-    if (typeof MetroGuide !== 'undefined') MetroGuide.far(ctx, LAYERS.far.SUB);
-    yield;
+    ch.stage = 'far'; if (typeof MetroGuide !== 'undefined') { const it = MetroGuide.far(ctx, LAYERS.far.SUB); if (it && it.next) yield* it; }
+    yield; ch.stage = 'mesh';
     const mat = infraMaterial('far'); ch.mat = mat;                              // (its own uHide mask; the program is shared)
     const m = addMesh(g, B.infra, mat, { shadow: false }); if (m) { m.castShadow = false; outdoorMark(ch, m); }
     ch.g = g; ch.job = null; g.visible = false; group.add(g);
@@ -694,16 +729,34 @@ const MetroTrack = (() => {
   }
   const nearSets = { detail: new Set(), body: new Set(), far: new Set() };
   function chunkDist(ch, p) { const b = ch.bb; const dx = Math.max(b[0] - p.x, 0, p.x - b[3]), dy = Math.max(b[1] - p.y, 0, p.y - b[4]), dz = Math.max(b[2] - p.z, 0, p.z - b[5]); return Math.sqrt(dx * dx + dy * dy + dz * dz); }
-  function gather(layer, p) {
-    const set = nearSets[layer]; set.clear(); const G = grids[layer], rr = Math.ceil(LAYERS[layer].R * LAYERS[layer].keep / CG), ci = Math.floor(p.x / CG), cj = Math.floor(p.z / CG);
+  function gather(layer, p, R0) {
+    const set = nearSets[layer]; set.clear(); const G = grids[layer], rr = Math.ceil((R0 || LAYERS[layer].R) * LAYERS[layer].keep / CG), ci = Math.floor(p.x / CG), cj = Math.floor(p.z / CG);
     for (let a = -rr; a <= rr; a++) for (let b = -rr; b <= rr; b++) { const l = G.get((ci + a) * 100003 + (cj + b)); if (l) for (const ch of l) set.add(ch); }
     for (const ch of set) ch.d = chunkDist(ch, p);
     return set;
   }
   function schedule(ch, gen, dExtra) { ch.job = gen; built[ch.layer].add(ch); jobs.push({ gen, ch, d: ch.d + dExtra }); }
+  // Away from BART nothing is built and nothing runs: a coarse presence grid (2 km cells holding any track) answers "is
+  // any track within r" in O(1). The far ring (silhouettes) reaches 3 km from the ground and 11 km from the air, so
+  // views on the Peninsula cost nothing.
+  const PG = 2000, FAR_GROUND = 3000; let pres = null, away = true, farR = FAR_GROUND;
+  function buildPresence() { pres = new Set(); for (const R of TRACKS) { const t = R.t; for (let i = 0; i < t.X.length; i += 8) pres.add(Math.floor(t.X[i] / PG) * 100003 + Math.floor(t.Z[i] / PG)); } }
+  function bartWithin(x, z, r) { if (!pres) return false; const n = Math.ceil(r / PG), ci = Math.floor(x / PG), cj = Math.floor(z / PG);
+    for (let a = -n; a <= n; a++) for (let b = -n; b <= n; b++) if (pres.has((ci + a) * 100003 + (cj + b))) return true; return false; }
+  function disposeAll() { for (const j of jobs.slice()) dropJob(j.ch); jobs.length = 0; for (const layer of ['detail', 'body', 'far']) for (const ch of [...built[layer]]) { disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
+  // graphics tier: Low draws the structures and rails only (no instanced fasteners / ties / insulators, no fences)
+  let tierName = 'high';
+  function setQuality(name) { tierName = name || 'high'; const low = tierName === 'low'; if (MATS.fence) MATS.fence.visible = !low; if (typeof MetroGuide !== 'undefined' && MetroGuide.setLow) MetroGuide.setLow(low);
+    uRailSwitch.value = low ? 110 : tierName === 'medium' ? 150 : 190; }
   function update(camPos, dt) {
     applyShot();
     if (!ready) return;
+    const alt = camPos.y - groundAt(camPos.x, camPos.z); farR = U.lerp(FAR_GROUND, R_FAR, U.smooth(60, 450, alt));
+    if (!bartWithin(camPos.x, camPos.z, farR + 1000)) {
+      if (!away) { away = true; disposeAll(); if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) MetroGuide.updateInstances(camPos, TRACKS, true); }
+      stats.away = 1; stats.chunks = stats.far = stats.body = stats.detail = 0; stats.jobs = 0; stats.buildMs = 0; return;
+    }
+    away = false; stats.away = 0; const T0 = performance.now(), tb = stats.tb || (stats.tb = [0, 0, 0, 0, 0, 0]);
     // wetness follows the rain (dries slowly)
     const rain = typeof Precip !== 'undefined' && Precip.state && Precip.state.kind === 'rain' ? Precip.state.rate : 0;
     uWet.value = U.clamp(uWet.value + (rain > 0.05 ? dt / 40 : -dt / 900), 0, 1);
@@ -713,43 +766,58 @@ const MetroTrack = (() => {
       if (ch.failed > 2) continue; const d = ch.d;
       if (d < R_BODY && !ch.g && !ch.job) { const b = ch.bb;
         if (Terrain.hasDetail(b[0], b[2], b[3], b[5], 7)) schedule(ch, bodyJob(ch), 0); else if (!ch.ensured) { ch.ensured = true; Terrain.ensure(b[0], b[2], b[3], b[5], 2, 7); } }
-      if (ch.g) { ch.g.visible = d < R_BODY * 1.08; if (ch.g.visible) nBody++; }
+      if (ch.g) { ch.g.visible = d < R_BODY * 1.08; if (ch.g.visible) nBody++;
+        const sh = d < SHADOW_R; if (ch.shadow !== sh) { ch.shadow = sh; for (const m of ch.g.children) if (m.userData.caster) m.castShadow = sh; }
+        if (ch.fence) ch.fence.visible = d < FENCE_R; }
     }
+    const T1 = performance.now();
     // DETAIL: rails, plinths, third rail
     for (const ch of gather('detail', camPos)) {
       if (ch.failed > 2) continue; const d = ch.d;
       if (d < R_DETAIL && !ch.g && !ch.job) schedule(ch, detailJob(ch), 60);
       if (ch.g) { ch.g.visible = d < R_DETAIL * 1.15; if (ch.g.visible) nDet++; }
     }
+    const T2 = performance.now();
     // FAR: silhouettes of aerials, bridges, embankments; each 400 m piece hides where a body chunk shows
     const SUB = LAYERS.far.SUB, BC = LAYERS.body.CH;
-    for (const ch of gather('far', camPos)) {
+    for (const ch of gather('far', camPos, farR)) {
       if (ch.failed > 2 || !ch.R.hasSil[ch.k]) continue; const d = ch.d;
-      if (d < R_FAR && d > R_BODY * 0.5 && !ch.g && !ch.job) schedule(ch, farJob(ch), 500 + d * 0.3);
+      if (d < farR && d > R_BODY * 0.5 && !ch.g && !ch.job) schedule(ch, farJob(ch), 500 + d * 0.3);
       if (ch.g) {
         let mask = 0, nsub = Math.ceil((ch.s1 - ch.s0) / SUB);
         for (let j = 0; j < nsub; j++) { const sm = ch.s0 + (j + 0.5) * SUB, bc = ch.R.L.body[Math.min(ch.R.L.body.length - 1, Math.floor(sm / BC))]; if (bc && bc.g && bc.g.visible) mask |= 1 << j; }
-        ch.g.visible = d < R_FAR && mask !== (1 << nsub) - 1;
+        ch.g.visible = d < farR && mask !== (1 << nsub) - 1;
         if (ch.mat) ch.mat.userData.u.uHide.value = mask;
         if (ch.g.visible) nFar++;
       }
     }
     for (const j of jobs) j.d = j.ch.d + (j.ch.layer === 'detail' ? 60 : j.ch.layer === 'far' ? 500 + j.ch.d * 0.3 : 0);
+    const T3 = performance.now();
     // dispose what fell out of each ring (with some hysteresis)
     for (const layer of ['detail', 'body', 'far']) {
       const lim = LAYERS[layer].R * LAYERS[layer].keep, near = nearSets[layer];
       for (const ch of [...built[layer]]) { const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
     }
+    const T4 = performance.now();
     runJobs();
-    if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) MetroGuide.updateInstances(camPos, TRACKS);
+    const T5 = performance.now();
+    if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) { const ti = performance.now(); MetroGuide.updateInstances(camPos, TRACKS); stats.instMs = Math.max(stats.instMs * 0.98, performance.now() - ti); }
     stats.chunks = nearSets.body.size + nearSets.detail.size + nearSets.far.size; stats.far = nFar; stats.body = nBody; stats.detail = nDet;
+    const T6 = performance.now(); tb[0] = T1 - T0; tb[1] = T2 - T1; tb[2] = T3 - T2; tb[3] = T4 - T3; tb[4] = T5 - T4; tb[5] = T6 - T5;   // (QA: this frame's body / detail / far / dispose / jobs / instances ms)
   }
 
+  // (a failure here leaves the guideway out; the metro switch (18_metro.js) is told, which turns the whole metro off
+  // with its one warning; a failed data load never settles, so it just stops here quietly)
   async function init() {
+    try { await init1(); } catch (e) { ready = false; try { disposeAll(); Env.scene.remove(group); } catch (e2) {}
+      if (typeof Metro !== 'undefined' && Metro.fail) Metro.fail('the guideway', e); else console.warn('MetroTrack: off', e); }
+  }
+  async function init1() {
     MATS.infra = infraMaterial('infra'); MATS.tunnel = infraMaterial('tunnel'); MATS.far = infraMaterial('far'); MATS.fence = fenceMaterial();
+    net = await MetroNet.load();
+    if (!net || !net.tracks || !net.tracks.length) throw new Error('no metro tracks');
     Env.scene.add(group);
     if (typeof Under !== 'undefined') Under.keep(group);
-    try { net = await MetroNet.load(); } catch (e) { console.warn('MetroTrack: no MetroNet data', e); return; }
     for (const t of net.tracks) {
       if (t.sys === 'oac') continue;                              // the airport connector is its own thing (later)
       if (t.cls === 'yard' && !/yd/.test(t.id)) continue;
@@ -764,15 +832,16 @@ const MetroTrack = (() => {
     for (const R of TRACKS) { R.hasSil = R.L.far.map(ch => R.runs.some(r => r.s1 > ch.s0 && r.s0 < ch.s1 && (r.type === 'aerial' || r.type === 'bridge' || r.type === 'embankment'))); }
     if (typeof MetroGuide !== 'undefined' && MetroGuide.init) MetroGuide.init({ DIM, PAL, GB, MATS, group });
     if (typeof MetroTube !== 'undefined' && MetroTube.init) MetroTube.init({ DIM, PAL, GB, MATS, group, TRACKS });
+    buildPresence(); setQuality(tierName);
     ready = true;
-    console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
+    if (/(^|&)debug(=|&|$)/.test(location.hash.slice(1))) console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
   }
   // track by MetroNet track object or id
   const trackOf = (t) => TI.get(typeof t === 'string' ? (MetroNet.byId || {})[t] : t);
   // the contact rail as drawn, for TRAINS (collector shoes) and SIM: see notes/bart/infra.md "Third rail (contact rail)"
   const thirdRail = (id, s) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdAt(R, s) : null; };
   const thirdRuns = (id, s0, s1) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdRuns(R, s0, s1) : []; };
-  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
+  return { enabled: true, init, update, setQuality, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
     get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)
