@@ -104,6 +104,7 @@
   c.setLights({ head: 1, tail: 1, interior: 1, lead: 'front' });
   if (c.setThirdRail) c.setThirdRail(view === 'curve' ? 0 : -1);          // the preview's contact rail is on the -Z side
   if (hp.get('load') && c.setLoad) c.setLoad(+hp.get('load'));
+  if (hp.get('wet') && MetroKit.setWet) MetroKit.setWet(+hp.get('wet'));                // rain: 0..1
   const front = c.length / 2;
   const X = i => front - c.cars[i].offset;
   if (curveView) {
