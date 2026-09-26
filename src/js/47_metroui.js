@@ -293,7 +293,8 @@ const MetroUI = (() => {
   }
 
   // ---------------------------------------------------------------- the map (both views share pan/zoom)
-  const map = { view: 'schematic', drag: null, sel: null, hover: null, geo: { cx: 0, cz: 0, scale: 0.012 }, sch: { cx: 15.45, cz: 10.75, scale: 30 } };
+  const map = { view: 'schematic', drag: null, sel: null, hover: null, geo: { cx: 0, cz: 0, scale: 0.012 }, sch: { cx: 15.45, cz: 10.75, scale: 30 },
+    trainScale: 1 };                                           // (the train markers' size: a trailer's full-frame map shot enlarges them)
   function setView(v) {
     map.view = v; el.mview.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   }
@@ -479,7 +480,7 @@ const MetroUI = (() => {
     for (const tr of MetroSim.running) {
       if (hidden.has(tr.line)) continue; const p = trainXY(tr, c); if (!p) continue; n++;
       let [x, y] = p; if (map.view !== 'geo') { const S = tr.leg.stops, k = Math.max(1, Math.min(S.length - 1, tr.nextK || 1)); const o = strandOffset(S[k - 1].st.replace('-T', ''), S[k].st.replace('-T', ''), tr.line, c); x += o[0]; y += o[1]; }
-      const ang = map.view === 'geo' ? Math.atan2(tr.hz, tr.hx) : (p[2] || 0), sz = (tr.key === (Player.focus || '') ? 8 : 6) * dpr;
+      const ang = map.view === 'geo' ? Math.atan2(tr.hz, tr.hx) : (p[2] || 0), sz = (tr.key === (Player.focus || '') ? 8 : 6) * dpr * (map.trainScale || 1);
       g.save(); g.translate(x, y); g.rotate(ang);
       g.fillStyle = MetroSim.lineColor(tr.line); g.strokeStyle = tr.driven ? '#ff5a3c' : '#0d1217'; g.lineWidth = (tr.driven ? 3 : 2) * dpr;
       g.beginPath(); g.moveTo(sz * 1.25, 0); g.lineTo(-sz * 0.8, sz * 0.85); g.lineTo(-sz * 0.8, -sz * 0.85); g.closePath(); g.fill(); g.stroke(); g.restore();
