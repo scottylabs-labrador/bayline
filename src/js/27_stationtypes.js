@@ -806,6 +806,36 @@ const StationTypes = (() => {
   // ------------------------------------------------------------------------------------------------ subway box
   // one box per level (stacked stations: the lower level's ceiling is the slab under the upper level's trackbed)
   function* subwayBox(T) { for (const L of T.levels) yield* subwayLevel(T, L); }
+  // the box end farther south-west (world x east, z south)
+  function canyonEnd(T) { const a = T.WUV(T.boxU0, 0), b = T.WUV(T.boxU1, 0); return (-a[0] + a[1]) > (-b[0] + b[1]) ? T.boxU0 : T.boxU1; }
+  function* wallCanyon(T, g, ue, dir, holes, yT, ceilY, P) {
+    // the solid part of the end wall over the island: between the two innermost tunnel openings
+    let va = -1e9, vb = 1e9; for (const [a, b] of holes) { if (b <= 0 && b > va) va = b; if (a >= 0 && a < vb) vb = a; }
+    if (!(vb - va > 2)) { const c = (holes[0][1] + (holes[1] || holes[0])[0]) / 2; va = c - 3; vb = c + 3; }
+    va += 0.3; vb -= 0.3;
+    const y0 = yT + 0.25, y1 = ceilY - 0.15, cell = 0.42, R = U.rng(1972);
+    const PAL = [0x8c3b24, 0xa8522c, 0xc27a3e, 0xd9a35c, 0xb0643a, 0x6e3222, 0xe0c08a, 0x7d5a3c, 0x4e5a52, 0x9aa38a];
+    const inward = dir > 0 ? -1 : 1;                                             // (the wall faces into the box)
+    for (let y = y0; y < y1 - 0.05; y += cell) {
+      const t = (y - y0) / (y1 - y0);
+      for (let v = va; v < vb - 0.05; v += cell) {
+        // strata: the colour follows height with a wavering band, the depth a canyon profile deeper toward the middle
+        const wob = Math.sin(v * 0.9 + t * 7) * 0.08 + (R() - 0.5) * 0.06, k = U.clamp(Math.floor((t + wob) * PAL.length), 0, PAL.length - 1);
+        const mid = 1 - Math.abs((v - (va + vb) / 2) / ((vb - va) / 2)), dep = 0.04 + 0.32 * Math.pow(Math.max(0, Math.sin(t * 9 + v * 0.7) * 0.5 + 0.5), 2) * (0.35 + 0.65 * mid) + R() * 0.05;
+        const w = Math.min(cell, vb - v), h = Math.min(cell, y1 - y), uu = ue + inward * 0.01;
+        const q = (dv, dy, dd) => { const f = T.frameAt(uu + inward * dd); return [f.x - f.tz * (v + dv), y + dy, f.z + f.tx * (v + dv)]; };
+        g.mat(PAL[k], K.TILE, -0.06);
+        // front face and the four sides of the block (toward the platform)
+        const a0 = q(0, 0, dep), a1 = q(w, 0, dep), a2 = q(w, h, dep), a3 = q(0, h, dep);
+        if (dir < 0) g.quad(a1, a0, a3, a2, [0, 0, 1, 0, 1, 1, 0, 1]); else g.quad(a0, a1, a2, a3, [0, 0, 1, 0, 1, 1, 0, 1]);
+        const b0 = q(0, 0, 0), b1 = q(w, 0, 0), b2 = q(w, h, 0), b3 = q(0, h, 0);
+        const side = (p0, p1, p2, p3) => { g.quad(p0, p1, p2, p3, [0, 0, 1, 0, 1, 1, 0, 1]); g.quad(p3, p2, p1, p0, [0, 0, 1, 0, 1, 1, 0, 1]); };
+        side(b3, a3, a2, b2); side(b0, b1, a1, a0); side(b0, a0, a3, b3); side(b1, b2, a2, a1);
+      }
+      yield;
+    }
+    void P;
+  }
   function* subwayLevel(T, L) {
     const { S, boxU0, boxU1, frames, frameAt, M, pu0, pu1, walk, W2, tv } = T;
     const top = L.k === 0, z = L.zone, g = z.m.sk, plats = L.plats, edgeV = T.levels.length > 1 ? L.edgeV : T.edgeV;
@@ -837,9 +867,12 @@ const StationTypes = (() => {
       const P = (v, y) => [f.x - f.tz * v, y, f.z + f.tx * v];
       g.mat(S.wallUp[0], K.CONCRETE, 0);
       const band = (va, vb, ya, yb) => { if (vb - va < 0.01 || yb - ya < 0.01) return; const q = [P(va, ya), P(vb, ya), P(vb, yb), P(va, yb)];
-        if (dir > 0) g.quad(q[1], q[0], q[3], q[2], [vb, ya, va, ya, va, yb, vb, yb]); else g.quad(q[0], q[1], q[2], q[3], [va, ya, vb, ya, vb, yb, va, yb]); };
+        if (dir < 0) g.quad(q[1], q[0], q[3], q[2], [vb, ya, va, ya, va, yb, vb, yb]); else g.quad(q[0], q[1], q[2], q[3], [va, ya, vb, ya, vb, yb, va, yb]); };   // (into the box)
       let v = vl; for (const [a, b] of holes) { band(v, a, yTB, ceilY); band(a, b, yRail + 4.3, ceilY); v = b; } band(v, vr, yTB, ceilY);
       const pl = P(vl, 0), pr = P(vr, 0); addWall(walk, W2(pl[0], pl[2]), W2(pr[0], pr[2]), yTB, ceilY);
+      // Embarcadero: Stephen De Staebler's 'Wall Canyon', a coloured ceramic relief filling the south-west end wall
+      // from the platform up (research): canyon strata of glazed blocks standing out from the wall between the tunnels
+      if (top && T.H.canyon && ue === canyonEnd(T)) yield* wallCanyon(T, g, ue, dir, holes, yT, ceilY, P);
     }
     for (let i = 0; i + 1 < fr.length; i++) for (const side of [-1, 1]) {
       const f0 = fr[i], f1 = fr[i + 1]; const v0 = edgeV(f0.u, side), v1 = edgeV(f1.u, side);
@@ -1352,7 +1385,7 @@ const StationTypes = (() => {
     g.sweep(fr, (i, f) => { const v = vr(f.u); return [[v, yCF, yCF, mL], [v, yCF + 0.15, yCF + 0.15, mW], [v, yCC, yCC]]; });
     for (const [ue, dir] of [[cu0, -1], [cu1, 1]]) {
       const f = frameAt(ue); const a = vl(ue), b = vr(ue); const P = (v, y) => [f.x - f.tz * v, y, f.z + f.tx * v]; g.set(mW);
-      if (dir > 0) g.quad(P(b, yCF), P(a, yCF), P(a, yCC), P(b, yCC), [b, yCF, a, yCF, a, yCC, b, yCC]); else g.quad(P(a, yCF), P(b, yCF), P(b, yCC), P(a, yCC), [a, yCF, b, yCF, b, yCC, a, yCC]);
+      if (dir < 0) g.quad(P(b, yCF), P(a, yCF), P(a, yCC), P(b, yCC), [b, yCF, a, yCF, a, yCC, b, yCC]); else g.quad(P(a, yCF), P(b, yCF), P(b, yCC), P(a, yCC), [a, yCF, b, yCF, b, yCC, a, yCC]);   // (into the concourse)
       addWall(walk, W2(...[P(a, 0)[0], P(a, 0)[2]]), W2(...[P(b, 0)[0], P(b, 0)[2]]), yCF - 1, yCC);
     }
     for (let i = 0; i + 1 < fr.length; i++) {
