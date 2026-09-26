@@ -51,7 +51,7 @@ const MetroStations = (() => {
   // the platforms), v = metres to the right, y absolute. Every station track gets v(u), y(u) samples, every platform
   // its edges, and the archetype builders work in (u, v, y).
   const DU = 2;
-  const F = {}, F2 = {};
+  const F = {}, F2 = {}, F3 = {};
   function makePlan(rec) {
     // the airport connector's platform at Coliseum is its own small station (a hero feature); a station that is only
     // connector (Oakland Airport) keeps its short platform
@@ -96,6 +96,14 @@ const MetroStations = (() => {
       }
       tracks.push({ id, v, y, s, ok });
     }
+    // every other track beside the station (storage, pocket and through tracks a platform must keep clear of): its v
+    // and rail height per spine sample (NaN where it is not beside the spine)
+    const others = [];
+    { const ids = new Set(tids), byT = new Map();
+      for (let i = 0; i < spine.length; i++) { const sp = spine[i];
+        for (const q of MetroNet.nearAll(sp.x, sp.z, 24)) { const id = q.track.id; if (ids.has(id)) continue;
+          let o = byT.get(id); if (!o) { byT.set(id, o = { id, v: new Float32Array(spine.length).fill(NaN), y: new Float32Array(spine.length).fill(NaN) }); others.push(o); }
+          MetroNet.frame(id, q.s, F3); o.v[i] = (F3.x - sp.x) * -sp.tz + (F3.z - sp.z) * sp.tx; o.y[i] = F3.y; } } }
     // station reference rail height: the mean of the platform tracks at the centre (the v0 profile can disagree by
     // metres between the two tracks of one station; stacked stations keep each track's own height)
     const mid = Math.floor(spine.length / 2);
@@ -116,7 +124,7 @@ const MetroStations = (() => {
       return { key: p.code || String(k + 1), gtfs: p.gtfs, track: p.track, sideV, u0: pu0, u1: pu1, t, yRail: stacked ? t.y[mid] : yRail, dataY: p.y, structure: p.structure,
         sys: sysOf(p), ph: V.ph, edge: V.edge, minL: V.minL };
     });
-    return { id: rec.id, spine, tracks, plats, u0, u1, halfL, yRail, spread, stacked, cx: spine[mid].x, cz: spine[mid].z, tx, tz, vShift, ref: ref.track, oac: oac.length && main.length ? oac : null, isOac };
+    return { id: rec.id, spine, tracks, others, plats, u0, u1, halfL, yRail, spread, stacked, cx: spine[mid].x, cz: spine[mid].z, tx, tz, vShift, ref: ref.track, oac: oac.length && main.length ? oac : null, isOac };
   }
   // spine interpolation: world point at (u, v, y) and the frame there
   function spineAt(plan, u, out = {}) {
@@ -237,6 +245,8 @@ const MetroStations = (() => {
       // keep-out zones: Towns drops OSM buildings standing in a station (Towns.addDrop, world workstream), the rest of
       // the world asks keepOut() itself; anything placed before now is placed again
       if (typeof Towns !== 'undefined' && Towns.addDrop) Towns.addDrop(dropBuilding);
+      // (Flora's load path asks keepOut itself; its drop filter is what Flora.adjust re-applies to loaded tiles)
+      if (typeof Flora !== 'undefined' && Flora.addDrop) Flora.addDrop((x, z) => keepOut(x, z, 'tree'));
       try { cutTownsGround(); } catch (e) { console.warn('metrostations: towns ground cut', e); }
       // the terrain filter for the ground pads (tiles under a pad re-grade as each station's footprint arrives); every
       // station's footprint is then made in the background, nearest first, one plan or footprint per frame (update)
@@ -523,10 +533,12 @@ const MetroStations = (() => {
   }
   // once the stations are known: world pieces placed before (towns, trees, parked cars) are placed again with the
   // footprints. MetroGround (world) re-places Towns and Flora itself when it installs after us.
-  // Only what actually stands in a footprint is placed again, and only once every station near the camera has its
-  // footprint (worldStep, one station per frame): OSM buildings in the Towns tiles decoded before the drop filter, Flora's
-  // trees. With Towns.refreshIn / Flora.refreshIn (asked of WORLD: re-decode and rebuild the tiles in a rect) only those
-  // tiles are rebuilt; without, one full re-place (dispose) of that module. Traffic re-streams (cheap).
+  // Once every station near the camera has its footprint (worldStep, one station per frame), what the world placed
+  // before stands re-placed around them: with WORLD's Towns.refresh(rects) the loaded Towns tiles there re-read and
+  // rebuild in the background (the old meshes stay until the swap: nothing goes black), and Flora.adjust(rects, null)
+  // re-applies the tree drops in place; both for every station with a footprint near the camera. Without them (older
+  // Towns / Flora) only a station where an OSM building or a tree actually stands in a footprint costs one full re-place
+  // (dispose). Traffic re-streams (cheap).
   const CHECK_R = 2500;
   let worldCheck = false, checkQ = null; const refresh = { towns: [], flora: [], ran: false, ms: 0 };
   function refreshWorld() {
@@ -543,16 +555,16 @@ const MetroStations = (() => {
       for (const Z of kzones) if (Z.st === st.id) { x0 = Math.min(x0, Z.bb[0]); z0 = Math.min(z0, Z.bb[1]); x1 = Math.max(x1, Z.bb[2]); z1 = Math.max(z1, Z.bb[3]); }
       if (x1 > x0) {
         const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, r = Math.max(x1 - x0, z1 - z0) / 2 + PADMAX, rect = [x0 - PADMAX, z0 - PADMAX, x1 + PADMAX, z1 + PADMAX];
-        try { if (typeof Towns !== 'undefined' && Towns.buildingsAt && Towns.buildingsAt(cx, cz, r).some(b => dropBuilding0(b, b.x, b.z))) refresh.towns.push(rect); } catch (e) {}
-        try { if (typeof Flora !== 'undefined' && Flora.treesNear && Flora.treesNear(cx, cz, r * 1.42).some(t => keepOut(t.x, t.z, 'tree'))) refresh.flora.push(rect); } catch (e) {}
+        const hasT = typeof Towns !== 'undefined', hasF = typeof Flora !== 'undefined';
+        try { if (hasT && (Towns.refresh || (Towns.buildingsAt && Towns.buildingsAt(cx, cz, r).some(b => dropBuilding0(b, b.x, b.z))))) refresh.towns.push(rect); } catch (e) {}
+        try { if (hasF && (Flora.adjust || (Flora.treesNear && Flora.treesNear(cx, cz, r * 1.42).some(t => keepOut(t.x, t.z, 'tree'))))) refresh.flora.push(rect); } catch (e) {}
       }
       refresh.ms += performance.now() - t0;
       return true;
     }
     worldCheck = false; checkQ = null; refresh.ran = true;
-    const redo = (M, rects) => { if (typeof M === 'undefined' || !rects.length) return;
-      try { if (M.refreshIn) for (const r of rects) M.refreshIn(...r); else if (M.dispose) M.dispose(); } catch (e) {} };
-    redo(typeof Towns !== 'undefined' ? Towns : undefined, refresh.towns); redo(typeof Flora !== 'undefined' ? Flora : undefined, refresh.flora);
+    try { if (refresh.towns.length && typeof Towns !== 'undefined') { if (Towns.refresh) Towns.refresh(refresh.towns.slice()); else if (Towns.dispose) Towns.dispose(); } } catch (e) {}
+    try { if (refresh.flora.length && typeof Flora !== 'undefined') { if (Flora.adjust) Flora.adjust(refresh.flora.slice(), null); else if (Flora.dispose) Flora.dispose(); } } catch (e) {}
     return false;
   }
 
@@ -627,6 +639,6 @@ const MetroStations = (() => {
   }
   if (typeof window !== 'undefined') Object.assign(window.__baylineMods = window.__baylineMods || {}, { MetroStations: api });
   // (QA handles to the kit, read lazily: those modules load after this one)
-  api.qa = { get kit() { return StationKit; }, get parts() { return StationParts; }, get types() { return StationTypes; }, get metronet() { return MetroNet; } };
+  api.qa = { get kit() { return StationKit; }, get parts() { return StationParts; }, get types() { return StationTypes; }, get metronet() { return MetroNet; }, get ctx() { return ctx(); } };
   return api;
 })();

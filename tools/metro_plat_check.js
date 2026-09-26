@@ -9,7 +9,9 @@ async (B, a) => {
   for (const id of ids) {
     const st = M.byId[id]; if (!st) { out.push({ id, err: 'no station' }); continue; }
     const pl = st.plan || (st.plan = M.makePlan(st.data)); if (!pl) { out.push({ id, err: 'no plan' }); continue; }
-    const row = { id, layout: st.layout, plats: [], flags: [] };
+    // (the faces as the build places them: StationTypes' guard moves a face off another track)
+    try { M.qa.types.footprint(st, M.qa.ctx); } catch (e) {}
+    const row = { id, layout: st.layout, plats: [], flags: [], guard: pl.guard };
     for (const p of pl.plats) {
       let hits = 0, n = 0, near = 1e9, nearT = '';
       for (let u = p.u0 + 2; u <= p.u1 - 2; u += 5) {
