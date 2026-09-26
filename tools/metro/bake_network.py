@@ -23,6 +23,7 @@ from metro import platforms as PL
 from metro import stations_curated as SC
 from metro import geomfix as GF
 from metro import crossings as CX
+from metro import frontdoor as FD
 from metro import yards as YD
 from metro import stations_meta as SM
 
@@ -485,6 +486,7 @@ def main():
         st_rows[r['trip_id']].append(r)
     patterns = {}
     trip_pat = {}
+    weekday_svc = {c['service_id'] for c in gtfs('calendar.txt') if c['monday'] == '1'}
     for t in trips:
         if t['route_id'] not in LINES:
             continue
@@ -495,6 +497,8 @@ def main():
             line, dirn = LINES[t['route_id']]
             patterns[key] = dict(route=t['route_id'], line=line, dir=dirn, stops=list(seq), trips=0, shape=t['shape_id'])
         patterns[key]['trips'] += 1
+        patterns[key].setdefault('heads', collections.Counter())[t['trip_headsign']] += 1
+        patterns[key]['wk'] = patterns[key].get('wk', 0) + (t['service_id'] in weekday_svc)
         trip_pat[t['trip_id']] = key
     log(f'GTFS patterns: {len(patterns)}')
 
@@ -743,7 +747,18 @@ def main():
         for k, nid in enumerate(tr['nodes']):
             if len(node_tracks[nid]) >= 2:
                 junction_s[id(tr)].append(raw_to_s(tr, float(tr['s_raw_nodes'][k])))
-    isl_pairs = []
+    junctions_of = collections.defaultdict(list)      # track idx -> [(fine s, {other track idx})]
+    for ti, tr in enumerate(tracks):
+        for k, nid in enumerate(tr['nodes']):
+            if len(node_tracks[nid]) >= 2:
+                junctions_of[ti].append((raw_to_s(tr, float(tr['s_raw_nodes'][k])), set(node_tracks[nid]) - {ti}))
+    node_of = {}
+    for ti, tr in enumerate(tracks):
+        for k, nid in enumerate(tr['nodes']):
+            for o in node_tracks[nid] - {ti}:
+                node_of[(ti, o)] = k
+    feats = PL.osm_features(E)
+    done = []
     for sid in parents:
         if (SC.C.get(sid) or {}).get('layout') != 'island':
             continue
@@ -753,8 +768,36 @@ def main():
             continue
         ta, tb = tracks[tis[0]], tracks[tis[1]]
         sa = raw_to_s(ta, plat_pos[[pid for pid in pids if plat_pos[pid][0] == tis[0]][0]][1])
-        isl_pairs.append((sid, ta, sa, sa - 125.0, sa + 125.0, tb))
-    GF.spread_islands(tracks, isl_pairs, junction_s)
+        fa, fb = ta['fine'], tb['fine']
+        i_ = int(np.clip(np.searchsorted(fa['s'], sa), 0, len(fa['s']) - 1))
+        d0 = float(np.hypot(fb['x'] - fa['x'][i_], fb['z'] - fa['z'][i_]).min())
+        if d0 >= GF.ISLAND_MIN:
+            continue
+        # the platform on both tracks (OSM geometry, on the fine polylines), then switch points out of it, then spread
+        plat_ext = {}
+        for ti_ in tis:
+            tr_ = tracks[ti_]; f_ = tr_['fine']
+            shim = dict(pub=dict(x=f_['x'], z=f_['z'], step=float(f_['s'][1] - f_['s'][0])))
+            pid_ = [pid for pid in pids if plat_pos[pid][0] == ti_][0]
+            c_ = raw_to_s(tr_, plat_pos[pid_][1]); k_ = int(np.clip(np.searchsorted(f_['s'], c_), 0, len(f_['s']) - 1))
+            e0, e1, *_ = PL.extent_on_track(shim, float(f_['x'][k_]), float(f_['z'][k_]), feats, PL.PLAT_LEN, PL.PLAT_LEN + 30,
+                                            side_hint=0)
+            plat_ext[ti_] = (e0, e1)
+        msg = GF.slide_switches(tracks, sid, tis[0], tis[1], plat_ext, junctions_of, node_of)
+        if msg:
+            log('  ' + msg)
+            junctions_of = collections.defaultdict(list)
+            for ti, tr in enumerate(tracks):
+                for k, nid in enumerate(tr['nodes']):
+                    if len(node_tracks[nid]) >= 2:
+                        junctions_of[ti].append((raw_to_s(tr, float(tr['s_raw_nodes'][k])), set(node_tracks[nid]) - {ti}))
+        a0_, a1_ = plat_ext[tis[0]]
+        res, why = GF.spread_corridor(tracks, sid, tis[0], tis[1], a0_, a1_, junctions_of)
+        if res is None:
+            log(f'  island spacing at {sid}: {d0:.1f} m, not spread: {why}')
+        else:
+            done.append(f"{sid} {res['spacing']}->{GF.ISLAND_SPACING} (zone {res['zone']}, tapers {res['tapers']}, with {res['members'] or 'no sidings'})")
+    log('island spacing (OSM tracks too close for the island platform): ' + ('; '.join(done) if done else 'none'))
 
     # ---------------- publish samples, attributes, profile
     elev.ensure_along(np.concatenate([t['fine']['x'][::50] for t in tracks]), np.concatenate([t['fine']['z'][::50] for t in tracks]), 300)
@@ -781,7 +824,8 @@ def main():
     junctions = []
     links = collections.defaultdict(dict)    # track idx -> {'prev': [...], 'next': [...]}
     for nid, lst in vt.items():
-        x, z = G.xz[nid]
+        ti0, sr0 = lst[0][0], lst[0][1]                  # on the track geometry (island spreading moves some)
+        x, z = xz_at(tracks[ti0], raw_to_s(tracks[ti0], sr0))
         through = [q for q in lst if not q[2]]
         ends = [q for q in lst if q[2]]
         jid = f'J{len(junctions)}'
@@ -814,7 +858,9 @@ def main():
             a_, _ = project_track(tr, *xz_at(tr0, ref['s0']), s_hint=hint)
             b_, _ = project_track(tr, *xz_at(tr0, ref['s1']), s_hint=hint)
             members.append((pl['track'], a_, b_))
-        groups.append(dict(station=g['station'], level=g['level'], sys=g['sys'], members=members))
+        cur = SC.C.get(g['station']) or {}
+        groups.append(dict(station=g['station'], level=g['level'], sys=g['sys'], members=members,
+                           type=cur.get('type'), platformStructure=cur.get('platformStructure')))
     # the Pittsburg/Bay Point transfer island has one walking surface: BART floor 0.991 m above its rail, the GTW's sill
     # 0.635 m above its rail, so the eBART track along the island is 0.356 m higher (stations workstream / EIR)
     gb = [g for g in groups if g['station'] == 'PITT-T' and g['sys'] == 'bart']
@@ -892,7 +938,8 @@ def main():
                 cum.append(cum[-1] + abs(b0 - a0))
             lo.append(dict(sys=leg['sys'], vehicle=VEH[leg['sys']], osmRelation=leg['rel'], length=round(cum[-1], 2),
                            path=[[t, round(a0, 2), round(b0, 2)] for t, a0, b0 in path], stops=st))
-        pats_out.append(dict(id=None, route=pat['route'], line=pat['line'], dir=pat['dir'], gtfs=pat['stops'], trips=pat['trips'], legs=lo))
+        pats_out.append(dict(id=None, route=pat['route'], line=pat['line'], dir=pat['dir'], gtfs=pat['stops'], trips=pat['trips'], legs=lo,
+                             _heads=pat.get('heads', collections.Counter()), _wk=pat.get('wk', 0)))
     # pattern ids: <line>-<N|S>-<k> by trip count
     by_ld = collections.defaultdict(list)
     for p in pats_out:
@@ -903,6 +950,13 @@ def main():
             p['id'] = f"{line}-{'NS'[dirn]}-{k}"
     for line, meta in LINE_META.items():
         lines.append(dict(id=line, **meta, patterns=[p['id'] for p in pats_out if p['line'] == line]))
+    # front door (SIM, M3): destination signs per pattern and per vehicle leg, line directions, station short names and
+    # transfer hints
+    heads = {p['id']: p.pop('_heads') for p in pats_out}
+    for p in pats_out:
+        p['tripsWeekday'] = p.pop('_wk')
+    FD.annotate_stations(stations)
+    FD.annotate(lines, pats_out, stations, heads)
 
     # ---------------- write
     write_tracks(out_tracks, links, junctions, stations, lines, pats_out, yards)

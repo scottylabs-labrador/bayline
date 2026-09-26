@@ -41,6 +41,8 @@ TOR_ABOVE_BED = 0.25          # top of rail above the lidar bare-earth trackbed 
 AER_CLEAR = 5.5               # rail above the ground envelope, interior of aerial runs
 AER_TARGET = 8.5
 CC_COVER = 7.5                # rail below ground, interior of cut-and-cover runs
+STATION_COVER = 5.5           # ... but under a station box (platform +-20 m) the roof sits just under the street: rail to
+                              # street >= car 3.3 m + clearance/ducts 1.2 m + slab 1.0 m (North Berkeley ~7 m, STW)
 FACE_COVER = 0.0              # required cover at an OSM tunnel start (grows 3 %/m inside). A box needs ~5-6 m, but OSM's
                               # tunnel tags often start at a lid or road bridge before the real portal (Millbrae, West
                               # Dublin) and some lidar predates construction (Fremont): 5 m there buried stations, so the
@@ -401,6 +403,33 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
     H, SRC = ground_table(Sm)
     log(f'profile v2: {Sm.N} samples, lidar coverage {SRC[:, C0].mean() * 100:.1f} % ({time.time() - t0:.0f} s)')
     code = classify(Sm, H, SRC, roads, research_zones)
+    tid0 = {tr['id']: k for k, tr in enumerate(tracks)}
+    st_box = np.zeros(Sm.N, bool)          # samples under a subway station box (platform +-20 m)
+    st_via = np.zeros(Sm.N, bool)          # samples on/near an elevated station's structure (platform +-60 m)
+    plat_via = np.zeros(Sm.N, bool)        # along its platforms (+-10 m)
+    for grp in platform_groups:
+        for m in grp['members']:
+            if m[0] not in tid0:
+                continue
+            k = tid0[m[0]]; a, b = Sm.off[k], Sm.off[k + 1]
+            s0, s1 = min(m[1], m[2]), max(m[1], m[2])
+            if grp.get('type') == 'subway':
+                st_box[a:b] |= (Sm.s[a:b] >= s0 - 20) & (Sm.s[a:b] <= s1 + 20)
+            elif grp.get('type') == 'aerial' and not grp.get('platformStructure'):
+                st_via[a:b] |= (Sm.s[a:b] >= s0 - 60) & (Sm.s[a:b] <= s1 + 60)     # the station structure
+                plat_via[a:b] |= (Sm.s[a:b] >= s0 - 10) & (Sm.s[a:b] <= s1 + 10)
+    # elevated stations: the platform runs on a viaduct even where OSM has no bridge tag and the bare-earth lidar kept the
+    # deck as "ground" (Concord: 31.2 m under the tracks, 25.4 m either side and in the street): aerial, with the ground
+    # taken beside the structure
+    side_g = np.minimum(np.median(H[:, 0:2], 1), np.median(H[:, 9:11], 1))
+    deck = st_via & (H[:, C0] - side_g > 3.0)
+    deck_h = H[:, C0].copy()                         # where the lidar kept the deck, it measures the deck top
+    H = H.copy()
+    H[deck, 3:8] = side_g[deck][:, None]            # the footprint (+-6 m) is street level too
+    code[deck & np.isin(code, [S['grade'], S['embankment'], S['bridge'], S['median']])] = S['aerial']
+    code[plat_via & np.isin(code, [S['grade'], S['embankment'], S['bridge']])] = S['aerial']   # the platform is elevated
+    log(f'station zones: {int(st_box.sum())} samples under subway station boxes, {int(st_via.sum())} on elevated stations '
+        f'({int(deck.sum())} where the lidar kept the viaduct deck)')
     need = crossings(Sm, code, roads)
     gc = H[:, C0]
     genv = H[:, 3:8].max(1)                     # ground envelope within +-6 m
@@ -429,8 +458,10 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
                     clear = min(clear, 3.0)
                 lower[g] = max(gc[g] + clear, gc[g] + need[g])
                 tgt[g] = gc[g] + AER_TARGET; wd[g] = 0.01
+                if deck[g]:                                # the lidar measured this viaduct's deck: the rail sits on it
+                    tgt[g] = deck_h[g] + 0.35; wd[g] = 1.0
             elif cc == S['portal'] or cc == S['cutcover']:
-                cover = min(CC_COVER, FACE_COVER + d_und[i] * RAMP)
+                cover = min(STATION_COVER if st_box[g] else CC_COVER, FACE_COVER + d_und[i] * RAMP)
                 upper[g] = gsm[i] - cover
                 tgt[g] = gsm[i] - min(CC_TARGET, FACE_COVER + d_und[i] * RAMP + 0.25); wd[g] = 0.005
             elif cc == S['bored']:
@@ -597,6 +628,8 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
         a_, b_ = Sm.off[k], Sm.off[k + 1]
         i0 = int(max(0, an['s0'] / Sm.step[k])); i1 = int(min(b_ - a_ - 1, an['s1'] / Sm.step[k]))
         gref = float(np.median(gc[a_ + i0:a_ + i1 + 1]))
+        if an['rel'] > 0:                      # above the ground: the street beside the structure, not a kept deck
+            gref = min(gref, float(np.median(side_g[a_ + i0:a_ + i1 + 1])))
         yc = gref + an['rel']
         ca, va = interp_cols(Sm, k, 0.5 * (an['s0'] + an['s1']))
         sysm.row(ca, va, yc, an['w']); nan_ += 1
@@ -620,7 +653,7 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
     for k, tr in enumerate(tracks):
         a, b = Sm.off[k], Sm.off[k + 1]
         c = code[a:b]
-        fill = np.isin(c, list(AER)) & (SRC[a:b, C0] == 1) & (y[a:b] - gc[a:b] < 2.5)
+        fill = np.isin(c, list(AER)) & (SRC[a:b, C0] == 1) & (y[a:b] - gc[a:b] < 2.5) & ~st_via[a:b]
         for (p_, q_, v_) in rle(fill.astype(np.uint8)):
             if v_ and (q_ - p_) * Sm.step[k] >= 20:
                 c[p_:q_] = S['embankment']; refined += q_ - p_

@@ -142,6 +142,42 @@ Notes:
 - **(M2b) Platform heights per system**: `height` = platform top − top of rail: BART 0.991 m (39 in, BFS), eBART 0.635 m
   (level boarding with the Stadler GTW floor), airport connector 0.991 (assumed). `levels.platform` = the BART value.
 
+## Front door: signs, directions, transfers (M2b, for SIM)
+
+Additive fields (tools/metro/frontdoor.py) so the search, boards, destination signs and announcements come from data:
+
+```jsonc
+"lines": [{ ..., "short": "Yellow",                    // 'Yellow' 'Orange' 'Green' 'Red' 'Blue' 'Airport' 'Antioch shuttle'
+            "dirs": { "0": { "toward": "Antioch", "dest": ["ANTC", "PITT"] },        // GTFS 0 = North, 1 = South
+                      "1": { "toward": "SFO Airport", "dest": ["SFIA", "MLBR"] } } }],   // dest: by weekday trips
+"patterns": [{ ..., "headsign": "Antioch",             // the destination sign (short name of dest)
+               "dest": "ANTC", "to": "ANTC",           // dest = the GTFS destination; to = where this pattern ends
+               "via": ["SFO", "SF"], "gtfsHeadsign": "SFO / SF / Antioch", "tripsWeekday": 88,
+               "legs": [{ ..., "to": "PITT-T", "headsign": "Antioch",
+                          "change": { "at": "PITT-T", "text": "Change at Pittsburg / Bay Point for Pittsburg Center and Antioch" } },
+                        { ..., "sys": "ebart", "to": "ANTC", "headsign": "Antioch" }] }],
+"stations": [{ ..., "short": "Pittsburg / Bay Point",  // = SIM's NAMES_SHORT (nothing on screen changes)
+               "transfers": [{ "kind": "metro", "to": "ebart", "dir": 0,
+                               "text": "For Pittsburg Center and Antioch: stay on to the transfer platform, then cross to the Antioch train" }] }]
+```
+
+- `dest` differs from `to` only where the train really gets there: after turning at its last stop and running on as
+  another pattern of the same line and direction (the evening Millbrae → SFO → Antioch Yellow trains:
+  `to: "SFIA"`, `dest: "ANTC"`), or where `dest` is a stop of the pattern itself (Antioch → SFO → Millbrae trains
+  sign "SFO Airport"). Bus-bridge weekend patterns whose GTFS headsign names a station the train never reaches
+  (Berryessa → Warm Springs "Richmond") sign where they end.
+- The Antioch DMU leg (southbound) signs **"Pittsburg / Bay Point"** with `change` "Change at Pittsburg / Bay Point for
+  SFO Airport" (or Millbrae); the EMU leg to the transfer platform signs the rider's destination (Antioch) with
+  `change` "... for Pittsburg Center and Antioch"; northbound DMUs sign Antioch.
+- `transfers[].kind`: `metro` (another line of the system; `to` = line id(s)), `rail` (Peninsula line, intercity),
+  `lightrail`, `ferry`, `cablecar`, `air`. `text` is rider-facing and brand-neutral (Peninsula line, city light rail,
+  intercity trains); `system` names the real operator for reference only: **never render `system`**. `dir` (0/1)
+  limits a hint to one direction of travel. Hints: Millbrae (Peninsula line), Coliseum (Airport Connector + intercity),
+  Pittsburg/Bay Point, the transfer platform, Pittsburg Center/Antioch (Antioch shuttle), MacArthur, 19th St, 12th St,
+  Bay Fair, West Oakland, Embarcadero, Montgomery, Powell, Civic Center, Glen Park, Balboa Park, Richmond, Milpitas,
+  SFO, Oakland Airport.
+- `stations[].aliases` (see "stations") are the search names; `name` stays the official name.
+
 ## Crossings (M2b)
 
 `metro/crossings.json` = `{ "format": "bayline-metro-crossings", "fields": [...], "tracks": { "<track id>": [[s, kind,
