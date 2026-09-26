@@ -69,7 +69,7 @@ export function build(M, id) {
   if (!st.plan) st.plan = MS.makePlan(st.data);
   const C = { PLAT_H: MS.PLAT_H, EDGE: MS.EDGE, DU: 2, spineAt: MS.spineAt, trackV: MS.trackV, N: MS.net, lines: MS.net.lines(), renderer: null, stationsList: MS.list, q: MS.quality };
   const gen = M.StationTypes.build(st, C); let r = gen.next(), n = 0; while (!r.done) { r = gen.next(); n++; }
-  const res = r.value; st.res = res; st.walk = res.walk; st.state = 'built'; return { st, res, steps: n };
+  const res = r.value; st.res = res; st.walk = res.walk; st.root = res.root; st.state = 'built'; return { st, res, steps: n };
 }
 const tris = (root) => { let t = 0; root.traverse(o => { if (o.isMesh && o.geometry) { const g = o.geometry; t += (g.index ? g.index.count : g.attributes.position ? g.attributes.position.count : 0) / 3; } }); return Math.round(t); };
 
