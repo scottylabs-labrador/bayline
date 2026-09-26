@@ -14,7 +14,7 @@ export const cards = {
   live: `<div class="c"><div class="w">Running <em>live</em></div></div>`,
   browser: `<div class="c"><div class="w">In your <em>browser</em></div></div>`,
   endcard: `<div class="c"><div class="scrim"></div><div class="logo">Bay<span>line</span></div><div class="tag">The Bay Area, in motion.</div>
-    <div class="url">bayline.tkanz.com</div><div class="play">Free · in your browser</div>
+    <div class="url">bayline.tkanz.com</div><div class="play">Free · nothing to install</div>
     <div class="fine">Unofficial. Not affiliated with Caltrain, the Peninsula Corridor Joint Powers Board, the San Francisco Bay Area Rapid Transit
     District, or any airline or aircraft manufacturer.<br>Real gameplay, captured in the browser. Music: “Aquarius” by David Celeste · Epidemic Sound.</div></div>`,
 };
