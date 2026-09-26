@@ -54,7 +54,7 @@ const StationHeroes = (() => {
     SSAN: { layout: 'island', type: 'subway', access: 'above', floor: CONC(0x9c9a95, 2.0), wall: [0xc9ccd0, K.FLUTED, 0.1], wallUp: [0xc9ccd0, K.FLUTED, 0.1], band: 0x6e2432, ceil: [0xdadcdf, K.PANEL, 0.6],
       cFloor: [0xe6e6e2, K.PANEL, 1.0], cWall: PANEL(0xf1f1ee, 1.2), cCeil: [0xa9895f, K.WOOD, 0.08], daylight: true, arches: 0x151515 },
     SBRN: { layout: 'island', type: 'trench', access: 'bridge', floor: CONC(0x8f8c87, 0.6), wall: BOARD(0x9a958c, 0.15), canopy: { style: 'barrel', len: 107, top: 0xe9ebec, under: 0xf2f2f0, fascia: 0xb3342b, posts: { shape: 'rect', col: 0xb3342b, size: 0.35, spacing: 9, where: 'back' } } },
-    SFIA: { type: 'aerial', access: 'below', endHallWip: { toward: [133, -43], len: 30 }, floor: TERR(0xb3b0aa, 4.0), ceil: PANEL(0x9a9d9f, 0.6), enclosed: true, canopy: { style: 'shed', len: 216, top: 0xa9adb0, under: 0x8e9194, fascia: 0x6f7377,
+    SFIA: { type: 'aerial', access: 'end', endHall: { toward: [133, -43], len: 30 }, floor: TERR(0xb3b0aa, 4.0), ceil: PANEL(0x9a9d9f, 0.6), enclosed: true, canopy: { style: 'shed', len: 216, top: 0xa9adb0, under: 0x8e9194, fascia: 0x6f7377,
       posts: { shape: 'round', col: 0xaaa59c, size: 1.2, spacing: 18, where: 'centre', kind: K.BOARDFORM } }, feature: ['windPortal'], hero: 1 },
     MLBR: { type: 'surface', access: 'bridge', floor: GRAN(0xa3a098, 0.6), canopy: { style: 'flat', len: 150, top: 0xefe8d6, under: 0xf2ecdd, fascia: 0xe4dcc8, posts: { shape: 'round', col: 0xf2f0ea, size: 0.3, spacing: 10, where: 'centre' } },
       bridgeStyle: 'wings', hero: 1,

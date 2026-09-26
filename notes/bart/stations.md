@@ -88,6 +88,15 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   side platforms beside the escalators).
 - **MacArthur's roof from above**: its box canopy's top was the fascia's dark brown (read as a black slab from the
   air, promo P06); now a grey roof, the underside and fascia stay dark.
+- **SFO's real access** (hero; `access: 'end'`, `endHall()`): no more ground-level lobby with stairs under the deck.
+  The platforms meet a glazed fare hall at platform level past the bumpers (fare line, booth, ticket machines, light
+  lines, walkers), which opens at its far end toward the International Terminal's departures level (research: "East
+  end: into the International Terminal departures level (Level 3)"); the deck runs on under it, and the terminal
+  building it meets stays (the hall's keep-out is soft). Found on the way: **platforms ending at a bumper ran on past
+  it** to the end of the station's spine (the nearest point on a track sticks at its end): SFO's three faces were 264 m
+  (now 224), Oakland Airport's 60 m (46), the Coliseum connector's 56 m (38), Pittsburg / Bay Point's transfer face 266
+  m (224); every other platform unchanged (the platform check on all 52 records compared with round 2's). Walk gaps 0,
+  back faces as before (`shots/stations/sfia_end_hall*.jpg`, `sfia_platform_to_hall.jpg`).
 - **Opening rims faced outward**: the walls round an opening in a slab (escalator wells through a platform or a
   concourse roof) were wound to look out of the opening, so from inside the well they were culled and whatever stood
   beside it showed through (found at Richmond's new well: the fill's gravel beside the escalators; also the rims of the
@@ -124,11 +133,24 @@ Support in the stations: `res.esc` (escalators in world coordinates), `info.rotu
 
 ## Post-M3 backlog (first item, lead 09:00)
 
-1. **Millbrae cross-platform island**: Caltrain NB becomes the east face of the shared island (Peninsula layout `R`
-   from the NB edge to BART platform 3's back, ~12.6 m at the middle; SB the west side platform), Caltrain NB doors
-   open to the east; the BART face keeps its height (0.991 m over its rail) and the Caltrain face its own, with a ramp
-   between; the shared hall's west column row then moves onto the island. Needs Peninsula platform geometry and the
-   Caltrain door/stop logic: after the flip.
+1. **Millbrae cross-platform island (M3.4 proposal; needs a guarded Peninsula change)**. Today (M3.2) the Peninsula
+   layout at `place_MLBR` is one island between Caltrain's two tracks (the OSM fallback), and BART platform 3 is a
+   side platform facing west toward it across a 12-13 m gap under the shared vault. The real station: Caltrain SB on a
+   west side platform (track 5), Caltrain NB (track 4) as the west face of one island whose east face is BART platform
+   3 (track W3). Plan, all behind `Metro.on`, only for `place_MLBR`:
+   - `25_stations.js layout()` (Peninsula file: the lead's call, a ~6-line guarded override like the depot split): plats
+     `[{ side: 'R', w: 4.5 }` (SB, west of lane 1), `{ side: 'L', w: W }]` (NB, east of lane 0, W from the NB edge to BART
+     platform 3's back, read from `MetroStations` once planned: ~10.5 m at the middle); `pick()` and `doorSide()` then give
+     NB doors on the east (-1), SB on the west (+1), stop marks from the new plats. (In the Track frame +lat is west:
+     lane 0 = NB is the east lane; 'L' extends east.) Everything else of the Peninsula station (canopy, lamps,
+     furniture, boards, walk floors, prompts, Peninsula crowd) derives from `st.plats` and follows.
+   - STATIONS: BART platform 3's back meets the Caltrain face (one walking surface: BART 0.991 m over its rail, the
+     Caltrain face at its own height, a 1:12 ramp between, glass rail along the step where the ramp does not run);
+     the shared hall's west columns move onto the island; the keep-out keeps Towns / flora off the new SB platform.
+   - QA: metro-off pixel-identical at `#auto&t=09:10&at=place_MLBR&metro=0`; Caltrain NB and SB stops, door sides,
+     boarding and alighting (SIM's `qa_metro_peninsula.sh`), the walk from BART platform 3 across the island to a Caltrain
+     NB door, P14b re-previewed (its framing is unchanged; the island reads differently).
+   Estimate 3-5 h with the Peninsula QA; not for M3.3.
 2. **Market St Muni Metro level** (EMBR, MONT, POWL, CIVC; research: "the mezzanine looks down onto the Muni
    platforms"): a platform level between the mezzanine and BART with its own box and track (trains later), its
    escalators from the mezzanine, the BART wells passing it behind glass; transfer panels already say "City light rail
@@ -139,7 +161,7 @@ Support in the stations: `res.esc` (escalators in world coordinates), `info.rotu
    circles and arrows, the 16th/24th St Mitchell reliefs.
    Also seen: at Balboa Park the terrain slopes beside the cover carry the orthophoto's red platforms (MetroGround's
    carve; pre-existing, only from the air).
-6. **SFO's access**: the real station has no street-level lobby: riders leave the platforms at the east (bumper) end
+6. (done: see "SFO's real access" above; the Wind Portal still waits for an AirTrain level) **SFO's access**: the real station has no street-level lobby: riders leave the platforms at the east (bumper) end
    into the International Terminal's departures level, and at the west end go up through the Wind Portal to the
    AirTrain. Ours has a lobby on the ground under the deck with stairs down (the generic aerial pattern). Plan: an
    `end` access (a glazed fare hall at platform level beyond the bumpers, opening into the terminal building), the
