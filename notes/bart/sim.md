@@ -273,11 +273,8 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
     marks (e.g. `berth: { '+': { 10: s, 8: s, … } }`) would be welcome if the real system stops shorter trains
     elsewhere (the runtime takes a number today; tell me before changing the shape).
   - PITT-T has no station entry (no platform extent/side): fine, the runtime centres the train on the stop point there.
-  - **Platform sides disagree** at least at West Oakland: network.json says M10-1 / M10-2 are `left` of +s, but the
-    stations workstream's built platform (its `spawnPoint` and walk floors) is 3.9 m to the **right** of M10-1. The
-    runtime now takes each platform's side from the stations' geometry when `MetroStations` is in the build (that is
-    what's drawn, and the train doors must open onto it), else from network.json. DATA + STATIONS: please reconcile
-    (a side audit over all 50 stations: `MetroSim.platformSide(id, gtfs)` vs `platforms[].side`).
+  - Platform sides: resolved. Audit 2026-09-26 03:05 (`MetroStations.spawnPoint` vs `platforms[].side`, all 105
+    platforms): 0 mismatches. The runtime still takes the side from the stations' geometry when it is in the build.
 - **TRAINS**
   - MetroKit v1 (bart-trains 7dd7d47, tested in a scratch build, not committed here): the runtime now feeds the
     PIS (`setDisplay({ line, lineName, color, destination, nextStop, arriving, doors, transfer, stops, index, clock })`,
@@ -301,7 +298,9 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
     recycles consists of other lengths (6/8/10 cars) and drops them from the scene.
   - Cab display: `setCab({ speedMph, codeMph (AUTHORIZED), commandedMph, mode: 'ATO'|'MANUAL', notch, atc, nextStop,
     distFt, clock, line, color, destination })` would feed your VATC screen; I call it only if it exists.
-- **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above.
+- **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above. Small one: the airport
+  connector platforms (COLS `H10`, OAKL `H40`) return a `spawnPoint` more than 14 m from their MetroNet track (H1.1 /
+  H1.2), so the side audit can't place them (the cable train's doors use the data side there).
 
 ## Assumptions log
 
