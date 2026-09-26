@@ -392,7 +392,9 @@ const MetroStations = (() => {
   function footStep(camPos) {
     let best = null, bd = 1e18;
     for (const st of list) { if (kdone.has(st.id)) continue; const d = (st.x - camPos.x) ** 2 + (st.z - camPos.z) ** 2; if (d < bd) { bd = d; best = st; } }
-    if (!best) { footPending = false; return; }
+    // every station near the camera has its footprint: is anything the world placed before them standing in one?
+    if (worldCheck && (!best || bd > CHECK_R * CHECK_R)) { if (worldStep(camPos)) return; }
+    if (!best) { footPending = worldCheck; return; }
     if (!best.plan) { best.plan = makePlan(best.data); if (!best.plan) kdone.add(best.id); return; }
     footprintOf(best);
   }
@@ -521,13 +523,37 @@ const MetroStations = (() => {
   }
   // once the stations are known: world pieces placed before (towns, trees, parked cars) are placed again with the
   // footprints. MetroGround (world) re-places Towns and Flora itself when it installs after us.
+  // Only what actually stands in a footprint is placed again, and only once every station near the camera has its
+  // footprint (worldStep, one station per frame): OSM buildings in the Towns tiles decoded before the drop filter, Flora's
+  // trees. With Towns.refreshIn / Flora.refreshIn (asked of WORLD: re-decode and rebuild the tiles in a rect) only those
+  // tiles are rebuilt; without, one full re-place (dispose) of that module. Traffic re-streams (cheap).
+  const CHECK_R = 2500;
+  let worldCheck = false, checkQ = null; const refresh = { towns: [], flora: [], ran: false, ms: 0 };
   function refreshWorld() {
     const groundLater = typeof MetroGround !== 'undefined' && !MetroGround.installed;
-    if (!groundLater) {
-      try { if (typeof Towns !== 'undefined' && Towns.dispose) Towns.dispose(); } catch (e) {}
-      try { if (typeof Flora !== 'undefined' && Flora.dispose) Flora.dispose(); } catch (e) {}
-    }
+    if (!groundLater) { worldCheck = true; footPending = true; checkQ = null; }
     try { if (typeof World !== 'undefined' && World.traffic && World.traffic.lanes && World.traffic.lanes.length) World.traffic.cx = 1e9; } catch (e) {}
+  }
+  function worldStep(camPos) {
+    const t0 = performance.now();
+    if (!checkQ) { checkQ = list.filter(st => kdone.has(st.id) && Math.hypot(st.x - camPos.x, st.z - camPos.z) < CHECK_R); refresh.towns.length = refresh.flora.length = 0; return true; }
+    const st = checkQ.pop();
+    if (st) {
+      let x0 = 1e18, z0 = 1e18, x1 = -1e18, z1 = -1e18;
+      for (const Z of kzones) if (Z.st === st.id) { x0 = Math.min(x0, Z.bb[0]); z0 = Math.min(z0, Z.bb[1]); x1 = Math.max(x1, Z.bb[2]); z1 = Math.max(z1, Z.bb[3]); }
+      if (x1 > x0) {
+        const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, r = Math.max(x1 - x0, z1 - z0) / 2 + PADMAX, rect = [x0 - PADMAX, z0 - PADMAX, x1 + PADMAX, z1 + PADMAX];
+        try { if (typeof Towns !== 'undefined' && Towns.buildingsAt && Towns.buildingsAt(cx, cz, r).some(b => dropBuilding0(b, b.x, b.z))) refresh.towns.push(rect); } catch (e) {}
+        try { if (typeof Flora !== 'undefined' && Flora.treesNear && Flora.treesNear(cx, cz, r * 1.42).some(t => keepOut(t.x, t.z, 'tree'))) refresh.flora.push(rect); } catch (e) {}
+      }
+      refresh.ms += performance.now() - t0;
+      return true;
+    }
+    worldCheck = false; checkQ = null; refresh.ran = true;
+    const redo = (M, rects) => { if (typeof M === 'undefined' || !rects.length) return;
+      try { if (M.refreshIn) for (const r of rects) M.refreshIn(...r); else if (M.dispose) M.dispose(); } catch (e) {} };
+    redo(typeof Towns !== 'undefined' ? Towns : undefined, refresh.towns); redo(typeof Flora !== 'undefined' ? Flora : undefined, refresh.flora);
+    return false;
   }
 
   // ------------------------------------------------------------------------------------------------ QA camera
@@ -591,7 +617,7 @@ const MetroStations = (() => {
   }
 
   const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, get enabled() { return enabled; }, get ready() { return ready; },
-    keepOut, keepOutAny, dropBuilding, keepOutZones, KEEPOUT_PAD: PAD, get droppedBuildings() { return dropped; },
+    keepOut, keepOutAny, dropBuilding, keepOutZones, KEEPOUT_PAD: PAD, get droppedBuildings() { return dropped; }, get worldRefresh() { return refresh; },
     makePlan, spineAt, trackV, net: N, PLAT_H, EDGE, VEH, jobs, shot, debug };
   // hooks: ride along with the Peninsula stations' init/update (no edits to the shared main loop; inert without #metro=1)
   if (enabled && typeof Stations !== 'undefined') {
@@ -601,6 +627,6 @@ const MetroStations = (() => {
   }
   if (typeof window !== 'undefined') Object.assign(window.__baylineMods = window.__baylineMods || {}, { MetroStations: api });
   // (QA handles to the kit, read lazily: those modules load after this one)
-  api.qa = { get kit() { return StationKit; }, get parts() { return StationParts; } };
+  api.qa = { get kit() { return StationKit; }, get parts() { return StationParts; }, get types() { return StationTypes; }, get metronet() { return MetroNet; } };
   return api;
 })();
