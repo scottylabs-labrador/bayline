@@ -361,13 +361,19 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
 - Good spots: M1.1 s 1300 (West Oakland aerial), 3150 → 3485 (aerial → portal → box), 8000 (Tube); C1 5200 (Berkeley
   Hills tunnel); M1.1 14000 (Mission St bore); A1.1 7000 (Fruitvale–Coliseum aerial).
 - Shots: `notes/bart/shots/infra/`.
+- Performance hooks (QA, always on, cheap): `MetroTrack.stats` { away (1 = nothing near: idle), chunks, body, detail,
+  far, jobs, buildMs (this frame's job time), slow (the slowest job steps seen, [ms, 'layer:stage:track:chunk']),
+  tb (this frame's ms: body / detail / far / dispose / jobs / instances), instMs, instParts, tris, inst };
+  `Under.stats` { cells, portals, cuts, visCells, mapDraws, mapMs, culled, walk, tu (map / cell / visibility ms),
+  failsafe }. Diagnostics in the console only with `#debug` (or `?dev`).
+- Profiling scripts used for the M3 numbers (not committed; scratch): a camera flown along a track by
+  `requestAnimationFrame` + `MetroTrack.shot`, wrapping `MetroTrack.update` / `Under.update` / `Under.preRender` with
+  timers, plus `renderer.info.programs` for shader compiles.
 
 ## Open problems
 
-- v0 data: the Tube tracks are 5.0 m apart (real 8.03 m), cut-and-cover pairs ~5.0 m (real 5.49 m), Berkeley Hills
-  bores ~20 m (real 15.2 m); the tube run is 3.4 km (real 5.83 km immersed + 1.08 km Oakland box + 0.45 km SF bores);
-  aerial/portal profiles are rough (e.g. 10 m drops over 80 m at the West Oakland portal) — builders adapt, but
-  accuracy follows the data.
+- The data's accuracy limits the builders (aerial heights from clearance rules, the Wye's solved levels, portal
+  profiles); builders adapt, but accuracy follows the data.
 - Milpitas (M2b): the data alternates cut-and-cover and trench every ~50 m around the station (the roofed trench), so
   the approach is a row of short boxes with headwalls; the carved ground beside the trench still rises in steep facets
   behind the walls (WORLD's carve / the terrain resolution). STATIONS is opening the ground over their trenches.
