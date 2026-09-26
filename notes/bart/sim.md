@@ -291,7 +291,11 @@ The data is © BART under its developer license (free, as-is; no BART marks in t
   signal, the Caltrain stations next to the metro (`tools/qa_peninsula_spots.js`: at 4th & King, South SF, San Bruno,
   Millbrae, Hillsdale and Diridon: the HUD place is the Caltrain station, the sub-line a Peninsula train, the Peninsula
   strip shown, the Peninsula walk prompt (+ "transfer to the metro" at Millbrae), B opens the Peninsula board) and the
-  flight FDM. Result: **0 failed with METRO=1 and 0 failed with METRO=0** (2026-09-26 06:00, bart-sim a1cc675+).
+  flight FDM. The keyboard drive (qa_all.sh's drive_qa, the Short Hop Mountain View - Sunnyvale - Lawrence) now runs to
+  its report card (up to 5 min) and prints one summary whose short fields come first (`maxMph`, `done`, `stops`,
+  `missed`, `score`, `grade`, then the score log and events), so the 400-character cut of qa_all.sh's lines can no
+  longer hide the verdict (M3 gate false negative, 2026-09-26); PASS = ≥ 30 mph, the run completed, ≥ 2 stops, none
+  missed. Each qa_all.sh shot's full output is also kept in `<out>/<name>.log`. Result: **0 failed with METRO=1 and 0 failed with METRO=0** (2026-09-26 06:00, bart-sim a1cc675+).
 - **Item 4, boot and failure isolation**: see the next section. `tools/qa_metro_isolation.sh`: 11/11.
 - **Item 5, phones**: touch features: the walk prompt is tappable on touch screens and worded for them ("Tap to board:
   …", "Tap for Embarcadero trains", "Tap to transfer to the metro"); the system map pans with one finger, pinch-zooms
