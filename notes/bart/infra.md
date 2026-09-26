@@ -7,7 +7,29 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## Status
 
-- 2026-09-26 00:40: started. Read the engine (env, terrain, post, trackgeo, main loop). Research running.
+- **2026-09-26 02:40 — M1 delivered on `bart-infra`** (merged with `bart` M1 integration):
+  - `23_metrotrack.js` MetroTrack: streamed guideway over every MetroNet track (bart + ebart; the airport connector
+    is left to its own module), three layers per track with their own chunk lengths (DETAIL 400 m ≤ 480 m, BODY 800 m
+    ≤ 2.7 km, FAR 2 km ≤ 11 km, far pieces hide themselves where a body shows), time-sliced jobs (≤ 3.2 ms/frame),
+    paired tracks (≤ 7.6 m apart) share structures, twin bores (≤ 22 m) know their inner side.
+  - `24_metroguide.js`: 119RE rails canted 1:40 with a polished band (Catmull-Rom smooth curves), continuous DF plinths,
+    third rail at 1.499 m / +171 mm with grey porcelain insulators and grey coverboard (outer side, away from platforms),
+    ballast bed with 2:1 shoulders and a skirt to the ground + terrain cut, automatic retained cuts where at-grade track
+    runs below the ground (portal approaches), trenches, freeway-median barriers + fences, **1970s aerials: twin slender
+    box girders (1.22 m deep, 3.556 m decks, sunken walkway between) on 1.52 m hexagonal columns with hammerhead caps,
+    elastomeric bearings, ~45 % of columns in seismic steel jackets**, modern single-box style (2003+), abutments, far
+    silhouettes; instanced fasteners (914 mm), ties (762 mm), insulators (3.05 m) around the camera.
+  - `24_metrotube.js`: Transbay Tube bores (5.18 m, walkway 0.76 m at +0.71 m on the gallery side, yellow gallery doors
+    every ~100 m), SF/Oakland bores (Market St bolted steel rings), Berkeley Hills horseshoe (LEDs every 7.62 m),
+    cut-and-cover box cells (walkway on the centre-wall side), fluorescent fixtures every 15.24 m lighting their own
+    tunnel per fragment (the rails glint), handrails, cable racks, blue-light stations, portal headwalls with fences;
+    every tunnel piece ≤ 200 m is an Under cell with portals (daylight at mouths, 'auto' to neighbours and stations).
+  - `24_metrounder.js` Under + engine hooks (post, terrain, main): see the API below. Verified: Tube interior, Berkeley
+    Hills tunnel, Mission St bore, the West Oakland aerial → portal → box → Tube sequence (exposure ramps 0.66 → 1.0,
+    draw calls fall from ~254 outdoors to ~30 in the tunnel), EMBR/MONT/12TH/19TH/GLEN platforms with the stations'
+    cells (**fixed the all-navy Embarcadero bug**: Under culled the `metrostations` root; it now never culls a top-level
+    ancestor of a registered cell group, and accepts `ambient` as a number or `[r, g, b]`).
+- 2026-09-26 00:40: started.
 
 ## Plan (M1 → M2)
 
@@ -137,6 +159,47 @@ Manual rev. 2016; [BFS] BART Facilities Standards; [W] Wikipedia; Geolith "Engin
 - **Stations**: platforms 213.4 m + 2.4 m transitions; end walls ≥ 2.03 m from the track centre; Market St boxes 18.3 m
   wide (Embarcadero 15.2 m); aerial platforms ~9 m above grade.
 
+### Track, third rail, aerials, open-air structures
+Sources: [BFS] BART Facilities Standards R3.2 spec sections (34 05 17, 34 11 25/27/31/33/37/93, 34 24 13, 32 31 13);
+[CLEMONS] R.E. Clemons (Bechtel), "Continuous-Welded Rail on BART Aerial Structures", TRR 1071 (1986); [FIRE] BART Fire
+Manual 2016; [WSX] Warm Springs Extension SEIR ch. 2 (2003, PB typical sections); [FLOR] Fremont Line Operability
+Retrofit IS/MND (2012); [TRID] A-Line North aerial retrofit abstract; [IJ] Interface Journal; [W] Wikipedia.
+- **Track**: gauge 66 in (1,676 mm), gauge line 838 mm from the centreline; **119RE** CWR (h 173.0, base 139.7, head
+  67.5, web 14.3, head depth 47.6 mm); rails canted **1:40** inward. Track centres **4.267 m** (14 ft) mainline, aerials,
+  crossovers; **5.49 m** in twin-cell cut-and-cover and portals, **2.01 m** from track centreline to the (near) wall.
+  45 % ballasted, 28 % aerial DF, 27 % subway DF.
+- **Platforms**: edge 1.616 m from the track centreline, top 0.991 m above rail; islands 28-32 ft wide.
+- **Direct fixation**: original aerials: Landis fasteners at **914 mm** on a continuous plinth **787 mm wide**
+  (89-216 mm thick in a 76 mm recess); current standard 610-762 mm spacing, footprint ~380 x 190 mm, ≤ 100 mm high,
+  plinth top canted 1:40. Top of rail ~0.29 m above the aerial deck.
+- **Ballasted**: concrete ties at **762 mm**, ~3.05 m long, cast-iron shoulders + spring clips; each tie has a contact-rail
+  bracket insert at one end, alternating ends tie to tie; ballast 305 mm under the tie, shoulder 305 mm (457 on curves
+  ≤ 2,000 ft), side slope **2:1**, top at ~tie top; subballast 152 mm; a 0.76 m paved walkway beside the track.
+- **Third rail**: 1,000 V DC, top contact, 4 shoes per car; centre **1.499 m** from the track centreline (660 mm from
+  the near gauge line), **contact surface 171 mm above top of running rail**; steel I-beam with aluminium sides or
+  stainless-capped aluminium, 9.14 m lengths; **light-grey porcelain insulators** (229 mm; 152 at dips/ramps) every
+  **3.05 m**; **light-grey fibreglass coverboard** (ANSI 70), brackets ≤ 1.83 m; dip sections/ramps 76 mm lower;
+  gaps < 55 ft bridged by the shoes; side: away from the platform at stations, alternating at grade, the outer edges
+  on aerials (walkway between the tracks).
+- **Aerials, original (1968-72)**: **two precast post-tensioned trapezoidal box girders, one per track, 14 ft apart,
+  each 1.22 m deep with a 3.556 m deck** (0.71 m gap between the decks), drainage channel on each girder centreline;
+  simple spans 21.3-22.9 m (55-145 ft, avg 75 ft); **single 1.52 m hexagonal column with a T / hammerhead cap**
+  (ASSUMPTION ~7 m x 1.5 m), heights 4.9-12.2 m (avg 9.1 m); elastomeric bearings, a deck joint at every pier; no
+  parapets; ~90 % this type (others: straddle, two-column and C bents, pier walls). Seismic retrofit: steel column
+  jackets 1.8-2.4 m diameter or fibre wrap, shear keys, seat extenders. Crossovers on aerials: special girders 6 in
+  lower with timber ties. Aerial walkway: sunken between the tracks (~0.25 m below the deck, ~0.7 m wide), no handrail.
+- **Later aerials**: Dublin/Pleasanton (1997) cast-in-place post-tensioned box girders; Warm Springs (2017) Paseo Padre:
+  one 9.75 m four-cell box for both tracks on a two-column bent, U-trough bridges at Walnut Ave; Berryessa (2020):
+  half in trenches up to 9 m deep, short aerials ≤ 5 m, the station aerial ~10.7 m up; SFO (2003) elevated station
+  and wye; Pittsburg/Bay Point (1996) at grade in the SR-4 median.
+- **Fences**: 2.13 m chain link (25 mm mesh, No. 9 galvanised) + 3 barbed strands = 2.44 m; yards 3.05 m; all at-grade
+  track fenced. Freeway medians (ASSUMPTION): ballasted, Caltrans barriers 0.81-0.91 m + the fence, ~10 m trackway.
+- **Turnouts**: No. 10 crossovers at 14 ft centres, rail-bound manganese frogs, 19'6" switch points, guard-rail
+  flangeway 1-7/8 in, Alstom GM4000A switch machines; yards No. 8/10.
+- **Train control**: cab signalling (no lineside block signals); train-control bungalows 12.5 x 7.8 m; mileposts blue
+  with white text, 0.66 m tall, every 161 m outdoors and 32 m underground. Cross-passage doors and third-rail cut-off
+  switches **yellow**. Concrete unpainted grey.
+
 ### Modelling choices from this (infra)
 - Walkway on the **inner** side (toward the other track: gallery doors, cross passages), third rail on the **outer**
   side (field side) outside stations; in stations the third rail is on the side away from the platform.
@@ -144,19 +207,54 @@ Manual rev. 2016; [BFS] BART Facilities Standards; [W] Wikipedia; Geolith "Engin
   box cells 4.7 x 5.3 m (cut-and-cover). Lights: fluorescent every 15.24 m (Tube, SF/Oakland subways), LED every 7.62 m
   (Berkeley Hills).
 
-## Costs
+## Costs (High tier, 1600x900, M2; GPU timings are noisy: six workstreams share the GPU)
 
-(to be measured: High tier, same views with `metro=0` vs `metro=1`)
+| view | metro=0 | metro=1 | notes |
+|---|---|---|---|
+| West Oakland street level, looking along the aerial | 199 calls, scene 1.9 ms | 300 calls (+101), scene 3.3 ms | body 38, detail 9, far 31 chunks visible; before the layer refactor it was +116 (far 92) |
+| Fruitvale aerial from 450 m | — | 160 calls total, 0.74 M tris | far layer: 123 pieces, cheap |
+| Transbay Tube interior | (n/a) | 25 calls, 0.31 M tris | outdoor world culled by portal visibility |
+| Berkeley Hills tunnel | (n/a) | 49 calls | |
+| EMBR platform (with stations) | (n/a) | 40 calls | |
 
-## Preview
+Build: jobs ≤ 3.2 ms per frame. Next: merge body chunks of paired tracks further, measure with a quiet GPU.
 
-(to come) `preview/metrotrack.html`, in-game `#auto&metro=1&...`
+## Preview / QA
+
+- In game (dev server on my worktree): `http://localhost:8134/infra.html#auto&metro=1&t=12:00&ll=...`; then
+  `__bayline.MetroTrack.shot('M1.1', 8000, 0.3, 2.3, { ds: 60, lat: 0, up: 1.5 })` puts the camera on a track (works
+  underground). `__bayline.Under.state`, `.stats`, `.debug.sample(x, z)`; `__bayline.MetroTrack.stats`.
+- Good spots: M1.1 s 1300 (West Oakland aerial), 3150 → 3485 (aerial → portal → box), 8000 (Tube); C1 5200 (Berkeley
+  Hills tunnel); M1.1 14000 (Mission St bore); A1.1 7000 (Fruitvale–Coliseum aerial).
+- Shots: `notes/bart/shots/infra/`.
 
 ## Open problems
 
+- v0 data: the Tube tracks are 5.0 m apart (real 8.03 m), cut-and-cover pairs ~5.0 m (real 5.49 m), Berkeley Hills
+  bores ~20 m (real 15.2 m); the tube run is 3.4 km (real 5.83 km immersed + 1.08 km Oakland box + 0.45 km SF bores);
+  aerial/portal profiles are rough (e.g. 10 m drops over 80 m at the West Oakland portal) — builders adapt, but
+  accuracy follows the data.
+- Junctions: tracks overlap at turnouts/crossovers (no switch points, frogs or guard rails yet); third rail stops
+  14 m before track ends. Next milestone.
+- The Oakland Wye / tunnel junctions: diverging tunnels intersect each other's linings.
+- Terrain cuts are rasterised at 1 m (0.5-1 m jaggies at cut edges, mostly under my skirts/walls); a finer cut level
+  near the camera is planned.
+- Freeway medians are typed `grade` in v0 (no barriers yet except where data says `median`).
+
 ## Requests for other workstreams
 
-- DATA: per-segment structure types and portal positions (tunnel=yes spans from OSM), the Transbay Tube profile,
-  a `side` for the third rail if known (else I derive it: BART's contact rail is on the side away from platforms).
-- WORLD: where BART runs at grade or in trenches, the terrain should be carved to the bed (like the Peninsula
-  carve); until then I cut the terrain at runtime (Under.addCut) and build retaining walls/embankments to meet it.
+- **DATA**: (1) Transbay Tube track centres **8.03 m** (NTSB Fig. 3), twin-cell cut-and-cover and portals **5.49 m**
+  (WSX), Berkeley Hills bores **15.2 m**; (2) the Tube's extent: SF vent structure (~137 m off the Ferry Building) to
+  the Oakland vent structure on 7th St (5.83 km), then ~1.08 km of box to the Oakland portal (MP 2.67, ~7th &
+  Maritime), the SF end as twin bores to Embarcadero; (3) consistent platform s-ranges on both faces of island
+  platforms (I normalise like STATIONS meanwhile); (4) `median` for SR-24 / I-580 / SR-4 / I-980 sections; (5) if
+  possible a per-sample third-rail side (BART alternates it at grade).
+- **WORLD**: carve the terrain to the bed where BART is at grade / in trenches (I cut the terrain at runtime with
+  `Under.addCut` meanwhile; carving removes the need and the edge jaggies); please keep lidar (h9) weight at 0 under
+  the bed like the Peninsula line.
+- **STATIONS**: (a) your cells work; Under now keeps your `metrostations` root drawing when the outdoors is culled
+  (no `Under.keep` needed, but it doesn't hurt); (b) my tunnel ends add `'auto'` portals probing 3 m into your box
+  at TOR + 1.5 m, so make `st:<ID>:plat` cover the trackway up to the box ends; (c) `ambient` accepted as a number or
+  `[r, g, b]`.
+- **TRAINS / SIM**: metro trains in tunnels are lit by the under map's ambient only (tunnel fixtures light my own
+  geometry); `Under.keep(car.group)` is already in 46_metrosim.js, good.
