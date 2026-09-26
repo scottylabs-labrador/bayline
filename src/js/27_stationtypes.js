@@ -2245,13 +2245,19 @@ const StationTypes = (() => {
       SP.railing(z.d, ends, 1.07, 'glass'); addWall(walk, WUV(ue, vIn(ue)), WUV(ue, X.back(ue)), yP - 0.5, yP + 2.5);
     }
     yield;
-    // the railing on the face's edge (on its surface, 0.1 m in), the face's whole length, open at the steps and the landing
+    // the fence on the face's edge (research: "turquoise fence down the middle" of the shared island), on its surface
+    // 0.1 m in, the face's whole length, open at the steps and the landing: posts every 2.4 m, top and bottom rails,
+    // bars every 0.12 m
     const gaps = X.opens.map(q => [q.u - 1.5, q.u + 1.5]); if (X.ramp) gaps.push([X.ramp.u - 0.9, X.ramp.u + 0.9]); gaps.sort((a, b) => a[0] - b[0]);
     const vR = (u) => X.face(u) - o * 0.1, segs = []; let a0 = X.uF0 + 0.6;
     for (const [g0, g1] of gaps) { if (g0 > a0 + 0.3) segs.push([a0, g0]); a0 = Math.max(a0, g1); } if (X.uF1 - 0.6 > a0 + 0.3) segs.push([a0, X.uF1 - 0.6]);
+    const fg = z.d.sk, FH = 1.2, P3 = (u, dy) => { const [x, zz] = L2(u, vR(u)); return [x, X.y(u) + dy, zz]; };
+    fg.mat(0x2f9e98, K.PAINT, 0.2);
     for (const [a, b] of segs) { const n = Math.max(1, Math.ceil((b - a) / 2.4)), us = []; for (let k = 0; k <= n; k++) us.push(a + (b - a) * k / n);
-      SP.railing(z.d, us.map(u => { const [x, zz] = L2(u, vR(u)); return [x, X.y(u), zz]; }), 1.07, 'glass');
-      for (let k = 0; k < n; k++) addWall(walk, WUV(us[k], vR(us[k])), WUV(us[k + 1], vR(us[k + 1])), yP - 0.5, Math.max(X.y(us[k]), X.y(us[k + 1])) + 1.2); }
+      for (let k = 0; k < n; k++) { fg.tube(P3(us[k], FH), P3(us[k + 1], FH), 0.03, 6); fg.tube(P3(us[k], 0.1), P3(us[k + 1], 0.1), 0.02, 4);
+        for (let u = us[k] + 0.12; u < us[k + 1] - 0.06; u += 0.12) fg.tube(P3(u, 0.1), P3(u, FH), 0.009, 3);
+        addWall(walk, WUV(us[k], vR(us[k])), WUV(us[k + 1], vR(us[k + 1])), yP - 0.5, Math.max(X.y(us[k]), X.y(us[k + 1])) + 1.2); }
+      for (const u of us) { const [x, y, zz] = P3(u, 0); fg.push().at(x, y, zz, T.yawAt(u)); fg.cbox(0, 0, 0, 0.07, FH + 0.04, 0.07); fg.pop(); } }
     yield;
     // steps at the openings: n risers from the strip to the face (the face's edge is the top step), treads 0.32 m with
     // yellow nosings, a handrail at each side; walked as a slope through the nosings
