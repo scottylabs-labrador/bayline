@@ -352,7 +352,7 @@ const MetroStations = (() => {
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);
     if (typeof StationCrowds !== 'undefined') StationCrowds.update(dt, camPos, list);
-    sharedBuildings();
+    try { sharedBuildings(); } catch (e) { /* (cosmetic: never worth the metro) */ }
   }
   // Millbrae is one intermodal building: the Caltrain-era depot's hall (Landmarks, 'depot:millbrae:hall', split off
   // only with the metro on) stands where BART's platform 3 and tracks are, so it is hidden while the BART station (which
