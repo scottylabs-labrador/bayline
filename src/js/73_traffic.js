@@ -176,8 +176,10 @@ const Traffic = (() => {
     }
     for (const k in meshes) { const m = meshes[k]; m.count = counts.get(m) || 0; m.visible = m.count > 0; m.instanceMatrix.needsUpdate = true; }
     lights.geometry.instanceCount = nl; aP.needsUpdate = true; aC.needsUpdate = true;
-    // callsign labels on the closest few
-    near.sort((a, b) => a.d - b.d); const keep = new Set(photo() ? [] : near.slice(0, 10).map(n => n.t));   // (photo mode: no labels)
+    // callsign labels on the closest few (none underground or on a metro platform: the labels draw through walls)
+    const indoors = (typeof Under !== 'undefined' && Under.enabled && Under.state && Under.state.cell) ||
+      (typeof Player !== 'undefined' && Player.mode === 'walk' && Player.onMetroFloor && Player.onMetroFloor());
+    near.sort((a, b) => a.d - b.d); const keep = new Set(photo() || indoors ? [] : near.slice(0, 10).map(n => n.t));   // (photo mode: no labels)
     for (const t of targets.values()) if (!keep.has(t) && t.label) removeLabel(t);
     for (const { t, d } of near.slice(0, keep.size)) {
       if (!t.label) t.label = labelSprite(t);
