@@ -100,6 +100,45 @@ collide, live mode verified against the real feed. Earlier notes below still hol
 
 ## QA results
 
+### M2 data + `bart` 62c83db merged (MetroKit v1), 2026-09-26 ~03:40–04:40, sim.html on bart-sim (Saturday timetable)
+
+What changed for M2: stops are berths (the runtime stops the head on `stops[].d`, i.e. `platforms[].berth`), the
+ATC civil code is MetroNet's code per segment (6/18/27/36/50/70; no more 5 mph floors: a 27 mph segment shows 27, not
+25), the 2026 consist lengths come straight from the timetable (Red 5 off-peak, Yellow 9, eBART in units).
+
+- **Metro ride** (`qa_metro_ride.js`): BALB board → 5-car Red Line to Millbrae, car 3 → Daly City, doors left → stepped
+  off onto the platform (y 92.87). "Five car Millbrae train now approaching platform 1." · "This is a Red Line train to
+  Millbrae. The next station is Daly City." · "Now arriving at Daly City. Doors will open on the left."
+- **Kinematics bug found and fixed on M2**: the first M2 check showed trains 45–53 s off the published times (worst
+  4 min) with 4,260 (Saturday) / 6,189 (weekday) runs needing lifted floors. Cause: the "restriction starts one sample
+  early" pass in the run envelope ran backward and cascaded, so every run was capped at its slowest code from the
+  start (GLEN→24TH at 18 mph for 2.3 km: 325 s for a 120 s run). Fixed (forward pass, one sample). After the fix, every
+  leg at 1 s steps: **Saturday** 2.9 M samples, 0 jumps, 0 over the limit, max 70.0 mph, mean |deviation| 5.5 s, worst
+  121 s, 0 early departures, 936 relaxed runs; **weekday** 4.0 M samples, 0 jumps, 0 over, mean 8.9 s, worst 130 s,
+  1,493 relaxed runs. Minimum run + dwell vs the published gap over all 189 distinct BART station pairs: p10/p50/p90
+  −96/−38/+14 s (most runs have slack). This bug also inflated the v0 "limit dips" list sent to DATA (see Requests).
+- **Metro ATC, reckless driver** (`qa_metro_atc.js`): 25 WARN, 26 ATC BRAKE, 0 penalty, codes seen 70/50/36 (real
+  codes), traction applied during an ATC brake in 4 samples (the frame the brake engages).
+- **Cab** (MetroKit v1): VATC screen fed (AUTHORIZED 36 at West Oakland, COMMANDED, effort −0.5 holding, doors "open
+  left", ATO), PIS fed (next Embarcadero, doors left, transfer "The ferries and the city light rail", 24 stops, index 9).
+  Shot: `notes/bart/shots/sim/cab_vatc_metrokit.jpg`. The driver's display now shows the deviation from the plan
+  ("8:07 AM (on time)") instead of the time left.
+- **Platform spawns** on the merged stations: all six on the stations' floors (EMBR −15.51, MONT −8.02, WOAK 12.10,
+  12TH −12.67 lower level, MCAR 35.61, MLBR 4.99), metro HUD and prompts; 12TH's lower level renders without its station
+  box (request below). Follow-the-next-train: WOAK, the arriving Antioch train left, the views moved to the next train
+  due there (Red to Richmond, dwelling at Embarcadero).
+- **Metro manual drive** (`qa_metro_drive.js`, keyboard only, WOAK → Civic Center): Embarcadero 0.57 m from the berth
+  ("Good stop", on time), Montgomery 0.66 m, Powell 0.71 m, Civic Center 0.66 m ("On the berth"), all on time, 0
+  warnings / ATC brakes / penalties, max 67 mph, score 850.
+- **Missions**: all seven start: Under the Bay, Market Street (manual), Berkeley Hills and Airport Reversal in the cab
+  ("You have the Red Line to Millbrae", through the SFO reversal), Commute at Embarcadero, the Cable Train (3-car
+  Airport Connector) and the Antioch Shuttle ("1-unit") rides. (Airport Reversal found no train on the first try: the
+  SBRN → SFO → MLBR trip is two legs; the search now follows the train through the reversal.)
+- **Peninsula regression, metro OFF**: `qa_ptc.js` WARN at 80.9 → ENFORCE at 83.8 mph → stop → release; `qa_signal.js`
+  stopped 1,454 m short of the red (0 passed); `qa_all.sh` views render, drive (74 mph, guidance, doors), ride boards;
+  `qa_flight.js` every type takes off, cruises and autolands (same numbers as before). Frame times in this run are not
+  comparable (another workstream's Chrome was on the GPU: pa_orbit 77.6 ms, sf_golden 30.9 ms).
+
 ### 2026-09-26 ~03:10–04:00 (sim.html on bart-sim 1d20226; the sim date is Saturday 9/26, so the Saturday timetable)
 
 - **Platform spawns (the lead's list)**, `#auto&metro=1&t=08:07&mst=<ST>`: EMBR, MONT, WOAK, 12TH, MCAR, MLBR all put the
@@ -289,17 +328,16 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
 ## Requests for other workstreams
 
 - **DATA**
-  - v0 speed limits have spurious dips that make the timetable impossible on some runs (min run vs published): GLEN→24TH
-    286 s vs 120 s, COLM→DALY 158 vs 120, EMBR→WOAK 386 vs 360, WOAK→EMBR 407 vs 360, PITT→NCON 404 vs 360,
-    ASHB→DBRK 156 vs 120, NBRK→PLZA 154 vs 120, SBRN→SSAN 188 vs 120, 24TH→GLEN 184 vs 120, DALY→COLM 214 vs 180,
-    FTVL→LAKE 264 vs 240, PHIL→CONC 343 vs 300. The runtime lifts dips per run to keep time; real limits will make that
-    a no-op. (Example: GLEN→24TH has 20, 25, 30, 40 mph dips inside a straight subway.)
-  - Reversal stops (SFO): the path reverses at the stop point (the station centre in v0), so a 10-car train stops with
-    its head at mid-platform. Please put the reversal point at the platform's end (the bumper side) in M2 berth marks.
-  - Stop marks: `platforms[].berth['+' | '-']` is used (2026-09-26 02:33 data) for the head's stop point; per-length
-    marks (e.g. `berth: { '+': { 10: s, 8: s, … } }`) would be welcome if the real system stops shorter trains
-    elsewhere (the runtime takes a number today; tell me before changing the shape).
-  - PITT-T has no station entry (no platform extent/side): fine, the runtime centres the train on the stop point there.
+  - Retracted: the v0 "limit dips" list (GLEN→24TH 286 s vs 120 s …) was mostly my envelope bug (see QA results); sorry
+    for the noise. On M2 after the fix, the runs whose minimum time (+ 20 s dwell) still exceeds the published gap are
+    few and small, the biggest: GLEN↔24TH 182 s vs 120 s (an 18 mph code ~640 m before 24TH and 27 mph ~1 km out of
+    GLEN in the Mission St subway; with 70 everywhere it would be 115 s), WOAK→12TH 240 vs 180 (the Wye at 27/36),
+    COLM↔DALY ~192 vs 180, SSAN↔SBRN ~195 vs 180. If the 18 mph code near 24th St isn't a real BART civil code, lifting
+    it would close most of the GLEN↔24TH gap; the runtime lifts floors per run to keep the published times anyway.
+  - Resolved by M2 (thanks): reversals turn at the berth; stops are berths (the runtime stops the head on
+    `stops[].d` = `platforms[].berth`, and uses the berth marks when a stop point isn't one); PITT-T has a station
+    record. Per-length berths (`{ '+': { 10: s, 5: s } }`) would still be welcome if BART stops short trains elsewhere
+    (tell me before changing the shape: the runtime reads a number).
   - Platform sides: resolved. Audit 2026-09-26 03:05 (`MetroStations.spawnPoint` vs `platforms[].side`, all 105
     platforms): 0 mismatches. The runtime still takes the side from the stations' geometry when it is in the build.
 - **TRAINS** (MetroKit v1 is on `bart` since 62c83db and merged here; all earlier requests are answered)
@@ -312,6 +350,11 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
   - `dmu` / `apm`: still stubs on `bart`; the runtime falls back to placeholders per kind (near and far) and will use
     MetroKit's GTW and Cable Liner as soon as those builders are on `bart` (nothing to change here: `cars` = GTW units /
     APM cars as your notes say).
+- **STATIONS / INFRA** (M2 data, merged `bart` 62c83db): `#auto&metro=1&t=08:07&mst=12TH` now spawns on the LOWER
+  level (y −12.67, the next train's platform; `floorAt` agrees), and there the station box is missing: no walls or
+  ceiling, the street and its cars are seen from below and the outdoor world is not culled (shot:
+  `notes/bart/shots/sim/m2_12th_lower.jpg`). Probably the stacked-station rebuild for M2's levels (12TH upper −3.8 /
+  lower −13.7 rail) and/or the Under cells for the lower level. The upper level and the other five stations are fine.
 - **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above. Small one: the airport
   connector platforms (COLS `H10`, OAKL `H40`) return a `spawnPoint` more than 14 m from their MetroNet track (H1.1 /
   H1.2), so the side audit can't place them (the cable train's doors use the data side there).
