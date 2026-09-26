@@ -240,11 +240,20 @@ Retrofit IS/MND (2012); [TRID] A-Line North aerial retrofit abstract; [IJ] Inter
 
 Build: jobs ≤ 3.2 ms per frame. Next: merge body chunks of paired tracks further, measure with a quiet GPU.
 
+## Verified views (2026-09-26 05:30, High unless noted; shots in `notes/bart/shots/infra/`)
+
+Transbay Tube (day, night, Low, Ultra), Embarcadero approach bore, Mission St bore + double-crossover chamber,
+Embarcadero crossover chamber, Berkeley Hills tunnel, West Oakland aerial (deck, underside, street, night) and the
+aerial → portal → box → Tube transition, Oakland Wye (usable; a gap remains at one box end), Orinda SR-24 median (day,
+night), Pittsburg SR-4 median, Walnut Creek aerial, Fruitvale–Coliseum aerial from the air, Warm Springs at grade,
+Milpitas portal approach, Berryessa (modern single-box aerial), Daly City crossovers, Millbrae beside the Caltrain
+catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/MONT/12TH/19TH/GLEN platforms.
+
 ## Preview / QA
 
 - In game (dev server on my worktree): `http://localhost:8134/infra.html#auto&metro=1&t=12:00&ll=...`; then
   `__bayline.MetroTrack.shot('M1.1', 8000, 0.3, 2.3, { ds: 60, lat: 0, up: 1.5 })` puts the camera on a track (works
-  underground). `__bayline.Under.state`, `.stats`, `.debug.sample(x, z)`; `__bayline.MetroTrack.stats`.
+  underground); `shotG(id, s, lat, h, target)` h m above the ground; `shot([x, y, z], null, 0, 0, [tx, ty, tz])` world. `__bayline.Under.state`, `.stats`, `.debug.sample(x, z)`; `__bayline.MetroTrack.stats`.
 - Good spots: M1.1 s 1300 (West Oakland aerial), 3150 → 3485 (aerial → portal → box), 8000 (Tube); C1 5200 (Berkeley
   Hills tunnel); M1.1 14000 (Mission St bore); A1.1 7000 (Fruitvale–Coliseum aerial).
 - Shots: `notes/bart/shots/infra/`.
@@ -277,5 +286,9 @@ Build: jobs ≤ 3.2 ms per frame. Next: merge body chunks of paired tracks furth
   (no `Under.keep` needed, but it doesn't hurt); (b) my tunnel ends add `'auto'` portals probing 3 m into your box
   at TOR + 1.5 m, so make `st:<ID>:plat` cover the trackway up to the box ends; (c) `ambient` accepted as a number or
   `[r, g, b]`.
+- **WORLD (observation, 05:30)**: near BART the road traffic floats ~1 m above the road surface (Walnut Creek beside
+  the aerial; the road crossing over the West Oakland portal box) — probably traffic lanes computed before MetroGround's
+  carve re-shaped `hBase`, or roads crossing carved trenches (they need a deck there, the ground under them is cut).
+  Shots: `notes/bart/shots/infra/woak_portal_night.jpg`.
 - **TRAINS / SIM**: metro trains in tunnels are lit by the under map's ambient only (tunnel fixtures light my own
   geometry); `Under.keep(car.group)` is already in 46_metrosim.js, good.

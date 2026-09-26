@@ -659,6 +659,12 @@ const MetroTrack = (() => {
     if (typeof Player !== 'undefined' && Player.fly) { if (Player.mode !== 'fly') Player.setMode('fly'); Player.fly.x = pos[0]; Player.fly.z = pos[2]; Player.fly.y = pos[1]; }
     return { pos: pos.map(v => +v.toFixed(1)), look: look.map(v => +v.toFixed(1)) };
   }
+  // the same, with the camera h m above the ground (street-level views beside aerials): shotG(id, s, lat, h, target)
+  function shotG(id, s, lat = 0, h = 1.7, tgt = { ds: 30, lat: 0, up: 1.5 }, fov) {
+    const R = TRACKS.find(r => r.id === id); if (!R) return 'no track ' + id;
+    frameAt(R, s, _dc); const x = _dc.x + _dc.lx * lat, z = _dc.z + _dc.lz * lat, g = Math.max(Terrain.h(x, z), groundAt(x, z));
+    return shot(id, s, lat, g + h - _dc.y, tgt, fov);
+  }
   function applyShot() {
     if (!dbgCam) return; const c = Env.camera;
     c.position.set(dbgCam.pos[0], dbgCam.pos[1], dbgCam.pos[2]); c.up.set(0, 1, 0); c.lookAt(dbgCam.look[0], dbgCam.look[1], dbgCam.look[2]);
@@ -737,7 +743,7 @@ const MetroTrack = (() => {
     ready = true;
     console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
   }
-  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, pairAt, nbrAt, inStation, thirdSide, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
+  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
     get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf: (t) => TI.get(t) };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)
