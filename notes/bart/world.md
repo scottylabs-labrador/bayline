@@ -6,23 +6,23 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Updated 2026-09-26 06:45.** All bakes are done except the last GPU pass (the new L8 tiles to 1024 px) and t2 (tree
-heights); PUBLISH READY is targeted for ~11:00-11:30 EDT.
+**Updated 2026-09-26 09:50. The world is LIVE (lead published it to Sheltie at 08:51; Velroi following):** 56,327 tile
+files + 5 indexes (list below), the 49 NAIP-dropout replacements. Flight QA by the lead: Antioch, Concord, Pittsburg,
+Richmond, Lafayette, Orinda, Dublin, Milpitas detailed; the three seams invisible; the Marin rectangle gone.
 
 | step | state |
 |---|---|
-| stage 1 (`bart1`): every BART corridor: +992 L6, +1749 L7, +3003 L8 (502 / 811 / 1334 in the north strip), strip L2-L5 | baked + indexed 02:21 |
-| stage 2 (`bart2`): the whole north strip at L6 + L7 (+522 L6, +3285 L7) | baked + indexed 03:44 |
-| stage 3 (`bart3`): the East Bay hills L7 inside the old square (lat 37.55..37.8429, lon -122.25..-121.78: +121 L6, +1446 L7) | baked + indexed 04:40 |
-| masks, tree crowns (t) | done (with each stage) |
-| towns b2 | done 02:40: 1692 new tiles + 127 replacing changed b tiles (14.2 MB) |
-| lidar h9 (3003 new L8 tiles + L9 children) | done |
-| materials (the square's L7 + the strip within 3 km of BART) | done (stage-3 hills have none: they fall back to the photo guess) |
-| L9 super-resolution (3594 new tiles + the dropout top-up) | done 06:38 (index L9 6026 square + strip) |
-| L8 to 1024 px | running (~670 parents left; the GPU is shared with the other workstreams' captures) |
-| t2 tree heights (11.5k L7 tiles incl. the strip and the hills) | running (75 / 160 rows at 06:35) |
-| NAIP band dropouts: new tiles | repaired (99 tiles re-baked); 7 boxes the server kept returning broken are being re-fetched through a bypass |
-| NAIP band dropouts: **12 published tiles** + their L8 / L9 / mosaic descendants | replacements being staged (GPU) with a manifest |
+| stages 1-3 (corridors, the whole north strip at L2-L7, the East Bay hills L7) | published 08:51 |
+| stage-3 fill: 6 L7 tiles lost to NAIP dropouts at 04:00 | baked + indexed 07:46, published |
+| towns b2, lidar h9, materials, t2, L9 SR | published |
+| L8 to 1024 px: 1297 of 3003 new L8 published at 1024 px, **1706 at 512 px** | the 1024 px set is being made into `data/raw/tiles/sr_l8_stage` (SR READY ~12:30; manifest by `sr_manifest.py`) |
+| **JPEG scan tails** (Pillow 10.1's encoder, see Findings): 233 tiles with visible damage (111 pre-Metro + 122 new) | re-made from source into `data/raw/tiles/fix_jpeg` (FIX_JPEG READY ~10:30) |
+| water: San Pablo Bay patchwork / 38.07 line / Richardson Bay pale wedge (lead's flight QA) | `fix_water.py`: the strip's bay water re-toned to the Globe's bay tone; testing in a dev overlay (`dtest/`), then a replacement set after SR |
+| INFRA: buildings in tunnel mouths / open cuts | done (40bae4e) |
+| INFRA: trees / bushes / grass on cut ground (Daly City chamber, Market St entrances) | done (74ec930): Under.cutAt drops; Daly City 1 tree dropped, 0 left on cut ground; Powell 0 |
+| INFRA: traffic near BART | done (0bb0e39): no lanes on a ground-level BART track or across an open trench (West Oakland put cars on the rails); lanes re-stream after the carve; Towns.refresh keeps a tile's roads during the swap. The ~1 m float at Walnut Creek is the same with the carve off (outer lanes keep the centreline's height on cross slopes): not a metro regression |
+| INFRA: carve at the West Oakland approach | the terrain can't go below sea level (Terrain.h and the vertex shader clamp at 0 for open water): M1.1 3350-3400 / M2 32052-32097 and the Lake Merritt channel A1/A2 1520-1620 keep the ground at 0.0 m, 0.1-0.5 m above the rail; infra's `carvedAlong` cut covers exactly those (lead: nothing else needed). Elsewhere the carve is at rail - 1.2 as designed |
+| queued | SF downtown plazas (bare lidar ground at Market & Post): paving / lidar weight 0 under OSM pedestrian areas |
 
 **M3 blocker fixed (bart-world ebd8fba ... 44c7379):** MetroGround no longer disposes Towns / Flora. Terrain re-filters its
 loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched tiles keeping their meshes and photo
@@ -174,6 +174,15 @@ platform is at or below the bed. v0 profile vs the ground (main tracks, before t
   sediment-brown bays as land and ran ocean surf through them (white speckles). `tiles/globe/baywater.png` (44 KB, from OSM
   bay / strait / water polygons, 1024 px over lon -123.3..-120.9, lat 36.4..38.8) now marks them in the Bay frame as calm
   bay water with one uniform tone (`15_globe.js`, cache key bayline-globe-v4); old clients never load it.
+
+- **JPEG scan tails (production since Sep 23).** Pillow 10.1's JPEG encoder here gets the end of the scan wrong for
+  30-60 % of encodes, at random (the same image encoded 20 times gave two outputs, one of them right): extra bytes before
+  EOI (harmless) or a scan that ends early ("premature end of data segment"), which libjpeg-turbo decoders (Chrome) draw
+  as a wrong last 16 px MCU in the tile's bottom-right corner: mostly invisible, sometimes a solid or green square.
+  Strict scan (`scan_corrupt.py`, libjpeg's own warning): production 12,333 files: 2,889 early / 1,211 extra; this
+  morning's 15,101: 5,768 / 2,129. Visible (corner damage > 20 levels, `mcu_damage.py`) or green: 233 files, re-made in
+  `fix_jpeg`. Every tile writer now encodes with OpenCV (deterministic, byte-identical to Pillow's good output) and checks
+  the decode (`tools/tiles/common.jpeg_bytes`).
 
 ## Flight / production QA after the publish (lat, lon, altitude m, yaw rad (0 north, pi/2 east), pitch rad)
 
