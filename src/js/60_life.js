@@ -1768,6 +1768,8 @@ const Life = (() => {
       const KO = typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.keepOut ? MetroStations : null;
       let R = (list || []).map(rd => (rd && rd.pts ? { ...rd, pts: toPts(rd.pts) } : { pts: toPts(rd) })).filter(rd => rd.pts.length >= 6);
       if (KO) R = cutRoads(R, KO);
+      // Bayline Metro: no lane on a BART track at ground level or across an open trench (MetroGround.roadKeepOut)
+      if (typeof MetroGround !== 'undefined' && MetroGround.installed && MetroGround.roadKeepOut) R = cutRoads(R, MetroGround.roadKeepOut);
       let sx = 0, sy = 0, sz = 0, sn = 0;
       for (const rd of R) for (let i = 0; i < rd.pts.length; i += 3) { sx += rd.pts[i]; sy += rd.pts[i + 1]; sz += rd.pts[i + 2]; sn++; }
       const ax = Math.round(sx / Math.max(1, sn)), ay = Math.round(sy / Math.max(1, sn)), az = Math.round(sz / Math.max(1, sn));

@@ -59,7 +59,8 @@ async function page() {
 }
 const A = await page(), B = await page();
 console.log('== two windows; relay on', MP_PORT);
-const url = (h) => `${PAGE}#auto&metro=1&t=${T}&${h}`;
+const XH = process.env.XH ? '&' + process.env.XH : '';   // (e.g. XH=metrodir=metro-next/)
+const url = (h) => `${PAGE}#auto&metro=1&t=${T}&${h}${XH}`;
 await A.send('Page.navigate', { url: url('mst=MLBR') });
 await B.send('Page.navigate', { url: url('at=place_MLBR') });
 const READY = `new Promise(r=>{const f=()=>window.__bayline&&__bayline.MetroSim&&__bayline.MetroSim.ready&&__bayline.Net?r(1):setTimeout(f,250);f();})`;

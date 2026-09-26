@@ -7,7 +7,7 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd); cd "$ROOT"
 PAGE=${1:-sim.html}; OUT=${2:-/tmp/bayline-metro-isolation}; mkdir -p "$OUT"
-BASE="http://localhost:${PORT:-8136}/$PAGE"
+BASE="http://localhost:${PORT:-8136}/$PAGE"; X=${XH:+&$XH}   # XH=metrodir=metro-next/ adds to every URL
 VIEW='t=10:30&ll=37.8062,-122.2940,420,1.9,-0.34'           # West Oakland: the aerial guideway, the station, trains
 STATE='new Promise(r=>setTimeout(r,26000)).then(()=>{const B=__bayline,M=B.Metro,S=B.MetroSim,T=B.MetroTrack,ST=B.MetroStations,f0=B.Env.renderer.info.render.frame;
   return new Promise(r=>setTimeout(r,1500)).then(()=>JSON.stringify({on:M.on,failed:M.failed&&M.failed.where,running:S?S.running.length:0,
@@ -15,7 +15,7 @@ STATE='new Promise(r=>setTimeout(r,26000)).then(()=>{const B=__bayline,M=B.Metro
 fails=0
 run() {   # name, hash, expect ("off" | "on")
   name=$1; h=$2; want=$3
-  python3 tools/wd.py 150 node tools/shot.mjs "$BASE#auto&$h" "$OUT/$name.png" --gpu --w 1280 --h 800 --wait 300 --eval "$STATE" > "$OUT/$name.log" 2>&1
+  python3 tools/wd.py 150 node tools/shot.mjs "$BASE#auto&$h$X" "$OUT/$name.png" --gpu --w 1280 --h 800 --wait 300 --eval "$STATE" > "$OUT/$name.log" 2>&1
   st=$(grep '^\[eval\]' "$OUT/$name.log" | tail -1 | cut -c8-)
   nw=$(grep -c 'Bayline Metro is off' "$OUT/$name.log"); ne=$(grep -cE '^\[console\.error\]|^\[pageerror\]' "$OUT/$name.log")
   ok=1
