@@ -5,6 +5,9 @@
 //   node tools/metro_shots.mjs --views views.json --out DIR [--base http://localhost:8135/stations.html] [--w 1600 --h 900]
 //        [--fmt jpeg|png] [--quality 88] [--hash "q=high"]
 // views.json: [{ "name": "embr_plat", "id": "EMBR", "t": "17:30", "opts": { "u": -40, "v": 0, "h": 1.65, "yaw": 0.2, "fov": 70 } }, ...]
+//   or { "name", "eval": "<expression>" } / { "name", "evalFile": "tools/metro_keepout_map.js", "args": {...} }: evaluated in the
+//   page (B = window.__bayline), the value printed (a PNG data URL, or { png }, is saved as <out>/<name>.png)
+//   or { "name", "wait": 20000 }: the page's own camera after that long (use it first, with --hash "mst=WOAK" etc.)
 // Always run it through tools/wd.py (kills a hung Chrome).
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
@@ -59,6 +62,19 @@ if (!ready) { console.error('page not ready'); cleanup(); process.exit(4); }
 const results = [];
 for (const v of views) {
   const t1 = Date.now();
+  // { name, eval: "<expression or async IIFE>" }: evaluate in the page and print the value (no screenshot)
+  // { name, evalFile: "tools/x.js", args: {...} }: the file holds one async arrow function (B, args) => value
+  if (v.evalFile) v.eval = `(${readFileSync(resolve(v.evalFile), 'utf8')})(B, ${JSON.stringify(v.args || {})})`;
+  // (a value that is a PNG data URL is written to <out>/<name>.png instead)
+  if (v.eval) { let val = await ev(`(async () => { const B = window.__bayline; return await (${v.eval}); })()`, 240000);
+    if (typeof val === 'string' && val.startsWith('data:image/png;base64,')) { const f = join(out, `${v.name}.png`); writeFileSync(f, Buffer.from(val.slice(22), 'base64')); val = f; }
+    else if (val && typeof val === 'object' && typeof val.png === 'string') { const f = join(out, `${v.name}.png`); writeFileSync(f, Buffer.from(val.png.slice(22), 'base64')); val.png = f; }
+    console.log(JSON.stringify({ name: v.name, ms: Date.now() - t1, value: val })); results.push({ name: v.name, value: val }); continue; }
+  // { name, wait: ms }: the page's own camera (e.g. after a #mst= link), captured after ms of free running
+  if (v.wait) { await ev(`new Promise(r => setTimeout(() => r(true), ${+v.wait}))`, +v.wait + 60000);
+    const pos = await ev(`(() => { const c = window.__bayline.Env.camera.position; return [c.x, c.y, c.z].map(x => +x.toFixed(1)); })()`, 10000);
+    const shot = await send('Page.captureScreenshot', { format: 'jpeg', quality: QUAL }); const file = join(out, `${v.name}.jpg`); writeFileSync(file, Buffer.from(shot.result.data, 'base64'));
+    console.log(JSON.stringify({ name: v.name, ms: Date.now() - t1, cam: pos })); results.push({ name: v.name, file }); continue; }
   const clock = v.t ? `{ const [h, m] = '${v.t}'.split(':').map(Number); window.__bayline.Env.setClock(h * 3600 + m * 60); }` : '';
   const res = await ev(`(async () => { ${clock} return await window.__bayline.MetroStations.shot(${JSON.stringify(v.id)}, ${JSON.stringify(v.opts || {})}); })()`, 240000);
   const shot = await send('Page.captureScreenshot', FMT === 'png' ? { format: 'png' } : { format: 'jpeg', quality: QUAL });

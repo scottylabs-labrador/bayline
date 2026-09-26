@@ -391,11 +391,15 @@ const MetroTrack = (() => {
   function fenceMaterial() {
     const tex = U.canvasTexture(128, 128, (c, w, h) => { c.clearRect(0, 0, w, h); c.strokeStyle = '#fff'; c.lineWidth = 6; c.lineCap = 'round';
       c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w / 2, 0); c.lineTo(w, h / 2); c.lineTo(w / 2, h); c.closePath(); c.stroke(); }, { repeat: true, aniso: 8, srgb: false });
-    const m = new THREE.MeshStandardMaterial({ color: 0x8a8f93, roughness: 0.45, metalness: 0.6, alphaMap: tex, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: true });
+    // the wire mesh up close; a faint screen at distance, by stochastic transparency (an ordered-dither discard against
+    // the alpha, which fades toward the wire's coverage fraction as the diamonds shrink below a pixel)
+    const m = new THREE.MeshStandardMaterial({ color: 0x8a8f93, roughness: 0.45, metalness: 0.6, alphaMap: tex, side: THREE.DoubleSide });
     m.customProgramCacheKey = () => 'bl-metro-fence';
     m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
-        { float fwu = fwidth(vAlphaMapUv.x) + fwidth(vAlphaMapUv.y); diffuseColor.a = mix(diffuseColor.a, 0.16, smoothstep(0.05, 0.25, fwu)); }`); };
-    return m;
+        { float fwu = fwidth(vAlphaMapUv.x) + fwidth(vAlphaMapUv.y);
+          float a = mix(smoothstep(0.3, 0.7, diffuseColor.a), 0.2, smoothstep(0.06, 0.35, fwu));
+          float th = fract(dot(gl_FragCoord.xy, vec2(0.7548776662, 0.56984029)));
+          if (a < th * 0.98 + 0.01) discard; diffuseColor.a = 1.0; }`); };    return m;
   }
 
   // ---------------------------------------------------------------- network access
@@ -476,9 +480,27 @@ const MetroTrack = (() => {
   // station ranges on a track (STATIONS builds the box / deck / trackway there; I build rails and third rail through)
   // (MetroStations.limits when STATIONS provides it; else the platform ranges, normalised like STATIONS does: v0 puts the
   // two faces of an island up to ~200 m apart, so every track of a station takes the first platform's range, projected)
+  // the physical side ('left' / 'right' facing +s) of a station's platform on track R, which puts the third rail on the
+  // other side: the data's side, corrected like STATIONS build it by the station's researched layout (M2 'layout'):
+  // side platforms lie away from the other platform track, an island's faces toward it (the data's per-platform
+  // sides point toward the other track at side-platform stations such as West Oakland, and so does its third-rail plane)
+  function platSide(st, R) {
+    const p = (st.platforms || []).find(q => q.track === R.id); if (!p) return null;
+    const tr = [...new Set((st.platforms || []).map(q => q.track))];
+    if ((st.layout === 'side' || st.layout === 'island') && tr.length === 2) {
+      const o = tr.find(id => id !== R.id), O = MetroNet.byId ? MetroNet.byId[o] : null;
+      if (O) {
+        frameAt(R, (p.s0 + p.s1) / 2, F0); const q = MetroNet.nearAll(F0.x, F0.z, 40, (t) => t === O)[0];
+        if (q) { const F1 = frameAt(O, q.s, {}), dv = (F1.x - F0.x) * F0.lx + (F1.z - F0.z) * F0.lz;
+          if (Math.abs(dv) > 0.5) return (st.layout === 'side' ? -1 : 1) * Math.sign(dv) > 0 ? 'right' : 'left'; }
+      }
+    }
+    return p.side;
+  }
   function stationRanges(R) {
     const out = [];
-    if (typeof MetroStations !== 'undefined' && MetroStations.limits) { try { for (const st of net.stations) for (const l of MetroStations.limits(st.id) || []) if (l.track === R.id) out.push({ s0: l.s0, s1: l.s1, st, side: null }); } catch (e) {} }
+    const sideOf = (st) => platSide(st, R);
+    if (typeof MetroStations !== 'undefined' && MetroStations.limits) { try { for (const st of net.stations) for (const l of MetroStations.limits(st.id) || []) if (l.track === R.id) out.push({ s0: l.s0, s1: l.s1, st, side: sideOf(st) }); } catch (e) {} }
     if (out.length) return out;
     for (const st of net.stations) {
       const pl = (st.platforms || []).filter(p => TRACKS.some(T => T.id === p.track)); if (!pl.length) continue;
@@ -488,7 +510,7 @@ const MetroTrack = (() => {
         let s0 = Math.min(p.s0, p.s1), s1 = Math.max(p.s0, p.s1);
         if (p !== ref && Rr) { frameAt(Rr, a0, F0); const q0 = projectS(R, F0.x, F0.z, p.s); frameAt(Rr, a1, F0); const q1 = projectS(R, F0.x, F0.z, p.s);
           if (q0 !== null && q1 !== null) { s0 = Math.min(q0, q1); s1 = Math.max(q0, q1); } }
-        out.push({ s0: s0 - 12, s1: s1 + 12, st, side: p.side, type: st.type });
+        out.push({ s0: s0 - 12, s1: s1 + 12, st, side: sideOf(st), type: st.type });
       }
     }
     return out;
@@ -502,10 +524,14 @@ const MetroTrack = (() => {
     return bs;
   }
   function inStation(R, s, pad = 0) { for (const r of R.stations) if (s > r.s0 - pad && s < r.s1 + pad) return r; return null; }
-  // third rail side (+1 right, -1 left) at s: away from the platform in stations, else the outside of a pair (the field
-  // side), else right. BART alternates the side around crossovers; the data can override with a per-track array later.
+  // third rail side (+1 right, -1 left facing +s, 0 none) at s: away from the platform in stations (and 60 m either
+  // side; platform sides as built, see platSide); else the data's per-sample side where the bake has one (M2 'third'
+  // plane); else the outside of a pair (the field side), else right. No contact rail on eBART (standard-gauge DMUs).
+  // Where it is actually drawn (gaps, end ramps): MetroGuide.thirdPieces.
   function thirdSide(R, s) {
+    if (!R.third) return 0;
     const st = inStation(R, s, 60); if (st && st.side) return st.side === 'right' ? -1 : 1;
+    const t = R.t; if (t.planes > 4 && t.TR) { const k = U.clamp(Math.round(s / t.step), 0, t.TR.length - 1); return t.TR[k] === 1 ? -1 : t.TR[k] === 2 ? 1 : 0; }
     const nb = nbrAt(R, s); if (nb) return nb > 0 ? -1 : 1;
     return 1;
   }
@@ -513,7 +539,7 @@ const MetroTrack = (() => {
   // ---------------------------------------------------------------- chunks, layers, jobs
   // Each layer cuts every track into its own chunk length: DETAIL 400 m (≤ 480 m away), BODY 800 m (≤ 2.7 km), FAR 2 km
   // (≤ 11 km; five 400 m sub-pieces that hide themselves, per mesh, where a BODY chunk is already drawn).
-  const LAYERS = { detail: { CH: 400, R: 480, keep: 1.35 }, body: { CH: 800, R: 2700, keep: 1.25 }, far: { CH: 2000, R: 11000, keep: 1.12, SUB: 400 } };
+  const LAYERS = { detail: { CH: 800, R: 480, keep: 1.35 }, body: { CH: 800, R: 2700, keep: 1.25 }, far: { CH: 2000, R: 11000, keep: 1.12, SUB: 400 } };
   const R_DETAIL = LAYERS.detail.R, R_BODY = LAYERS.body.R, R_FAR = LAYERS.far.R, CH = LAYERS.detail.CH, BUDGET = 3.2;
   const grids = { detail: new Map(), body: new Map(), far: new Map() }, CG = 1000;
   const built = { detail: new Set(), body: new Set(), far: new Set() };          // chunks with a group or a job
@@ -642,14 +668,24 @@ const MetroTrack = (() => {
   let dbgCam = null; const _dc = {};
   function shot(id, s, lat = 0, up = 1.7, tgt = { ds: 30, lat: 0, up: 1.5 }, fov) {
     if (id === null) { dbgCam = null; return; }
-    const R = TRACKS.find(r => r.id === id); if (!R) return 'no track ' + id;
-    const at = (ss, la, uu) => { frameAt(R, ss, _dc); return [_dc.x + _dc.lx * la + _dc.vx * uu, _dc.y + _dc.ly * la + _dc.vy * uu, _dc.z + _dc.lz * la + _dc.vz * uu]; };
-    const pos = at(s, lat, up), look = Array.isArray(tgt) ? tgt : at(s + (tgt.ds || 0), tgt.lat || 0, tgt.up || 0);
+    let pos, look;
+    if (Array.isArray(id)) { pos = id; look = Array.isArray(tgt) ? tgt : [id[0], id[1], id[2] - 10]; }          // world positions
+    else {
+      const R = TRACKS.find(r => r.id === id); if (!R) return 'no track ' + id;
+      const at = (ss, la, uu) => { frameAt(R, ss, _dc); return [_dc.x + _dc.lx * la + _dc.vx * uu, _dc.y + _dc.ly * la + _dc.vy * uu, _dc.z + _dc.lz * la + _dc.vz * uu]; };
+      pos = at(s, lat, up); look = Array.isArray(tgt) ? tgt : at(s + (tgt.ds || 0), tgt.lat || 0, tgt.up || 0);
+    }
     dbgCam = { pos, look, fov: fov || 0 };
     // move the player's fly camera there too, so the terrain and the world stream for this spot (Terrain.update runs
     // before this override every frame)
     if (typeof Player !== 'undefined' && Player.fly) { if (Player.mode !== 'fly') Player.setMode('fly'); Player.fly.x = pos[0]; Player.fly.z = pos[2]; Player.fly.y = pos[1]; }
     return { pos: pos.map(v => +v.toFixed(1)), look: look.map(v => +v.toFixed(1)) };
+  }
+  // the same, with the camera h m above the ground (street-level views beside aerials): shotG(id, s, lat, h, target)
+  function shotG(id, s, lat = 0, h = 1.7, tgt = { ds: 30, lat: 0, up: 1.5 }, fov) {
+    const R = TRACKS.find(r => r.id === id); if (!R) return 'no track ' + id;
+    frameAt(R, s, _dc); const x = _dc.x + _dc.lx * lat, z = _dc.z + _dc.lz * lat, g = Math.max(Terrain.h(x, z), groundAt(x, z));
+    return shot(id, s, lat, g + h - _dc.y, tgt, fov);
   }
   function applyShot() {
     if (!dbgCam) return; const c = Env.camera;
@@ -718,6 +754,8 @@ const MetroTrack = (() => {
       if (t.sys === 'oac') continue;                              // the airport connector is its own thing (later)
       if (t.cls === 'yard' && !/yd/.test(t.id)) continue;
       const R = { t, id: t.id, k: TRACKS.length, len: t.length, cls: t.cls, sys: t.sys };
+      R.gauge = t.gauge || DIM.gauge; R.railC = R.gauge / 2 + DIM.railHead / 2 - 0.016;   // (eBART: 1,435 mm)
+      R.third = t.sys !== 'ebart';                                 // (eBART: DMUs, no contact rail)
       R.runs = runsOf(t); TRACKS.push(R); TI.set(t, R);
     }
     pairTracks();
@@ -729,7 +767,12 @@ const MetroTrack = (() => {
     ready = true;
     console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
   }
-  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, pairAt, nbrAt, inStation, thirdSide, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
-    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf: (t) => TI.get(t) };
+  // track by MetroNet track object or id
+  const trackOf = (t) => TI.get(typeof t === 'string' ? (MetroNet.byId || {})[t] : t);
+  // the contact rail as drawn, for TRAINS (collector shoes) and SIM: see notes/bart/infra.md "Third rail (contact rail)"
+  const thirdRail = (id, s) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdAt(R, s) : null; };
+  const thirdRuns = (id, s0, s1) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdRuns(R, s0, s1) : []; };
+  return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
+    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)

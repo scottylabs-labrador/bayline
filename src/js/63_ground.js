@@ -122,6 +122,9 @@ const GroundCover = (() => {
     occ.fill(0); if (typeof Towns === 'undefined' || !Towns.roadsNear) return;
     let roads; try { roads = Towns.roadsNear(cx, cz, R + 30); } catch (e) { return; }
     const ox = cx - OG / 2, oz = cz - OG / 2;
+    // Bayline Metro (#metro=1): no grass in a station's lobby, trackway or entrances (MetroStations.keepOut)
+    if (typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.keepOutAny && MetroStations.keepOutAny(ox, oz, ox + OG, oz + OG, 'grass'))
+      for (let j = 0; j < OG; j++) for (let i = 0; i < OG; i++) if (MetroStations.keepOut(ox + i + 0.5, oz + j + 0.5, 'grass')) occ[j * OG + i] = 1;
     for (const rd of roads) {
       const P = rd.pts, half = (rd.width || (rd.lanes || 2) * 3.4) / 2 + 2.6;          // + sidewalk
       for (let i = 0; i + 5 < P.length; i += 3) {
