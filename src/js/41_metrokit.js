@@ -70,6 +70,7 @@ const MetroKit = (() => {
   pal('louver', '#3a3e44', 0.55, 0.5, { pat: PAT.louver, gr: 1 });
   pal('podBlack', '#0c0e10', 0.16, 0.2, { cc: 1, gr: 0.3 });
   pal('reflector', '#e2e6ea', 0.06, 1, { eg: G.head, ew: 0.08 });
+  pal('podSilver', '#c9ced3', 0.22, 0.35, { cc: 1, eg: G.head, ew: 0.05 });            // headlight housings behind their covers
   pal('headLamp', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.head });
   pal('tailLamp', '#d0121c', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.tail });
   pal('headLampB', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.headB });
@@ -691,7 +692,7 @@ const MetroKit = (() => {
   const GLASS_FRAG_HEAD = `
     uniform vec3 mkCamO, mkTint; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY, mkLoad; uniform float mkLv[16];
     uniform vec4 mkIndoor, mkLamp, mkCab, mkCabI, mkRail, mkDoorWin, mkBand, mkEnds, mkCnt;
-    uniform vec4 mkRows[40]; uniform float mkRowN;
+    uniform vec4 mkRows[40]; uniform float mkRowN, mkImDet;
     uniform vec4 mkSec[8]; uniform vec4 mkWin[16]; uniform vec4 mkDoor[4]; uniform vec4 mkPole[16]; uniform vec4 mkStand[8]; uniform vec4 mkPan[12];
     uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
@@ -832,7 +833,7 @@ const MetroKit = (() => {
     vec3 mkCabView(vec3 ro, vec3 rd) {
       float fy = mkFloorY, hw = mkHalfW - 0.12;
       if (mkCabI.w < 0.5) return mkShade(ro, vec3(sign(-rd.x), 0.0, 0.0), vec3(0.1));
-      float keep = mkLitK; mkLitK = 0.3 * mkLv[9] * (1.0 - 0.85 * mkNight);
+      float keep = mkLitK; mkLitK = 0.12 * mkLv[9] * (1.0 - 0.85 * mkNight);        // the cab is dim (no ceiling bands on)
       float tH = 1e9, id = 0.0; vec3 n = vec3(0.0, 1.0, 0.0);
       if (rd.y < -1e-5) tH = (fy - ro.y) / rd.y;
       if (rd.y > 1e-5) { float t = (mkCeilY - 0.1 - ro.y) / rd.y; if (t < tH) { tH = t; id = 2.0; n = vec3(0.0, -1.0, 0.0); } }
@@ -847,13 +848,13 @@ const MetroKit = (() => {
         if (tN < tF && tN > 0.0 && tN < tH) { tH = tN; id = 5.0; n = tN == tn.x ? vec3(-sign(rd.x), 0.0, 0.0) : (tN == tn.y ? vec3(0.0, -sign(rd.y), 0.0) : vec3(0.0, 0.0, -sign(rd.z))); } }
       vec3 h = ro + rd * tH, c;
       if (id == 3.0) {
-        c = mkShade(h, n, vec3(0.64));
+        c = mkShade(h, n, vec3(0.45));
         vec2 q = vec2(h.x - mkCabI.y - 0.3, h.z - 0.72);
         if (abs(q.x) < 0.12 && abs(abs(q.y) - 0.2) < 0.14) c = vec3(0.008) + vec3(0.04, 0.12, 0.1) * mkLv[7];
       } else if (id == 5.0) c = mkShade(h, n, vec3(0.012, 0.016, 0.035));
-      else if (id == 9.0) c = abs(h.z) < 0.3 && h.y > fy + 1.0 && h.y < fy + 1.8 ? mkLitK * vec3(0.2) + keep * vec3(0.18) : mkShade(h, n, MK_WALL2);
+      else if (id == 9.0) c = abs(h.z) < 0.3 && h.y > fy + 1.0 && h.y < fy + 1.8 ? mkLitK * vec3(0.2) + keep * vec3(0.18) : mkShade(h, n, vec3(0.3));
       else if (id == 0.0) c = mkShade(h, n, vec3(0.06));
-      else c = mkShade(h, n, id == 4.0 ? vec3(0.3) : MK_WALL2);
+      else c = mkShade(h, n, id == 4.0 ? vec3(0.2) : vec3(0.32));
       mkLitK = keep;
       return c;
     }
@@ -873,9 +874,9 @@ const MetroKit = (() => {
       // ---- what stands in front of it (only rows within the ray's x span are tested)
       float tB = tH; vec3 cB = vec3(0.0), nB = nrm; float metal = 0.0;
       float xe = ro.x + rd.x * min(tH, 14.0), xlo = min(ro.x, xe) - 0.7, xhi = max(ro.x, xe) + 0.7;
-      float pOcc = clamp(mkLoad * 1.35, 0.0, 0.95);
+      float pOcc = clamp(mkLoad * 1.35, 0.0, 0.95), nRows = mkImDet > 0.5 ? mkRowN : 0.0;
       for (int k = 0; k < 40; k++) {
-        if (float(k) >= mkRowN) break;
+        if (float(k) >= nRows) break;
         vec4 r = mkRows[k]; float code = abs(r.w), fc = sign(r.w);
         if (code < 2.5) {
           // transverse pair: back at x = r.x (fabric on its +fc side, grey shell behind), cushion 0.5 deep, two seats
@@ -916,11 +917,11 @@ const MetroKit = (() => {
         }
       }
       // standing passengers (mkStand: x, z, height, key), more of them the fuller the car
-      float nSt = clamp(floor((mkLoad - 0.18) * 14.0), 0.0, 8.0);
+      float nSt = clamp(floor((mkLoad - 0.18) * 14.0), 0.0, 8.0) * mkImDet;
       for (int k = 0; k < 8; k++) { if (float(k) >= nSt) break; vec4 s = mkStand[k]; if (s.x < xlo || s.x > xhi) continue;
         float t0 = tB; mkPerson(ro, rd, vec3(s.x, fy, s.y), s.z - 0.12, fract(s.w * 7.0) < 0.5 ? vec2(0.2, 0.13) : vec2(0.13, 0.2), s.w, 1.0, tB, cB, nB); if (tB < t0) metal = 0.0; }
       // grab poles (x, z, radius, top) and the two overhead rails (y, |z|, radius)
-      for (int k = 0; k < 16; k++) { if (float(k) >= mkCnt.z) break; vec4 q = mkPole[k]; if (q.x < xlo || q.x > xhi) continue;
+      for (int k = 0; k < 16; k++) { if (float(k) >= mkCnt.z * mkImDet) break; vec4 q = mkPole[k]; if (q.x < xlo || q.x > xhi) continue;
         vec3 n = vec3(0.0); float t = mkCylE(ro, rd, q.xy, vec2(q.z), fy, q.w, n); if (t < tB) { tB = t; nB = n; cB = MK_POLE; metal = 1.0; } }
       if (mkRail.z > 0.0) for (int s = 0; s < 2; s++) {
         vec2 o = vec2(ro.y - mkRail.x, ro.z - (s == 0 ? mkRail.y : -mkRail.y)), d = rd.yz; float a = dot(d, d);
@@ -1023,6 +1024,7 @@ const MetroKit = (() => {
     S.mkEnds = { value: new THREE.Vector4() };
     S.mkLoad = { value: 0.3 };
     S.mkTint = { value: GLASS_TINT };
+    S.mkImDet = { value: 1 };
   }
 
   // ------------------------------------------------------------------------------------------ designs
@@ -1084,7 +1086,9 @@ const MetroKit = (() => {
       this.glass = mk(d.glass, this.matGlass, 'glass'); this.glass.receiveShadow = false;
       // camera position in car space for the glass (interior mapping), computed just before the glass draws
       const self = this;
-      this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m); };
+      // (and the impression's detail: seats, passengers and poles only within ~90 m, where they cover pixels)
+      this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); const o = S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m);
+        S.mkImDet.value = o.lengthSq() < 8100 ? 1 : 0; };
       // lamp glow billboards (one instanced draw per lamp-carrying car, visible when lit at dusk / night / in tunnels)
       this.glow = null;
       if (d.lamps && d.lamps.length && K.makeGlow) {

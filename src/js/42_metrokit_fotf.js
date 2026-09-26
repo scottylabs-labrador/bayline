@@ -480,7 +480,8 @@
       E.box(x0, 1.05, -0.86, faceX(1.07, 0), 1.07, 0.86);
       for (const zs of [-1, 1]) { const x1 = faceX(1.0, zs * 0.86); E.box(x0, y0, zs * 0.86 - 0.01, x1, 1.07, zs * 0.86 + 0.01); } }
     // headlight pods: recessed black bowls with two LED lamps each
-    for (const s of [1, -1]) { headPod(E, s); const po = podOutline(s); G.pal('lensClear'); G.shape(ccw(po), [], (z, y) => faceAt(z, y, -0.002)); }
+    // (no cover glass: the glass mesh is the interior-mapped glazing, a cover there would show the cab behind it)
+    for (const s of [1, -1]) headPod(E, s);
     // centre door (white lower part) seams, the small hatch left of it
     E.pal('seam');
     const seamLine = (pts, w) => { for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1], dz = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dz, dy) || 1, oz = -dy / l * w / 2, oy = dz / l * w / 2;
@@ -556,13 +557,15 @@
   }
   function headPod(E, s) {
     const out = podOutline(s), cz = s * 1.12, cy = 1.82, depth = 0.045;
-    // bowl walls: from the outline on the face inward (shrinking), then the back plate
-    E.pal('podBlack');
-    const inner = out.map(([z, y]) => [cz + (z - cz) * 0.9, cy + (y - cy) * 0.93]);
-    for (let i = 0; i < out.length; i++) { const i2 = (i + 1) % out.length;
-      const A = faceAt(out[i][0], out[i][1]).p, B = faceAt(out[i2][0], out[i2][1]).p, C = faceAt(inner[i2][0], inner[i2][1], -depth).p, D = faceAt(inner[i][0], inner[i][1], -depth).p;
-      const nn = fnorm(A, B, C); const ids = [A, B, C, D].map(p => E.v(p[0], p[1], p[2], nn[0], nn[1], nn[2])); E.quad(ids[0], ids[1], ids[2], ids[3]); E.quad(ids[0], ids[3], ids[2], ids[1]); }
-    E.shape(inner.slice(), [], (z, y) => faceAt(z, y, -depth));
+    // bowl: a black gasket at the face, then silver reflector walls down to a silver back plate (the real housings read
+    // bright behind their clear covers)
+    const mid = out.map(([z, y]) => [cz + (z - cz) * 0.975, cy + (y - cy) * 0.98]), inner = out.map(([z, y]) => [cz + (z - cz) * 0.9, cy + (y - cy) * 0.93]);
+    const ring = (a, b, da, db, pal) => { E.pal(pal);
+      for (let i = 0; i < a.length; i++) { const i2 = (i + 1) % a.length;
+        const A = faceAt(a[i][0], a[i][1], da).p, B = faceAt(a[i2][0], a[i2][1], da).p, C = faceAt(b[i2][0], b[i2][1], db).p, D = faceAt(b[i][0], b[i][1], db).p;
+        const nn = fnorm(A, B, C); const ids = [A, B, C, D].map(p => E.v(p[0], p[1], p[2], nn[0], nn[1], nn[2])); E.quad(ids[0], ids[1], ids[2], ids[3]); E.quad(ids[0], ids[3], ids[2], ids[1]); } };
+    ring(out, mid, 0, -0.012, 'podBlack'); ring(mid, inner, -0.012, -depth, 'podSilver');
+    E.pal('podSilver'); E.shape(inner.slice(), [], (z, y) => faceAt(z, y, -depth));
     E.shape(inner.slice().reverse(), [], (z, y) => faceAt(z, y, -depth));
     // two lamp modules (reflector cup + LED lens with the honeycomb cluster), upper slightly outboard
     for (const [lz, ly, r] of [[s * 1.175, 1.96, 0.075], [s * 1.08, 1.7, 0.068]]) {
