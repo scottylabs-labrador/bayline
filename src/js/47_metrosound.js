@@ -114,7 +114,7 @@ const MetroSound = (() => {
   }
   const XFER_TEXT = { MLBR: 'Transfer here for the Peninsula line.', MCAR: 'Transfer here between Richmond, Antioch and San Francisco trains.', '12TH': 'Transfer here between Richmond and San Francisco trains.',
     '19TH': 'Transfer here between Richmond and San Francisco trains.', BAYF: 'Transfer here for Dublin, Pleasanton and Berryessa trains.', COLS: 'Transfer here for the Oakland Airport.',
-    PITT: 'Transfer here for Antioch.', BALB: 'Transfer here for Muni Metro.', EMBR: 'Transfer here for the ferries and Muni Metro.', SFIA: 'This station serves the airport.', WOAK: 'Transfer here for Oakland and East Bay trains.' };
+    PITT: 'Transfer here for Antioch.', BALB: 'Transfer here for the city light rail.', EMBR: 'Transfer here for the ferries and the city light rail.', SFIA: 'This station serves the airport.', WOAK: 'Transfer here for Oakland and East Bay trains.' };
   const lineWord = (tr) => MetroSim.lineName(tr.line).replace(' Line', '');
   function departure(tr, k) { if (!tr) return; const S = tr.leg.stops, ns = S[k]; if (!ns) return;
     say(tr.key + ':dep:' + k, `This is a ${lineWord(tr)} Line train to ${MetroSim.termName(tr)}. The next station is ${MetroSim.stName(ns.st)}.`, true); }
@@ -148,5 +148,5 @@ const MetroSound = (() => {
       if (eta > 14 && eta < 32) say(ev.plan.key + ':now:' + ms.id, `${who[0].toUpperCase() + who.slice(1)} now approaching${plat ? ' platform ' + plat : ''}.`);
     }
   }
-  return { init, train, update, doorChime, departure, approaching, arrival, curveAt, get state() { return st; } };
+  return { init, train, update, doorChime, departure, approaching, arrival, curveAt, XFER_TEXT, get state() { return st; } };
 })();

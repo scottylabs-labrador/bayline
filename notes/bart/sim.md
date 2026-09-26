@@ -24,7 +24,10 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
     St subway); where a run's minimum time exceeds the published time + 30 s, the dips on that run are lifted to the
     lowest floor that fits (2,037 runs on a weekday with v0 data). ATC uses the same floors.
   - Dwell by station (20 s standard, 30–35 s downtown/transfers, ×1.2 at the peaks), doors open 2.5 s after the stop,
-    close 3.5 s before departure; door side from the platform data (travel-relative).
+    close 3.5 s before departure; door side from the stations' built platform (else the platform data), travel-relative.
+  - Berths: the head stops on MetroNet's berth mark for its direction (`platforms[].berth['+' | '-']`, 2 m inside the
+    leaving end) when the data has one, else 1 m inside the platform's leaving end; reversals stop at the path's
+    reversal point.
   - Physical trains: legs that meet at a terminal on the same platform are one train (it waits and changes ends);
     reversals keep the train where it is (its tail becomes its head); a chain keeps one identity (`chainKey`) and one
     length, so you can stay aboard through a turnback. Other turns go via the tail track (the train leaves ~150 s
@@ -46,6 +49,9 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
   on the platform; the Millbrae transfer (E on the metro platform → Peninsula platform for the next departure; the
   metro board also lists Peninsula connections; the reverse via the metro board button); Tab/F follow metro trains.
   Walking uses `MetroStations.floorAt/blocked` when present, else a fallback platform floor from MetroNet extents.
+  Going to a platform (`#mst=`, boards, the map, missions) puts you on the stations' platform floor, on its centreline,
+  a quarter along from where the next train comes in, facing it; the views follow that train, and once it has left
+  (while you stay on that platform and haven't picked another train) the next one due there.
 - **UI** (`MetroUI`): title card "Bayline Metro" (opens the system map); system map (N): our own octilinear
   schematic with parallel strands per line, or geographic over the NAIP tiles, live trains (arrows in line colours),
   line filter, station search, click a station (next trains, go to platform, arrivals) or a train (follow, cab view,
@@ -263,8 +269,9 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
     a no-op. (Example: GLEN→24TH has 20, 25, 30, 40 mph dips inside a straight subway.)
   - Reversal stops (SFO): the path reverses at the stop point (the station centre in v0), so a 10-car train stops with
     its head at mid-platform. Please put the reversal point at the platform's end (the bumper side) in M2 berth marks.
-  - Stop marks: the runtime uses the platform extent's leaving end (−1 m) for the berth; M2 berth marks per train
-    length will be used automatically if `platforms[].s0/s1` stay the platform extents (tell me if you add `berth`).
+  - Stop marks: `platforms[].berth['+' | '-']` is used (2026-09-26 02:33 data) for the head's stop point; per-length
+    marks (e.g. `berth: { '+': { 10: s, 8: s, … } }`) would be welcome if the real system stops shorter trains
+    elsewhere (the runtime takes a number today; tell me before changing the shape).
   - PITT-T has no station entry (no platform extent/side): fine, the runtime centres the train on the stop point there.
   - **Platform sides disagree** at least at West Oakland: network.json says M10-1 / M10-2 are `left` of +s, but the
     stations workstream's built platform (its `spawnPoint` and walk floors) is 3.9 m to the **right** of M10-1. The
@@ -272,6 +279,13 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
     what's drawn, and the train doors must open onto it), else from network.json. DATA + STATIONS: please reconcile
     (a side audit over all 50 stations: `MetroSim.platformSide(id, gtfs)` vs `platforms[].side`).
 - **TRAINS**
+  - MetroKit v1 (bart-trains 7dd7d47, tested in a scratch build, not committed here): the runtime now feeds the
+    PIS (`setDisplay({ line, lineName, color, destination, nextStop, arriving, doors, transfer, stops, index, clock })`,
+    redrawn only when the stop/phase/minute changes) and the VATC (`setCab({ speedMph, atcCodeMph, targetMph, effort,
+    handle, brake, mode, doors, cars, nextStop, distFt, clock, atc, lineColor, destination })`; `effort` is always a
+    number so your notch mapping never sees my notch text), uses `MetroKit.createFarBatch` when exported (else
+    `_k.createFarBatch`) and passes the drawing-buffer size to `end(night, res)`; `dispose()` is called on dropped consists.
+    `dmu` / `apm` still fall back to placeholders per kind (near and far) until their builders land.
   - MetroKit v0 is integrated: consists come from `MetroKit.createConsist(kind, { cars, seed, name })` (exact length),
     posed with `MetroKit.poseOnTrack` (bogie yaw; for a train led by its last car the frame function runs backwards
     along the path with the tangent and bank flipped), `setDestination({ line, color, text })`, `setNextStop`,

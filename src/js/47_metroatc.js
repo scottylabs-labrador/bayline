@@ -283,10 +283,13 @@ const MetroATC = (() => {
   function cabDisplay(tr) {
     const D = MetroSim.drive, d = D && tr.driven ? dmi() : null;
     const S = tr.leg.stops, k = d && d.next ? d.next.k : tr.nextK, ns = S[k];
-    return { speedMph: tr.v / MPH, codeMph: d ? d.code / MPH : Math.min(70, tr.lim ? tr.lim / MPH : 70), commandedMph: D && tr.driven ? (D.ato ? (D.commanded || 0) : d.vAllow) / MPH : tr.v / MPH,
-      mode: d ? d.mode : 'ATO', notch: d ? d.notch : '',
+    // (MetroKit's VATC screen: ACTUAL speedMph, AUTHORIZED atcCodeMph, COMMANDED targetMph, effort -1 brake .. 1 power)
+    const code = d ? d.code / MPH : Math.min(70, tr.lim ? tr.lim / MPH : 70), cmd = D && tr.driven ? (D.ato ? (D.commanded || 0) : d.vAllow) / MPH : tr.v / MPH;
+    const lever = D && tr.driven ? (D.emergency || D.penalty ? -1 : D.lever) : U.clamp((tr.a || 0) / 1.34, -1, 1);
+    return { speedMph: tr.v / MPH, codeMph: code, atcCodeMph: Math.round(code), commandedMph: cmd, targetMph: Math.round(cmd), effort: lever, handle: lever, brake: Math.max(0, -lever),
+      mode: d ? d.mode : 'ATO', notchText: d ? d.notch : '', doors: tr.doorT > 0.02 ? 'open ' + (tr.doorSide || '') : 'closed', cars: tr.cars,
       nextStop: ns ? MetroSim.stName(ns.st) : '', distFt: ns ? Math.max(0, ns.ps - tr.s) * 3.281 : 0, clock: Env.clockText(Env.time.sec), atc: d ? d.atc : 'ok',
-      line: MetroSim.lineName(tr.line), color: MetroSim.lineColor(tr.line), destination: MetroSim.termName(tr) };
+      line: MetroSim.lineName(tr.line), color: MetroSim.lineColor(tr.line), lineColor: MetroSim.lineColor(tr.line), destination: MetroSim.termName(tr) };
   }
   const api = { start, end, update, supervise, driveKeys, dmi, guide, stopInfo, cabDisplay, codeFor, get run() { return run; }, best, LADDER, BLOCK };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroATC = api;

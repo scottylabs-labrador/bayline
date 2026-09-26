@@ -61,7 +61,7 @@ const MetroPlay = (() => {
   // floors exist (an aerial platform never drops you to the street), and the camera modes follow that train.
   function teleport(st, gtfs) {
     const id = st.id || st, MN = MetroSim.net, S = MN.stationById[id]; if (!S || !S.platforms || !S.platforms.length) return false;
-    const now = Env.time.sec, next = MetroSim.arrivals(id, now, 20).find(e => !gtfs || e.sid === gtfs);
+    const now = Env.time.sec, next = nextAt(id, gtfs, now);
     const p = (gtfs && S.platforms.find(q => q.gtfs === gtfs)) || (next && S.platforms.find(q => q.gtfs === next.sid)) || S.platforms[0];
     const t = MN.byId[p.track]; if (!t) return false;
     // the next train's direction along this track (+1: toward +s); it enters at the other end
@@ -73,13 +73,12 @@ const MetroPlay = (() => {
     const spS = spawnFromStations(id, p.gtfs);
     const hasFloors = typeof MetroStations !== 'undefined' && MetroStations.floorAt;
     let sQ = sQ0, lat = 0, yPlat = spS ? spS.y : 0, ok = false;
-    for (const ds of hasFloors ? [0, 6, -6, 12, -12, 20, -20, 30, -30] : []) {   // (a stair or escalator well may sit right there)
-      const sq = U.clamp(sQ0 + ds * dirS, s0 + 5, s1 - 5), yP = spS ? spS.y : MN.frame(t, sq, F).y + FLOOR, r = probeAcross(t, sq, side, yP);
-      if (r) { sQ = sq; lat = side * (r.a + r.b) / 2; yPlat = yP; ok = true; break; }
-    }
+    const pick = hasFloors ? pickSpot(t, sQ0, s0, s1, side, dirS, spS ? spS.y : null) : null;
+    if (pick) { sQ = pick.s; lat = pick.lat; yPlat = pick.y; ok = true; }
     // the station hasn't streamed in yet (its floors appear within ~1.5 km of the camera): an estimate now, the platform's
     // centreline as soon as its floors exist (MetroPlay.update)
-    if (!ok) { MN.frame(t, sQ0, F); sQ = sQ0; lat = side * (EDGE + ((S.layout === 'island' || S.layout === 'split') ? 2.1 : 1.8)); if (!spS) yPlat = F.y + FLOOR; pending = { t, s: sQ, side, y: yPlat, until: performance.now() + 15000 }; }
+    if (!ok) { MN.frame(t, sQ0, F); sQ = sQ0; lat = side * (EDGE + ((S.layout === 'island' || S.layout === 'split') ? 2.1 : 1.8)); if (!spS) yPlat = F.y + FLOOR;
+      pending = { t, s: sQ, s0, s1, dirS, side, y: yPlat, yKnown: !!spS, until: performance.now() + 15000 }; }
     MN.frame(t, sQ, F);
     const x = F.x + F.rx * lat, z = F.z + F.rz * lat;
     // heading: up the platform toward where the train comes from, 12 degrees toward its track
@@ -87,8 +86,46 @@ const MetroPlay = (() => {
     const yaw = Math.atan2(ax + tx * k, az + tz * k);
     Player.setMode('walk', { pos: { x, y: yPlat, z, yaw } });
     Player.walk.y = yPlat; Player.walk.vy = 0; Player.walk.hold = performance.now() + 15000;   // (until the station's floors stream in)
-    if (next) Player.setFocus(next.leg.chainKey || next.plan.key);
+    if (next) { const key = next.leg.chainKey || next.plan.key; Player.setFocus(key); watch = { key, st: id, gtfs: p.gtfs, dep: next.dep }; }
     return true;
+  }
+  // the next train on a platform: one still standing there (leaving in more than a few seconds) or on its way in
+  function nextAt(id, gtfs, now) { return MetroSim.arrivals(id, now, 24).find(e => (!gtfs || e.sid === gtfs) && e.dep > now + 3) || null; }
+  // standing on the platform you were sent to, the views keep following "the next train": once the focused one has
+  // left (and you haven't picked another train or wandered off), the next one due on that platform takes over
+  let watch = null;
+  function watchPlatform() {
+    const W = watch; if (Player.mode !== 'walk' || MetroSim.focus !== W.key) { watch = null; return; }
+    const now = Env.time.sec; if (now < W.dep + 6 && now > W.dep - 7200) return;
+    const st = MetroSim.nearestStation(Env.camera.position, 450); if (!st || st.id !== W.st) { watch = null; return; }
+    const n = nextAt(W.st, W.gtfs, now); if (!n) { watch = null; return; }
+    const key = n.leg.chainKey || n.plan.key; Player.setFocus(key); watch = { key, st: W.st, gtfs: W.gtfs, dep: n.dep };
+  }
+  // the spot: near the quarter point (sQ0), on the platform's centreline (or a little either side of it), where the view up
+  // the platform is open: headroom along the line of sight and behind the walker (the camera), i.e. no escalator or
+  // stair overhead, and no wall, column or balustrade across it. Best of: open corridor > headroom only > just floor.
+  function pickSpot(t, sQ0, s0, s1, side, dirS, yKnown) {
+    const MN = MetroSim.net; let best = null, bs = -1;
+    for (const ds of [0, 6, -6, 12, -12, 20, -20, 30, -30, 40, -40, 55, -55]) {
+      const sq = U.clamp(sQ0 + ds * dirS, s0 + 5, s1 - 5), yP = yKnown !== null ? yKnown : MN.frame(t, sq, F2).y + FLOOR, r = probeAcross(t, sq, side, yP); if (!r) continue;
+      for (const f of [0.5, 0.36, 0.64]) {                        // (a very wide platform: at most 5 m in from the edge, so the train is in view)
+        const w = r.a + Math.min(f * (r.b - r.a), 5.0 + (f - 0.5) * 3), sc = spotClear(t, sq, side * w, dirS, yP);
+        if (sc > bs) { bs = sc; best = { s: sq, lat: side * w, y: yP, score: sc }; }
+        if (bs === 2) return best;
+      }
+    }
+    return best;
+  }
+  function spotClear(t, s, lat, dirS, yP) {
+    MetroSim.net.frame(t, s, F2); const fx = -dirS * F2.tx, fz = -dirS * F2.tz, h = Math.hypot(fx, fz) || 1, ux = fx / h, uz = fz / h;
+    const x = F2.x + F2.rx * lat, z = F2.z + F2.rz * lat;
+    for (const k of [-7, -4, -1.5, 1.5, 4, 7, 10, 14, 18]) {
+      const o = MetroStations.floorAt(x + ux * k, yP + 3.0, z + uz * k);
+      if (o === null || o > yP + 0.35) return 0;              // off the floor, or something overhead (an escalator, a stair)
+    }
+    const B = MetroStations.blocked;
+    if (B && (B(x - ux * 7, z - uz * 7, x, z, yP) || B(x, z, x + ux * 18, z + uz * 18, yP))) return 1;
+    return 2;
   }
   // across the platform at (track t, s): the stretch of station floor at height yP on the given side -> {a, b} (m from the track)
   function probeAcross(t, s, side, yP) {
@@ -102,9 +139,10 @@ const MetroPlay = (() => {
   function settleSpawn() {
     const P = pending; if (!P || Player.mode !== 'walk') { pending = null; return; }
     if (performance.now() > P.until) { pending = null; return; }
-    const r = probeAcross(P.t, P.s, P.side, P.y); if (!r) return;
-    MetroSim.net.frame(P.t, P.s, F2); const lat = P.side * (r.a + r.b) / 2;
-    Player.walk.x = F2.x + F2.rx * lat; Player.walk.z = F2.z + F2.rz * lat; Player.walk.y = P.y; pending = null;
+    if (!probeAcross(P.t, P.s, P.side, P.y)) return;                 // (not streamed in yet)
+    const k = pickSpot(P.t, P.s, P.s0, P.s1, P.side, P.dirS, P.yKnown ? P.y : null); if (!k) return;
+    MetroSim.net.frame(P.t, k.s, F2);
+    Player.walk.x = F2.x + F2.rx * k.lat; Player.walk.z = F2.z + F2.rz * k.lat; Player.walk.y = k.y; pending = null;
   }
   // (the older helper: where the stations workstream would put you; kept for tools)
   function spawnFromStations(id, gtfs) {
@@ -197,7 +235,7 @@ const MetroPlay = (() => {
     if (mode === 'onboard') return { mode: 'mride', trip: key, s: tr.s, car: ob.car, x: ob.x, y: ob.y, z: ob.z, yaw: look.yaw, speed: tr.v, ...w };
     return { mode: tr.driven ? 'mdrive' : 'mride', trip: key, s: tr.s, car: tr.dir ? 0 : 99, x: 0, y: 0, z: 0, yaw: 0, speed: tr.v, ...w };
   }
-  function update(dt) { if (on() && !strips) buildStrips(); if (pending) settleSpawn(); }
+  function update(dt) { if (on() && !strips) buildStrips(); if (pending) settleSpawn(); if (watch) watchPlatform(); }
 
   return { floorAt, blocked, platformSpot, teleport, spawnFromStations, tunnelCam, trackside, endOfLine, walkPrompt, walkAction, toPeninsula, toMetro, nearPeninsulaXfer, netState, update, XFER };
 })();
