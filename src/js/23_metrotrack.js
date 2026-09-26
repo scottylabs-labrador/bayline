@@ -391,11 +391,15 @@ const MetroTrack = (() => {
   function fenceMaterial() {
     const tex = U.canvasTexture(128, 128, (c, w, h) => { c.clearRect(0, 0, w, h); c.strokeStyle = '#fff'; c.lineWidth = 6; c.lineCap = 'round';
       c.beginPath(); c.moveTo(0, h / 2); c.lineTo(w / 2, 0); c.lineTo(w, h / 2); c.lineTo(w / 2, h); c.closePath(); c.stroke(); }, { repeat: true, aniso: 8, srgb: false });
-    const m = new THREE.MeshStandardMaterial({ color: 0x8a8f93, roughness: 0.45, metalness: 0.6, alphaMap: tex, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: true });
+    // the wire mesh up close; a faint screen at distance, by stochastic transparency (an ordered-dither discard against
+    // the alpha, which fades toward the wire's coverage fraction as the diamonds shrink below a pixel)
+    const m = new THREE.MeshStandardMaterial({ color: 0x8a8f93, roughness: 0.45, metalness: 0.6, alphaMap: tex, side: THREE.DoubleSide });
     m.customProgramCacheKey = () => 'bl-metro-fence';
     m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
-        { float fwu = fwidth(vAlphaMapUv.x) + fwidth(vAlphaMapUv.y); diffuseColor.a = mix(diffuseColor.a, 0.16, smoothstep(0.05, 0.25, fwu)); }`); };
-    return m;
+        { float fwu = fwidth(vAlphaMapUv.x) + fwidth(vAlphaMapUv.y);
+          float a = mix(smoothstep(0.3, 0.7, diffuseColor.a), 0.2, smoothstep(0.06, 0.35, fwu));
+          float th = fract(dot(gl_FragCoord.xy, vec2(0.7548776662, 0.56984029)));
+          if (a < th * 0.98 + 0.01) discard; diffuseColor.a = 1.0; }`); };    return m;
   }
 
   // ---------------------------------------------------------------- network access

@@ -92,6 +92,18 @@ const MetroGuide = (() => {
       }
       sweepVar(ctx.B.infra, rows);
       if (!cv) addCut(ctx, 'mg:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
+      // right-of-way fences (all at-grade BART track is fenced: 2.13 m chain link + 3 barbed strands [BFS 32 31 13]),
+      // 5.8 m outside the outer tracks, on the ground; not beside platforms or in medians (the barriers carry those)
+      if (kind !== 'median') for (const side of [-1, 1]) {
+        const pts = []; let run = [];
+        for (let q = Math.ceil(s0 / 3) * 3; q <= s1; q += 3) {
+          if (ctx.inStation(ctx.R, q, 25)) { if (run.length > 1) pts.push(run); run = []; continue; }
+          MT.frameAt(ctx.R, q, F); const ln = lanes(ctx, q), lat = side < 0 ? ln.lo - 5.8 : ln.hi + 5.8; const x = F.x + F.lx * lat, z = F.z + F.lz * lat;
+          run.push([x - ctx.ox, Math.max(MT.groundAt(x, z), F.y - 8), z - ctx.oz]);
+        }
+        if (run.length > 1) pts.push(run);
+        for (const r of pts) fenceRun(ctx, r, DIM.fenceH, side);
+      }
     }
   }
   // sweep with a per-row profile (same point count on every row): rows[i].prof, rows[i].col (per segment)
@@ -153,17 +165,24 @@ const MetroGuide = (() => {
       }
     }
   }
-  // chain-link fence along a polyline of foot points (chunk-local), height h: posts every ~3 m, top rail, fabric panels
-  function fenceRun(ctx, pts, h) {
+  // chain-link fence along a polyline of foot points (chunk-local), height h: posts every ~3 m, top rail, fabric panels;
+  // barbed: which way (-1 / +1 across the polyline, 0 none) the barbed-wire outriggers lean (away from the track)
+  function fenceRun(ctx, pts, h, barbed = 0) {
     if (pts.length < 2) return; const gb = ctx.B.infra, fb = ctx.B.fence || (ctx.B.fence = new FenceB());
-    let dist = 0, next = 0;
+    let dist = 0, next = 0; const arms = [];
     for (let i = 0; i < pts.length; i++) {
       const p = pts[i];
       if (i > 0) { const q = pts[i - 1]; const d = Math.hypot(p[0] - q[0], p[2] - q[2]); fb.panel(q, p, dist, dist + d, h); dist += d; }
-      if (dist >= next || i === pts.length - 1) { gb.cyl([p[0], p[1] - 0.1, p[2]], [p[0], p[1] + h + 0.05, p[2]], 0.03, 0.03, 6, PAL.fence, false, true); next = dist + 3.0; }
+      if (dist >= next || i === pts.length - 1) {
+        gb.cyl([p[0], p[1] - 0.1, p[2]], [p[0], p[1] + h + 0.05, p[2]], 0.03, 0.03, 6, PAL.fence, false, true); next = dist + 3.0;
+        if (barbed) { const q = pts[Math.min(pts.length - 1, i + 1)], r0 = pts[Math.max(0, i - 1)]; let dx = q[0] - r0[0], dz = q[2] - r0[2]; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+          const nx = dz * barbed * 0.22, nz = -dx * barbed * 0.22; const a0 = [p[0], p[1] + h, p[2]], a1 = [p[0] + nx, p[1] + h + 0.22, p[2] + nz];
+          gb.cyl(a0, a1, 0.012, 0.012, 4, PAL.galvDark, false, false); arms.push([a0, a1]); }
+      }
     }
     gb.top = 1e4; const top = []; for (const p of pts) top.push(p[0], p[1] + h, p[2]);
     tube(gb, top, 0.02, 4, PAL.fence);
+    if (barbed && arms.length > 1) for (const f of [0.35, 0.68, 1.0]) { const w = []; for (const [a0, a1] of arms) w.push(a0[0] + (a1[0] - a0[0]) * f, a0[1] + (a1[1] - a0[1]) * f, a0[2] + (a1[2] - a0[2]) * f); tube(gb, w, 0.005, 3, PAL.galvDark); }
   }
   function tube(gb, pts, r, n, C) {
     const m = pts.length / 3; if (m < 2) return; const b = gb.count;
