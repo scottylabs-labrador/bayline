@@ -1696,6 +1696,31 @@ const Life = (() => {
   }
 
   // roads: [{ pts: Float32Array|number[]|[{x,y,z}] (world xyz), lanes (total, both directions), speed (m/s), oneway, bus }]
+  // roads split where they run through a keep-out zone (KO.keepOut(x, z, 'road')), sampled every 2 m; freeways, trunk
+  // roads and bridges are left alone (they pass beside or over a station)
+  function cutRoads(R, KO) {
+    const out = [];
+    for (const rd of R) {
+      const P = rd.pts, n = P.length / 3;
+      if (rd.bridge || (rd.cls !== undefined && rd.cls < 4)) { out.push(rd); continue; }
+      let x0 = 1e18, z0 = 1e18, x1 = -1e18, z1 = -1e18; for (let i = 0; i < n; i++) { x0 = Math.min(x0, P[i * 3]); x1 = Math.max(x1, P[i * 3]); z0 = Math.min(z0, P[i * 3 + 2]); z1 = Math.max(z1, P[i * 3 + 2]); }
+      const hw = Math.max(0, (rd.width || Math.max(1, rd.lanes || 2) * 3.4) / 2 - 1.2);     // the outer lanes too
+      if (!KO.keepOutAny(x0 - hw, z0 - hw, x1 + hw, z1 + hw, 'road')) { out.push(rd); continue; }
+      let cur = [], cut = false;
+      const flush = () => { if (cur.length >= 6) out.push({ ...rd, pts: Float32Array.from(cur) }); cur = []; };
+      for (let i = 0; i + 1 < n; i++) {
+        const ax = P[i * 3], ay = P[i * 3 + 1], az = P[i * 3 + 2], bx = P[i * 3 + 3], by = P[i * 3 + 4], bz = P[i * 3 + 5];
+        const m = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 2));
+        for (let k = i === 0 ? 0 : 1; k <= m; k++) {
+          const t = k / m, x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
+          if (KO.keepOut(x, z, 'road', hw, y)) { cut = true; flush(); } else cur.push(x, y, z);
+        }
+      }
+      if (!cut) { out.push(rd); continue; }
+      flush();
+    }
+    return out;
+  }
   function createTraffic(roads = [], opts = {}) {
     if (!roadMat) roadMat = vehicleMaterial(0);
     const r = U.rng((opts.seed || 7) * 1013);
@@ -1738,7 +1763,11 @@ const Life = (() => {
     let lanes = [], cars = [], parked = [];
     const PARK_W = VEH_TYPES.map(t => ({ sedan: 50, suv: 32, pickup: 8, van: 8, bus: 0, truck: 1 })[t] || 0);
     function setRoads(list, center, lots) {
-      const R = (list || []).map(rd => (rd && rd.pts ? { ...rd, pts: toPts(rd.pts) } : { pts: toPts(rd) })).filter(rd => rd.pts.length >= 6);
+      // Bayline Metro (#metro=1): no lane through a station's lobby, trackway or columns (a road may pass under a deck),
+      // no parked car in them (MetroStations.keepOut)
+      const KO = typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.keepOut ? MetroStations : null;
+      let R = (list || []).map(rd => (rd && rd.pts ? { ...rd, pts: toPts(rd.pts) } : { pts: toPts(rd) })).filter(rd => rd.pts.length >= 6);
+      if (KO) R = cutRoads(R, KO);
       let sx = 0, sy = 0, sz = 0, sn = 0;
       for (const rd of R) for (let i = 0; i < rd.pts.length; i += 3) { sx += rd.pts[i]; sy += rd.pts[i + 1]; sz += rd.pts[i + 2]; sn++; }
       const ax = Math.round(sx / Math.max(1, sn)), ay = Math.round(sy / Math.max(1, sn)), az = Math.round(sz / Math.max(1, sn));
@@ -1797,6 +1826,7 @@ const Life = (() => {
             if (next < total - 11 && Math.hypot(px - pcx, pz - pcz) < PR) for (const side of [-1, 1]) {
               if (r() > 0.56) continue;
               const off = side * (half - 1.15), x = px - uz * off, z = pz + ux * off;
+              if (KO && KO.keepOut(x, z, 'car', 0, py)) continue;
               const type = VEH_TYPES[wpick(r, PARK_W)], paint = CAR_PAINT[wpick(r, CAR_PAINT.map(c => c[1]))][0];
               const yaw = Math.atan2(-uz, ux) + (side < 0 && !rd.oneway ? Math.PI : 0) + (r() - 0.5) * 0.05;
               _e.set(0, yaw, 0, 'YZX'); _q.setFromEuler(_e); _s.set(1, 1, 1);
@@ -1834,6 +1864,7 @@ const Life = (() => {
             if (!inside(x, z) || !inside(xa, za) || !inside(xb, zb)) continue;
             const type = VEH_TYPES[wpick(r, PARK_W)], paint = CAR_PAINT[wpick(r, CAR_PAINT.map(c => c[1]))][0];
             const gy = typeof Terrain !== 'undefined' && Terrain.h ? Terrain.h(x, z) + 0.14 : ay;
+            if (KO && (KO.keepOut(x, z, 'car', 0, gy) || KO.keepOut(xa, za, 'car', 0, gy) || KO.keepOut(xb, zb, 'car', 0, gy))) continue;
             const yaw = Math.atan2(-vDir[1], vDir[0]) + (r() < 0.5 ? Math.PI : 0) + (r() - 0.5) * 0.06;
             _e.set(0, yaw, 0, 'YZX'); _q.setFromEuler(_e); _s.set(1, 1, 1);
             _m.compose(_v.set(x - ax + (r() - 0.5) * 0.25 * vDir[0], gy - ay, z - az + (r() - 0.5) * 0.25 * vDir[1]), _q, _s);

@@ -1141,6 +1141,8 @@ const Flora = (() => {
       const mask = trackMaskFor(x0, z0), NG = T7 / 20;
       const hasBed = typeof TrackGeo !== 'undefined' && TrackGeo.bedSpan, hasPlat = typeof Stations !== 'undefined' && Stations.platformY;
       const D = new Float32Array(n * NF), K = new Uint8Array(n); let m = 0, ysum = 0;
+      // Bayline Metro (#metro=1): no tree in a station's footprint (MetroStations.keepOut)
+      const ko = typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.keepOutAny && MetroStations.keepOutAny(x0, z0, x0 + T7, z0 + T7, 'tree') ? MetroStations.keepOut : null;
       const H = typeof Terrain !== 'undefined' && Terrain.h ? Terrain.h : () => 0;
       let slice = performance.now();
       for (let i = 0; i < n; i++) {
@@ -1150,6 +1152,7 @@ const Flora = (() => {
         const x = x0 + ux / 65536 * T7, z = z0 + uz / 65536 * T7;
         const rB = u8[o + 4], hB = u8[o + 5]; let kind = u8[o + 6]; const tint = u8[o + 7] / 255;
         if (kind >= NK) kind = 7;
+        if (ko && ko(x, z, 'tree')) continue;
         if (mask && mask[Math.min(NG - 1, (uz * NG) >> 16) * NG + Math.min(NG - 1, (ux * NG) >> 16)]) {
           const tr = Track.nearest(x, z, 50);
           if (tr) {

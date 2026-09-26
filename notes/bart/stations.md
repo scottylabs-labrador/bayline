@@ -5,7 +5,18 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
-## Status (2026-09-26 03:20) — M1 done, M2 under way
+## Status (2026-09-26 03:08 EDT) — M1 done, keep-out zones done, M2 under way
+
+- **Keep-out zones (lead request, 02:10)**: every station's ground-level footprint is a keep-out zone for Towns
+  buildings and infill houses, trees, grass, parked cars and moving traffic (API and hooks below). Verified at WOAK,
+  FTVL, COLS, MCAR, DALY and SFIA with plan maps (`tools/metro_keepout_map.js`: zones, roads, driven lanes, buildings,
+  trees, parked and moving cars) and street-level views: no parked car, tree or building left in a lobby, plaza,
+  trackway or against a column (0 of 151–264 buildings, 0 of 49–223 trees, 0 of 1–195 parked cars in a zone), the
+  WOAK street-level view of the lead's link now shows the lobby clear (`shots/stations/woak_lobby_street_0807.jpg`).
+  Lobbies under aerial decks now move along the station until they and their entrance apron are clear of the streets
+  that run under the deck, and bents shift up to 10 m (else drop the column) to span over a street; roads well below
+  an embanked trackway (MCAR, 40th St under SR-24) keep their traffic. Bent columns no longer stand inside lobbies
+  by accident (the lobby extent was read before it was computed).
 
 - **All 50 stations build** from MetroNet v0 (verified in one session: 12k–89k triangles each, 0.4–1.5 s of
   time-sliced build), by archetype: subway box + concourse above + street entrance shafts; aerial deck on bents +
@@ -38,7 +49,51 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 - `MetroStations.spawnPoint(stationId, platformCode | gtfsId)` → `{ x, y, z, yaw }` (yaw = heading toward the track).
 - `MetroStations.limits(stationId)` → `[{ track, s0, s1 }]` (where station structure replaces INFRA's guideway).
 - `MetroStations.list / byId / stats / enabled / ready`, `StationCrowds.population(id)`.
-- Hooks: MetroStations rides on `Stations.init/update` (no main-loop edits); inert without `#metro=1`.
+- Hooks: MetroStations rides on `Stations.init/update`; inert without `#metro=1`.
+
+### Keep-out zones (2026-09-26)
+
+- `MetroStations.keepOut(x, z, what = 'building', extra = 0, y)` → true inside a station footprint + the margin for
+  `what`: `'building' | 'house' | 'tree' | 'lamp' | 'grass' | 'car' | 'road'`; `extra` widens the margin (a road's half
+  width); `y` lets a road or car well below an embanked trackway pass under it. ~0.25 µs per query.
+- `MetroStations.keepOutAny(x0, z0, x1, z1, what)` → false when no zone can touch the box (skip per-item tests).
+- `MetroStations.dropBuilding(b, cx, cz)` → a `Towns.addDrop` filter (registered automatically when Towns has
+  `addDrop`): drops an OSM building whose centroid stands in a footprint, whose outline reaches into a lobby,
+  trackway or column (or contains one), or with two corners under a deck.
+- `MetroStations.keepOutZones(x, z, r)` (QA) → `[{ st, kind, under, pts }]`.
+- Zones come from `StationTypes.footprint` (the same `setup()` the builders use: frame, platforms, circulation plan,
+  ground plan), made the first time anything asks near a station (~1.5 ms each, all 50 ≈ 75 ms if ever needed) and
+  replaced by the built station's exact footprint when it builds (traffic near it re-streams if it moved > 0.5 m).
+  Kinds: `deck` (under an aerial deck), `track` (at-grade / trench / median trackway + platforms), `lobby` +
+  `plaza` (ground-level lobby and its entrance apron), `column` (bent columns, footbridge supports), `bridge` (under a
+  footbridge), `entrance` (subway street entrance shafts with railings and totem).
+- Margins (m) per consumer, -1 = the zone does not apply:
+
+  | what | deck | track | lobby | plaza | column | bridge | entrance |
+  |---|---|---|---|---|---|---|---|
+  | building (OSM) | 1.5 | 2 | 2 | 1 | 0.8 | 1 | -1 |
+  | house (infill, at its centre) | 4 | 7 | 8 | 6 | 4 | 4 | 5 |
+  | tree | 2.5 | 3 | 3 | 1.5 | 2 | 2 | 1.2 |
+  | lamp | 1 | 2 | 2 | 0.5 | 1.5 | 1 | 0.8 |
+  | grass | -1 | 0.3 | 0.3 | 0 | 0.3 | -1 | 0.3 |
+  | car (parked) | -1 | 2 | 2.5 | 1 | 1.2 | -1 | 1.2 |
+  | road (traffic) | -1 | 0.5 | 0.5 | -1 | 0.8 | -1 | -1 |
+
+- **Consumer hooks in shared files** (each one or two lines, all behind `MetroStations.enabled`, so the default path is
+  untouched; lead: please review at the next integration):
+  - `90_main.js` world `keepOut(x, z, what)`: asks `MetroStations.keepOut(x, z, what || 'house')` first; landmarks
+    still keep out houses only (a `what` other than 'house' never consults them).
+  - `60_life.js` `createTraffic.setRoads`: `cutRoads()` splits lanes where a road (not motorway/trunk, not a bridge)
+    runs through a lobby, column or trackway (sampled every 2 m, road half width as `extra`, road height as `y`);
+    curbside and parking-lot cars are skipped inside `'car'` zones.
+  - `61_flora.js` `loadTile`: trees skipped inside `'tree'` zones (only for tiles `keepOutAny` says can be touched).
+  - `63_ground.js` `rasterRoads`: `'grass'` zones rasterised into the no-grass grid.
+  - When the stations become known, whatever was placed before is placed again (`Towns.dispose`, `Flora.dispose`, a
+    traffic re-stream) unless MetroGround is about to do the same.
+- QA: `tools/metro_keepout_map.js` (plan map; run with `metro_shots.mjs`, `{ "name", "evalFile":
+  "tools/metro_keepout_map.js", "args": { "id": "WOAK", "r": 170 } }`), `shot(id, { lobby: -22, gh: 1.7 })` (camera
+  measured from the lobby's entrance end, at street level), `{ "name", "wait": 25000 }` + `--hash "mst=WOAK"` (the
+  page's own camera, e.g. the lead's link).
 
 ## Costs (measured, High, 1600x900, GPU shared with other workstreams' Chromes, so indicative)
 
@@ -52,6 +107,33 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-station budgets checked at every hero.
 
 ## Requests
+
+### To WORLD (Towns) — keep-out, 2026-09-26
+
+1. **`Towns.addDrop` on bart**: I register `MetroStations.dropBuilding` with it when it exists (verified locally with
+   your `ebc0f5d` patch applied, not committed: the OSM station outline around West Oakland's lobby goes away;
+   together with your MetroGround `train_station` rule). Until it reaches bart, OSM buildings in footprints stay.
+2. **Street lamps and fallback trees**: Towns places them without asking `ctx.keepOut`; lamps under a deck or in a
+   lobby apron are possible. Proposal (two lines in `buildGnd`): skip a lamp when
+   `ctx.keepOut && ctx.keepOut(T.ox + x, T.oz + z, 'lamp')`, a fallback tree when `... 'tree')`. `90_main.js`'s
+   `keepOut(x, z, what)` already forwards `what` to the stations and applies landmarks to houses only, so the default
+   path stays exactly as today.
+3. Daly City: two long thin OSM polygons beside the deck (bus-bay canopies?) are drawn as solid ~3 m boxes; if they are
+   canopies, your MetroGround canopy rule may want them (they are outside my deck footprint, so I keep them).
+
+### To DATA — keep-out, 2026-09-26
+
+- **Road crossings** in MetroNet (streets passing under / over each track: s, width, class, clearance), as your
+  `profile2.py` already finds them for `ROAD_CLEAR`: lobbies and bents are placed clear of streets from Towns roads at
+  build time today (decoded tiles only); a deterministic source would make footprints identical before and after a
+  build (and help INFRA's guideway piers).
+
+### To INFRA — keep-out, 2026-09-26
+
+- Guideway piers stand in streets the same way my bents did (e.g. SFIA's approach, and piers under station decks at
+  the station ends); my bents now shift up to 10 m along the deck to span over a street (`StationTypes` `bentPlan`,
+  `roadAt`), the same rule may suit the guideway. Station footprints are queryable (`keepOutZones`) if you want your
+  piers kept out of lobbies.
 
 ### To INFRA: Under — the Embarcadero fix (agreed contract, 03:10)
 
