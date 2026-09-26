@@ -252,10 +252,22 @@ def _coverage_bart(stage):
     for L, r in ((6, BART_R6), (7, BART_R7), (8, BART_R8)):
         rows = range(-north_rows(L), 1 << L)
         out[L] = _cand_near(L, pts, r, rows)
-    if stage == 'bart2':
+    if stage in ('bart2', 'bart3'):
         out[6] |= set(north_tiles(6))
         out[7] |= set(north_tiles(7))
+    if stage == 'bart3':             # the East Bay hills between the lines, inside the old square (Diablo foothills)
+        T7 = T(7)
+        for (la0, lo0, la1, lo1) in EAST_BAY_HILLS:
+            xa, za = ll2w(la1, lo0); xb, zb = ll2w(la0, lo1)
+            for ty in range(int((za - Z0) // T7), int((zb - Z0) // T7) + 1):
+                for tx in range(int((xa - X0) // T7), int((xb - X0) // T7) + 1):
+                    out[7].add((tx, ty)); out[6].add((tx >> 1, ty >> 1))
     return out
+
+
+# stage 3: L7 over the hills between the BART lines inside the old square (Moraga, Canyon, Las Trampas, Danville, San
+# Ramon, the Castro Valley and Sunol hills): the Diablo foothills seen from the Concord, Dublin and Fremont lines
+EAST_BAY_HILLS = [(37.55, -122.25, 37.8429, -121.78)]
 
 
 def compute_coverage():
@@ -268,7 +280,7 @@ def compute_coverage():
     b = _coverage_bart(stage)
     L6 = set(cov[6]) | b[6]; L7 = set(cov[7]) | b[7]; L8 = set(cov[8]) | b[8]
     # monotonic: a recompute (next stage, or a new corridor source) never drops what an earlier stage listed
-    for f in ('coverage_bart1.json', 'coverage_bart2.json'):
+    for f in ('coverage_bart1.json', 'coverage_bart2.json', 'coverage_bart3.json'):
         pf = os.path.join(WORK, f)
         if os.path.exists(pf):
             j = json.load(open(pf))
