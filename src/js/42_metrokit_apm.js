@@ -21,7 +21,7 @@
 
   // type 'end' (nose at +X) or 'mid'
   function build(type, q) {
-    K.decalAtlas();
+    K.decalAtlas(K.atlasRes());
     const { bodyAt, tAtY, sectionLoop } = K.fotfProfile, P = makeProfile(q), E = new MB(), G = new MB();
     const isEnd = type === 'end', L = isEnd ? A.LEN_END : A.LEN, xR = -A.LEN / 2 + 0.08, xF = isEnd ? A.LEN / 2 + 0.25 : A.LEN / 2 - 0.08;
     const tB0 = tAtY(P, A.BAND0), tB1 = tAtY(P, A.BAND1), tCant = tAtY(P, 2.95);

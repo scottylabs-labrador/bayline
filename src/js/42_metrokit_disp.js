@@ -19,12 +19,13 @@
   }
   // ------------------------------------------------------------------------------------------ decal atlas
   // 2048 x 2048, non-premultiplied RGBA; cells are named rects [u0, v0, u1, v1] (flipY = true: v = 1 at the top row)
-  const ATL = Object.create(null); let _atlas = null;
+  // drawn in a 2048-unit layout at res x res pixels (1024 on the low tiers: 5 MB instead of 21 MB of GPU memory)
+  const ATL = Object.create(null); const _atlas = Object.create(null);
   const DIG = '0123456789 XYL';                  // car-number glyphs (white on blue / black on white), 14 cells per row
-  function decalAtlas() {
-    if (_atlas) return _atlas;
-    const W = 2048, H = 2048, c = document.createElement('canvas'); c.width = W; c.height = H;
-    const g = c.getContext('2d'); g.clearRect(0, 0, W, H);
+  function decalAtlas(res = 2048) {
+    if (_atlas[res]) return _atlas[res];
+    const W = 2048, H = 2048, c = document.createElement('canvas'); c.width = res; c.height = res;
+    const g = c.getContext('2d'); g.clearRect(0, 0, res, res); g.scale(res / W, res / H);
     const cell = (name, x, y, w, h, draw) => { g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, w, h); g.clip(); draw(w, h); g.restore();
       ATL[name] = [(x + 1) / W, 1 - (y + h - 1) / H, (x + w - 1) / W, 1 - (y + 1) / H]; };
     // wordmark sticker (the door, the E-car end bands): white rounded plate, the mark, "BAYLINE METRO"
@@ -85,8 +86,11 @@
     // floor arrows / "keep clear" at doors, the car's plate by the end door
     cell('plate', 1600, 416, 256, 96, (w, h) => { g.fillStyle = '#d5d8da'; g.fillRect(0, 0, w, h); g.fillStyle = '#1b1b1b'; g.font = `700 22px ${FONT}`; g.textAlign = 'left'; g.fillText('BAYLINE METRO', 14, 34); g.font = `500 18px ${FONT}`; g.fillText('Built 2019 \u00b7 Car type D/E', 14, 66); });
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.premultiplyAlpha = false;
-    t.userData.canvas = c; _atlas = t; return t;
+    t.userData.canvas = c; t.userData.res = res; t.userData.bytes = res * res * 4 * 4 / 3; _atlas[res] = t; return t;
   }
+  // free the atlases no live consist uses (after a quality change)
+  function releaseAtlases(keep) { for (const r of Object.keys(_atlas)) { const t = _atlas[r]; if (keep.has(t)) continue; t.dispose(); t.userData.canvas.width = t.userData.canvas.height = 1; delete _atlas[r]; } }
+  function atlasBytes() { let b = 0; for (const r of Object.keys(_atlas)) b += _atlas[r].userData.bytes; return b; }
   // a stylised line strip map (station dots on a line), used on posters and the LCD
   function drawStripMap(g, x, y, w, h, st) {
     const stops = (st && st.stops) || ['Antioch', 'Pittsburg Center', 'Pittsburg/Bay Point', 'North Concord', 'Concord', 'Pleasant Hill', 'Walnut Creek', 'Lafayette', 'Orinda', 'Rockridge', 'MacArthur', '19th St', '12th St', 'West Oakland', 'Embarcadero', 'Montgomery', 'Powell', 'Civic Center', '16th St', '24th St', 'Glen Park', 'Balboa Park', 'Daly City', 'Colma', 'South SF', 'San Bruno', 'SF Airport'];
@@ -177,13 +181,14 @@
   // ------------------------------------------------------------------------------------------ LCD texture (per consist)
   // 2048 x 512: [0, 1024) passenger screen, [1024, 2048) cab screens. uv rects for the geometry below.
   const LCD = { W: 2048, H: 512, pis: [0, 0, 0.5, 1], cab: [0.5, 0, 1, 1] };
-  function makeLcdTexture() {
-    const c = document.createElement('canvas'); c.width = LCD.W; c.height = LCD.H;
+  // scale 0.5 on the low tier (1024 x 256: 1.3 MB instead of 5.3 MB per consist with an interior); drawn in the full layout
+  function makeLcdTexture(scale = 1) {
+    const c = document.createElement('canvas'); c.width = Math.round(LCD.W * scale); c.height = Math.round(LCD.H * scale);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
-    t.userData.canvas = c; t.userData.ctx = c.getContext('2d'); return t;
+    t.userData.canvas = c; t.userData.ctx = c.getContext('2d'); t.userData.sc = scale; t.userData.bytes = c.width * c.height * 4 * 4 / 3; return t;
   }
-  function updatePis(tex, s) { const g = tex.userData.ctx; g.save(); g.beginPath(); g.rect(0, 0, 1024, 512); g.clip(); drawPis(g, 1024, 512, s); g.restore(); tex.needsUpdate = true; }
-  function updateCab(tex, s) { const g = tex.userData.ctx; g.save(); g.translate(1024, 0); g.beginPath(); g.rect(0, 0, 1024, 512); g.clip(); drawCab(g, 1024, 512, s); g.restore(); tex.needsUpdate = true; }
+  function updatePis(tex, s) { const g = tex.userData.ctx, k = tex.userData.sc || 1; g.save(); g.scale(k, k); g.beginPath(); g.rect(0, 0, 1024, 512); g.clip(); drawPis(g, 1024, 512, s); g.restore(); tex.needsUpdate = true; }
+  function updateCab(tex, s) { const g = tex.userData.ctx, k = tex.userData.sc || 1; g.save(); g.scale(k, k); g.translate(1024, 0); g.beginPath(); g.rect(0, 0, 1024, 512); g.clip(); drawCab(g, 1024, 512, s); g.restore(); tex.needsUpdate = true; }
 
-  Object.assign(K, { decalAtlas, ATL, DIG, mark, drawStripMap, drawPis, drawCab, LCD, makeLcdTexture, updatePis, updateCab });
+  Object.assign(K, { decalAtlas, releaseAtlases, atlasBytes, ATL, DIG, mark, drawStripMap, drawPis, drawCab, LCD, makeLcdTexture, updatePis, updateCab });
 })();

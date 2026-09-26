@@ -198,7 +198,7 @@
   // ------------------------------------------------------------------------------------------ the design
   function buildFotf(type, q) {
     const isD = type === 'D', P = makeProfile(q), E = new MB(), G = new MB();   // E: palette (body etc.), G: glass
-    K.decalAtlas();
+    K.decalAtlas(K.atlasRes());
     const alu = isD ? 'aluD' : 'aluE';
     const tCant = tAtY(P, F.CANT), tFloor = tAtY(P, F.FLOOR);
     const xFront = isD ? F.NOSE_XC : F.BODY - F.END_R, xRear = -(F.BODY - F.END_R);

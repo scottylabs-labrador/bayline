@@ -29,7 +29,7 @@
 
   // ------------------------------------------------------------------------------------------ the unit
   function build(type, q) {
-    K.decalAtlas();
+    K.decalAtlas(K.atlasRes());
     const { bodyAt, tAtY, sectionLoop } = K.fotfProfile, P = makeProfile(q), E = new MB(), G = new MB();
     const tCant = tAtY(P, 2.9);
     for (const e of [1, -1]) {                     // e = +1: end car A (+X), -1: end car B (mirrored)

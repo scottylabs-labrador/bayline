@@ -20,7 +20,13 @@ const MetroKit = (() => {
   // 0 low .. 4 max (same scale as ACModel.setQuality). Applies to designs built afterwards (designs are cached per level).
   let Q = 2;
   const QN = { low: 0, medium: 1, high: 2, ultra: 3 };
-  function setQuality(level) { const q = typeof level === 'number' ? level : (level in QN ? QN[level] : (level ? 4 : 2)); Q = clamp(Math.round(q), 0, 4); }
+  // Low (0): cars never draw their full LOD 0 exterior (simple LOD geometry only; the car you ride in still gets its
+  // interior), 1024 px decal atlas and half-size screens; Medium (1): 1024 px atlas, half-size screens. A change releases the designs and
+  // atlases no live consist uses any more (consists built before keep theirs until they are disposed).
+  function setQuality(level) {
+    const q = typeof level === 'number' ? level : (level in QN ? QN[level] : (level ? 4 : 2)), nq = clamp(Math.round(q), 0, 4);
+    if (nq === Q) return; Q = nq; releaseUnused(true);
+  }
 
   // ------------------------------------------------------------------------------------------ palette
   // Each part's vertices carry uv.x = the palette texel of its material. Channels (4 RGBA8 textures, 256 x 1):
@@ -1142,7 +1148,7 @@ const MetroKit = (() => {
       const self = this;
       // (and the impression's detail: seats, passengers and poles only within ~90 m, where they cover pixels)
       this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); const o = S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m);
-        S.mkImDet.value = o.lengthSq() < 8100 ? 1 : 0; };
+        S.mkImDet.value = o.lengthSq() < 8100 ? 1 : 0; K.noteCamera(cam); };
       // lamp glow billboards (one instanced draw per lamp-carrying car, visible when lit at dusk / night / in tunnels)
       this.glow = null;
       if (d.lamps && d.lamps.length && K.makeGlow) {
@@ -1161,6 +1167,7 @@ const MetroKit = (() => {
       this.shoeDy = d.shoes ? new Float32Array(d.shoes.length) : null; this.bogM = d.bogieList.map(() => new THREE.Matrix4());
       this.lv = S.mkLv.value;
       this._pose();
+      if (Q === 0) this.setLOD(1);                             // (low tier: simple LOD geometry from the start)
     }
     // write bone matrices (car-local) from the current state
     _pose() {
@@ -1239,21 +1246,24 @@ const MetroKit = (() => {
     setInteriorVisible(v) {
       v = !!v; if (v === this.intVisible) return; this.intVisible = v;
       if (v && !this.int && this.consist._buildInterior) this.consist._buildInterior(this);
-      if (this.int) this.int.visible = v && this.lod === 0;
+      if (this.int) this.int.visible = v && (this.lod === 0 || Q === 0);
       this.glass.material = v && this.int ? this.matGlassClear : this.matGlass;
       this.glass.renderOrder = v ? 2 : 0;
     }
     setLOD(level) {
-      level = clamp(level | 0, 0, 2); if (level === this.lod) return; this.lod = level;
+      level = clamp(level | 0, 0, 2); if (Q === 0 && level === 0) level = 1;      // (low tier: simple LOD geometry only)
+      if (level === this.lod) return; this.lod = level;
       if (level > 0 && !this['lodMesh' + level]) {
         const d = this.design, b = builders[d.kind], k = 'lod' + level;
         if (!d[k] && b.lod) d[k] = b.lod(d, level);
-        if (d[k]) { if (!this.matLod) this.matLod = palMaterial('lod', this.S); const m = new THREE.Mesh(d[k], this.matLod); m.name = 'lod' + level; m.castShadow = level === 1; m.receiveShadow = level === 1; this.root.add(m); this['lodMesh' + level] = m; }
+        if (d[k]) { if (!this.matLod) this.matLod = palMaterial('lod', this.S); const m = new THREE.Mesh(d[k], this.matLod); m.name = 'lod' + level; m.castShadow = level === 1; m.receiveShadow = level === 1;
+          if (level === 1) m.onBeforeRender = (r, sc, cam) => K.noteCamera(cam);
+          this.root.add(m); this['lodMesh' + level] = m; }
       }
       this.ext.visible = this.glass.visible = level === 0;
       if (this.lodMesh1) this.lodMesh1.visible = level === 1;
       if (this.lodMesh2) this.lodMesh2.visible = level === 2;
-      if (this.int) this.int.visible = this.intVisible && level === 0;
+      if (this.int) this.int.visible = this.intVisible && (level === 0 || Q === 0);
       if (level === 0 && this.dirty) this._pose();
     }
     // bogie yaw from the two bogie-pivot frames (x, y, z, tx, tz), called after posing (TrainKit-style posing)
@@ -1290,7 +1300,8 @@ const MetroKit = (() => {
       this.night = 0; this.lights = { head: 1, tail: 1, interior: 1, cab: 1, signs: 1 }; this.lead = 'front';
       this.doorT = [0, 0]; this.doorGoal = [0, 0]; this.dest = null; this.onEvent = null; this._chime = [-1, -1];
       this.sway = opts.sway !== false; this.odo = 0; this._v0 = 0; this._aL = 0;       // body sway on (c.sway = false: rigid)
-      this.signTex = makeSignTexture(); this.atlasTex = K.decalAtlas ? K.decalAtlas() : null; this.lcdTex = null;
+      this.signTex = makeSignTexture(); this.atlasTex = K.decalAtlas ? K.decalAtlas(K.atlasRes()) : null; this.lcdTex = null;
+      this.intAllowed = false; live.add(this);
       this.glassClear = glassClearMaterial();
       // car list
       let order = opts.order || null;
@@ -1383,16 +1394,24 @@ const MetroKit = (() => {
     openDoors(side) { this.setDoors(side, 1); this._chime = [-1, -1]; }
     closeDoors(side = 'both') { for (const k of side === 'both' ? [0, 1] : [side === 'left' ? 0 : 1]) if (this.doorGoal[k] > 0 && this._chime[k] < 0) { this._chime[k] = 1.6; this._emit('chime', k ? 'right' : 'left'); } }
     _emit(type, info) { if (this.onEvent) try { this.onEvent(type, info, this); } catch (e) { console.error(e); } }
-    setInteriorVisible(v) { for (const c of this.cars) c.setInteriorVisible(v); }
+    // interiors are allowed for this consist; they are drawn only for the car nearest the camera and its neighbours
+    // (when that car is within 45 m), decided every update, so a ride along the train carries them with the player
+    setInteriorVisible(v) { this.intAllowed = !!v; this._applyInt(); }
+    _applyInt() {
+      let best = -1, bd = 45 * 45; const p = this.intAllowed ? camPos() : null;
+      if (p) for (const c of this.cars) { const g = c.group.position, d = (g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2; if (d < bd) { bd = d; best = c.index; } }
+      for (const c of this.cars) c.setInteriorVisible(best >= 0 && Math.abs(c.index - best) <= 1);
+    }
     setLOD(level) { for (const c of this.cars) c.setLOD(level); }
     // free the per-consist GPU resources (shared design geometry stays cached)
     dispose() {
       for (const c of this.cars) { for (const m of [c.mat, c.matGlass, c.matInt, c.matLod]) if (m) m.dispose(); if (c.skeleton) c.skeleton.dispose(); if (c.group.parent) c.group.parent.remove(c.group); }
       this.signTex.dispose(); if (this.lcdTex) this.lcdTex.dispose(); this.glassClear.dispose();
+      live.delete(this); releaseUnused();
     }
     _lcd() {
       if (!this.lcdTex && K.makeLcdTexture) {
-        this.lcdTex = K.makeLcdTexture(); for (const c of this.cars) c.S.mkLcd.value = this.lcdTex;
+        this.lcdTex = K.makeLcdTexture(Q <= 1 ? 0.5 : 1); for (const c of this.cars) c.S.mkLcd.value = this.lcdTex;
         K.updatePis(this.lcdTex, this._disp || { nextStop: '', destination: '' }); K.updateCab(this.lcdTex, this._cab || {});
       }
       return this.lcdTex;
@@ -1449,6 +1468,7 @@ const MetroKit = (() => {
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
       MKG.mkWet.value = wetNow();
+      if (this.intAllowed) this._applyInt();
       if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
         if (moved) { c.doorPos[0] = c.flip ? T[1] : T[0]; c.doorPos[1] = c.flip ? T[0] : T[1]; c.dirty = true; }
@@ -1566,6 +1586,44 @@ const MetroKit = (() => {
     const ym = U.wrapAngle(Math.atan2(-_JM.tz, _JM.tx) - yawBody); car.yaw[1] = car.flip ? ym : ym; car.bogOff[1][0] = jm[0] - A.mid; car.bogOff[1][1] = jm[1];
     car.dirty = true;
   }
+  // ------------------------------------------------------------------------------------------ resources
+  const live = new Set(), farBatches = new Set();
+  K.live = live; K.farBatches = farBatches;
+  K.atlasRes = () => Q <= 1 ? 1024 : 2048;
+  function disposeDesign(d) {
+    for (const g of [d.ext, d.glass, d.lod1, d.lod2]) if (g && g.dispose) g.dispose();
+    if (d.int) { for (const k of ['geo', 'glass']) if (d.int[k] && d.int[k].dispose) d.int[k].dispose(); }
+  }
+  function releaseUnused(qChanged) {
+    if (qChanged) for (const f of farBatches) f.reset();
+    const used = new Set(), atl = new Set();
+    for (const c of live) { for (const car of c.cars) used.add(car.design); if (c.atlasTex) atl.add(c.atlasTex); }
+    for (const f of farBatches) { for (const d of f.designs) used.add(d); if (f.atlas) atl.add(f.atlas); }
+    for (const key of Object.keys(designs)) { const d = designs[key]; if (used.has(d) || key.endsWith(':q' + Q)) continue; disposeDesign(d); delete designs[key]; }
+    if (K.releaseAtlases) { if (K.decalAtlas) atl.add(K.decalAtlas(K.atlasRes())); K.releaseAtlases(atl); }
+  }
+  // what MetroKit holds on the GPU (estimates from buffer and texture sizes) and how much it draws
+  const geoBytes = g => { if (!g || !g.attributes) return 0; let b = g.index ? g.index.array.byteLength : 0; for (const k in g.attributes) b += g.attributes[k].array.byteLength; return b; };
+  function stats() {
+    let geo = 0, lcd = 0, sign = 0, bones = 0, cars = 0, lod0 = 0, ints = 0;
+    for (const key of Object.keys(designs)) { const d = designs[key]; geo += geoBytes(d.ext) + geoBytes(d.glass) + geoBytes(d.lod1) + geoBytes(d.lod2) + (d.int ? geoBytes(d.int.geo) + geoBytes(d.int.glass) : 0); }
+    for (const c of live) { sign += SIGN.W * SIGN.H * 4; if (c.lcdTex) lcd += c.lcdTex.userData.bytes || 0;
+      for (const car of c.cars) { cars++; if (car.lod === 0) lod0++; if (car.int && car.int.visible) ints++; const bt = car.skeleton && car.skeleton.boneTexture; if (bt) bones += bt.image.data.byteLength; } }
+    const atlas = K.atlasBytes ? K.atlasBytes() : 0, MB = 1 / 1048576;
+    return { quality: Q, consists: live.size, cars, lod0Cars: lod0, interiorsShown: ints, designs: Object.keys(designs).length,
+      geometryMB: +(geo * MB).toFixed(1), atlasMB: +(atlas * MB).toFixed(1), screensMB: +(lcd * MB).toFixed(1), signsMB: +(sign * MB).toFixed(2), bonesMB: +(bones * MB).toFixed(2),
+      totalMB: +((geo + atlas + lcd + sign + bones) * MB).toFixed(1) };
+  }
+  // the camera's world position (the interior policy needs it): the camera the cars were last drawn with (their glass
+  // or LOD mesh notes it; that is the view, also when a capture camera stands in for the player's), else Env's camera
+  const _camW = new V3(); let _camT = -1e9;
+  function camPos() {
+    if (performance.now() - _camT < 400) return _camW;
+    const cam = typeof Env !== 'undefined' && Env.camera; if (cam) return _camW.copy(cam.position);
+    return null;
+  }
+  K.noteCamera = cam => { _camW.setFromMatrixPosition(cam.matrixWorld); _camT = performance.now(); };
+
   // wetness: an explicit value (setWet, previews), else infra's rain-driven wetness (MetroTrack.uWet: wets in ~40 s of
   // rain, dries in ~15 min), else dry
   let wetOverride = -1;
@@ -1580,6 +1638,6 @@ const MetroKit = (() => {
   K.FONT = FONT; K.Consist = Consist; K.Car = Car;
 
   const createFarBatch = (scene, o) => K.createFarBatch(scene, o);
-  return { _k: K, setQuality, setWet, createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
+  return { _k: K, setQuality, setWet, stats, createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroKit = MetroKit;
