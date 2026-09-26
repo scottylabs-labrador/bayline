@@ -55,7 +55,9 @@ const WorldTiles = (() => {
   const PAL = [[0.78, 0.74, 0.68], [0.72, 0.66, 0.58], [0.62, 0.5, 0.42], [0.82, 0.8, 0.76], [0.68, 0.68, 0.7], [0.55, 0.45, 0.38], [0.86, 0.84, 0.8], [0.6, 0.62, 0.66]];
   function hexcol(s) { const m = /^#?([0-9a-f]{6})$/i.exec(s || ''); if (!m) return null; const v = parseInt(m[1], 16); return [(v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255]; }
   onmessage = async (e) => {
-    const { id, url, mx, my, hs } = e.data;   // hs: ground heights (17x17 over the tile) for the base of each building
+    const { id, url, mx, my, hs, ex } = e.data;   // hs: ground heights (17x17 over the tile) for the base of each building
+    // ex: rects [x0, z0, x1, z1] (metres from the tile centre, x east, z south) where the Bayline city stands instead
+    const excl = (px, pz) => { if (ex) for (const r of ex) if (px >= r[0] && px < r[2] && pz >= r[1] && pz < r[3]) return true; return false; };
     try {
       const r = await fetch(url); if (!r.ok) throw new Error('tile ' + r.status);
       const buf = new Uint8Array(await r.arrayBuffer()), t = rd(buf); const layers = {};
@@ -76,6 +78,7 @@ const WorldTiles = (() => {
           const ar = area(R); if (ar <= 0 || R.length < 4) continue;              // exterior rings (positive area in MVT); holes skipped
           const pts = R.slice(0, -1).map(p => toM(p[0], p[1]));
           let cx = 0, cy = 0; for (const p of R) { cx += p[0]; cy += p[1]; } cx /= R.length; cy /= R.length;
+          if (ex) { const cm = toM(cx, cy); if (excl(cm[0], cm[1])) continue; }
           const base = hAt(cx, cy), y0 = base + h0 - (h0 ? 0 : 1.5), y1 = base + H;
           const hash = Math.abs(Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453) % 1;
           const col = hexcol(f.tags.colour) || (H > 40 ? [0.66 + hash * 0.1, 0.7 + hash * 0.08, 0.74 + hash * 0.06] : PAL[(hash * PAL.length) | 0]);
@@ -99,11 +102,13 @@ const WorldTiles = (() => {
         const f = feature(fb, layers.aeroway), cls = f.tags.class, rs = rings(f.geom);
         if (f.type === 3 && (cls === 'apron' || cls === 'helipad' || cls === 'taxiway')) for (const R of rs) {
           if (area(R) <= 0 || R.length < 4) continue; const pts = R.slice(0, -1).map(p => toM(p[0], p[1])), hs2 = R.slice(0, -1).map(p => hAt(p[0], p[1]) + 0.12);
+          if (ex && excl(pts[0][0], pts[0][1])) continue;
           const col = cls === 'apron' ? [0.6, 0.6, 0.58] : [0.33, 0.33, 0.33];
           for (const [i, j, k] of earclip(pts)) { pushQ(pts[i][0], hs2[i], pts[i][1], col, 2, 0); pushQ(pts[k][0], hs2[k], pts[k][1], col, 2, 0); pushQ(pts[j][0], hs2[j], pts[j][1], col, 2, 0); }
         }
         if (f.type === 2 && cls === 'taxiway') for (const R of rs) {
           const pts = R.map(p => toM(p[0], p[1])), hh = R.map(p => hAt(p[0], p[1]) + 0.15), w = 11.5;
+          if (ex && pts.length && excl(pts[0][0], pts[0][1])) continue;
           for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = Math.hypot(dx, dz) || 1, ox = -dz / L2 * w, oz = dx / L2 * w;
             const g = [0.3, 0.3, 0.3];
             pushQ(a[0] - ox, hh[i], a[1] - oz, g, 3, -1); pushQ(b[0] + ox, hh[i + 1], b[1] + oz, g, 3, 1); pushQ(b[0] - ox, hh[i + 1], b[1] - oz, g, 3, -1);
@@ -154,16 +159,38 @@ const WorldTiles = (() => {
   function request(x, y) {
     const k = x + '/' + y; if (tiles.has(k)) return;
     const lonW = lonOf(x), lonE = lonOf(x + 1), latN = latOf(y), latS = latOf(y + 1), lat = (latN + latS) / 2, lon = (lonW + lonE) / 2;
-    const c = Globe.ll2w(lat, lon); if (Globe.frame.bay && Globe.inBayline(c.x, c.z)) { tiles.set(k, { k, skip: true, used: frameNo }); return; }
+    const c = Globe.ll2w(lat, lon), strip = stripTile(lonW, lonE, latN, latS);
+    if (!strip && Globe.frame.bay && Globe.inBayline(c.x, c.z)) { tiles.set(k, { k, skip: true, used: frameNo }); return; }
     const p = Math.cos(lat * D), mlat = 111132.954 - 559.822 * Math.cos(2 * lat * D), mlon = 111412.84 * p;
     const mx = (lonE - lonW) * mlon, my = (latN - latS) * mlat;
     const t = { k, x, y, lat, lon, mlat, mlon, mx, my, state: 1, used: frameNo, mesh: null, aero: null, fid: -1 };
     tiles.set(k, t);
+    busy++;
+    if (strip) { stripRequest(t, x, y, lonW, lonE, latN, latS, c); return; }
     // ground heights over the tile for the building bases
     const hs = new Float32Array(17 * 17);
     for (let j = 0; j <= 16; j++) for (let i = 0; i <= 16; i++) hs[j * 17 + i] = Globe.hAt(latOf(y + j / 16), lonOf(x + i / 16));
-    busy++;
     tileUrl().then(u => worker.postMessage({ id: k, url: u.replace('{z}', Z).replace('{x}', x).replace('{y}', y), mx, my, hs }));
+  }
+  // ---- the Bayline Metro strip (Terrain.north, notes/bart/world.md): the Bayline terrain draws north of the old square,
+  // but its city (Towns) covers only the BART corridors, so OpenFreeMap buildings keep standing everywhere else there,
+  // on the Bayline ground (Terrain.hBase), minus the old square and the Towns tiles
+  function stripTile(lonW, lonE, latN, latS) {
+    if (!Globe.frame.bay || typeof Terrain === 'undefined' || !Terrain.north) return false;
+    const a = Globe.ll2w(latN, lonW), b = Globe.ll2w(latS, lonE), n = Terrain.north, ar = Terrain.area;
+    return a.z < -49152 && b.z > n.z0 && b.x > ar[0] && a.x < ar[2];
+  }
+  function stripRequest(t, x, y, lonW, lonE, latN, latS, c) {
+    const a = Globe.ll2w(latN, lonW), b = Globe.ll2w(latS, lonE), sx = Globe.frame.mlon / t.mlon, sz = Globe.frame.mlat / t.mlat;
+    const loc = (r) => [(r[0] - c.x) / sx, (r[1] - c.z) / sz, (r[2] - c.x) / sx, (r[3] - c.z) / sz];
+    const ex = [loc([-45056, -49152, 57344, 53248])];                                           // the old square: Towns / no buildings
+    if (typeof Towns !== 'undefined' && Towns.rectsIn) for (const r of Towns.rectsIn(a.x, a.z, b.x, b.z)) ex.push(loc(r));
+    const go = () => {
+      const hs = new Float32Array(17 * 17);
+      for (let j = 0; j <= 16; j++) for (let i = 0; i <= 16; i++) { const w = Globe.ll2w(latOf(y + j / 16), lonOf(x + i / 16)); hs[j * 17 + i] = Terrain.covers(w.x, w.z) ? Terrain.hBase(w.x, w.z) : Globe.hAt(latOf(y + j / 16), lonOf(x + i / 16)); }
+      tileUrl().then(u => worker.postMessage({ id: t.k, url: u.replace('{z}', Z).replace('{x}', x).replace('{y}', y), mx: t.mx, my: t.my, hs, ex }));
+    };
+    Promise.resolve(Terrain.ensure(a.x, a.z, b.x, b.z, 4, 7)).then(go, go);
   }
   function geo(o) {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(o.p, 3)); g.setAttribute('normal', new THREE.BufferAttribute(o.n, 3));

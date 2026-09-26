@@ -39,9 +39,12 @@ def save(p, x01, q):
 def main():
     q = 86
     idx = json.load(open(os.path.join(C.PUB, 'index.json')))
-    l8 = [tuple(t) for t in idx['levels']['8']]
-    l9 = set(tuple(t) for t in idx['levels'].get('9', []))
+    # every L8 tile of the coverage (square + the Bayline Metro north strip) that exists at 512 px
+    l8 = [tuple(t) for t in C.coverage()[8] if os.path.exists(C.path('img', 8, t[0], t[1], 'jpg'))]
+    l9 = {(x, y) for L9d in [os.path.join(C.PUB, 'img', '9')] if os.path.isdir(L9d)
+          for (x, y) in (map(int, f[:-4].split('_')) for f in os.listdir(L9d) if f.endswith('.jpg') and '_test' not in f)}
     todo = [t for t in l8 if not is1024(C.path('img', 8, t[0], t[1], 'jpg'))]
+    todo.sort(key=lambda t: (-int(t[1] < 0), t[1], t[0]))                   # the north strip first
     print(f'{len(l8)} L8 tiles, {len(todo)} to upgrade', flush=True)
     # 1) mosaic from L9 children where all four exist (no GPU needed)
     mos = 0
@@ -84,6 +87,7 @@ def main():
                 del cache[k]
         if n % 20 == 0 or n == len(parents) - 1:
             el = time.time() - t0; print(f'{n + 1}/{len(parents)} L7 parents, {made} L8 written, {el:.0f}s, ~{el / (n + 1) * (len(parents) - n - 1):.0f}s left', flush=True)
+    idx = json.load(open(os.path.join(C.PUB, 'index.json')))          # (re-read: other steps may have rewritten it meanwhile)
     idx['products']['img']['size8'] = 1024
     tmp = os.path.join(C.PUB, 'index.json.tmp'); json.dump(idx, open(tmp, 'w'), separators=(',', ':')); os.replace(tmp, os.path.join(C.PUB, 'index.json'))
     print('done', flush=True)

@@ -212,7 +212,7 @@ const Game = (() => {
   // ---------------- onboard announcements (riding a scheduled train) ----------------
   let annKey = '', lastAnn = {};
   function updateRide() {
-    const tr = Player.focusTrain(); if (!tr || tr.driven || !(Player.onboard() || Player.inCab())) return;
+    const tr = Player.focusTrain(); if (!tr || tr.metro || tr.driven || !(Player.onboard() || Player.inCab())) return;
     const seg = tr.seg; if (!seg || !tr.plan) return;
     const k = Sim.nextStopK(tr.plan, seg); const s = tr.trip.stops[k]; if (!s) return;
     const key = tr.key + ':' + k;
@@ -270,10 +270,11 @@ const Game = (() => {
       { id: 'commute', kind: 'commute', title: 'Commuter: 9 AM Meeting', sub: 'Mountain View to 22nd Street before 9:00 AM. Local or express? Choose wisely.', from: 'mountain_view', to: '22nd_street', start: 7 * 3600 + 58 * 60, deadline: 9 * 3600 },
       { id: 'gameday', kind: 'commute', title: 'Game Day', sub: 'San Jose Diridon to San Francisco before first pitch at 6:45 PM.', from: 'sj_diridon', to: 'san_francisco', start: 16 * 3600 + 52 * 60, deadline: 18 * 3600 + 45 * 60 },
       { id: 'tour', kind: 'tour', title: 'Landmark Tour', sub: 'Visit three landmarks by train and on foot: no flying.', count: 3 },
-    ];
+    ].concat(typeof MetroMissions !== 'undefined' ? MetroMissions.list() : []);   // (Bayline Metro, #metro=1 only)
   }
   function startMission(m) {
     mission = null; if (run) endRun(false);
+    if (m.kind === 'metro') { MetroMissions.start(m); return; }
     if (m.kind === 'drive') {
       const d = m.pick(); if (!d) { emit('toast', 'No suitable train in the timetable today'); return; }
       const endK = m.end ? d.trip.stops.findIndex(s => s[0] === idx(m.end)) : undefined;

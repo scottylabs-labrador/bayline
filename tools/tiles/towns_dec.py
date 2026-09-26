@@ -16,7 +16,18 @@ TILE = 800.0
 X0, Z0 = -45056.0, -49152.0
 
 
+_B2 = None
+
+
 def tile_path(tx, ty):
+    """tiles/b2 (Bayline Metro) where its index lists the tile, else tiles/b: what the new client draws there."""
+    global _B2
+    if _B2 is None:
+        import json
+        p2 = os.path.join(PUB, 'b2', 'index.json')
+        _B2 = {(t[0], t[1]) for t in json.load(open(p2))['tiles']} if os.path.exists(p2) else set()
+    if (tx, ty) in _B2:
+        return os.path.join(PUB, 'b2', '7', f'{tx}_{ty}.bin')
     return os.path.join(PUB, 'b', '7', f'{tx}_{ty}.bin')
 
 
