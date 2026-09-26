@@ -114,6 +114,9 @@ const Terrain = (() => {
 
   // ---------- tile records ----------
   const hrec = new Map(), mrec = new Map(), irec = new Map();   // key -> { L, x, y, state, ... }
+  // height filters (Bayline Metro, world workstream: 19_metroground.js makes the ground meet the BART track bed):
+  // fn(L, x0, z0, T, h) edits a decoded 129x129 tile in place, h[j * 129 + i] at (x0 + i T / 128, z0 + j T / 128)
+  const heightFilters = [];
   let frameNo = 0;
   function decodeHeights(u8, qs = 16, qo = 200) {   // MED-predicted zigzag residuals (uint16) -> Float32 heights (h = q/qs - qo)
     const n = HS * HS; const res = new Uint16Array(u8.buffer, u8.byteOffset, n); const q = new Int32Array(n); const h = new Float32Array(n);
@@ -135,6 +138,8 @@ const Terrain = (() => {
     r.p = Stream.bin(r.path, prio).then((u8) => {
       if (u8.length < HS * HS * 2) throw new Error('short height tile');
       const d = lidar && h9 ? decodeHeights(u8, h9.qs, -(h9.off.get(K(8, x >> (L - 8), y >> (L - 8))) || 0)) : decodeHeights(u8);
+      if (heightFilters.length) { const T = tileSize(L); for (const f of heightFilters) f(L, X0 + x * T, Z0 + y * T, T, d.h);
+        let mn = 1e9, mx = -1e9; for (let i = 0; i < d.h.length; i++) { const v = d.h[i]; if (v < mn) mn = v; if (v > mx) mx = v; } d.mn = mn; d.mx = mx; }
       r.h = d.h; r.mn = d.mn; r.mx = d.mx; r.base = d.mn;
       const hf = new Uint16Array(HS * HS); for (let i = 0; i < hf.length; i++) hf[i] = THREE.DataUtils.toHalfFloat(d.h[i] - r.base);
       const t = new THREE.DataTexture(hf, HS, HS, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
@@ -890,5 +895,16 @@ const Terrain = (() => {
   });
   api.covers = (x, z) => (x >= X0 && x < X0 + SIZE && z >= Z0 && z < Z0 + SIZE) || North.contains(x, z);
   api.cutTest = null;           // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
+  // (Bayline Metro, world workstream) add a height filter (see heightFilters); loaded height tiles overlapping rect
+  // [x0, z0, x1, z1] are dropped so they stream in again, filtered (a brief step down in detail there, once)
+  api.addHeightFilter = (fn, rect) => {
+    heightFilters.push(fn);
+    for (const [k, r] of [...hrec]) {
+      if (r.state !== 2 || r.L < 5) continue;
+      const T = tileSize(r.L), x0 = X0 + r.x * T, z0 = Z0 + r.y * T;
+      if (rect && (x0 > rect[2] || x0 + T < rect[0] || z0 > rect[3] || z0 + T < rect[1])) continue;
+      if (r.tex) r.tex.dispose(); hrec.delete(k);
+    }
+  };
   return api;
 })();
