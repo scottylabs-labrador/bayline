@@ -65,6 +65,29 @@ const MetroSigns = (() => {
     else if (kind === 'train') { c.beginPath(); c.roundRect(-s * 0.36, -s * 0.46, s * 0.72, s * 0.78, s * 0.14); c.stroke(); c.fillRect(-s * 0.26, -s * 0.32, s * 0.52, s * 0.22); c.beginPath(); c.arc(-s * 0.18, s * 0.14, s * 0.06, 0, 7); c.arc(s * 0.18, s * 0.14, s * 0.06, 0, 7); c.fill(); c.beginPath(); c.moveTo(-s * 0.3, s * 0.46); c.lineTo(-s * 0.18, s * 0.32); c.moveTo(s * 0.3, s * 0.46); c.lineTo(s * 0.18, s * 0.32); c.stroke(); }
     c.restore();
   }
+  // text in at most two lines of maxW (greedy by words), shrinking from size until it fits; leaves c.font set
+  function wrap2(c, text, maxW, size, minSize) {
+    const words = String(text).split(/\s+/);
+    for (let s = size; s >= minSize; s -= 2) { c.font = `600 ${s}px ${FONTB}`; const out = ['']; let ok = true;
+      for (const wd of words) { const tr = out[out.length - 1] ? out[out.length - 1] + ' ' + wd : wd; if (c.measureText(tr).width <= maxW) out[out.length - 1] = tr; else if (out.length < 2 && c.measureText(wd).width <= maxW) out.push(wd); else { ok = false; break; } }
+      if (ok) return out; }
+    c.font = `600 ${minSize}px ${FONTB}`; return [String(text)];
+  }
+  // transfer pictograms (white): metro, rail, lightrail, cablecar, ferry, air
+  function xpict(c, x, y, s, kind) {
+    c.save(); c.translate(x, y); c.strokeStyle = WHITE; c.fillStyle = WHITE; c.lineWidth = s * 0.08; c.lineCap = 'round'; c.lineJoin = 'round';
+    if (kind === 'ferry') { c.beginPath(); c.moveTo(-s * 0.48, s * 0.05); c.lineTo(s * 0.48, s * 0.05); c.lineTo(s * 0.34, s * 0.28); c.lineTo(-s * 0.36, s * 0.28); c.closePath(); c.fill();
+      c.fillRect(-s * 0.2, -s * 0.2, s * 0.36, s * 0.22); c.fillRect(-s * 0.04, -s * 0.36, s * 0.08, s * 0.16);
+      c.beginPath(); for (let i = 0; i < 4; i++) { c.moveTo(-s * 0.48 + i * s * 0.26, s * 0.42); c.quadraticCurveTo(-s * 0.35 + i * s * 0.26, s * 0.34, -s * 0.22 + i * s * 0.26, s * 0.42); } c.stroke(); }
+    else if (kind === 'air') { c.beginPath(); c.moveTo(0, -s * 0.48); c.lineTo(s * 0.06, -s * 0.1); c.lineTo(s * 0.46, s * 0.1); c.lineTo(s * 0.46, s * 0.2); c.lineTo(s * 0.06, s * 0.1); c.lineTo(s * 0.05, s * 0.32); c.lineTo(s * 0.16, s * 0.44);
+      c.lineTo(-s * 0.16, s * 0.44); c.lineTo(-s * 0.05, s * 0.32); c.lineTo(-s * 0.06, s * 0.1); c.lineTo(-s * 0.46, s * 0.2); c.lineTo(-s * 0.46, s * 0.1); c.lineTo(-s * 0.06, -s * 0.1); c.closePath(); c.fill(); }
+    else if (kind === 'lightrail' || kind === 'cablecar') { c.beginPath(); c.roundRect(-s * 0.4, -s * 0.22, s * 0.8, s * 0.5, s * 0.1); c.stroke(); c.fillRect(-s * 0.3, -s * 0.12, s * 0.6, s * 0.16);
+      if (kind === 'lightrail') { c.beginPath(); c.moveTo(-s * 0.16, -s * 0.22); c.lineTo(0, -s * 0.42); c.lineTo(s * 0.16, -s * 0.22); c.moveTo(-s * 0.3, -s * 0.46); c.lineTo(s * 0.3, -s * 0.46); c.stroke(); }
+      else { c.beginPath(); c.moveTo(0, -s * 0.22); c.lineTo(0, -s * 0.36); c.moveTo(-s * 0.48, -s * 0.36); c.lineTo(s * 0.48, -s * 0.36); c.stroke(); }
+      c.beginPath(); c.arc(-s * 0.2, s * 0.36, s * 0.06, 0, 7); c.arc(s * 0.2, s * 0.36, s * 0.06, 0, 7); c.fill(); }
+    else pict(c, 0, 0, s, 'train');
+    c.restore();
+  }
   function panel(c, x, y, w, h) { c.fillStyle = NAVY; c.fillRect(x, y, w, h); c.fillStyle = TEAL; c.fillRect(x, y + h - Math.max(3, h * 0.045), w, Math.max(3, h * 0.045)); }
 
   // ------------------------------------------------------------------------------------------------ station atlas
@@ -140,8 +163,17 @@ const MetroSigns = (() => {
     // system map
     drawMap(c, R.map, st.id);
     yield;
-    // info panel
-    { const [x, y, w, h] = R.info; panel(c, x, y, w, h); mark(c, x + 24, y + 24, 72); c.fillStyle = WHITE; c.textBaseline = 'middle'; fit(c, name, `600 #px ${FONT}`, w - 150, 70, 26); c.fillText(name, x + 116, y + 60);
+    // info panel: the station's transfers when it has any (the data's rider-facing, brand-neutral text: never the
+    // operator's name), else the station's name and lines
+    const xf = ((st.data && st.data.transfers) || []).filter(t => t && t.text);
+    if (xf.length) { const [x, y, w, h] = R.info; panel(c, x, y, w, h);
+      c.fillStyle = DIM; c.font = `600 24px ${FONTB}`; c.textBaseline = 'middle'; c.fillText('Transfers', x + 20, y + 20);
+      const rows = xf.slice(0, 2), rh = (h - 38) / rows.length;
+      rows.forEach((t, i) => { const cy = y + 38 + rh * (i + 0.5);
+        xpict(c, x + 52, cy, Math.min(58, rh * 0.78), t.kind);
+        const ls = wrap2(c, t.text, w - 120, rows.length > 1 ? 30 : 38, 18); c.fillStyle = WHITE; c.textBaseline = 'middle';
+        const lh = (+(/(\d+)px/.exec(c.font) || [0, 24])[1]) * 1.12; ls.forEach((ln, k) => c.fillText(ln, x + 104, cy + (k - (ls.length - 1) / 2) * lh, w - 116)); }); }
+    else { const [x, y, w, h] = R.info; panel(c, x, y, w, h); mark(c, x + 24, y + 24, 72); c.fillStyle = WHITE; c.textBaseline = 'middle'; fit(c, name, `600 #px ${FONT}`, w - 150, 70, 26); c.fillText(name, x + 116, y + 60);
       c.fillStyle = DIM; c.font = `500 30px ${FONTB}`; c.fillText('Bayline Metro · unofficial', x + 116, y + 118);
       lines.forEach((l, i) => { bullet(c, x + 40 + i * 58, y + 160, 18, l); }); }
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.generateMipmaps = true;

@@ -5,6 +5,26 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## Since the M3 report (09:10)
+
+- **M2b round 2 re-verified** (`#metrodir=metro-next/`, 08:06 data): platform check clean on 52 records (the guard
+  no longer moves anything), audit: SBRN is now a real 7.7 m island, CONC on its viaduct (lobby under the deck),
+  ASHB/DBRK escalator + stair on both banks, SFIA's side face narrowed to 5.2 m by a third track 8.7 m behind it
+  (stair, no escalator); views of SBRN, MLBR, MLPT, CONC, SFIA, DALY, BERY clean.
+- **Covered halls**: a platform mostly under a trench cover (Milpitas under the Montague lid) gets columns rising to
+  the soffit into branching struts, skylight drums and a light line instead of a canopy
+  (`shots/stations/mlpt_covered_hall.jpg`); Balboa Park's trench walls take its fluted precast finish and its
+  overhead conduit runs along each platform edge.
+- **End walls**: every subway box's end walls (both levels at 12th/19th) and every concourse's end walls were wound
+  outward and culled from inside (the platform ends looked like open tunnel mouths): now walls with the tunnel
+  openings around each track (found with the new `tools/metro_backfaces.js`); Embarcadero's SW end wall carries the
+  'Wall Canyon' relief (`shots/stations/embr_wall_canyon_end.jpg`); one-sided signs have a navy back.
+- **Transfer panels** (DATA's `stations[].transfers`, brand-neutral text, pictograms by kind) at each platform's
+  circulation and inside each concourse gate line, 21 stations.
+- **Entrances**: the Towns ground opens with the terrain's own fine cut test (BL_CUT + `Terrain.cutUniforms`);
+  collars on sidewalks follow the base ground 8 cm proud; Market St canopies stop short of a facade (Powell NE).
+  The jagged dark band beside Powell's NE entrance is the building's shadow-map edge, not geometry.
+
 ## Post-M3 backlog (first item, lead 09:00)
 
 1. **Millbrae cross-platform island**: Caltrain NB becomes the east face of the shared island (Peninsula layout `R`
@@ -12,6 +32,16 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
    open to the east; the BART face keeps its height (0.991 m over its rail) and the Caltrain face its own, with a ramp
    between; the shared hall's west column row then moves onto the island. Needs Peninsula platform geometry and the
    Caltrain door/stop logic: after the flip.
+2. **Market St Muni Metro level** (EMBR, MONT, POWL, CIVC; research: "the mezzanine looks down onto the Muni
+   platforms"): a platform level between the mezzanine and BART with its own box and track (trains later), its
+   escalators from the mezzanine, the BART wells passing it behind glass; transfer panels already say "City light rail
+   in the same station".
+3. **Signature pieces still missing**: SFO's Wind Portal (a 4.9 m radius drum of loose stainless discs around the
+   escalators up to the AirTrain level), Warm Springs' round glass entrance rotunda joined to the concourse by a
+   footbridge, Richmond's semicircular metal canopy over the west plaza, Lake Merritt's black tile circles and red
+   arrows, 16th/24th St William Mitchell reliefs along the escalator entries.
+4. Minor surfaces seen from behind (`tools/metro_backfaces.js`, a few rays each): well-end faces at 12th/19th St, the
+   shed canopy's end caps at SFO; low visibility, left for after the gate.
 
 ## M3 gate (2026-09-26 08:30 EDT): items 2-4 done, Millbrae shared hall done (09:40)
 
@@ -181,7 +211,15 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 - QA camera from the console: `__bayline.MetroStations.shot('MONT', { u: -30, v: 0, h: 1.65, yaw: 0.2, fov: 70 })`
   (u along the platforms from their middle, v to the right, h above the platform top; `cut: 6` = cutaway above that
   height with everything else hidden; `perf: true` = GPU cost and draw calls with/without the stations).
-- Many views in one page load: `python3 tools/wd.py 590 node tools/metro_shots.mjs --views views.json --out DIR`.
+- Many views in one page load: `python3 tools/wd.py 590 node tools/metro_shots.mjs --views views.json --out DIR`
+  (`--hash "metrodir=metro-next/"` for staged data, `--mobile` phone profile, `--allconsole` every console line,
+  `--rawhash "..."` + `--ready world` for metro-off comparisons, `--gc` exact heap after `gc()`).
+- QA tools (each an `evalFile` for metro_shots): `metro_station_audit.js` (levels vs ground/street, flags),
+  `metro_plat_check.js` (every platform body against every track, yards included), `metro_station_tour.js` (build,
+  hitch counters, console, memory), `metro_calls.js` (draw calls/triangles the whole metro adds to a view),
+  `metro_flyin.js` (cold approach: programs, frame times, the reveal frame), `metro_backfaces.js` (surfaces seen from
+  behind inside stations), `metro_intrusion.js` (OSM buildings / Peninsula objects on platforms),
+  `metro_keepout_map.js`, `metro_joint_map.js` (Millbrae).
 
 ## APIs (M1, stable)
 
@@ -237,21 +275,39 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   measured from the lobby's entrance end, at street level), `{ "name", "wait": 25000 }` + `--hash "mst=WOAK"` (the
   page's own camera, e.g. the lead's link).
 
-## Costs (measured 2026-09-26 05:30, High, 1600x900; draw calls and triangles are exact, the GPU times are not: six
-## workstreams' headless Chromes share the GPU, frames swing 45–270 ms)
+## Costs (M3, 2026-09-26 07:30, M2b, 1600x900; draw calls and triangles exact, GPU times not: shared GPU)
 
-| view | +draw calls | +triangles (incl. crowd) |
+Whole metro in a hero view on High (stations + guideway + trains; `tools/metro_calls.js`, every metro scene group
+hidden vs shown): +23 to +81 draw calls, +0.6 to +1.2 M triangles (crowds included).
+
+| view (17:30) | +draw calls | +triangles |
 |---|---|---|
-| Montgomery platform, AM peak crowd | +30 | +0.70 M |
-| 12th St lower level (stacked) | +32 | +0.27 M |
-| West Oakland street, lobby | +27 | +0.20 M |
-| Bay Fair from 120 m | +27 | +0.09 M |
-| West Dublin from the air (footbridge, walkways) | +25 | +0.08 M |
+| Embarcadero platform | +50 | +1.19 M |
+| Montgomery platform / street entrance | +40 / +23 | +0.97 / +0.67 M |
+| Powell platform | +44 | +0.80 M |
+| 12th St lower level | +55 | +1.04 M |
+| MacArthur platform / from the air | +56 / +81 | +0.97 / +0.98 M |
+| West Oakland lobby | +42 | +0.78 M |
+| SFO platform | +74 | +1.21 M |
+| Balboa Park platform | +43 | +0.70 M |
+| Millbrae from the air | +67 | +0.58 M |
 
-Builds: 0.4–1.5 s of time-sliced jobs per station (<= 3 ms a frame); all 51 footprints and ground pads at network
-load: ~230 ms once. Keep-out queries ~0.25 µs. Next: far LOD silhouettes for aerial stations, shadow-caster trims.
+Stations alone: 13-80 k triangles each (Low 33-76 k with a quarter of the crowd). Memory (forced GC, `--gc`): four
+Market St stations built = 14 MB of geometry in the JS heap; the geometry builders' working arrays (~4 MB a station)
+are released once the meshes exist (514 -> 498 MB for the whole page with those four). Builds: every step < 12 ms
+(stepped build + stepped attach + one material's shaders per step); footprints for all 52 records ~45 ms in the
+background at network load (< 11 ms per step). Phones (`--mobile`, Low): platform views 46-206 draw calls for the
+whole page.
 
 ## Requests
+
+### To WORLD — 2026-09-26 09:15
+
+- **Market & Post, NW corner (Montgomery St entrance A1)**: the open plaza there has no Towns surface, so it draws as
+  bare lidar ground with sand-like imagery and bumps up to ~1 m; the entrance's collar now sits on it at ground level.
+  A plaza area (or holding the detail layer at zero there, as under streets) would make it read as paving.
+- **Milpitas** (routed by the lead to INFRA): the cut-and-cover cell south of the station pokes above the shallow
+  ground; with my Towns-ground discard the road over it opens too.
 
 ### To WORLD (Towns) — keep-out, 2026-09-26
 
