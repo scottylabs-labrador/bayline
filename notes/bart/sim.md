@@ -6,9 +6,13 @@ Files owned: `src/js/46_metrosim.js`, `src/js/47_metro*.js` (`metroatc`, `metrop
 (`55_player.js`, `66_ui.js`, `70_sound.js`, `80_net.js`, `90_main.js`, `tools/devserver.py`). Everything is behind `#metro=1`
 (`MetroSim.enabled`; the lead flips `DEFAULT_ON` in `46_metrosim.js` to ship it by default; `#metro=0` forces it off).
 
-## Status (2026-09-26 01:50)
+## Status (2026-09-26 04:00)
 
-Working on the real MetroNet v0 + timetable (merged from `bart`), with placeholder consists until MetroKit lands:
+On `bart` 1f54fd2 (M1 integration: MetroNet v0 + timetable, infra guideway + Under, stations for all 50, MetroKit v0)
+plus the lead's QA list done (platform spawns, metro HUD at stations); MetroKit v1 (bart-trains) verified in a scratch
+build. Latest round: platform spawns with an open view beside where the next train will stand, the views following
+the next train due on that platform, MetroNet berth marks, MetroKit v1 PIS/VATC feeds, system-map labels that never
+collide, live mode verified against the real feed. Earlier notes below still hold:
 
 - **Timetable runtime** (`MetroSim`): every trip of the service day (today + yesterday's after-midnight trips), per
   pattern leg (EMU / the Antioch DMU / the airport cable train), split again at reversals (SFO); 1,059 trips planned
@@ -96,7 +100,30 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
 
 ## QA results
 
-2026-09-26 ~02:40, on the M1 integration build (`bart` merged: infra guideway + Under, stations for all 50, world
+### 2026-09-26 ~03:10–04:00 (sim.html on bart-sim 1d20226; the sim date is Saturday 9/26, so the Saturday timetable)
+
+- **Platform spawns (the lead's list)**, `#auto&metro=1&t=08:07&mst=<ST>`: EMBR, MONT, WOAK, 12TH, MCAR, MLBR all put the
+  walker on the stations' platform floor (`y` = `MetroStations.floorAt`: EMBR −15.46, MONT −8.05, WOAK 12.01 (aerial),
+  12TH −3.33, MCAR 34.84, MLBR 4.91), `onMetroFloor` true, HUD "<Station> · Bayline Metro" + the focused metro train
+  ("Red Line to Millbrae · 6 cars · 0 mph · at Embarcadero"), never a Peninsula train; prompts "Press E to board: …"
+  beside an open door, "Press B for <station> trains", Millbrae adds "E transfer to the Peninsula line". First pass
+  faced the escalator bank on the Market St island platforms; the spot picker now checks a 2 m corridor 16 m ahead for
+  escalator/stair slopes below 5.2 m and walls, and stands beside where the next train will stop. Contact sheet:
+  `notes/bart/shots/sim/mst_platform_spawns.jpg`.
+- **Next-train follow**: WOAK 08:07, the dwelling Antioch train left; the views moved to the next train due on that
+  platform (Red Line to Richmond, 55 mph, next West Oakland) without input.
+- **Platform sides**: 105/105 platforms audited against the stations' geometry, 0 mismatches.
+- **Live mode** (real clock 00:05 PT, `#auto&metro=1&mlive=1&mmap=1`, dev proxy): source GTFS-RT, 25 trips matched,
+  24 of 27 running trains on predicted times, map chip "Live: 25 trains from real-time trip updates", no errors.
+- **System map**: schematic, geographic (opens on the whole system when you're far from it) and train graph, no label
+  collisions (`notes/bart/shots/sim/map_*.jpg`).
+- **MetroKit v1** (bart-trains 7dd7d47 copied into a scratch build, not committed): consists, far batch (18–20 far
+  trains through `createFarBatch`), ride flow boarded / rode / alighted on v1 car metadata; cab feeds below.
+- **Kinematics** (Saturday, every leg, 1 s steps, 2.9 M samples): 0 position jumps, 0 samples over the effective limit,
+  max 70.0 mph, mean |deviation| 6.3 s from the published times, worst 40 s, 0 early origin departures; 1,241 runs
+  needed lifted v0 limit floors.
+
+### 2026-09-26 ~02:40, on the M1 integration build (`bart` merged: infra guideway + Under, stations for all 50, world
 north strip; placeholder consists until MetroKit is on `bart`):
 
 - **Metro ride** (`qa_metro_ride.js`, Balboa Park board → Daly City): clicked a train on the arrivals board → on the
