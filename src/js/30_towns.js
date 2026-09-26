@@ -1939,6 +1939,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh,
+  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

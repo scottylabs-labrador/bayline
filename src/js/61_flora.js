@@ -1404,7 +1404,7 @@ const Flora = (() => {
     return out;
   }
   return {
-    addDrop, adjust,
+    addDrop, adjust, refreshIn: (rects) => adjust(rects, null),
     init, update, hasData, covers: hasData, setQuality, dispose, group, stats, KINDS, DIM, treesNear,
     get ready() { return ready; }, get quality() { return qName; }, get radii() { return { near: q.near, mid: q.mid, far: q.far, load: q.load }; },
     _geo: { near: geoNear, mid: geoMid }, _atlas: () => atlasTex, _nrm: () => nrmTex, _imp: () => impTex, _tiles: tiles, addTestTile,
