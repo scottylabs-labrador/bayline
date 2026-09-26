@@ -49,7 +49,9 @@ const Under = (() => {
   function addCell(o) {
     if (!o || !o.id) return;
     if (cells.has(o.id)) removeCell(o.id, true);
-    const c = { id: o.id, kind: o.kind || 'cell', poly: o.poly || null, strip: o.strip || null, floor: o.floor, ceil: o.ceil, ambient: o.ambient || 0,
+    // ambient: a number (hemisphere-light units) or an [r, g, b] (its luminance is used; the tint is the shared one)
+    const amb = Array.isArray(o.ambient) ? 0.2126 * (+o.ambient[0] || 0) + 0.7152 * (+o.ambient[1] || 0) + 0.0722 * (+o.ambient[2] || 0) : (+o.ambient || 0);
+    const c = { id: o.id, kind: o.kind || 'cell', poly: o.poly || null, strip: o.strip || null, floor: o.floor, ceil: o.ceil, ambient: isFinite(amb) ? amb : 0,
       daylight: o.daylight || null, group: o.group || null, terrain: o.terrain !== false, mesh: null };
     if (c.strip) { c.rows = stripRows(c.strip); c.half = c.strip.half || 3; const b = bboxOf(c.strip.pts); c.bb = [b[0] - c.half - PAD, b[1] - c.half - PAD, b[2] + c.half + PAD, b[3] + c.half + PAD];
       c.floor = Math.min(...c.rows.map(r => r.floor)); c.ceil = Math.max(...c.rows.map(r => r.ceil)); }
@@ -104,12 +106,13 @@ const Under = (() => {
     return ins;
   }
   // strip: nearest point on the centreline -> { d (lateral distance), t (row index + fraction) }
+  // (beyond: metres past either end of the strip along its axis, 0 inside its length)
   function stripNear(c, x, z) {
-    const R = c.rows; let bd = 1e18, bt = 0;
-    for (let i = 0; i + 1 < R.length; i++) { const a = R[i], b = R[i + 1], dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
-      const t = U.clamp(((x - a.x) * dx + (z - a.z) * dz) / L2, 0, 1), px = a.x + dx * t - x, pz = a.z + dz * t - z, d = px * px + pz * pz;
-      if (d < bd) { bd = d; bt = i + t; } }
-    return { d: Math.sqrt(bd), t: bt };
+    const R = c.rows, n = R.length; let bd = 1e18, bt = 0, beyond = 0;
+    for (let i = 0; i + 1 < n; i++) { const a = R[i], b = R[i + 1], dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
+      const tr = ((x - a.x) * dx + (z - a.z) * dz) / L2, t = U.clamp(tr, 0, 1), px = a.x + dx * t - x, pz = a.z + dz * t - z, d = px * px + pz * pz;
+      if (d < bd) { bd = d; bt = i + t; beyond = (i === 0 && tr < 0) ? -tr * Math.sqrt(L2) : (i === n - 2 && tr > 1) ? (tr - 1) * Math.sqrt(L2) : 0; } }
+    return { d: Math.sqrt(bd), t: bt, beyond };
   }
   function rowAt(c, t) { const i = Math.min(c.rows.length - 2, Math.floor(t)), f = t - i, a = c.rows[i], b = c.rows[i + 1];
     return { floor: a.floor + (b.floor - a.floor) * f, ceil: a.ceil + (b.ceil - a.ceil) * f, day: a.day + (b.day - a.day) * f }; }
@@ -121,7 +124,7 @@ const Under = (() => {
     for (const id of cellsNear(x, z)) {
       const c = cells.get(id); if (!c) continue;
       if (x < c.bb[0] - pad || x > c.bb[2] + pad || z < c.bb[1] - pad || z > c.bb[3] + pad) continue;
-      if (c.strip) { const n = stripNear(c, x, z); if (n.d > c.half + pad) continue; const r = rowAt(c, n.t); if (y < r.floor - 0.3 - pad || y > r.ceil + 0.3 + pad) continue; }
+      if (c.strip) { const n = stripNear(c, x, z); if (n.d > c.half + pad || n.beyond > 0.05 + pad) continue; const r = rowAt(c, n.t); if (y < r.floor - 0.3 - pad || y > r.ceil + 0.3 + pad) continue; }
       else { if (y < c.floor - 0.3 - pad || y > c.ceil + 0.3 + pad) continue; if (!inPoly(c.poly, x, z)) continue; }
       const A = (c.bb[2] - c.bb[0]) * (c.bb[3] - c.bb[1]); if (A < bestA) { bestA = A; best = c.id; }
     }
@@ -420,15 +423,18 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     lastCam.copy(cp);
   }
   // around the draw: hide cells nobody can see and, while no opening to the outdoors is in view, the outdoor world
-  const hidden = [];
+  const hidden = [], anc = new Set();
   function preRender() {
     hidden.length = 0;
     if (!cells.size) return;
     const under = !!state.cell;
     for (const c of cells.values()) if (c.group) { const v = state.visible.has(c.id); if (c.group.visible && !v) { c.group.visible = false; hidden.push(c.group); } }
     if (under && !state.outsideVisible) {
-      for (const o of Env.scene.children) {
-        if (!o.visible || o.isLight || o.isCamera || o.userData.blUnderKeep || keepSet.has(o)) continue;
+      // never cull a top-level object that holds a registered cell's group (a module's station / tunnel root)
+      anc.clear(); const scene = Env.scene;
+      for (const c of cells.values()) { let o = c.group; while (o && o.parent && o.parent !== scene) o = o.parent; if (o && o.parent === scene) anc.add(o); }
+      for (const o of scene.children) {
+        if (!o.visible || o.isLight || o.isCamera || o.userData.blUnderKeep || keepSet.has(o) || anc.has(o)) continue;
         if (o.type === 'Object3D' && !o.children.length) continue;            // light targets
         o.visible = false; hidden.push(o);
       }

@@ -1,0 +1,768 @@
+[
+ {
+  "id": "FTVL",
+  "name": "Fruitvale",
+  "structure": "aerial",
+  "structure_notes": "Elevated (viaduct) station on the original 1972 Oakland–Fremont A-Line. It has two side platforms on a concrete aerial structure, a street-level fare lobby underneath, and the AC Transit busway and BART garage alongside. BART's 1972 design release put Fruitvale with Hayward as the 'airy grace' stations among the line's aerial stations, which all share the same platform length and canopy height.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "serves": "Platform 1 = southbound track (to Coliseum/Fremont/Berryessa/Dublin); Platform 2 = northbound track (to Lake Merritt/SF/Richmond). Labels from bart.gov.",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "700 ft BART-standard platforms. BART in 1972: 'identical platform length and canopy height' across the Oakland–Fremont aerial stations."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Street-level fare lobby under the aerial platforms. Escalators and stairs go up to each side platform, plus a separate elevator for each platform.",
+   "notes": "No published platform height found. Measure from lidar/DSM."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Neill Smith & Associates (design) with Reynolds & Chamberlain (production), per BART's Sept 1972 release. Wikipedia (Cerny guidebook) lists Neil Smith / Reynolds & Chamberlain.",
+  "era": "Original 1972 BART aerial station. Fruitvale Village TOD 2004 (garage, plaza), more TOD 2019 and 2024, seismic retrofit work c. 2018, new faregates 2024.",
+  "recognisable": "Long side-platform canopies with reddish-brown slatted ceilings on concrete columns, edged by a sloped band of clerestory glazing, over red quarry-tile paving. Underneath, the trackway is an angular, board-marked concrete structure on large piers. At street level it is flanked by the AC Transit busway with blue gabled shelters and the 2004 BART garage. The Fruitvale Village transit village and newer apartment blocks surround the station, which is widely known from the 2009 Oscar Grant shooting and the film 'Fruitvale Station'.",
+  "entrances": "Street-level fare lobby under the tracks near 35th Ave (address 3401 E 12th St). It opens toward the busway, the BART garage and the Fruitvale Village paseo, which leads northeast to International Blvd. The AC Transit Tempo (1T) BRT stop is about 600 ft (183 m) northeast on International Blvd.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Fruitvale_station",
+   "https://www.bart.gov/stations/ftvl",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://commons.wikimedia.org/wiki/File:Platform_canopies_at_Fruitvale_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Fruitvale_station_from_garage_(1),_March_2018.JPG"
+  ]
+ },
+ {
+  "id": "COLS",
+  "name": "Coliseum (BART), including Oakland Airport Connector 'Platform 3'",
+  "structure": "aerial",
+  "structure_notes": "Elevated complex on three levels. (1) Ground-level fare control and concessions on the east side of San Leandro St, under the north end of the BART platform. (2) BART island platform on a concrete aerial structure along San Leandro St. (3) Oakland Airport Connector (OAC) station on the west side of San Leandro St, reachable only from the BART platform. The at-grade UP Oakland Subdivision runs along the east side. The separate at-grade Amtrak Oakland Coliseum platform (UP Niles Subdivision, 3 tracks, 1 side platform, opened 2005) is about 600 ft away and linked by the footbridge.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Platform 1 = southbound BART track; Platform 2 = northbound BART track; 'Platform 3' = OAC. bart.gov lists 'Southbound Platform 1, 3'.",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "700 ft BART-standard island platform."
+  },
+  "oac_station": {
+   "tracks": 1,
+   "platforms": 1,
+   "platform_type": "Side platform on a single-track stub (pinched-loop terminal), with platform screen doors",
+   "location": "West side of San Leandro St, opposite the BART platforms. Riders walk to the south end of the BART platform, take a short up-escalator to an elevated walkway over San Leandro St, pass the OAC faregates and reach Platform 3. There is no non-emergency street access.",
+   "notes": "The two OAC guideway lanes merge into one track just before the station, and trains change cable loop during the dwell. Rounded metal canopy, white round columns and art-glass walls: 'A-Round Oakland' by Gordon Huether, about 50 dichroic glass circles 18–36 in across.",
+   "opened_date": "2014-11-22"
+  },
+  "levels": {
+   "platform_above_street_m": 10.7,
+   "platform_below_street_m": null,
+   "concourse": "Ground-level fare lobby east of San Leandro St, under the north end of the platform. OAC Platform 3 is higher (third level), reached by escalator and walkway from the south end of the BART platform.",
+   "notes": "The 10.7 m (35 ft) is derived, not published. The 2002 OAC FEIR put its then-proposed people-mover platform 'approximately 55 feet above San Leandro Street and approximately 20 feet above the BART tracks and BART platform'. The as-built OAC platform height is not published: the FEIR concept was 55 ft (16.8 m), but the station was later moved across San Leandro St."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Neill Smith & Associates (design) with Reynolds & Chamberlain (production), per BART's Sept 1972 release. Footbridge by Skidmore, Owings & Merrill (opened 1974, stiffened 1975). OAC station by the design-build Flatiron/Parsons JV with Doppelmayr Cable Car.",
+  "era": "1972 A-Line aerial station, 1974 footbridge, 2005 Amtrak platform, 2014 OAC, 2019 Coliseum Connections TOD.",
+  "recognisable": "A long, flat island-platform canopy on a plain concrete viaduct beside San Leandro St; BART in 1972 called it 'handsomely stark functionality'. A 950 ft (290 m) concrete footbridge runs from the station over San Leandro St and the UP tracks to the Oakland Coliseum and Arena. The white steel-truss OAC guideway curves south from Platform 3, which has a rounded metal canopy and colourful art glass. The five-storey modular Coliseum Connections apartment block (2019) stands on the former station lot.",
+  "entrances": "Ground-level fare lobby east of San Leandro St. AC Transit stops are on both sides of San Leandro St, there is a shuttle/loading zone at the southeast corner of San Leandro St and 71st Ave, and a taxi stand on the west side north of 71st Ave. An accessible pedestrian underpass with wheelchair lifts runs under the UP Oakland Subdivision to the east parking lot and Snell St. The footbridge leads to the Coliseum complex, with a ramp down to the Amtrak platform. The OAC can only be reached from the BART platform.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "levels.platform_above_street_m": "medium",
+   "oac_station.tracks": "high",
+   "oac_station.platforms": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Oakland_Coliseum_station",
+   "https://www.bart.gov/stations/cols",
+   "https://www.bart.gov/sites/default/files/docs/OAC_FEIR-FEIS_Volume_1_Part_1.pdf",
+   "https://web.archive.org/web/2017/http://www.oaklandairport.com/wp-content/uploads/2016/05/BARTtoOAKFAQ.pdf",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://en.wikipedia.org/wiki/Oakland_Airport_Connector",
+   "https://commons.wikimedia.org/wiki/File:Oakland_Coliseum_BART_station_from_pedestrian_bridge,_November_2017.jpg",
+   "https://commons.wikimedia.org/wiki/File:Aerial_view_of_Coliseum_station_complex_(1),_October_2020.JPG",
+   "https://commons.wikimedia.org/wiki/File:OAC_platform_at_Coliseum_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Coliseum_station_from_OAC_level,_July_2017.JPG"
+  ]
+ },
+ {
+  "id": "SANL",
+  "name": "San Leandro",
+  "structure": "aerial",
+  "structure_notes": "Elevated station in downtown San Leandro (1401 San Leandro Blvd, off Davis St). Two side platforms sit on a concrete aerial structure, with the fare lobby and faregates at ground level underneath. The busway on the east side was rebuilt in 2019–20 for Tempo BRT.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "serves": "Platform 1 = southbound; Platform 2 = northbound (bart.gov)",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "700 ft BART-standard platforms."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Ground-level fare lobby under the aerial structure, with elevators from the lobby to each side platform.",
+   "notes": "No published height found."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Joseph Esherick & Associates (design) with Masten & Hurd, Inc. (production), per BART's Sept 1972 list. Wikipedia (Cerny) credits Gwathmey, Sellier & Crosby with Joseph Esherick & Associates.",
+  "era": "1972 A-Line aerial station. Marea Alta TOD 2017 and 2019. A fire in May 2025 damaged train-control equipment here.",
+  "recognisable": "BART's 1972 release singled out 'the strong massiveness of the San Leandro Station'. The platform level is boxed in by solid grey-painted panel walls with ribbon windows, on a heavy concrete deck with large diagonal concrete stair and escalator enclosures cutting down to the ground. A tall blue elevator tower stands on the west side. The platform canopies are flat and steel-framed, with a yellow fascia on one side and blue screen walls on the other.",
+  "entrances": "Ground-level lobby under the structure. The AC Transit / Tempo 1T / LINKS busway is on the east side, with parking lots on both sides. Elevators in the lobby serve each platform.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/San_Leandro_station",
+   "https://www.bart.gov/stations/sanl",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://commons.wikimedia.org/wiki/File:West_side_of_San_Leandro_station,_April_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Northbound_train_at_San_Leandro_station,_January_2018.JPG"
+  ]
+ },
+ {
+  "id": "BAYF",
+  "name": "Bay Fair",
+  "structure": "aerial",
+  "structure_notes": "Elevated 700 ft station next to Bayfair Center mall (15242 Hesperian Blvd). A single island platform sits on a concrete aerial deck over a ground-level fare lobby. It has been a junction since 10 May 1997: the Dublin/Pleasanton branch (L-Line) splits off just southeast of the station through a flying junction (flyover) that passes under the I-238 overpass. No third track or platform has been added. The station is still 1 island platform and 2 tracks, and bart.gov shows only Platforms 1 and 2 (Sept 2026).",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Platform 1 = southbound track (toward Hayward/Fremont/Berryessa and toward Castro Valley/Dublin); Platform 2 = northbound track (toward San Leandro/Oakland). Since the 10 Aug 2026 timetable, Blue Line trains from Dublin and Orange Line trains to Berryessa are timed to 'pull up together' for a cross-platform transfer across the island.",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "The 1972 release calls it a '700-foot aerial station'. Several crossovers and the diverging L-Line tracks fan out immediately southeast of the platform."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Ground-level fare lobby under the platform, entered beneath a flat concrete canopy. An elevator and stairs/escalators go up to the island.",
+   "notes": "No published height found."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Gwathmey, Sellier & Crosby / Joseph Esherick & Associates (BART 1972 preview release; also Cerny via Wikipedia). BART's Sept 1972 list credits Masten & Hurd, Inc. for production. 1972 cost about $1,132,255.",
+  "era": "1972 A-Line aerial station, 1997 L-Line flying junction, elevator faregate 2021.",
+  "recognisable": "Island platform under steel canopies with green-painted fascias and a perforated green screen band. The platform is broken up by a rough board-formed concrete stair/elevator core with small square window openings, and by glazed windscreen shelters. At street level a flat, green-painted concrete canopy on round columns fronts the fare lobby. The Dublin-line flyover and the I-238 overpass sit just southeast, with Bayfair Center mall next door.",
+  "entrances": "Main entrance on the north side, with the AC Transit bus transfer area and parking. A pedestrian tunnel under the UP Oakland Subdivision links the fare lobby to the south/west parking lot. The 1972 release describes 'parking lots on either side that are connected by a pedestrian overpass with the entrance canopy on the eastern side'.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Bay_Fair_station",
+   "https://www.bart.gov/stations/bayf",
+   "https://www.bart.gov/news/articles/2026/news20260709",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://commons.wikimedia.org/wiki/File:Main_entrance_to_Bay_Fair_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Northbound_train_at_Bay_Fair_station,_May_2024.jpg",
+   "https://commons.wikimedia.org/wiki/File:Southbound_train_leaving_Bay_Fair_station,_May_2024.jpg",
+   "https://commons.wikimedia.org/wiki/File:BART_flyover_east_of_Bay_Fair_station,_January_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Pedestrian_tunnel_at_Bay_Fair_station,_July_2018.JPG"
+  ]
+ },
+ {
+  "id": "HAYW",
+  "name": "Hayward",
+  "structure": "aerial",
+  "structure_notes": "Elevated station with two side platforms in downtown Hayward (699 B St). The concrete aerial deck is carried on large T-bents and runs beside the at-grade UP Oakland Subdivision (former Western Pacific) on its east side.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "serves": "Platform 1 = southbound; Platform 2 = northbound (bart.gov)",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "700 ft BART-standard platforms."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Ground-level fare lobby under the tracks, with a pedestrian tunnel under the UP tracks to the east side.",
+   "notes": "No published height found."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Wurster, Bernardi & Emmons, Inc. (BART 1972 list; Cerny via Wikipedia).",
+  "era": "1972 A-Line aerial station. 1998 TOD with a five-level garage, townhomes, Hayward City Hall and a Greyhound stop. New faregates Dec 2024.",
+  "recognisable": "Long, low side-platform canopies with brown slatted ceilings, a beige fascia and a sloped clerestory glazing band over dark brown tile paving; BART in 1972 grouped it with Fruitvale for 'airy grace'. Seen from the adjacent Union Pacific tracks, the station is a strong horizontal: a concrete deck on sculpted T-bents, topped by a dark windscreen band and beige steel canopy outriggers. The 1998 five-level BART garage and the Hayward City Hall complex stand next to it.",
+  "entrances": "Two-lane AC Transit bus terminal on the northeast side, with the Greyhound stop near B St. A pedestrian tunnel under the UP Oakland Subdivision leads to the parking lot and five-level garage. There is also a south plaza.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Hayward_station_(BART)",
+   "https://www.bart.gov/stations/hayw",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://commons.wikimedia.org/wiki/File:Platform_canopies_at_Hayward_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Hayward_station_and_Oakland_Subdivision,_May_2024.JPG"
+  ]
+ },
+ {
+  "id": "SHAY",
+  "name": "South Hayward",
+  "structure": "aerial",
+  "structure_notes": "BART called it a '700 foot aerial station' in 1972 and Wikipedia calls it elevated. Photos, however, show ballasted track between the side platforms and a tiled pedestrian underpass beneath them. The platforms appear to sit on a raised retained-fill embankment rather than an open viaduct, with the concourse at ground level. Located off Tennyson Rd at Dixon St.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "serves": "Platform 1 = southbound; Platform 2 = northbound (bart.gov)",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "Unique in BART: the elevators to both platforms are reached by a fenced path and an overhead footbridge, not directly from the fare lobby."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Ground-level station building and fare lobby. A pedestrian underpass runs beneath the tracks with stairs up to each platform, and a separate overhead footbridge serves the elevators.",
+   "notes": "Height not published. The embankment reading is based on photos (medium confidence)."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Kitchen & Hunt (BART 1972).",
+  "era": "1972 A-Line station. 357-unit TOD completed 2017.",
+  "recognisable": "Deliberately residential in scale. BART in 1971 said the entrance 'has a peaked roof like that of a small residence'. In 1972 it described the station as 'three interlocking hexagonal structures', two enclosed and the middle one open under wide overhangs. In practice these are low hexagonal pavilions with broad, shallow hip roofs, exposed rafters and board-formed concrete. The platforms have low hipped canopies with bronze standing-seam metal roofs over ballasted track, with the East Bay hills behind.",
+  "entrances": "Main entrance pavilion on the Dixon St side, with AC Transit bus bays. An underpass beneath the tracks connects both sides, and a fenced path leads to the elevator footbridge. Large surface parking lot and the 2017 apartment TOD.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/South_Hayward_station",
+   "https://www.bart.gov/stations/shay",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1971%20News%20Releases.pdf",
+   "https://commons.wikimedia.org/wiki/File:Canopies_at_South_Hayward_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Entrance_to_South_Hayward_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Pedestrian_underpass_at_South_Hayward_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Northbound_train_leaving_South_Hayward_station,_May_2024.JPG",
+   "https://commons.wikimedia.org/wiki/File:Pathway_to_elevator_bridge_at_South_Hayward_station,_March_2018.JPG"
+  ]
+ },
+ {
+  "id": "UCTY",
+  "name": "Union City",
+  "structure": "aerial",
+  "structure_notes": "BART called it an 'aerial-type facility' in 1972. Photos show the side platforms raised on fill with ballasted track and a pedestrian passage under the platforms, so it is effectively an embankment station. It sits beside the UP Oakland Subdivision (former Western Pacific), south of Decoto Rd, behind James Logan High School.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "serves": "Platform 2 = northbound = east platform (Wikipedia describes new escalators to the 'east (northbound)' platform). Platform 1 = southbound = west platform.",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "700 ft platform, 'standard for all BART stations' (BART 1972)."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Ground-level fare lobby on the west side (expanded 'atrium', 2017), with a passage under the platforms. Stairs, escalators and elevators go up to each platform.",
+   "notes": "Height not published. The embankment reading is based on photos (medium confidence)."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Kitchen & Hunt (BART 1972; about $1.2 million). Fare-lobby tile mosaics by Jean Varda, made by Alfonso Pardiñas.",
+  "era": "1972 A-Line station. Intermodal area and roadway rebuilt 2008–2012, lobby expanded 2017, east-platform escalators 2019–2022. An east entrance with an at-grade UP crossing was expected around 2025, and an ACE commuter-rail platform is proposed for about 2030.",
+  "recognisable": "Now mostly 21st-century in appearance. The fare lobby is a white block with horizontal louvers, a glazed clerestory and 'UNION CITY STATION' lettering, and the bus bays have solar-panel canopies. Up top, the side platforms have flat white canopies on yellow-painted columns behind tall vertical-bar metal fences, with Mission Peak rising to the east. Jean Varda's tile mosaics survive inside the fare lobby.",
+  "entrances": "Main west entrance on the intermodal loop (access from Union Square / Decoto Rd), with bus bays for AC Transit, Union City Transit and Dumbarton Express. The passage under the platforms (its central part made unpaid in 2017) leads to the future east entrance. An at-grade pedestrian crossing of the UP tracks on the east side was approved in 2017.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Union_City_station",
+   "https://www.bart.gov/stations/ucty",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://commons.wikimedia.org/wiki/File:Union_City_station_platforms,_July_2017.JPG",
+   "https://commons.wikimedia.org/wiki/File:Two_trains_at_Union_City_station,_October_2017.JPG",
+   "https://commons.wikimedia.org/wiki/File:Union_City_station_from_busway,_April_2024.jpg",
+   "https://commons.wikimedia.org/wiki/File:Main_entrance_to_Union_City_station,_April_2024.jpg",
+   "https://commons.wikimedia.org/wiki/File:Central_passage_at_Union_City_station,_April_2024.jpg"
+  ]
+ },
+ {
+  "id": "FRMT",
+  "name": "Fremont",
+  "structure": "aerial",
+  "structure_notes": "BART called it a '700 foot aerial structure' in 1972. Photos show the island platform on top of a long concrete retaining-wall podium or embankment, with ballasted track and pedestrian underpasses beneath, not an open viaduct. It was the terminus from 1972 to 2017. Since 2017 the Warm Springs line continues south from the platform end on embankment, crosses Walnut Ave on an aerial structure and enters the Central Park subway. The A85 interlocking just north/west of the station is being rebuilt in 2026–27.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Platform 1 = southbound; Platform 2 = northbound (bart.gov)",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "700 ft island platform."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Ground-level lobbies on the west (original) and east (1980) sides. They are joined by a main underpass with faregates on both sides, plus a secondary free underpass beneath the tracks. Escalators, stairs and an elevator go up to the island.",
+   "notes": "Height not published."
+  },
+  "opened": 1972,
+  "opened_date": "1972-09-11",
+  "architect": "Kitchen & Hunt (BART 1972; cost slightly over $2 million).",
+  "era": "1972 terminal station (the 'Fremont Flyer' overran the end of the track on 2 Oct 1972). East entrance and bus plaza 1980, renovation 1997, through station since 2017.",
+  "recognisable": "A long, low station on a concrete podium wall, with a continuous red-orange roof fascia along the platform canopy. On the island platform, blue-grey steel pergola-like frames flank a central enclosed canopy with a red soffit, over brick-red paver bands and drum-shaped concrete benches, with Mission Peak as the backdrop. BART's 1972 release highlighted 'a large sunken rectangular plaza with porcelain enamel steel panels, and giant glass windows'.",
+  "entrances": "West entrance on the Civic Center Dr / BART Way side, near Washington Hospital. East entrance with a 3-lane AC Transit bus plaza (opened 1980). Underpasses run under the tracks. Large surface lots, including the Mowry Ave lot to the north.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Fremont_station_(BART)",
+   "https://www.bart.gov/stations/frmt",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1972%20News%20Releases.pdf",
+   "https://www.bart.gov/about/projects/wsx/alignment",
+   "https://commons.wikimedia.org/wiki/File:South_side_of_Fremont_station,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Fremont_station_platform_panorama,_October_2017.jpg",
+   "https://commons.wikimedia.org/wiki/File:Southbound_train_at_Fremont_station,_October_2017.JPG",
+   "https://commons.wikimedia.org/wiki/File:Pedestrian_tunnel_at_Fremont_station,_March_2018.JPG"
+  ]
+ },
+ {
+  "id": "WARM",
+  "name": "Warm Springs/South Fremont",
+  "structure": "surface",
+  "structure_notes": "At-grade island platform between surface tracks, with a fare concourse (mezzanine) spanning the tracks above the platform. BART describes it as 'an at-grade island platform with an overhead concourse'. The UP Warm Springs Subdivision runs just west. It is the southern end of the 5.4 mi Warm Springs Extension; the VTA Berryessa extension starts just south of it (STA 35+00).",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Platforms 1 and 2. bart.gov currently lists departures under a combined 'Platform 1, 2' heading, so which side serves which direction is not confirmed.",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "Length assumed to be the BART-standard 700 ft (not explicitly documented)."
+  },
+  "levels": {
+   "platform_above_street_m": 0.0,
+   "platform_below_street_m": null,
+   "concourse": "Mezzanine one level above the platform, spanning the tracks. A footbridge links it to the east entrance rotunda, and the 2022 West Access Bridge links it to a west plaza. Stairs, escalators and an elevator go down to the island.",
+   "notes": "Mezzanine height not published."
+  },
+  "opened": 2017,
+  "opened_date": "2017-03-25",
+  "architect": "Robin Chiang & Company (conceptual and preliminary design, under Parsons Brinckerhoff), with HNTB doing final design for the design-build Line, Track, Station & Systems contract.",
+  "era": "2017 Warm Springs Extension station. West Access Bridge 2022.",
+  "recognisable": "A large overhead concourse bridges the at-grade platform. It is a long cantilevered box with an upswept shed roof, a warm wood-slat soffit, blue/grey patterned glazing and coloured glass panels, beside a stair/elevator tower clad in steel mesh. You enter through a round glass rotunda (with Catherine Widgery's artwork 'Sky Cycles') joined to the concourse by a footbridge. A cable-stayed pedestrian and bike bridge (2022, $41M) crosses west over the UP tracks toward the Tesla factory area.",
+  "entrances": "East side: rotunda entrance off Warm Springs Blvd, with 7 bus bays to its south and a parking lot of about 2,000 spaces (42 EV chargers). West side: the West Access Bridge & Plaza, running from the mezzanine over the UP tracks (opened 3 Feb 2022).",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "medium",
+   "levels.platform_above_street_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Warm_Springs/South_Fremont_station",
+   "https://www.bart.gov/about/projects/wsx",
+   "https://www.bart.gov/about/projects/wsx/alignment",
+   "https://www.bart.gov/stations/warm",
+   "https://commons.wikimedia.org/wiki/File:Warm_Springs_station_panorama_from_parking_lot,_June_2018.jpg",
+   "https://commons.wikimedia.org/wiki/File:Platform_level_at_Warm_Springs_station,_June_2018.JPG"
+  ]
+ },
+ {
+  "id": "MLPT",
+  "name": "Milpitas (Milpitas Transit Center)",
+  "structure": "trench",
+  "structure_notes": "The BART tracks run roughly north–south in a retained cut (a U-shaped walled trench) below street level. The ground-level station building roofs over the platforms and has skylights. The cut runs from about STA 353+00 to 414+00 (about 1.8–1.9 km). Montague Expwy, Capitol Ave and Trade Zone Blvd cross over it at street level on new bridges. VTA fact sheets describe a 'ground-level concourse with below-ground boarding platforms'. The elevated VTA light-rail Milpitas station (2004) is next to it, over Capitol Ave.",
+  "tracks": 2,
+  "platforms": {
+   "count": 2,
+   "type": "side",
+   "serves": "Platform 1 = southbound (Berryessa); Platform 2 = northbound (Richmond/Daly City), per bart.gov and platform signs.",
+   "length_m": 213.4,
+   "width_m": 4.9,
+   "notes": "Two side platforms in the retained cut, each 700 ft long and at least 16 ft (4.9 m) wide (2011 SEIR). Crossovers sit in the cut just north of the station (STA 358+00 and 366+00)."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Street-level concourse and fare lobbies in the station building: a central corridor with fare control on both sides, stairs and escalators down, and elevators in the north fare area.",
+   "notes": "Exact platform depth is not published. The 2007 SEIR says the adjoining cut south to Trade Zone Blvd is 'generally less than 30 feet' (9.1 m) deep and 10 ft (3 m) at its shallowest. Because roads cross the cut at street level, the top of rail is well over one storey below the street."
+  },
+  "opened": 2020,
+  "opened_date": "2020-06-13",
+  "architect": null,
+  "era": "2020 VTA BART Silicon Valley Phase I station, built and owned by VTA and operated by BART. Bus plaza opened Dec 2019; Montague Expwy footbridge July 2021.",
+  "recognisable": "A low, wide station building (about 430 × 160 ft) with a sweeping, undulating sage-green standing-seam metal roof and large circular skylight drums. The curved glass front carries 'MILPITAS' lettering and the stained-glass artwork 'Ethos of Imagination' by BJ Katz and Chris Klein. Down in the trench, 20 columns clad in ochre ikat-pattern tiles ('Ecstatic Voyaging' by Amy Trachtenberg) rise into branching concrete arches. A footbridge links the station to the elevated VTA light-rail platform, and a six-storey garage stands to the east.",
+  "entrances": "East and west entrances near the south end of the building open into a central corridor. A footbridge from the west side leads to the VTA light-rail mezzanine over Capitol Ave. A 229 ft (70 m) footbridge over Montague Expwy reaches level 2 of the garage. The VTA/AC Transit bus plaza is west of the building.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "platforms.width_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Milpitas_station",
+   "https://www.bart.gov/stations/mlpt",
+   "https://www.vta.org/sites/default/files/2019-09/BEP-Milpitas-Station-032017%28060818edit%29.pdf",
+   "https://www.vta.org/sites/default/files/2023-12/VTABSV_FactSheet_2023_Phase%20I%20Berryessa_0.pdf",
+   "https://www.vta.org/sites/default/files/documents/3.0_recommended_project_description.pdf",
+   "https://www.vta.org/sites/default/files/documents/3_0.pdf",
+   "https://www.vta.org/public-art-bart-silicon-valley-phase-i-stations",
+   "https://www.vta.org/blog/building-benefits-vtas-bart-phase-i-extension",
+   "https://commons.wikimedia.org/wiki/File:Milpitas_station_headhouse_from_garage,_June_2020.JPG",
+   "https://commons.wikimedia.org/wiki/File:Platforms_at_Milpitas_station,_June_2020.JPG"
+  ]
+ },
+ {
+  "id": "BERY",
+  "name": "Berryessa/North San José",
+  "structure": "aerial",
+  "structure_notes": "Elevated. North of Berryessa Rd the line climbs from ground level onto retained fill and then an aerial structure. It crosses over Berryessa Rd and Upper Penitencia Creek into an aerial island-platform station on a concrete viaduct with round columns. It continues over Mabury Rd and comes back down to ground level south of Mabury (about STA 560). The street-level concourse sits under the middle of the platform. This is the current southern terminus of the Orange and Green lines.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Terminal: bart.gov lists departures from both Platform 1 and Platform 2.",
+   "length_m": 213.4,
+   "width_m": 8.8,
+   "notes": "Centre platform about 700 × 29–30 ft (213 × 8.8–9.1 m), per the 2011 SEIR and DEIS. South of the station, the 2011 SEIR design has two crossovers and a pocket track on the aerial structure and its ramp. Both main tracks continue as tail tracks to Las Plumas Ave (STA 569+00, about 0.9 km past the platform) and end at high-rail access points, with a maintenance-of-way siding on the east side (STA 556+50–569+00). Phase II will continue from here into a tunnel toward 28th Street/Little Portugal (about 2036–37)."
+  },
+  "levels": {
+   "platform_above_street_m": 10.7,
+   "platform_below_street_m": null,
+   "concourse": "Street-level concourse (fare lobby) under the middle of the platform, with stairs, escalators and elevators up.",
+   "notes": "VTA fact sheet: 'aerial boarding center platform 35 feet above ground'. The FEIS puts the aerial structure about 22 ft (6.7 m) above Berryessa Rd."
+  },
+  "opened": 2020,
+  "opened_date": "2020-06-13",
+  "architect": null,
+  "era": "2020 VTA BART Silicon Valley Phase I terminal station, built and owned by VTA and operated by BART. Bus center opened Dec 2019.",
+  "recognisable": "A long elevated concrete viaduct station whose platform canopy is held up by sage-green, undulating steel truss frames, meant to suggest the flow of the nearby creeks. Below is a glazed street-level concourse fronted by spherical bollards. Larry Kirkland's 15 ft bronze wheel sculpture 'LIFE!' stands outside, and a small signal tower / operator building sits at the platform end. The San Jose Flea Market is next door and a seven-storey garage stands to the south.",
+  "entrances": "Street-level concourse with entrances on the north, south and east sides (2011 SEIR). Two-lane bus transit center at the north end, on Berryessa Station Way. Stairs up from the San Jose Flea Market side. Bike station under the north end of the platform. Garage plus surface lots, 1,527 spaces in total.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "high",
+   "platforms.width_m": "medium",
+   "levels.platform_above_street_m": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Berryessa/North_San_Jos%C3%A9_station",
+   "https://www.bart.gov/stations/bery",
+   "https://www.vta.org/sites/default/files/2023-12/VTABSV_FactSheet_2023_Phase%20I%20Berryessa_0.pdf",
+   "https://www.vta.org/sites/default/files/2019-11/BEP-Berryessa-Station-060818.pdf",
+   "https://www.vta.org/sites/default/files/documents/3.0_recommended_project_description.pdf",
+   "https://www.vta.org/sites/default/files/2019-10/Chapter%202%20Alternatives.pdf",
+   "https://www.vta.org/sites/default/files/documents/05.14_VisualAesthetics_EC.pdf",
+   "https://www.vta.org/public-art-bart-silicon-valley-phase-i-stations",
+   "https://commons.wikimedia.org/wiki/File:Berryessa_station_from_the_north,_June_2020.JPG",
+   "https://commons.wikimedia.org/wiki/File:Berryessa_station_from_parking_garage,_June_2020.JPG"
+  ]
+ },
+ {
+  "id": "CAST",
+  "name": "Castro Valley",
+  "structure": "median",
+  "structure_notes": "In the centre median of I-580 on a low embankment (the Wikipedia infobox says 'Embankment'), with freeway lanes on both sides at roughly track level. Island platform. The fare lobby is under the platform and is reached by a tunnel beneath the westbound lanes from the entrance plaza on the north side.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Platform 1 = toward West Dublin and Dublin/Pleasanton (bart.gov labels it 'Northbound'); Platform 2 = toward Bay Fair/SF/Daly City.",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "Length assumed to be the BART-standard 700 ft."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Fare lobby below the island platform, entered through a sloping pedestrian tunnel under the westbound I-580 lanes.",
+   "notes": "Height not published."
+  },
+  "opened": 1997,
+  "opened_date": "1997-05-10",
+  "architect": "Group 4 / ICF Kaiser Engineers (Cerny via Wikipedia).",
+  "era": "1997 Dublin/Pleasanton extension (L-Line) station.",
+  "recognisable": "An island platform in the freeway median with a small hip-roofed pavilion and tall mauve/pink-painted steel posts and light masts, with traffic passing on both sides. On the north side, the entrance is a curved-roof portico on banded, sandstone-coloured drum columns, in front of a stone-textured wall carved with 'CASTRO VALLEY'. A ramped tunnel mouth leads under the freeway; BART's 1997 report pictured this 'portico'.",
+  "entrances": "A single entrance plaza on the north side (Norbridge Dr), with bus bays and parking. A tunnel under the westbound I-580 lanes leads to the fare lobby beneath the platform. A 96-unit TOD (1993) sits at the northwest corner of the site.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Castro_Valley_station",
+   "https://www.bart.gov/stations/cast",
+   "https://www.bart.gov/sites/default/files/docs/50-years/1997%20BART%20Report%20to%20Congress.pdf",
+   "https://commons.wikimedia.org/wiki/File:Castro_Valley_station_from_pedestrian_bridge,_May_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Entrance_to_Castro_Valley_station,_May_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Westbound_train_at_Castro_Valley_station,_May_2018.JPG"
+  ]
+ },
+ {
+  "id": "WDUB",
+  "name": "West Dublin/Pleasanton",
+  "structure": "median",
+  "structure_notes": "At grade in the I-580 median between the freeway lanes, with ballasted track and low barrier walls. It is an infill station: its foundations were built with the 1997 line, and it opened in 2011. A fare mezzanine spans above the platform, and enclosed pedestrian bridges cross the freeway lanes to garages on both sides.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Platform 1 = toward Dublin/Pleasanton; Platform 2 = westbound toward Castro Valley/SF (bart.gov and platform signs).",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "Mostly uncovered island platform with multi-disc lamp posts. Length assumed to be the BART-standard 700 ft."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Fare mezzanine one level above the platform, bridging the median. Pedestrian bridges continue over the I-580 lanes to the Dublin (north) and Pleasanton (south) garages.",
+   "notes": "The platform is at freeway level. Mezzanine and bridge heights are not published."
+  },
+  "opened": 2011,
+  "opened_date": "2011-02-19",
+  "architect": null,
+  "era": "2011 infill station, about $106M, largely funded privately and through TOD.",
+  "recognisable": "BART's 2011 article described it as 'perched above a busy freeway' and looking at first 'like a utilitarian, simple silver structure'. It is a boxy silver/grey metal-panelled mezzanine over the I-580 median, with X-braced steel-truss enclosed footbridges and elevator/stair towers bearing BART logos. Below is an open concrete island platform between the freeway lanes. Two parking garages and TOD flank it (apartments to the north, offices to the south), and Stoneridge Shopping Center is next door.",
+  "entrances": "North (Dublin) side: garage with about 722 BART spaces and Wheels bus stops. South (Pleasanton) side: garage with about 468 spaces near Stoneridge Mall Rd, plus Wheels stops. Both reach the mezzanine by footbridge. Closed-off 'stairs to nowhere' are waiting for future development.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/West_Dublin/Pleasanton_station",
+   "https://www.bart.gov/stations/wdub",
+   "https://web.archive.org/web/2013/http://www.bart.gov/about/projects/WestDublinPleasanton.asp",
+   "https://www.bart.gov/sites/default/files/docs/50-years/2001%20West%20Dublin%20Pleasanton%20Station.pdf",
+   "https://commons.wikimedia.org/wiki/File:West_Dublin_Pleasanton_station_from_parking_garage,_May_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:West_end_of_platform_at_West_Dublin_Pleasanton_station,_May_2018.JPG"
+  ]
+ },
+ {
+  "id": "DUBL",
+  "name": "Dublin/Pleasanton",
+  "structure": "median",
+  "structure_notes": "Island platform in the centre median of I-580, where the freeway is raised over a street-level pedestrian and vehicle underpass (Wikipedia: 'center median of the elevated Interstate 580'). Eastern terminus of the Blue Line, with tail tracks continuing east in the median. The planned Valley Link line would run east from here.",
+  "tracks": 2,
+  "platforms": {
+   "count": 1,
+   "type": "island",
+   "serves": "Terminal. The bart.gov departure table lists all departures from Platform 2 (Sept 2026).",
+   "length_m": 213.4,
+   "width_m": null,
+   "notes": "According to a BART 2020 work plan, the tail tracks east of the station can hold at most an 8-car train. A design project (2018–2021) aimed to extend them to hold a 10-car train and improve turnbacks; completion not verified."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "Fare lobby under the platform, opening into the pedestrian and vehicle underpass beneath the freeway that links the north (Dublin) and south (Pleasanton) sides.",
+   "notes": "The platform is at freeway-median level above the underpass. Height not published."
+  },
+  "opened": 1997,
+  "opened_date": "1997-05-10",
+  "architect": "Stone, Marraccini & Patterson (Cerny via Wikipedia).",
+  "era": "1997 Dublin/Pleasanton extension terminal, planned as 'East Dublin/Pleasanton'. Garages 2008 and 2024.",
+  "recognisable": "A long white titanium canopy over the island platform whose outline forms five 'wave' curves. It is meant to echo the Dublin hills and 'the sound waves generated by BART's electric propulsion'. The station sits in the I-580 median above a broad concrete underpass with round columns and a wave motif. Next to it are a 10-bay bus plaza and large parking garages (BART garage 2008, county garage 2024).",
+  "entrances": "An underpass for pedestrians and vehicles under I-580 connects the fare lobby to the 10-bay north bus plaza, garage and parking on the Dublin side, and to the south-side bus bays and parking on the Pleasanton side (Owens Dr). The Iron Horse Regional Trail connects on both sides.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "platforms.length_m": "medium",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Dublin/Pleasanton_station",
+   "https://www.bart.gov/stations/dubl",
+   "https://www.bart.gov/sites/default/files/docs/6M8147A08-01%20%E2%80%93%20BART%20Tail%20Track%20Extension%20Project%20%E2%80%93%20Millbrae%20and%20(200207).pdf",
+   "https://www.bart.gov/sites/default/files/docs/6M8122A12%20-%20BART%20Tail%20Track%20Extension%20Project%20%28181002%29.pdf",
+   "https://commons.wikimedia.org/wiki/File:Dublin_Pleasanton_station_from_garage,_May_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Train_at_Dublin_Pleasanton_station,_October_2019.JPG",
+   "https://commons.wikimedia.org/wiki/File:Underpass_at_Dublin_Pleasanton_station,_May_2018.JPG"
+  ]
+ },
+ {
+  "id": "OAKL",
+  "name": "Oakland International Airport (OAC airport station)",
+  "structure": "aerial",
+  "structure_notes": "Elevated terminus of the cable-hauled Oakland Airport Connector, in the airport's Premier parking lot across the curbside roadways from Terminals 1–2. The two-lane guideway merges to a single track at a switch just outside the station.",
+  "tracks": 1,
+  "platforms": {
+   "count": 1,
+   "type": "side",
+   "serves": "Single stub track (pinched-loop terminal) with platform screen doors. bart.gov labels it Platform 1 (to Coliseum).",
+   "length_m": null,
+   "width_m": null,
+   "notes": "Trains are 3 cars, expandable to 4. The 2006 FEIR addendum design called for a platform of about 145 × 30 ft, but the station was later redesigned and moved, so as-built dimensions are unconfirmed."
+  },
+  "levels": {
+   "platform_above_street_m": null,
+   "platform_below_street_m": null,
+   "concourse": "No fare equipment at OAK; all faregates and ticket machines are at Coliseum Platform 3. Ground-level entry with an elevator, escalator and stairs up to the platform. The concrete base houses the cable drive, and the bullwheels are visible at night behind perforated metal panels.",
+   "notes": "Height not published (roughly two storeys by eye)."
+  },
+  "opened": 2014,
+  "opened_date": "2014-11-22",
+  "architect": "Design-build by the Flatiron/Parsons joint venture. Cable Liner system by Doppelmayr Cable Car, which also has the 20-year operations and maintenance contract.",
+  "era": "2014 BART to OAK automated people mover, replacing the AirBART bus (1977–2014).",
+  "recognisable": "A big oval, disc-like cantilevered metal canopy over a platform lined with colourful art-glass windscreens, on a bare concrete base in the middle of the parking lot. The Port/BART FAQ describes a 'rounded metal canopy roof and glass walls' echoing the airport's pedestrian canopies. A long escalator under a green-glazed canopy climbs from the ground beside a grey elevator tower with BART logos.",
+  "entrances": "From the terminal curb (Crosswalk #2) across the roadways to the station in front of the Premier lot. A covered escalator, stairs and an elevator lead to the platform. AC Transit routes 73 and 805 stop nearby.",
+  "conf": {
+   "tracks": "high",
+   "platforms.count": "high",
+   "opened": "high"
+  },
+  "sources": [
+   "https://en.wikipedia.org/wiki/Oakland_International_Airport_station",
+   "https://www.bart.gov/stations/oakl",
+   "https://web.archive.org/web/2017/http://www.oaklandairport.com/wp-content/uploads/2016/05/BARTtoOAKFAQ.pdf",
+   "https://www.bart.gov/sites/default/files/docs/OAC_FEIR-FEIS_Addendum_Draft.pdf",
+   "https://commons.wikimedia.org/wiki/File:OAK_station_from_the_south,_March_2018.JPG",
+   "https://commons.wikimedia.org/wiki/File:Oakland_International_Airport_station,_April_2024.jpg",
+   "https://commons.wikimedia.org/wiki/File:Track_switch_at_OAK_station,_March_2018.JPG"
+  ]
+ },
+ {
+  "id": "_notes",
+  "method_and_caveats": [
+   "WebSearch was unavailable in this session because the search budget was used up. I fetched primary documents directly instead: bart.gov station and project pages, BART's 1971–72 news-release archive, the OAC FEIR, addendum and FAQ, the VTA EIS/SEIR library, and the Doppelmayr reference page via the Wayback Machine. I also used current Wikipedia wikitext and Wikimedia Commons.",
+   "Some visual details in 'recognisable' come from viewing the cited Wikimedia Commons photos (2017–2025). Colours and finishes may change with renovations.",
+   "Platform heights and depths are almost never published. Only Berryessa (35 ft / 10.7 m, VTA), Warm Springs (at grade) and Coliseum (about 35 ft / 10.7 m, derived from the 2002 OAC FEIR) have numbers. Measure the rest from lidar/DSM.",
+   "South Hayward, Union City and Fremont are typed 'aerial' because their platforms are well above the street (per BART and Wikipedia). Photos show ballasted track on raised retained fill with underpasses rather than open viaducts (medium confidence).",
+   "Platform numbering on bart.gov: on the A-Line, Platform 1 is southbound/outbound (toward Fremont/Berryessa/Dublin) and Platform 2 is northbound (toward Oakland/SF/Richmond). At Union City, Wikipedia confirms the northbound platform is the east one, which fits BART's right-hand running."
+  ],
+  "standard_platform": "BART platforms are 700 ft (213.4 m) long, 'standard for all BART stations' (BART 1972). BART's 1972 design release says the Oakland–Fremont aerial stations shared 'comparable terrain, identical platform length and canopy height, and strong horizontal planes sliced by diagonals of the escalators'. Their character ranged from San Leandro's 'strong massiveness' and Coliseum's 'handsomely stark functionality' to the 'airy grace' of Fruitvale and Hayward.",
+  "oakland_airport_connector": {
+   "opened": "2014-11-22 (ceremony 2014-11-21). Replaced the AirBART buses (1977–2014).",
+   "length": "3.2 mi (5.15 km) per BART; Doppelmayr lists 5,000 m (16,424 ft).",
+   "system": "Doppelmayr Cable Liner in a 'Pinched Loop' configuration: driverless and cable-propelled (no on-board motors), with detachable grips. Design-build by the Flatiron/Parsons JV, with 20-year operations and maintenance by Doppelmayr. Cost about $484M.",
+   "guideway": "Open, white-painted steel truss guideway on concrete columns (hammerhead caps in the Hegenberger Rd median) and portal frames straddling roadways. Between the terminals it has two lanes (two parallel tracks). The lanes merge into a single track through a switch just outside each terminal, so each terminal is a single-track stub with one side platform and platform screen doors.",
+   "cable_loops": 4,
+   "trains": 4,
+   "cars_per_train": 3,
+   "cars_per_train_ultimate": 4,
+   "capacity_per_train": 113,
+   "capacity_per_train_ultimate": 148,
+   "line_capacity_pphpd": 1500,
+   "line_capacity_ultimate_pphpd": 1900,
+   "max_speed": "30 mph (48 km/h) per BART at opening. Doppelmayr gives an 'operating speed' of 50.4 km/h (31 mph). Wikipedia gives an average of about 24 mph (39 km/h).",
+   "trip_time": "About 8 min one way. The bid in-vehicle time was 8 min 12 s; BART's 2013 quick facts said about 8.5 min.",
+   "headway": "Design headway about 4.5 min (Doppelmayr 280 s; bid 4 min 35 s). Trains ran every 5 min at peak at opening and about every 6 min recently (Wikipedia).",
+   "dwell_s": 58,
+   "operations_inference": "This is inferred from the Wikipedia OAC and Cable Liner descriptions. In a pinched loop with four cable loops and one train per loop, all trains stop at the same time: one at each terminal and one on each lane at the Doolittle Wheelhouse. They switch cable loops during the dwell, so every one-way trip includes a mid-route stop with no passenger service.",
+   "midpoint_structure": "Doolittle Maintenance & Storage Facility ('The Wheelhouse'), on Hegenberger Rd at Airport Access Rd / Doolittle Dr (about 37°43′42″N 122°11′59″W). It holds vehicle storage and maintenance between the tracks, central control (a 2-person team), a power substation and the cable drives (four 12 ft / 3.66 m drive wheels). Trains stop here in both directions to switch cables, with no passenger service. An optional infill 'Doolittle station' (side platforms at guideway level, concourse below) is environmentally cleared but waiting on City of Oakland funding.",
+   "route": [
+    "Coliseum Platform 3: elevated, on the west side of San Leandro St, third level of the Coliseum complex.",
+    "The guideway runs west of the Hegenberger Expressway flyover and crosses over the UP Niles Subdivision / Capitol Corridor tracks.",
+    "It enters the Hegenberger Rd median, still elevated.",
+    "It crosses over I-880 on its own bridge about 150 ft (46 m) west of the Hegenberger overpass.",
+    "It returns to the Hegenberger Rd median as far as Airport Access Rd / Pardee Dr, with the mid-route stop at the Doolittle Wheelhouse.",
+    "It turns along Airport Access Rd and goes underground for about 200 ft (61 m) under Doolittle Dr. That is the as-built length per the BART/Port FAQ; the 2002 FEIR design instead passed over 98th Ave into a 430 ft (131 m) tunnel.",
+    "It comes back up at Doolittle Dr / Airport Access Rd and runs at ground level in a concrete-walled trough between the Metropolitan Golf Links boundary and Airport Dr / Bessie Coleman Dr.",
+    "It rises onto an elevated guideway over the airport roads and parking (per the MTI 2012 description of the design) to the elevated OAK station at the front of the Premier parking lot, opposite Terminals 1–2."
+   ],
+   "heights": "As-built guideway heights are not published. The 2002 FEIR design criteria were a minimum clearance of 15.5 ft (4.7 m) under the guideway, and 17 ft (5.2 m) over I-880, 98th Ave and on-airport roads. The FEIR also specified 5–7 ft columns at 60–100 ft spacing, spans up to 160 ft, and a guideway no more than 26 ft (7.9 m) wide. The 2006 addendum notes the guideway at the Coliseum end had to be about three storeys high to clear the adjacent rail lines. The highest points are the UP railroad and I-880 crossings, but I found no heights for them.",
+   "coliseum_station": "'Platform 3': 1 track and 1 side platform with platform screen doors, west of San Leandro St. The OAC's faregates and ticket machines for both directions are here. It is reached from the south end of the BART island platform by a short up-escalator and an elevated walkway over San Leandro St.",
+   "airport_station": "1 track (with a double-to-single-track switch just outside) and 1 side platform with platform screen doors, elevated in the Premier lot. No fare equipment.",
+   "sources": [
+    "https://en.wikipedia.org/wiki/Oakland_Airport_Connector",
+    "https://en.wikipedia.org/wiki/Cable_Liner",
+    "https://en.wikipedia.org/wiki/Doolittle_Maintenance_and_Storage_Facility",
+    "https://web.archive.org/web/2021/https://www.dcc.at/references/oakland-airport-connector/",
+    "https://web.archive.org/web/2017/http://www.oaklandairport.com/wp-content/uploads/2016/05/BARTtoOAKFAQ.pdf",
+    "https://www.bart.gov/sites/default/files/docs/BART%20to%20OAK%20Fact%20Sheet%202014_0.pdf",
+    "https://www.bart.gov/news/articles/2014/news20141121-0",
+    "https://www.bart.gov/news/articles/2009/news20091210",
+    "https://www.bart.gov/sites/default/files/docs/Microsoft_PowerPoint_-_OAC_December_10_Award_-_Final.pdf",
+    "https://web.archive.org/web/2013/http://www.bart.gov/about/projects/oac/faq.aspx",
+    "https://web.archive.org/web/2013/http://www.bart.gov/about/projects/oac/index.aspx",
+    "https://www.bart.gov/sites/default/files/docs/OAC_FEIR-FEIS_Volume_1_Part_1.pdf",
+    "https://www.bart.gov/sites/default/files/docs/OAC_FEIR-FEIS_Addendum_Draft.pdf",
+    "https://web.archive.org/web/2015/http://transweb.sjsu.edu/PDFs/research/2503/2503_cases/2503-cs3-oak-airport-connector.pdf",
+    "https://commons.wikimedia.org/wiki/File:OAC_track_over_Hegenberger_Road,_March_2018.JPG",
+    "https://commons.wikimedia.org/wiki/File:At-grade_section_of_Oakland_Airport_Connector,_March_2018.JPG",
+    "https://commons.wikimedia.org/wiki/File:Track_switch_at_OAK_station,_March_2018.JPG"
+   ]
+  },
+  "warm_springs_extension": {
+   "length": "5.4 mi (8.7 km), Fremont to Warm Springs/South Fremont. Opened 2017-03-25; cost about $790M.",
+   "alignment": "The line leaves the south end of the elevated Fremont station on embankment, crosses Walnut Ave on an aerial structure and descends into a cut-and-cover subway north of Stevenson Blvd. The subway runs under Stevenson Blvd, Fremont Central Park, the eastern lobe of Lake Elizabeth and the UP freight track. It surfaces at ground level between the former WP and SP alignments north of Paseo Padre Pkwy. It crosses Paseo Padre Pkwy on a bridge (the City of Fremont lowered the road into an underpass, completed 2010), then runs at ground level under the Washington Blvd overpass. It continues at ground level in the former WP corridor through the future Irvington infill site, passes under Auto Mall Pkwy, crosses over S. Grimmer Blvd and reaches the at-grade Warm Springs/South Fremont station.",
+   "subway": "About 1 mile (about 1.6 km), built cut-and-cover under BART's 'Fremont Central Park Subway' contract, with two ventilation structures. It runs from just north of Stevenson Blvd through Fremont Central Park, under the eastern lobe of Lake Elizabeth and beneath the UP freight track to just north of Paseo Padre Pkwy. The contract went to the Shimmick/Skanska JV on 28 May 2009 (about $137M; BART in 2009 cited a $136M project). Construction ran from summer 2009 to spring 2013, and the park's dog park, basketball courts and parking were relocated.",
+   "irvington_infill": "A future Irvington station roughly midway, near Osgood Rd / Washington Blvd. It is in final design; the 2021 estimate was $282M, with $122M secured.",
+   "sources": [
+    "https://www.bart.gov/about/projects/wsx",
+    "https://www.bart.gov/about/projects/wsx/alignment",
+    "https://www.bart.gov/news/articles/2009/news20090930a",
+    "https://en.wikipedia.org/wiki/Silicon_Valley_BART_extension"
+   ]
+  },
+  "berryessa_extension_phase_I": {
+   "length": "About 10 mi (VTA) or 9.9 mi (2011 SEIR), from STA 35+00 (just south of Warm Springs) to STA 569+00 (Las Plumas Ave, end of the tail tracks). Stationing is in feet.",
+   "opened": "2020-06-13. $2.3B. Built and owned by VTA, operated by BART. Construction 2012–2019.",
+   "alignment_as_approved_2011": [
+    "Fremont: at ground level on the former UP (Western Pacific) right-of-way. Bridges carry BART over the Mission Blvd and East Warren Ave road underpasses, and over the Kato Rd underpass (road lowered by the City of Fremont). Crossovers north and south of Kato Rd (STA 157+00, 170+00) allow storage of a 10-car train and single-track working.",
+    "County line to south of Dixon Landing Rd: retained cut, STA 182+00–201+00 (about 0.58 km). Dixon Landing Rd crosses over at street level on a new bridge; the UP track stays at grade.",
+    "Milpitas: at ground level past Calera and Berryessa creeks and under the existing Abel St and Calaveras Blvd/SR 237 overpasses. A BART maintenance siding sits south of Calaveras (STA 291+00–309+00).",
+    "Retained cut from about STA 353+00/356+00 to 414+00 (about 1.8–1.9 km), under Montague Expwy, Capitol Ave (Milpitas station lies between them) and Trade Zone Blvd, all carried over at street level on new bridges. UP freight service ends near Montague. Crossovers sit in the cut north of the station (STA 358+00, 366+00).",
+    "San Jose: at ground level for about 4,100 ft (1.25 km) south of Trade Zone Blvd.",
+    "Retained cut from about STA 450+00 to 498+00 (about 1.46 km), under Hostetter Rd and the Sierra Rd/Lundy Ave intersection.",
+    "At ground level, then retained fill and an aerial structure from about STA 519+50. It crosses Berryessa Rd (structure about 22 ft / 6.7 m above the road) and Upper Penitencia Creek into the aerial Berryessa station (platform 35 ft / 10.7 m up), and continues on aerial structure over Mabury Rd. Two crossovers and a pocket track lie south of the station. The line returns to ground level at about STA 560+00, and the tail tracks run to Las Plumas Ave (STA 569+00)."
+   ],
+   "trench_depths": "2007 SEIR: the cut from E. Penitencia Channel to Trade Zone Blvd is 'generally less than 30 feet' (9.1 m) deep and 10 ft (3 m) at its shallowest; the Hostetter–Sierra/Lundy cut is about 20–25 ft (6.1–7.6 m). The 2010 FEIS construction-noise section instead describes about 7–12 ft there, so treat all depths as approximate.",
+   "approx_split_derived": "Derived from the 2011 stationing (medium-low confidence): retained cut about 3.9 km (2.4 mi) in three sections; aerial including ramps about 1.2 km (0.8 mi) at Berryessa; the remaining about 11 km (about 7 mi) at ground level.",
+   "grade_separations_as_built": "VTA (2020): BART passes under Dixon Landing Rd, Montague Expwy and Capitol Ave in Milpitas, and under Trade Zone Blvd, Hostetter Rd and the Sierra Rd/Lundy Ave intersection in San Jose. It passes over Berryessa Rd into Berryessa station. VTA counts 'eleven grade separations' in total.",
+   "sources": [
+    "https://www.vta.org/sites/default/files/documents/3.0_recommended_project_description.pdf",
+    "https://www.vta.org/sites/default/files/documents/2.0_design_refinements.pdf",
+    "https://www.vta.org/sites/default/files/2019-10/Chapter%202%20Alternatives.pdf",
+    "https://www.vta.org/sites/default/files/documents/3_0.pdf",
+    "https://www.vta.org/sites/default/files/documents/06.0_Construction%2520%281%29.pdf",
+    "https://www.vta.org/sites/default/files/documents/05.14_VisualAesthetics_EC.pdf",
+    "https://www.vta.org/sites/default/files/2023-12/VTABSV_FactSheet_2023_Phase%20I%20Berryessa_0.pdf",
+    "https://www.vta.org/blog/building-benefits-vtas-bart-phase-i-extension",
+    "https://www.vta.org/projects/bart-sv/phase-i",
+    "https://en.wikipedia.org/wiki/Silicon_Valley_BART_extension"
+   ]
+  },
+  "bay_fair_junction": {
+   "summary": "Bay Fair is still a station with 2 tracks and 1 island platform (Platforms 1–2 only). The L-Line to Castro Valley and Dublin splits off just southeast of the station through a flying junction built for the 10 May 1997 opening. The flyover passes beneath the I-238 overpass, and a photo shows several crossovers and turnouts between the platform and the junction. No source indicates a third track or platform as of Sept 2026. Since the 10 Aug 2026 timetable, Blue Line trains from Dublin and Orange Line trains to Berryessa are timed for a cross-platform transfer across the island.",
+   "sources": [
+    "https://en.wikipedia.org/wiki/Bay_Fair_station",
+    "https://www.bart.gov/stations/bayf",
+    "https://www.bart.gov/news/articles/2026/news20260709",
+    "https://commons.wikimedia.org/wiki/File:BART_flyover_east_of_Bay_Fair_station,_January_2018.JPG"
+   ]
+  },
+  "terminal_tail_tracks": {
+   "BERY": "2011 SEIR design: two crossovers and a pocket track on the aerial structure and ramp south of the platform. Both main tracks continue as tail tracks to Las Plumas Ave (STA 569+00), about 0.9 km past the platform, ending at high-rail access points. Maintenance-of-way siding at STA 556+50–569+00.",
+   "DUBL": "The tail tracks east of the station in the I-580 median hold at most an 8-car train (BART, Feb 2020). Design work in 2018–2021 looked at extending them for a 10-car train and better turnbacks; completion not verified."
+  }
+ }
+]

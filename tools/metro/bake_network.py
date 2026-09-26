@@ -18,6 +18,7 @@ from metro.common import (PUB, RAW, ll2w, w2ll, log, gtfs, write_json, write_bin
 from metro import osmgraph as OG
 from metro import elev
 from metro import profile as PR
+from metro import profile2 as PR2
 from metro import stations_meta as SM
 
 STEP = 5.0                 # max sample spacing of the published polylines (m)
@@ -96,6 +97,61 @@ def densify(tr):
 def raw_to_s(tr, s_raw):
     f = tr['fine']
     return float(np.interp(s_raw, f['raw'], f['s']))
+
+
+
+def project_track(tr, x, z, s_hint=None, win=400.0):
+    """Nearest s on a published track polyline to (x, z) (optionally within +-win of s_hint)."""
+    p = tr['pub']
+    X, Z, st = p['x'], p['z'], p['step']
+    a, b = 0, len(X) - 1
+    if s_hint is not None:
+        a = max(0, int((s_hint - win) / st)); b = min(len(X) - 1, int((s_hint + win) / st) + 1)
+    px = np.stack([X[a:b + 1], Z[a:b + 1]], 1)
+    d, s_at, k, t = poly_project(px, x, z)
+    return a * st + s_at, d
+
+
+def platform_groups(tracks, plat_pos, plats, raw_to_s):
+    """Per station and level: the tracks sharing a platform level, as matched s-ranges. Level = OSM layer of the track
+    at the platform (12th St / 19th St have two). Returns (groups, anchors)."""
+    from metro.stations_meta import PLAT_LEN
+    by_station = collections.defaultdict(list)
+    for pid, (ti, sraw) in plat_pos.items():
+        st = plats[pid]['parent_station'] if pid in plats else pid.split('-')[0]
+        tr = tracks[ti]
+        s = raw_to_s(tr, sraw)
+        i = min(len(tr['pub']['tags']) - 1, int(round(s / tr['pub']['step'])))
+        t = tr['pub']['tags'][i]
+        try:
+            layer = int(str(t.get('layer', '0')).split(';')[0])
+        except ValueError:
+            layer = 0
+        by_station[st].append((pid, ti, s, layer))
+    groups = []
+    for st, mem in by_station.items():
+        levels = collections.defaultdict(list)
+        for m in mem:
+            levels[m[3] if st in ('12TH', '19TH') else 0].append(m)
+        for lv, ms in levels.items():
+            seen = {}
+            for pid, ti, s, layer in ms:
+                seen.setdefault(ti, []).append(s)
+            ks = list(seen.items())
+            ti0, ss0 = ks[0]
+            tr0 = tracks[ti0]
+            c0 = float(np.mean(ss0))
+            s0, s1 = max(0.0, c0 - PLAT_LEN / 2), min(tr0['length'], c0 + PLAT_LEN / 2)
+            members = [(tr0['id'], s0, s1)]
+            for ti, ss in ks[1:]:
+                tr = tracks[ti]
+                p0 = tr0['pub']; i0 = int(round(s0 / p0['step'])); i1 = min(len(p0['x']) - 1, int(round(s1 / p0['step'])))
+                a_, _ = project_track(tr, p0['x'][i0], p0['z'][i0], float(np.mean(ss)))
+                b_, _ = project_track(tr, p0['x'][i1], p0['z'][i1], float(np.mean(ss)))
+                members.append((tr['id'], a_, b_))
+            groups.append(dict(station=st, level=lv, members=members))
+    anchors = {'points': []}
+    return groups, anchors
 
 
 # ====================================================================== naming
@@ -518,8 +574,6 @@ def main():
         wt = [G.ways[tr['segway'][k]]['tags'] for k in segi]
         tr['pub'] = dict(s=s, x=x, z=z, step=L / (n - 1), tags=wt)
         out_tracks.append(tr)
-    PR.solve(out_tracks, G, elev)            # y (top of rail), structure, cant, speed limits
-
     # junctions: vertices where a track ends on another track (turnouts), both ends (links), diamonds
     vt = collections.defaultdict(list)       # vertex -> [(track idx, raw s, is_end, end which)]
     for ti, tr in enumerate(tracks):
@@ -548,8 +602,19 @@ def main():
             links[ti]['prev' if which == 0 else 'next'] = dict(junction=jid, to=others)
     log(f'junctions: {len(junctions)}', collections.Counter(j['kind'] for j in junctions))
 
+
+    # ---------------- platform groups (tracks sharing a station level), then the joint profile solve
+    groups, anchors = platform_groups(tracks, plat_pos, plats, raw_to_s)
+    roads = PR2.Roads()
+    PR2.solve(out_tracks, junctions, groups, anchors, roads)
+    PR2.finish(out_tracks)
+
     # ---------------- stations
     stations = SM.build(parents, plats, ents, tracks, plat_pos, st_tracks, E, raw_to_s, code_of)
+    vlines, vrep = PR2.validate(out_tracks, stations, junctions, groups)
+    for ln in vlines:
+        log(ln)
+    write_json(os.path.join(PUB, 'validation.json'), dict(generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), summary=vlines, report=vrep), compact=False)
 
     # ---------------- lines + patterns
     lines = []
@@ -627,7 +692,7 @@ def write_tracks(tracks, links, junctions, stations, lines, pats):
                             station=tr.get('near_station'), structure=segs, prev=links[ti].get('prev'), next=links[ti].get('next')))
     net = dict(version=0, format='bayline-metro-network', frame='Bay frame: x=(lon+122.10)*88542.2 east, z=-(lat-37.40)*110985.1 south, y=m above sea level (top of rail)',
                generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), sources=SOURCES,
-               structCodes=PR.STRUCT_NAMES, tracksBin=dict(path='metro/tracks.bin', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 4 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m)'),
+               structCodes=PR2.STRUCT_NAMES, tracksBin=dict(path='metro/tracks.bin', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 4 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m)'),
                tracks=tr_meta, junctions=junctions, stations=stations, lines=lines, patterns=pats)
     size = write_json(os.path.join(PUB, 'network.json'), net)
     log(f'network.json {size/1e6:.2f} MB, tracks.bin {size_bin/1e6:.2f} MB ({len(raw)/1e6:.2f} MB raw), {len(tracks)} tracks')
