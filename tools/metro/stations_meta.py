@@ -125,3 +125,89 @@ def build(parents, plats, ents, tracks, plat_pos, st_tracks, E, raw_to_s, code_o
     if missing:
         log('stations without platforms:', missing)
     return out
+
+
+# ====================================================================== M2 station records
+def _research():
+    out = {}
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'research')
+    for f in ('stations_A.json', 'stations_B.json', 'stations_C.json'):
+        p = os.path.join(d, f)
+        if os.path.exists(p):
+            for r in json.load(open(p)):
+                if r.get('id') and not r['id'].startswith('_'):
+                    out[r['id']] = r
+    return out
+
+
+def build2(parents, plats, ents, tracks, platforms, E, code_of, curated, extra_stations=()):
+    """Station records from the platforms (platforms.py), the solved profile and the curated facts."""
+    from metro.platforms import PLAT_H, EDGE_OFF, BERTH_MARGIN
+    from metro.profile2 import STRUCT_NAMES
+    from metro.dem import ground as dem_ground
+    research = _research()
+    by_id = {t['id']: t for t in tracks}
+    ent_osm = []
+    for e in E:
+        t = e.get('tags', {})
+        if e['type'] == 'node' and t.get('railway') == 'subway_entrance':
+            x, z = ll2w(e['lat'], e['lon'])
+            ent_osm.append(dict(osm=e['id'], x=float(x), z=float(z), lat=e['lat'], lon=e['lon'], tags=t))
+
+    def y_at(tr, s):
+        p = tr['pub']; f = min(max(s / p['step'], 0), len(p['y']) - 1.000001); i = int(f); a = f - i
+        return float(p['y'][i] * (1 - a) + p['y'][i + 1] * a), int(p['struct'][min(len(p['y']) - 1, int(round(f)))])
+
+    stations = []
+    rows = [(sid, p['stop_name'], float(p['stop_lat']), float(p['stop_lon']), p.get('stop_url', '')) for sid, p in parents.items()] + list(extra_stations)
+    for sid, name, lat, lon, url in sorted(rows, key=lambda r: code_of.get(r[0], 'Z99')):
+        x, z = ll2w(lat, lon); x, z = float(x), float(z)
+        cur = curated.get(sid) or {}
+        pl_out = []
+        levels = {}
+        for pid, pl in sorted(platforms.items()):
+            if pl['station'] != sid:
+                continue
+            tr = by_id[pl['track']]
+            c = 0.5 * (pl['s0'] + pl['s1'])
+            rail, code = y_at(tr, c)
+            lv = (cur.get('levelOf') or {}).get(pl['code'], 'main')
+            levels.setdefault(lv, []).append(rail)
+            pl_out.append(dict(gtfs=pid, code=pl['code'], track=pl['track'], level=lv, s0=round(pl['s0'], 2), s1=round(pl['s1'], 2), s=round(c, 2),
+                               side='right' if pl['side'] > 0 else 'left', edge=EDGE_OFF, y=round(rail + PLAT_H, 3), rail=round(rail, 3),
+                               structure=STRUCT_NAMES[code], berth={'+': round(pl['s1'] - BERTH_MARGIN, 2), '-': round(pl['s0'] + BERTH_MARGIN, 2)},
+                               src=pl['src'], sys=pl['sys']))
+        gnd = float(dem_ground(np.array([x]), np.array([z]))[0][0])
+        main_rails = levels.get('main') or [r for v in levels.values() for r in v]
+        rail = float(np.mean(main_rails)) if main_rails else gnd
+        lv_out = dict(street=round(gnd, 2), rail=round(rail, 2), platform=round(rail + PLAT_H, 2))
+        if len(levels) > 1:
+            lv_out['byLevel'] = {k: dict(rail=round(float(np.mean(v)), 2), platform=round(float(np.mean(v)) + PLAT_H, 2)) for k, v in levels.items()}
+            lv_out['platform'] = round(max(float(np.mean(v)) for v in levels.values()) + PLAT_H, 2)
+        # entrances: GTFS + OSM subway_entrance nodes not duplicating them
+        ents_g = []
+        for q in ents:
+            if q['parent_station'] == sid:
+                ex, ez = ll2w(float(q['stop_lat']), float(q['stop_lon']))
+                ents_g.append(dict(name=q['stop_name'], lat=float(q['stop_lat']), lon=float(q['stop_lon']), x=round(float(ex), 2), z=round(float(ez), 2), src='gtfs'))
+        for q in ent_osm:
+            if math.hypot(q['x'] - x, q['z'] - z) < 350 and not any(math.hypot(q['x'] - g['x'], q['z'] - g['z']) < 12 for g in ents_g):
+                t = q['tags']
+                ents_g.append(dict(name=t.get('name') or t.get('ref') or 'entrance', lat=q['lat'], lon=q['lon'], x=round(q['x'], 2), z=round(q['z'], 2),
+                                   src='osm', osm=q['osm'], **({'wheelchair': t['wheelchair']} if t.get('wheelchair') else {})))
+        r = research.get(sid) or {}
+        res = {k: r.get(k) for k in ('opened', 'opened_date', 'architect', 'era', 'recognisable', 'structure_notes', 'entrances') if r.get(k)}
+        if isinstance(r.get('platforms'), dict):
+            res['platformsDetail'] = r['platforms'].get('detail') or r['platforms'].get('serves')
+        if r.get('sources'):
+            res['sources'] = r['sources']
+        st = dict(id=sid, name=name, code=code_of.get(sid, ''), lat=lat, lon=lon, x=round(x, 2), z=round(z, 2),
+                  type=cur.get('type') or 'surface', layout=cur.get('layout') or 'island', hero=sid in HERO,
+                  levels=lv_out, platforms=pl_out, entrances=ents_g, note=cur.get('note', ''), src=cur.get('src', []), url=url)
+        if cur.get('platformStructure'):
+            st['platformStructure'] = cur['platformStructure']
+        if res:
+            st['research'] = res
+        stations.append(st)
+    log(f'stations: {len(stations)}; platforms {sum(len(s["platforms"]) for s in stations)}; entrances {sum(len(s["entrances"]) for s in stations)}')
+    return stations

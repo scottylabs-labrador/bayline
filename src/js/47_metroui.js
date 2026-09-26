@@ -468,7 +468,7 @@ const MetroUI = (() => {
     el.mrk.textContent = atSt ? (tr.doorsOpen ? 'Doors open' : 'Now at') : 'Next station';
     el.mrn.textContent = atSt ? MetroSim.stName(atSt.st) : ns ? MetroSim.stName(ns.st) : '—';
     el.mrs.innerHTML = `${Math.round(tr.v / MPH)}<small>mph</small>`;
-    const side = ns && ns.side ? (ns.side > 0 ? 'right' : 'left') : '';            // (as you face the direction of travel)
+    const side = ns ? (MetroSim.stopSide(tr.leg, tr.nextK) > 0 ? 'right' : 'left') : '';   // (as you face the direction of travel)
     el.mri.textContent = atSt ? (tr.dwellLeft > 0 ? `Departs in ${Math.max(0, Math.round(tr.dwellLeft))} s` : '') + (tr.phase === 'terminal' ? 'Last stop: everybody off' : '')
       : ns ? `Arriving ${Env.clockText(ns.tArr)}${side ? ' · doors open on the ' + side : ''}` : '';
     drawNextStops(el.mrline, tr);
@@ -533,6 +533,7 @@ const MetroUI = (() => {
       if (tr.phase !== 'run' && tr.stopK >= 0) return MetroSim.stName(S[tr.stopK].st) + ' · Bayline Metro';
       const a = S[Math.max(0, tr.nextK - 1)], b = S[tr.nextK]; return b ? `Between ${MetroSim.stName(a.st)} and ${MetroSim.stName(b.st)}` : null; }
     const ms = MetroSim.nearestStation(p, 450); if (!ms) return null;
+    if (Player.mode === 'walk' && Player.onMetroFloor && Player.onMetroFloor()) return ms.name + ' · Bayline Metro';
     const pen = typeof Stations !== 'undefined' ? Stations.nearest(p, 450) : null;
     if (pen && Math.hypot(pen.x - p.x, pen.z - p.z) < Math.hypot(ms.x - p.x, ms.z - p.z)) return null;
     return ms.name + ' · Bayline Metro';
@@ -541,10 +542,19 @@ const MetroUI = (() => {
   let atT = 0, atV = false;
   function atMetro(p) { const now = performance.now(); if (now - atT < 500) return atV; atT = now;
     if (!ready()) return (atV = false); const ms = MetroSim.nearestStation(p, 700); if (!ms) return (atV = false);
+    if (typeof Player !== 'undefined' && Player.mode === 'walk' && Player.onMetroFloor && Player.onMetroFloor()) return (atV = true);
     const pen = typeof Stations !== 'undefined' ? Stations.nearest(p, 700) : null; return (atV = !pen || Math.hypot(ms.x - p.x, ms.z - p.z) < Math.hypot(pen.x - p.x, pen.z - p.z)); }
+  // the HUD line at a metro station: the next train of each line and direction, soonest first
+  function stationSub(p) {
+    const ms = MetroSim.nearestStation(p, 700); if (!ms) return '';
+    const now = Env.time.sec, seen = new Set(), out = [];
+    for (const ev of MetroSim.arrivals(ms.id, now, 24)) { const inf = MetroSim.eventInfo(ev), k = inf.line + '>' + inf.dest; if (seen.has(k)) continue; seen.add(k);
+      const m = Math.max(0, Math.round((ev.t - now) / 60)); out.push(`${MetroSim.lineById.get(inf.line) ? MetroSim.lineById.get(inf.line).short : inf.line} to ${inf.dest} ${m ? m + ' min' : 'now'}`); if (out.length >= 3) break; }
+    return out.length ? 'Next: ' + out.join(' · ') : 'No more trains today';
+  }
   function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK]; return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)} · ${tr.cars} cars · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
 
-  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
+  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
   return api;
 })();

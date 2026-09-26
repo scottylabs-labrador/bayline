@@ -43,6 +43,7 @@ CC_COVER = 7.5                # rail below ground, interior of cut-and-cover run
 CC_TARGET = 11.0
 BORED_COVER = 12.0
 TUBE_COVER = 7.0
+RAMP = 0.03                  # clearance / cover requirements grow at 3 % from a structure end (a 4 % track can meet them)
 SEP_RAIL = 5.6               # m rail-to-rail where one track crosses over / is stacked above another (car 3.2 m + clearance + thin deck)
 OFFS = np.array([-24, -16, -10, -6, -3, 0, 3, 6, 10, 16, 24], np.float64)
 C0 = 5                        # index of offset 0
@@ -162,6 +163,19 @@ class Samples:
 
 # ====================================================================== ground
 def ground_table(Sm):
+    import hashlib
+    key = hashlib.sha1(np.round(np.stack([Sm.x, Sm.z], 1), 2).tobytes()).hexdigest()[:16]
+    cp = os.path.join(RAW, 'cache', f'ground_{key}.npz')
+    if os.path.exists(cp):
+        z_ = np.load(cp)
+        return z_['H'], z_['SRC']
+    H, SRC = _ground_table(Sm)
+    os.makedirs(os.path.dirname(cp), exist_ok=True)
+    np.savez_compressed(cp, H=H, SRC=SRC)
+    return H, SRC
+
+
+def _ground_table(Sm):
     rx, rz = -Sm.tz, Sm.tx
     H = np.zeros((Sm.N, len(OFFS)))
     SRC = np.zeros((Sm.N, len(OFFS)), np.uint8)
@@ -363,17 +377,17 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
             if cc in OPEN:
                 tgt[g] = gc[g] + TOR_ABOVE_BED; wd[g] = 1.0 if lid[i] else 0.15
             elif cc in AER:
-                clear = min(AER_CLEAR, 1.0 + d_aer[i] * 0.09)
+                clear = min(AER_CLEAR, 1.0 + d_aer[i] * RAMP)
                 if cc == S['bridge']:
                     clear = min(clear, 3.0)
                 lower[g] = max(genv[g] + clear, gc[g] + need[g]) if need[g] > 0 else genv[g] + clear
                 tgt[g] = gc[g] + AER_TARGET; wd[g] = 0.01
             elif cc == S['portal'] or cc == S['cutcover']:
-                cover = min(CC_COVER, d_und[i] * 0.12)
+                cover = min(CC_COVER, d_und[i] * RAMP)
                 upper[g] = gsm[i] - cover
-                tgt[g] = gsm[i] - min(CC_TARGET, d_und[i] * 0.12 + 0.25); wd[g] = 0.005
+                tgt[g] = gsm[i] - min(CC_TARGET, d_und[i] * RAMP + 0.25); wd[g] = 0.005
             elif cc == S['bored']:
-                upper[g] = gsm[i] - min(BORED_COVER, d_und[i] * 0.2)
+                upper[g] = gsm[i] - min(BORED_COVER, d_und[i] * RAMP)
             elif cc == S['tube']:
                 upper[g] = min(gbay[i], -2.0) - TUBE_COVER
     m = np.isfinite(tgt) & (wd > 0)
@@ -493,6 +507,20 @@ def solve(tracks, junctions, platform_groups, anchors, roads, research_zones=Non
             continue
         ca, va = interp_cols(Sm, tid[an['track']], an['s'])
         sysm.row(ca, va, an['y'], an.get('w', 200.0)); nan_ += 1
+    # researched station heights relative to the ground along the platform (street above a subway, ground below an
+    # aerial): y(centre) = median lidar ground over the platform + rel
+    anchors['resolved'] = []
+    for an in anchors.get('rel', []):
+        if an['track'] not in tid:
+            continue
+        k = tid[an['track']]
+        a_, b_ = Sm.off[k], Sm.off[k + 1]
+        i0 = int(max(0, an['s0'] / Sm.step[k])); i1 = int(min(b_ - a_ - 1, an['s1'] / Sm.step[k]))
+        gref = float(np.median(gc[a_ + i0:a_ + i1 + 1]))
+        yc = gref + an['rel']
+        ca, va = interp_cols(Sm, k, 0.5 * (an['s0'] + an['s1']))
+        sysm.row(ca, va, yc, an['w']); nan_ += 1
+        anchors['resolved'].append(dict(an, ground=round(gref, 2), y=round(yc, 2)))
     log(f'system: {sysm.m} least-squares rows ({nj} junction, {npar} parallel, {nst} platform, {nan_} anchor couplings)')
     if os.environ.get('METRO_QP') == 'osqp':
         y = solve_qp(Sm, sysm, tracks, tid, junctions, platform_groups, sep, lower, upper, base)
