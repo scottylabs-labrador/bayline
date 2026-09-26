@@ -165,7 +165,8 @@ def detect(tx, ty):
     if not len(X):
         return np.zeros(0, dtype=DT)
     # species
-    rng = np.random.default_rng((tx * 73856093) ^ (ty * 19349663) ^ 0x5eed)
+    rng = np.random.default_rng(((tx * 73856093) ^ (ty * 19349663) ^ 0x5eed) & 0xFFFFFFFFFFFFFFFF)   # (same seed as before for
+                                                                        # non-negative tiles; the north strip's rows are negative)
     lat, lon = w2ll(X, Z)
     elev = hgt[np.clip((czm / px_m).astype(int), 0, n - 1), np.clip((cxm / px_m).astype(int), 0, n - 1)]
     urban_lc = M_.raster_areas  # (unused; urban context from building density below)

@@ -93,6 +93,29 @@ before the Bayline Metro code ships):
 Order: tile files first, then `tiles/h9/index.json`, `tiles/mat/index.json`, `tiles/t2/index.json`, `tiles/b2/index.json`,
 and `tiles/index.json` last.
 
+## Ground meets BART (the carve rule; `src/js/19_metroground.js`, `MetroGround`)
+
+Runtime, not baked: with `#metro=1`, once MetroNet is loaded, a Terrain height filter (`Terrain.addHeightFilter`, a
+small hook in `12_terrain.js`) reshapes every height tile of level >= 7 (L7 base 6.25 m, lidar L8 3.1 m / L9 1.56 m) along
+MetroNet's CURRENT profile, so a new profile (M2 and later) never needs a re-bake of published tiles. `Terrain.h` /
+`hBase` return the carved ground, so Towns roads, trees and people stand on it (Towns and Flora rebuild once when the
+filter installs). `#mground=0` turns it off (QA). Cost measured at MacArthur: ~1.1 ms per carved tile (only tiles near
+a ground-level BART track are touched). Rule, per track sample (MetroNet `ST` codes):
+
+| structure | ground |
+|---|---|
+| grade (0), embankment (3), median (5) | **bed = top of rail - 0.85 m** within **2.4 m** of each track centreline; beyond, back to the natural ground on a **1:2** side slope (cut or fill), 1.5 .. 16 m wide |
+| trench (4) | cut only, to **top of rail - 1.2 m** within **3.0 m** of each track centreline; the step up to the natural ground happens between 3.0 and 3.9 m: **infra's retaining walls stand there** (wall face at >= 3.0 m from the outer track's centreline, footing below rail - 1.2 m, top at or above the natural ground) |
+| portal (6), cut-and-cover (7), bored (8), tube (9) | untouched: infra opens the ground with `Under.addCut` |
+| aerial (1), bridge (2) | untouched (columns stand on the natural ground) |
+| platforms of ground-level stations (platform structure grade / embankment / median / trench) | cut only, to the bed (rail - 0.85 m), from 1.2 m to 11 m from the track centreline on the platform side, over the platform length + 5 m |
+
+For infra: at grade the ballast shoulder / sleeper ends can assume flat ground at rail - 0.85 m out to 2.4 m; in
+medians the ground between the track and the barriers is the same bed plane (the freeway lanes stay where Towns draws
+them); trench walls must cover the vertical step at 3.0-3.9 m. For stations: the ground under a ground-level
+platform is at or below the bed. v0 profile vs the ground (main tracks, before the carve): grade rail-ground median
++0.5 m (p10 -0.1, p90 +2.0), embankment +1.1 m, trench -2.8 m, portal -5.4 m.
+
 ## Requests / notes for other workstreams
 
 - **data**: I use `bart_osm.json` from your raw cache read-only for the corridor geometry until `metro/network.json`

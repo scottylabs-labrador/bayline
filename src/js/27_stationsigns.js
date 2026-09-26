@@ -174,7 +174,8 @@ const MetroSigns = (() => {
     // header: platform number, clock
     c.fillStyle = '#10263b'; c.fillRect(0, 0, BW, 44); c.fillStyle = WHITE; c.font = `600 30px ${FONT}`; c.textBaseline = 'middle';
     c.fillText('Platform ' + b.key, 14, 23); c.textAlign = 'right'; c.fillText(clockText(), BW - 14, 23); c.textAlign = 'left';
-    const rows = b.rows;
+    const ext = b.ext && performance.now() - b.ext < 90000;
+    const rows = ext ? b.rows : (scheduledRows(b.st, b.key) || b.rows);
     if (!rows || !rows.length) {
       c.fillStyle = '#ffb21e'; c.font = `600 40px ${FONT}`; c.fillText(rows ? 'No trains scheduled' : b.st.name, 18, 92);
       c.fillStyle = 'rgba(255,178,30,0.65)'; c.font = `500 30px ${FONT}`; c.fillText(rows ? 'Check the system map' : 'Bayline Metro', 18, 146);
@@ -192,15 +193,53 @@ const MetroSigns = (() => {
     c.fillStyle = 'rgba(0,0,0,0.22)'; for (let y = 44; y < BH; y += 4) c.fillRect(0, y, BW, 1);
     b.tex.needsUpdate = true; b.dirty = false;
   }
+  // rows pushed by SIM win for 90 s; otherwise the board shows the scheduled departures (the static timetable)
   function setBoard(st, key, rows) {
-    for (const b of boards) if (b.st === st && (b.key === key || key === '*')) { b.rows = rows; b.dirty = true; }
+    const now = performance.now();
+    for (const b of boards) if (b.st === st && (b.key === key || key === '*')) { b.rows = rows; b.ext = now; b.dirty = true; }
+  }
+  // ---------------------------------------------------------------- scheduled departures (fallback until SIM writes rows)
+  let ttState = 0, depIndex = null, depDay = '';
+  function ensureTimetable() {
+    if (ttState || typeof MetroNet === 'undefined' || !MetroNet.loadTimetable) return;
+    ttState = 1; MetroNet.loadTimetable().then(() => { ttState = 2; }, () => { ttState = 3; });
+  }
+  function ymdShift(ymd, days) { const d = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8) + days)); return d.toISOString().slice(0, 10).replace(/-/g, ''); }
+  // gtfs platform id -> sorted [departure s (today's clock; yesterday's late trips shifted by -1 day), trip, leg index]
+  function indexDepartures(ymd) {
+    depIndex = new Map(); depDay = ymd;
+    for (const [day, shift] of [[ymdShift(ymd, -1), -86400], [ymd, 0]]) {
+      for (const t of MetroNet.tripsOn(day)) {
+        const pat = MetroNet.patterns[t.pat]; if (!pat || !pat.legs) continue;
+        pat.legs.forEach((leg, k) => { const times = t.legs && t.legs[k]; if (!times) return;
+          leg.stops.forEach((s, i) => { if (i === leg.stops.length - 1 && k === pat.legs.length - 1) return;          // arriving at its terminus
+            const dep = times[i * 2 + 1] + shift; if (!(dep > -3600)) return;
+            let L = depIndex.get(s.gtfs); if (!L) depIndex.set(s.gtfs, L = []); L.push([dep, t, k]); }); });
+      }
+    }
+    for (const L of depIndex.values()) L.sort((a, b) => a[0] - b[0]);
+  }
+  function scheduledRows(st, key) {
+    if (ttState !== 2) { ensureTimetable(); return null; }
+    const day = (typeof Env !== 'undefined' && Env.serviceDay) ? Env.serviceDay().ymd : '';
+    if (!depIndex || depDay !== day) indexDepartures(day);
+    const plat = ((st.data && st.data.platforms) || []).find(p => String(p.code) === String(key)); if (!plat) return [];
+    const L = depIndex.get(plat.gtfs) || []; const now = (typeof Env !== 'undefined') ? Env.time.sec : 0;
+    let lo = 0, hi = L.length; while (lo < hi) { const m = (lo + hi) >> 1; if (L[m][0] < now - 20) lo = m + 1; else hi = m; }
+    const rows = [];
+    for (let i = lo; i < L.length && rows.length < 3; i++) {
+      const [dep, t, k] = L[i]; const pat = MetroNet.patterns[t.pat]; const lastLeg = pat.legs[pat.legs.length - 1]; const dest = lastLeg.stops[lastLeg.stops.length - 1].station;
+      rows.push({ line: t.line, color: lineColor(t.line), dest: stName(dest), cars: (t.cars && t.cars[k]) || null, min: Math.max(0, Math.round((dep - now) / 60)) });
+    }
+    return rows;
   }
   let minute = -1, redrawI = 0;
   function update(dt) {
     const m = Math.floor((typeof Env !== 'undefined' ? Env.time.sec : 0) / 60);
-    if (m !== minute) { minute = m; for (const b of boards) b.dirty = true; }
+    if (m !== minute || (ttState === 2 && !update.ttSeen)) { minute = m; if (ttState === 2) update.ttSeen = true; for (const b of boards) b.dirty = true; }
+    if (boards.length) ensureTimetable();
     let n = 0; for (let k = 0; k < boards.length && n < 2; k++) { const b = boards[(redrawI + k) % boards.length]; if (b.dirty) { drawBoard(b); n++; } } redrawI = (redrawI + 1) % Math.max(1, boards.length);
   }
 
-  return { NAVY, TEAL, WHITE, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
+  return { NAVY, TEAL, WHITE, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, scheduledRows, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
 })();
