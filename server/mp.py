@@ -22,8 +22,10 @@ Design for "can never be overwhelmed":
 Protocol (v1)
   client -> server (text frames, JSON arrays, <= 200 bytes):
       [1, mode, trip, s, car, x, y, z, yaw, speed]   presence state
-          mode  int 0..7  (0 menu, 1 walk, 2 ride, 3 drive, 4 fly, 5 map, 6 cab, 7 air: flying an aircraft; then
-                trip = aircraft type id, s = (lat+90)*1000, x = lon*1000, y = altitude/2, z = pitch/roll packed)
+          mode  int 0..9  (0 menu, 1 walk, 2 ride, 3 drive, 4 fly, 5 map, 6 cab, 7 air: flying an aircraft; then
+                trip = aircraft type id, s = (lat+90)*1000, x = lon*1000, y = altitude/2, z = pitch/roll packed;
+                8 mride: riding a Bayline Metro car, 9 mdrive: driving a metro train. Clients before hello v2 show
+                modes they don't know as 'menu', i.e. they simply don't draw those players)
           trip  str  ^[A-Za-z0-9_-]{0,12}$  (GTFS trip id or "" when not on a scheduled train)
           s     float track position in meters from 4th & King (-1000..250000)
           car   int  -1..31 (-1 = not in a car)
@@ -239,7 +241,7 @@ def apply_message(p, msg, now):
         raise ValueError
     kind = data[0]
     if kind == 1 and len(data) == 10:
-        mode = int(_num(data[1], 0, 7))
+        mode = int(_num(data[1], 0, 9))
         trip = data[2]
         if not isinstance(trip, str) or not TRIP_RE.fullmatch(trip):
             raise ValueError
@@ -346,7 +348,7 @@ async def handler(ws):
     STATS["accepted"] += 1
     rate, burst = CFG["MSG_RATE"], CFG["MSG_BURST"]
     try:
-        await ws.send(json.dumps({"t": "hi", "v": 1, "id": p.id, "name": callsign(p.id), "color": color_of(p.id),
+        await ws.send(json.dumps({"t": "hi", "v": 2, "id": p.id, "name": callsign(p.id), "color": color_of(p.id),
                                   "hz": CFG["TICK_HZ"], "max": CFG["MAX_CONN"]}, separators=(",", ":")))
         async for msg in ws:
             now = time.monotonic()
