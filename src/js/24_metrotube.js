@@ -25,6 +25,9 @@ const MetroTube = (() => {
   // kind: 'bore' (circle), 'shoe' (horseshoe), 'box'; ring: steel rings (Market St); lamp spacing
   function sectionOf(type, x, z) {
     const ll = Geo.w2ll(x, z);
+    // San Francisco's subways between the stations are twin bores (Market St: bolted steel rings; Mission St: Calweld
+    // bores), whatever the OSM-derived structure code says; the stations themselves are the STATIONS workstream's boxes
+    if (type === 'cutcover' && ll.lon < -122.392 && ll.lon > -122.45 && ll.lat > 37.728 && ll.lat < 37.796) type = 'bored';
     if (type === 'tube') return { kind: 'bore', R: 2.59, off: 0.2, lamp: 15.24, lining: PAL.lining, name: 'tube', doors: 100.5 };
     if (type === 'bored') {
       if (ll.lon > -122.24 && ll.lat > 37.83 && ll.lat < 37.89) return { kind: 'shoe', R: 2.665, spring: 1.95, off: 0, lamp: 7.62, lining: PAL.lining, name: 'hills', doors: 305 };
@@ -70,7 +73,7 @@ const MetroTube = (() => {
   }
   // a box cell: outer wall at L + 2.45 o, inner wall at L - wi o (the centre wall face of a pair, or 2.25 for one track)
   function boxProfile(sec, L, o, wi) {
-    const wo = 2.45, top = -TB + sec.H, ch = 0.35, edge = 1.84;
+    const wo = 2.01, top = -TB + sec.H, ch = 0.35, edge = 1.84;          // (2.01 m track to wall [WSX 2-5c/d])
     const oW = L + wo, iW = L - wi;
     const p = { arc: [[oW, -TB], [oW, top - ch], [oW - ch, top], [iW + ch, top], [iW, top - ch], [iW, WALK]], floor: [[L - edge, -TB], [oW, -TB]],
       walkTop: [[iW, WALK], [L - edge, WALK]], walkFace: [[L - edge, WALK], [L - edge, -TB + 0.02]], crown: top, flatArc: true };
@@ -97,7 +100,7 @@ const MetroTube = (() => {
       // walkway handrail on the wall side, cable trough cover lines, cables on the outer wall
       const hr = WALK + 1.0, hrL = P.wallAt(hr) - (-o) * 0.1;
       gb.sweep(ctx.rowsAt(ctx, ss, hrL, hr, false), [[-0.022, -0.022], [-0.022, 0.022], [0.022, 0.022], [0.022, -0.022]], PAL.railing, { closed: true });
-      for (const [h, r] of [[1.25, 0.045], [1.45, 0.035], [1.62, 0.035], [1.8, 0.05]]) {
+      for (const [h, r] of [[1.235, 0.034], [1.435, 0.027], [1.605, 0.027], [1.78, 0.038]]) {
         const cl = P.outerAt(h) - o * (0.14 + r); gb.sweep(ctx.rowsAt(ctx, ss, cl, h, false), [[-r, 0], [0, r], [r, 0], [0, -r]], PAL.cable, { closed: true, flat: false });
       }
       // brackets, handrail posts, lamps, doors, blue light stations along the cell
@@ -105,7 +108,9 @@ const MetroTube = (() => {
         MT.frameAt(ctx.R, s, F); setRef(gb, ctx, F); gb.s = s;
         const T = [F.tx, F.ty, F.tz], Lv = [F.lx, F.ly, F.lz], Uv = [F.vx, F.vy, F.vz];
         const at = (lat, h) => [F.x + F.lx * lat + F.vx * h - ctx.ox, F.y + F.ly * lat + F.vy * h, F.z + F.lz * lat + F.vz * h - ctx.oz];
-        const bl = P.outerAt(1.5) - o * 0.13, c = at(bl, 1.5); gb.box(c[0], c[1], c[2], T, Uv, Lv, 0.025, 0.36, 0.13, PAL.galvDark);   // cable bracket
+        // cable rack: a slim channel post on the outer wall with an arm under each cable
+        const bl = P.outerAt(1.5) - o * 0.03, c = at(bl, 1.52); gb.box(c[0], c[1], c[2], T, Uv, Lv, 0.02, 0.36, 0.022, PAL.galvDark);
+        for (const hh of [1.2, 1.4, 1.57, 1.74]) { const al = P.outerAt(hh) - o * 0.13, a2 = at(al, hh); gb.box(a2[0], a2[1], a2[2], T, Uv, Lv, 0.018, 0.012, 0.11, PAL.galvDark); }
         if (Math.round(s / 1.52) % 2 === 0) { const pl = P.wallAt(WALK + 0.5) - (-o) * 0.1, pc = at(pl, WALK + 0.5); gb.box(pc[0], pc[1], pc[2], T, Uv, Lv, 0.02, 0.5, 0.02, PAL.railing); }
       }
       for (let s = Math.ceil(ss[0] / sec.lamp) * sec.lamp; s < ss[ss.length - 1]; s += sec.lamp) {
@@ -121,7 +126,7 @@ const MetroTube = (() => {
         const T = [F.tx, F.ty, F.tz], Lv = [F.lx, F.ly, F.lz], Uv = [F.vx, F.vy, F.vz];
         const h0 = WALK, wl = P.wallAt(h0 + 1.05) + o * 0.02, c = [F.x + F.lx * wl + F.vx * (h0 + 1.05) - ctx.ox, F.y + F.ly * wl + F.vy * (h0 + 1.05), F.z + F.lz * wl + F.vz * (h0 + 1.05) - ctx.oz];
         gb.box(c[0], c[1], c[2], T, Uv, Lv, 0.62, 1.12, 0.05, PAL.concreteLight);
-        gb.box(c[0] + F.lx * o * 0.03, c[1] - 0.04, c[2] + F.lz * o * 0.03, T, Uv, Lv, 0.48, 1.04, 0.03, PAL.steelPaint);
+        gb.box(c[0] + F.lx * o * 0.03, c[1] - 0.04, c[2] + F.lz * o * 0.03, T, Uv, Lv, 0.48, 1.04, 0.03, PAL.doorYellow);   // bright yellow [FIRE]
         const sg = [c[0] + F.lx * o * 0.04, c[1] + 1.32, c[2] + F.lz * o * 0.04]; gb.box(sg[0], sg[1], sg[2], T, Uv, Lv, 0.28, 0.09, 0.02, PAL.exitSign);
         // blue light station 6 m on: grey box, blue lamp above
         MT.frameAt(ctx.R, s + 6, F); setRef(gb, ctx, F); gb.s = s + 6;
@@ -223,7 +228,7 @@ const MetroTube = (() => {
     const cells = ch.pendingCells || []; ch.cellIds = []; ch.portalIds = [];
     for (let i = 0; i < cells.length; i++) {
       const c = cells[i];
-      Under.addCell({ id: c.id, kind: 'tunnel', strip: c.strip, ambient: 0.07, group: c.mesh || null, terrain: !!c.mouth || c.strip.pts.some((p, k) => c.strip.day[k] > 0.01) });
+      Under.addCell({ id: c.id, kind: 'tunnel', strip: c.strip, ambient: 0.09, group: c.mesh || null, terrain: !!c.mouth || c.strip.pts.some((p, k) => c.strip.day[k] > 0.01) });
       ch.cellIds.push(c.id);
     }
     // portals: consecutive cells of this chunk, and at each cell end: the next cell ('auto'), a station face ('auto'),

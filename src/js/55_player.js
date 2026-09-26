@@ -382,6 +382,7 @@ const Player = (() => {
       case 'heli': {
         if (!tr) { setMode('orbit'); break; }
         const car = leadCar(tr); if (!car) break; heli.ang += dt * 0.05;
+        if (tr.metro && tr.underground && typeof MetroPlay !== 'undefined' && MetroPlay.tunnelCam(tr, c, dt)) break;   // (no sky to fly in)
         const g = car.group.position, hd = travelHeading(tr), hx = Math.sin(hd), hz = Math.cos(hd);
         const a = hd + 2.2 + Math.sin(heli.ang) * 0.8; const R = 160, H = 70 + Math.sin(heli.ang * 1.3) * 25;
         const tx = g.x + Math.sin(a) * R, tz = g.z + Math.cos(a) * R; const ty = Math.max(g.y + H, groundAt(tx, tz) + 40);
@@ -396,7 +397,8 @@ const Player = (() => {
         if (hit) { prompt = 'Press <kbd>E</kbd> to board: ' + (hit.tr.metro ? MetroSim.lineName(hit.tr.line) + ' to ' + MetroSim.termName(hit.tr) : Sim.destText(hit.tr).replace(/\s+/g, ' ')); promptAction = () => board(hit); }
         else { const ms = metroOn() ? MetroSim.nearestStation(walk, 160) : null, st = Stations.nearest(walk, 140);
           if (ms && (!st || Math.hypot(ms.x - walk.x, ms.z - walk.z) < Math.hypot(st.x - walk.x, st.z - walk.z))) { prompt = typeof MetroPlay !== 'undefined' && MetroPlay.walkPrompt ? MetroPlay.walkPrompt(ms, walk) : 'Press <kbd>B</kbd> for ' + ms.short + ' trains'; if (typeof MetroPlay !== 'undefined' && MetroPlay.walkAction) promptAction = MetroPlay.walkAction(ms, walk); }
-          else if (st) { prompt = 'Press <kbd>B</kbd> for ' + st.name + ' departures'; } }
+          else if (st) { prompt = 'Press <kbd>B</kbd> for ' + st.name + ' departures';
+            if (st.id === 'place_MLBR' && metroOn() && typeof MetroPlay !== 'undefined') { prompt += ' · <kbd>E</kbd> transfer to the metro'; promptAction = () => MetroPlay.toMetro(); } } }
         break;
       }
       case 'fly': {

@@ -57,7 +57,9 @@ const MetroPlay = (() => {
   function teleport(st, gtfs) {
     const id = st.id || st;
     let sp = null;
-    if (typeof MetroStations !== 'undefined' && MetroStations.spawnPoint) { try { sp = MetroStations.spawnPoint(id, gtfs); } catch (e) { sp = null; } }
+    if (typeof MetroStations !== 'undefined' && MetroStations.spawnPoint) {          // (platforms are keyed by their code: '1', '2' ...)
+      const S = MetroSim.net.stationById[id], pf = S && gtfs ? (S.platforms || []).find(p => p.gtfs === gtfs) : null;
+      try { sp = MetroStations.spawnPoint(id, pf ? (pf.code || String(gtfs).split('-')[1]) : undefined); } catch (e) { sp = null; } }
     if (!sp) sp = platformSpot(id, gtfs);
     if (!sp) return false;
     Player.setMode('walk', { pos: sp });

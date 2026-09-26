@@ -65,7 +65,7 @@ for (const v of views) {
   const file = join(out, `${v.name}.${FMT === 'png' ? 'png' : 'jpg'}`);
   writeFileSync(file, Buffer.from(shot.result.data, 'base64'));
   const info = res && res.info ? res.info : null;
-  console.log(JSON.stringify({ name: v.name, ms: Date.now() - t1, state: res && res.state, tris: res && res.tris, calls: res && res.post && res.post.calls, mode: info && info.mode }));
+  console.log(JSON.stringify({ name: v.name, ms: Date.now() - t1, state: res && res.state, tris: res && res.tris, calls: res && res.post && res.post.calls, mode: info && info.mode, perf: res && res.perf ? { dCalls: res.perf.dCalls, dTris: res.perf.dTris, gpuOn: res.perf.on.gpu, gpuOff: res.perf.off.gpu, pct: res.perf.pct } : undefined }));
   results.push({ name: v.name, file, res });
 }
 writeFileSync(join(out, 'results.json'), JSON.stringify(results, null, 1));
