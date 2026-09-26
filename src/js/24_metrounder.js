@@ -21,7 +21,7 @@ const Under = (() => {
   const stats = { cells: 0, portals: 0, cuts: 0, visCells: 0, mapDraws: 0, mapMs: 0, culled: 0, walk: 0 };
   if (!enabled) {
     const nop = () => {};
-    return { enabled: false, state, stats, addCell: nop, addPortal: nop, addCut: nop, remove: nop, cellAt: () => null, keep: nop, outdoor: nop, update: nop, preRender: nop, postRender: nop,
+    return { enabled: false, state, stats, addCell: nop, addPortal: nop, addCut: nop, remove: nop, cellAt: () => null, cutAt: () => false, keep: nop, outdoor: nop, update: nop, preRender: nop, postRender: nop,
       dayAt: () => 1, cells: new Map(), debug: {} };
   }
   const R = Env.renderer;
@@ -52,7 +52,7 @@ const Under = (() => {
     // ambient: a number (hemisphere-light units) or an [r, g, b] (its luminance is used; the tint is the shared one)
     const amb = Array.isArray(o.ambient) ? 0.2126 * (+o.ambient[0] || 0) + 0.7152 * (+o.ambient[1] || 0) + 0.0722 * (+o.ambient[2] || 0) : (+o.ambient || 0);
     const c = { id: o.id, kind: o.kind || 'cell', poly: o.poly || null, strip: o.strip || null, floor: o.floor, ceil: o.ceil, ambient: isFinite(amb) ? amb : 0,
-      daylight: o.daylight || null, group: o.group || null, terrain: o.terrain !== false, mesh: null };
+      daylight: o.daylight || null, group: o.group || null, terrain: o.terrain !== false, zone: o.zone ? [].concat(o.zone) : null, mesh: null };
     if (c.strip) { c.rows = stripRows(c.strip); c.half = c.strip.half || 3; const b = bboxOf(c.strip.pts); c.bb = [b[0] - c.half - PAD, b[1] - c.half - PAD, b[2] + c.half + PAD, b[3] + c.half + PAD];
       c.floor = Math.min(...c.rows.map(r => r.floor)); c.ceil = Math.max(...c.rows.map(r => r.ceil)); }
     else if (c.poly && c.poly.length >= 3) { const b = bboxOf(c.poly); c.bb = [b[0] - PAD, b[1] - PAD, b[2] + PAD, b[3] + PAD]; }
@@ -130,6 +130,12 @@ const Under = (() => {
     }
     return best;
   }
+  // is the ground at (x, z) cut away (a registered cut whose floor is below y, or an underground volume containing y)?
+  // For modules that place things on the terrain (grass, trees, props): skip where this is true.
+  function cutAt(x, z, y) {
+    for (const c of cuts.values()) { if (x < c.bb[0] || x > c.bb[2] || z < c.bb[1] || z > c.bb[3]) continue; if (y > c.below && inPoly(c.poly, x, z)) return true; }
+    return !!cellAt(x, y, z);
+  }
   // daylight (0..1) at a point inside cell c (the same function the under map encodes)
   function dayAt(c, x, y, z) {
     if (!c) return 1;
@@ -145,6 +151,11 @@ const Under = (() => {
   //   B = (-(yBot - refY), -(yTop - refY), -(cutBelow - refY), 0)       (entrance-shaft daylight ramp; terrain cut)
   // Everything is MAX-blended, so overlapping and stacked cells union correctly; empty columns hold -1e4.
   const N = 1024, LV = [{ texel: 1, half: 512, cx: 1e9, cz: 1e9, refY: 0, re: 176 }, { texel: 4, half: 2048, cx: 1e9, cz: 1e9, refY: 0, re: 704 }];
+  // the fine level: 0.25 m over 128 m around the camera, only for the terrain's cut test (sharp edges at stair wells,
+  // station entrances and portals up close); a separate 1024 x 512 target (A | B)
+  const NF = 512, FL = { texel: 0.25, half: 64, cx: 1e9, cz: 1e9, refY: 0, re: 20 };
+  const rtF = new THREE.WebGLRenderTarget(2 * NF, NF, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false, stencilBuffer: false,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   const rt = new THREE.WebGLRenderTarget(2 * N, 2 * N, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, depthBuffer: false, stencilBuffer: false,
     minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   rt.texture.wrapS = rt.texture.wrapT = THREE.ClampToEdgeWrapping;
@@ -222,6 +233,12 @@ const Under = (() => {
       }
     }
     rt.scissorTest = false; rt.viewport.set(0, 0, 2 * N, 2 * N); rt.scissor.set(0, 0, 2 * N, 2 * N);
+    { const q = FL; for (const m of fpScene.children) { const b = m.userData.bb; m.visible = !(b[2] < q.cx - q.half || b[0] > q.cx + q.half || b[3] < q.cz - q.half || b[1] > q.cz + q.half); }
+      for (let pass = 0; pass < 2; pass++) {
+        rtF.viewport.set(pass * NF, 0, NF, NF); rtF.scissor.set(pass * NF, 0, NF, NF); rtF.scissorTest = true; R.setRenderTarget(rtF);
+        clearMat.uniforms.uV.value.copy(pass ? CLEAR_B : CLEAR_A); R.render(clearScene, orthoCam);
+        fpMat.uniforms.uPass.value = pass; fpMat.uniforms.uPad.value = 0.4; fpMat.uniforms.uXf.value.set(q.cx, q.cz, 1 / q.half, q.refY); R.render(fpScene, orthoCam); }
+      rtF.scissorTest = false; rtF.viewport.set(0, 0, 2 * NF, NF); rtF.scissor.set(0, 0, 2 * NF, NF); }
     R.setRenderTarget(prevRT); R.autoClear = ac;
     stats.mapMs = +(performance.now() - t0).toFixed(2);
   }
@@ -239,10 +256,15 @@ const Under = (() => {
     return true;
   }
   let aliased = false;
+  const fineTex = new THREE.Texture(); fineTex.name = 'under-fine';
+  function aliasFine() { const src = R.properties.get(rtF.texture); if (!src.__webglTexture) return false; const dst = R.properties.get(fineTex); dst.__webglTexture = src.__webglTexture; dst.__webglInit = true; dst.__version = fineTex.version; return true; }
+  let aliasedF = false;
+  const uFine = { value: fineTex }, uXfF = { value: new THREE.Vector4(0, 0, 1 / 64, 0) };
   const uMap = { value: mapTex }, uXf0 = { value: new THREE.Vector4(0, 0, 1 / 512, 0) }, uXf1 = { value: new THREE.Vector4(0, 0, 1 / 2048, 0) };
   const uK = { value: new THREE.Vector4(0, 0, 0, 0) }, uTint = { value: new THREE.Vector3(1.0, 0.95, 0.87) };
-  for (const o of [mapTex, uXf0.value, uXf1.value, uK.value, uTint.value]) o.clone = function () { return this; };
+  for (const o of [mapTex, uXf0.value, uXf1.value, uK.value, uTint.value, fineTex, uXfF.value]) o.clone = function () { return this; };
   const UNI = { blUM: uMap, blUMXf0: uXf0, blUMXf1: uXf1, blUMK: uK, blUTint: uTint };
+  const UNI_FINE = { blUMF: uFine, blUMXfF: uXfF };        // (the terrain's cut variant only: Terrain.cutUniforms)
   for (const id of ['standard', 'physical', 'lambert', 'phong', 'toon']) if (THREE.ShaderLib[id]) Object.assign(THREE.ShaderLib[id].uniforms, UNI);
   // GLSL shared by the lit materials, the terrain cut test and the post composite (uXf: (cx, cz, 1/(2 half) , refY))
   const GLSL = /* glsl */`
@@ -280,6 +302,20 @@ vec4 blUnder( vec3 w ) {
   float day = clamp( max( a.b, dv ), 0.0, 1.0 );
   return vec4( ins, mix( 1.0, day, ins ), a.a * ins, max( cut, ins ) );
 }
+#ifdef BL_CUT
+uniform sampler2D blUMF; uniform vec4 blUMXfF;
+// the terrain's cut test: the fine level (0.25 m) near the camera, the under map beyond
+bool blUnderCut( vec3 w ) {
+  vec2 uv = ( w.xz - blUMXfF.xy ) * blUMXfF.z * 0.5 + 0.5;
+  if ( blUMK.x > 0.5 && all( greaterThan( uv, vec2( 0.004 ) ) ) && all( lessThan( uv, vec2( 0.996 ) ) ) ) {
+    vec4 a = texture2D( blUMF, vec2( uv.x * 0.5, uv.y ) ), b = texture2D( blUMF, vec2( 0.5 + uv.x * 0.5, uv.y ) );
+    float y = w.y - blUMXfF.w;
+    if ( y > -b.b + 0.02 ) return true;                                            // above a cut floor
+    return y > -a.g - 0.3 && y < a.r + 0.3;                                       // inside a volume
+  }
+  return blUnder( w ).w > 0.5;
+}
+#endif
 #endif
 `;
   THREE.ShaderChunk.lights_pars_begin += GLSL;
@@ -324,7 +360,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     for (const b of cutList) if (!(b[2] < x0 || b[0] > x1 || b[3] < z0 || b[1] > z1)) return true;
     return false;
   }
-  if (typeof Terrain !== 'undefined') Terrain.cutTest = terrainNeedsCut;
+  if (typeof Terrain !== 'undefined') { Terrain.cutTest = terrainNeedsCut; Terrain.cutUniforms = UNI_FINE; }
 
   // ------------------------------------------------------------------ portal visibility
   const _v = new THREE.Vector3(), _pm = new THREE.Matrix4();
@@ -354,8 +390,17 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   const adj = new Map();                               // cell id -> portals touching it (rebuilt every frame: 'auto' ends move)
   const EMPTY = [];
   function other(p, cid) { const b = p.b === 'auto' ? p.rb : p.b; return p.a === cid ? b : p.a; }
+  // cells sharing a zone key (the tunnels of one junction cluster, which open into each other without portals) are one
+  // visibility unit: entering one enters all, with the same rectangle
+  const zoneMembers = new Map();
+  function enterZone(cid, rect, cam, depth) {
+    const c = cells.get(cid); if (!c || !c.zone) return;
+    for (const key of c.zone) { const zm = zoneMembers.get(key); if (!zm) continue;
+      for (const o of zm) { if (o === cid) continue; const had = seen.get(o); if (had && contains(had, rect)) continue; seen.set(o, unionR(had, rect)); state.visible.add(o); if (depth < 24) walk(o, rect, cam, depth + 1); } }
+  }
   function walk(cid, rect, cam, depth) {
     stats.walk++;
+    enterZone(cid, rect, cam, depth);
     for (const p of adj.get(cid) || EMPTY) {
       const o = other(p, cid); if (o === cid) continue;
       const pr = rectOf(p, cam); if (!pr) continue;
@@ -370,6 +415,8 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   function visibility(cam) {
     state.visible.clear(); seen.clear(); state.outsideVisible = false; stats.walk = 0;
     for (const l of adj.values()) l.length = 0;
+    for (const l of zoneMembers.values()) l.length = 0;
+    for (const c of cells.values()) if (c.zone) for (const key of c.zone) { let l = zoneMembers.get(key); if (!l) zoneMembers.set(key, l = []); l.push(c.id); }
     const put = (id, p) => { if (id === null || id === undefined) return; let l = adj.get(id); if (!l) adj.set(id, l = []); l.push(p); };
     for (const p of portals.values()) {
       if (p.b === 'auto') p.rb = p.probe ? cellAt(p.probe.x, p.probe.y, p.probe.z, 0.5) : null;
@@ -398,14 +445,15 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   function update(cam) {
     const cp = cam.position;
     // clipmap levels follow the camera (snapped to 8 texels so the map doesn't swim)
-    for (const q of LV) {
+    for (const q of [...LV, FL]) {
       if (Math.abs(cp.x - q.cx) > q.re || Math.abs(cp.z - q.cz) > q.re || Math.abs(cp.y - q.refY) > 160) {
         const snap = q.texel * 8; q.cx = Math.round(cp.x / snap) * snap; q.cz = Math.round(cp.z / snap) * snap; q.refY = Math.round(cp.y / 32) * 32; dirty = true;
       }
     }
     const any = cells.size + cuts.size > 0;
-    if (dirty && any) { drawMaps(cam); dirty = false; if (!aliased) aliased = aliasMap(); }
+    if (dirty && any) { drawMaps(cam); dirty = false; if (!aliased) aliased = aliasMap(); if (!aliasedF) aliasedF = aliasFine(); }
     uXf0.value.set(LV[0].cx, LV[0].cz, 1 / LV[0].half, LV[0].refY); uXf1.value.set(LV[1].cx, LV[1].cz, 1 / LV[1].half, LV[1].refY);
+    uXfF.value.set(FL.cx, FL.cz, 1 / FL.half, FL.refY);
     uK.value.x = any && aliased ? 1 : 0;
     // the camera's cell and how deep inside it is
     state.cell = any ? cellAt(cp.x, cp.y, cp.z) : null;
@@ -454,7 +502,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     },
     levels: LV, rt,
   };
-  return { enabled: true, state, stats, addCell, addPortal, addCut, remove, cellAt, keep, outdoor, update, preRender, postRender, cells, portals, cuts, debug, GLSL,
+  return { enabled: true, state, stats, addCell, addPortal, addCut, remove, cellAt, cutAt, keep, outdoor, update, preRender, postRender, cells, portals, cuts, debug, GLSL,
     dayAt: (x, y, z) => { const id = cellAt(x, y, z); return id ? dayAt(cells.get(id), x, y, z) : 1; },
     INTERIOR_EXPOSURE, MAX_BOOST, get dirty() { return dirty; }, invalidate() { dirty = true; } };
 })();

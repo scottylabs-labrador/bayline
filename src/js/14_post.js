@@ -528,6 +528,7 @@ const Post = (() => {
       const fu = finalMat.uniforms;
       fu.tHDR.value = rtHDR.texture; fu.tAE.value = tAE; fu.tBloom.value = (up[0] || down[0]).texture; fu.uExposure.value = exposure;
       fu.uBloom.value = U.lerp(0.045, 0.11, night) / Math.max(1, down.length - 2); fu.uGrain.value = Q.grain;
+      fu.uGrade.value = under.on ? 1 - 0.8 * under.depth : 1;          // (no cool sky-blue shadow toning deep underground)
       const eDeg = Env.state.sunEl / U.DEG, golden = U.smooth(22, 4, eDeg) * (1 - U.smooth(1, -6, eDeg));
       fu.uTint.value.set(1 + 0.03 * golden, 1, 1 - 0.035 * golden);
       if (Q.fxaa) { pass(finalMat, rtLDR); fxaaMat.uniforms.tSrc.value = rtLDR.texture; fxaaMat.uniforms.uTexel.value.set(1 / W, 1 / H); pass(fxaaMat, null); }
