@@ -350,7 +350,7 @@ const MetroSim = (() => {
     for (const a of all) {
       const b = a.turn; if (!b) continue;
       const ta = a.stops[a.stops.length - 1].tArr, tb = b.stops[0].tDep;
-      if (a.sameTurn) { a.t1 = tb; b.t0 = tb; }            // one train: it waits on the platform and leaves as the next trip
+      if (a.sameTurn) { const hand = Math.max(ta + 5, Math.min(tb - 30, ta + 90)); a.t1 = hand; b.t0 = hand; }   // one train: it unloads, becomes the next trip (sign, lights) and waits with its doors open
       else { a.t1 = Math.min(a.t1, ta + 150); b.t0 = Math.min(tb - 45, Math.max(b.t0, a.t1 + 20)); }
     }
   }
@@ -379,6 +379,7 @@ const MetroSim = (() => {
     stopEvents = new Map();
     for (const p of plans) for (const l of p.legs) for (let k = 0; k < l.stops.length; k++) {
       const s = l.stops[k]; const last = k === l.stops.length - 1 && !l.next;
+      if (k === l.stops.length - 1 && l.next) continue;      // (a reversal: the same train's next part lists the departure)
       if (!stopEvents.has(s.st)) stopEvents.set(s.st, []);
       stopEvents.get(s.st).push({ t: last ? s.tArr : s.tDep, arr: s.tArr, dep: s.tDep, pub: last ? s.arr : s.dep, plan: p, leg: l, k, last, sid: s.sid });
     }
@@ -482,8 +483,20 @@ const MetroSim = (() => {
 
   // pose a consist: head (front coupler of the leading car) at path position ps, cars trailing back along the path
   const PF = {}, PR = {};
+  // MetroKit poses a whole consist from a frame function (bogies yaw with the track under them): d grows toward the
+  // consist's front (car 0's +X end). Leading with car 0, that is the direction of travel; leading with the last car,
+  // it runs backwards along the path (tangent and bank flipped).
+  let posePath = null;
+  const frameFwd = (d, o) => { posePath.at(d, o); if (o.bank === undefined) o.bank = 0; return o; };
+  const frameBack = (d, o) => { posePath.at(-d, o); o.tx = -o.tx; o.ty = -o.ty; o.tz = -o.tz; o.bank = -(o.bank || 0); return o; };
   function poseConsist(e, path, ps, lead) {
-    const cs = e.consist.cars, n = cs.length; let acc = ps;
+    const c = e.consist, cs = c.cars, n = cs.length;
+    if (!c.placeholder && typeof MetroKit !== 'undefined' && MetroKit.poseOnTrack) {
+      posePath = path; if (lead === 0) MetroKit.poseOnTrack(c, frameFwd, ps); else MetroKit.poseOnTrack(c, frameBack, -(ps - c.length));
+      for (const car of cs) car.group.visible = true;
+      return ps - c.length;
+    }
+    let acc = ps;
     for (let j = 0; j < n; j++) {
       const car = cs[lead === 0 ? j : n - 1 - j];
       const L = car.length, c = acc - L / 2, sg = lead === 0 ? 1 : -1;     // +X of the car along travel (lead 0) or against it
@@ -559,18 +572,26 @@ const MetroSim = (() => {
     netOthers(t);
     // world position of every head + distance to the camera
     for (const tr of running) { tr.leg.path.at(tr.s, HF); tr.x = HF.x; tr.y = HF.y; tr.z = HF.z; const hl = Math.hypot(HF.tx, HF.tz) || 1; tr.hx = HF.tx / hl; tr.hz = HF.tz / hl;
-      tr.underground = isUnder(HF.st || HF.struct); tr.dist = Math.hypot(HF.x - camPos.x, HF.z - camPos.z, (HF.y - camPos.y) * 0.5); tr.lim = HF.lim; }
+      tr.underground = isUnder(HF.st); tr.dist = Math.hypot(HF.x - camPos.x, HF.z - camPos.z, (HF.y - camPos.y) * 0.5); tr.lim = HF.lim;
+      tr.buried = tr.underground && isUnder(tr.leg.path.at(tr.s - tr.len, F2).st); }   // (head and tail both under the street)
     running.sort((a, b) => (b.key === focusKey) - (a.key === focusKey) || a.dist - b.dist);
     for (const e of pool) e.busy = false;
     const night = U.uNight.value, maxNear = nearBudget();
     let nNear = 0, fN = 0, lN = 0, dN = 0;
     const fp = far.instanceMatrix.array, lp = lights.geometry.attributes.position.array, lc = lights.geometry.attributes.color.array, dp = dots.geometry.attributes.position.array, dc = dots.geometry.attributes.color.array;
-    const camUnder = typeof Terrain !== 'undefined' && camPos.y < Terrain.h(camPos.x, camPos.z) - 3;
+    const camUnder = !!(typeof Under !== 'undefined' && Under.state && Under.state.cell) || (typeof Terrain !== 'undefined' && camPos.y < Terrain.h(camPos.x, camPos.z) - 3);
+    let nHidden = 0;
     for (const tr of running) {
-      const near = tr.key === focusKey || tr.driven || (nNear < maxNear && tr.dist < 2600);
+      // out of sight costs nothing: a train entirely under the street seen from above ground, or a surface train far
+      // from a camera that is itself underground (the map dots still show them)
+      const own = tr.key === focusKey || tr.driven;
+      if (!own && ((tr.buried && !camUnder) || (camUnder && !seenFromUnder(tr)))) { tr.entry = null; nHidden++;
+        if (dN < DMAX) { dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; _c.set(lineColor(tr.line)); dc[dN * 3] = _c.r; dc[dN * 3 + 1] = _c.g; dc[dN * 3 + 2] = _c.b; dN++; }
+        continue; }
+      const near = own || (nNear < maxNear && tr.dist < 1500);
       const e = near ? acquire(tr.kind, tr.key, tr.cars) : null; tr.entry = e;
       if (e) { nNear++; tr.tailS = poseConsist(e, tr.leg.path, tr.s, tr.lead); setupConsist(tr, e, dt, night); }
-      else if (tr.dist < 60000 && !(camUnder && tr.underground)) {
+      else if (tr.dist < 60000) {
         // far: one instance per car, posed at its centre along the path (cars beyond 12 km are merged in pairs)
         const P = PERF[tr.kind], pair = tr.dist > 12000 && tr.cars > 3 ? 2 : 1, n = Math.ceil(tr.cars / pair), L = P.carLen * pair;
         _c.set(lineColor(tr.line));
@@ -593,11 +614,20 @@ const MetroSim = (() => {
     lights.geometry.setDrawRange(0, lN); lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
     dots.geometry.setDrawRange(0, dN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
     const alt = camPos.y - (typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0); dots.visible = alt > 350; dots.material.opacity = U.smooth(350, 1200, alt);
-    stats.running = running.length; stats.consists = nNear; stats.far = fN; stats.runs = runCache.size;
+    stats.running = running.length; stats.consists = nNear; stats.far = fN; stats.runs = runCache.size; stats.hidden = nHidden;
     stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05;
   }
   let quality = 'high';
   function nearBudget() { return quality === 'low' ? 4 : quality === 'medium' ? 6 : 8; }
+  // with the camera underground (INFRA's portal visibility draws only the cells you can see): a train is drawn when a
+  // cell under its head or tail is visible, or it is on the surface near a portal; without Under, anything within 350 m
+  function seenFromUnder(tr) {
+    const S = typeof Under !== 'undefined' && Under.state && Under.state.visible && Under.cellAt ? Under.state : null;
+    if (!S || tr.dist > 3000) return tr.dist < 350;
+    const a = Under.cellAt(tr.x, tr.y + 2, tr.z); if (a && S.visible.has(a)) return true;
+    tr.leg.path.at(tr.s - tr.len, F2); const b = Under.cellAt(F2.x, F2.y + 2, F2.z); if (b && S.visible.has(b)) return true;
+    return !tr.underground && tr.dist < 350;
+  }
   function fillTrain(tr, p, l, S, t) {
     tr.plan = p; tr.trip = p.trip; tr.leg = l; tr.kind = l.kind; tr.cars = l.cars; tr.line = l.line;
     tr.s = S.ps; tr.v = S.v; tr.a = S.a; tr.phase = S.phase; tr.stopK = S.stopK; tr.nextK = S.nextK; tr.dwellLeft = S.dwellLeft;
@@ -613,7 +643,8 @@ const MetroSim = (() => {
 
   function setupConsist(tr, e, dt, night) {
     const c = e.consist;
-    const dest = destText(tr); if (e.dest !== dest) { c.setDestination(dest, lineColor(tr.line)); e.dest = dest; }
+    const dest = termName(tr); if (e.dest !== dest) { c.setDestination(c.placeholder ? dest : { line: tr.line === 'ebart' ? 'yellow' : tr.line, color: lineColor(tr.line), text: dest }); e.dest = dest; }
+    if (c.setNextStop) { const ns = nextStopName(tr); if (e.ns !== ns) { c.setNextStop(ns); e.ns = ns; } }
     c.setDoors(tr.doorT > 0 ? tr.doorSide : 'none', tr.doorT);
     const lead = tr.lead === 0 ? 'front' : 'rear';
     c.setLights({ head: 1, tail: 1, interior: 0.5 + 0.5 * night, cab: 0.5, lead }); if (c.setLeadEnd) c.setLeadEnd(lead);
@@ -625,7 +656,54 @@ const MetroSim = (() => {
     if (tr.key === focusKey || tr.dist < 250) c.setDisplay && c.setDisplay({ line: lineName(tr.line), color: lineColor(tr.line), nextStop: nextStopName(tr), destination: termName(tr), clock: Env.clockText(Env.time.sec) });
     if (tr.key === focusKey && typeof MetroATC !== 'undefined' && MetroATC.cabDisplay) { const cd = MetroATC.cabDisplay(tr); if (cd && c.setCab) c.setCab(cd); }
     c.update(dt); e.shown = 1;
-    if (typeof MetroPax !== 'undefined') MetroPax.update(e, tr);
+    paxFor(e, tr, iv && (tr.key === focusKey || tr.dist < 70));
+  }
+  // passengers (Life people, one instanced set per car, parented to the car): seated by the time of day and the line,
+  // standees in the aisles and by the doors at the peaks (the Transbay trains are full), deterministic per train and
+  // 20-minute bucket, only for cars near the camera of the train you're on or standing beside
+  const PAXKINDS = ['commuter', 'commuter', 'office', 'office', 'student', 'tourist', 'senior', 'kid', 'cyclist'];
+  const _pw = new THREE.Vector3();
+  function loadFactor(tr) {
+    const h = (Env.time.sec % 86400) / 3600, sd = Env.serviceDay(), wk = sd.kind === 'wkday';
+    const am = h > 6.8 && h < 9.4, pm = h > 16.3 && h < 18.9, transbay = ['yellow', 'red', 'blue', 'green'].includes(tr.line);
+    if (wk && (am || pm)) return transbay ? 1.0 : 0.75;
+    if (h > 21.5 || h < 5.5) return 0.18;
+    return wk ? 0.42 : 0.35;
+  }
+  function paxFor(e, tr, show) {
+    if (typeof Life === 'undefined' || !Life.createPeople) return;
+    const cars = e.consist.cars, bucket = Math.floor(Env.time.sec / 1200), cp = Env.camera.position;
+    for (let ci = 0; ci < cars.length; ci++) {
+      const car = cars[ci];
+      let near = show; if (near) { car.group.getWorldPosition(_pw); near = (_pw.x - cp.x) ** 2 + (_pw.z - cp.z) ** 2 < 80 * 80; }
+      if (!near) { if (car._pax) car._pax.mesh.visible = false; continue; }
+      if (!car._pax) { if (!car.seats || !car.seats.length) continue; try { car._pax = Life.createPeople(Math.min(car.seats.length + 26, 120)); } catch (err) { continue; } car._pax.mesh.frustumCulled = false; car._pax.mesh.castShadow = false; car.group.add(car._pax.mesh); car._paxKey = ''; }
+      car._pax.mesh.visible = true;
+      const key = tr.key + ':' + bucket;
+      if (car._paxKey !== key) { car._paxKey = key; populate(car, tr, ci, bucket); }
+      car._pax.update(0.016);
+    }
+  }
+  function populate(car, tr, ci, bucket) {
+    const P = car._pax, r = U.rng(U.hashStr(tr.key + ':' + ci + ':' + bucket)), load = loadFactor(tr);
+    let k = 0; car._paxSeat = [];
+    const seatP = Math.min(0.97, load * 0.95 + 0.04);
+    for (let si = 0; si < car.seats.length && k < P.max; si++) {
+      if (r() >= seatP) continue; const st = car.seats[si];
+      try { P.look(k, { kind: PAXKINDS[Math.floor(r() * PAXKINDS.length)], seed: Math.floor(r() * 1e6) }); } catch (err) { /* look is optional */ }
+      P.sitAtEye(k, st.x, st.y, st.z, st.yaw); car._paxSeat[k] = si; k++;
+    }
+    // standees: in the floor regions, away from the seats, facing across the car or along it
+    const stand = load >= 0.95 ? 14 + Math.floor(r() * 10) : load >= 0.7 ? 4 + Math.floor(r() * 6) : 0;
+    const R = car.floorRegions || [];
+    for (let n = 0, tries = 0; n < stand && k < P.max && tries < stand * 8; tries++) {
+      const reg = R[Math.floor(r() * R.length)]; if (!reg) break;
+      const x = reg.x0 + 0.3 + r() * Math.max(0, reg.x1 - reg.x0 - 0.6), z = reg.z0 + 0.25 + r() * Math.max(0, reg.z1 - reg.z0 - 0.5);
+      if (car.seats.some(s => Math.abs(s.x - x) < 0.55 && Math.abs(s.z - z) < 0.5)) continue;
+      try { P.look(k, { kind: PAXKINDS[Math.floor(r() * PAXKINDS.length)], seed: Math.floor(r() * 1e6) }); } catch (err) { /* optional */ }
+      P.set(k, x, reg.y, z, r() < 0.6 ? (z > 0 ? Math.PI / 2 : -Math.PI / 2) : (r() < 0.5 ? 0 : Math.PI), 0, r() * 6.28); car._paxSeat[k] = -1; k++; n++;
+    }
+    P.count = k; P.update(0.1);
   }
   // names
   function lineName(id) { const l = lineById.get(id); return l ? l.name : id; }

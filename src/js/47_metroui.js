@@ -84,7 +84,7 @@ const MetroUI = (() => {
     el.sys = add(`<div class="overlay" id="msys" hidden><div class="card panel"><button class="close" data-mclose>×</button>
       <div class="kicker">Bayline Metro · live</div>
       <div class="bar"><h2>System map</h2>
-        <div class="seg" id="mview"><button data-v="schematic" class="on">Schematic</button><button data-v="geo">Geographic</button></div>
+        <div class="seg" id="mview"><button data-v="schematic" class="on">Schematic</button><button data-v="geo">Geographic</button><button data-v="graph" title="Time-distance graph of one line: every train of the next hour and a half">Train graph</button></div>
         <input id="msearch" placeholder="Find a station…" autocomplete="off" spellcheck="false">
         <button class="chip" id="mlive" title="Place every train from the operator's real-time predictions"><span class="dot" id="mlivedot"></span><span id="mlivet">Live positions</span></button>
         <span id="mlines" style="display:flex;gap:6px;flex-wrap:wrap"></span></div>
@@ -204,6 +204,7 @@ const MetroUI = (() => {
   }
   const lineW = () => Math.max(3, Math.min(9, V().scale * (map.view === 'geo' ? 70 : 0.2))) * devicePixelRatio;
   function pick(e) {
+    if (map.view === 'graph') return null;
     const c = el.msysc, r = c.getBoundingClientRect(), dpr = devicePixelRatio, mx = (e.clientX - r.left) * dpr, my = (e.clientY - r.top) * dpr;
     let best = null, bd = 14 * dpr;
     for (const tr of MetroSim.running) { if (hidden.has(tr.line)) continue; const p = trainXY(tr, c); if (!p) continue; const d = Math.hypot(p[0] - mx, p[1] - my); if (d < bd) { bd = d; best = { tr }; } }
@@ -243,6 +244,7 @@ const MetroUI = (() => {
     const c = el.msysc, g = c.getContext('2d'), W = c.width, H = c.height, dpr = devicePixelRatio;
     g.fillStyle = '#0d1217'; g.fillRect(0, 0, W, H);
     if (!ready()) { g.fillStyle = '#c9c4b8'; g.font = `${14 * dpr}px Barlow, sans-serif`; g.fillText('Loading the metro…', 20 * dpr, 30 * dpr); return; }
+    if (map.view === 'graph') { drawGraph(g, c); return; }
     if (!segs) buildSegs();
     const lw = lineW();
     g.lineCap = 'round'; g.lineJoin = 'round';
@@ -288,6 +290,55 @@ const MetroUI = (() => {
     el.mfoot.textContent = `${n} trains running · ${Env.clockText(Env.time.sec)} ${Env.time.live && Env.time.scale === 1 ? '(live)' : ''}${typeof MetroLive !== 'undefined' && MetroLive.on ? ' · live predictions' : ''}`;
   }
 
+  // ---------------------------------------------------------------- the train graph (time-distance, "string" chart)
+  // Time runs left to right (30 min back, 90 min ahead), the line's stations top to bottom in the order of its
+  // busiest pattern; every trip of the line is a line through its (smoothed) arrival and departure times, so headways,
+  // dwells, turnbacks at the terminals and the SFO reversal are all visible at once; the live trains ride on it.
+  let graphLine = 'yellow';
+  const graphCache = { line: '', order: null };
+  function graphOrder(lineId) {
+    if (graphCache.line === lineId) return graphCache.order;
+    const MN = MetroSim.net, L = MN.lineById[lineId === 'ebart' ? 'yellow' : lineId]; if (!L) return null;
+    let best = null; for (const pid of L.patterns) { const p = MN.patterns[pid]; if (p && p.dir === 1 && (!best || p.trips > best.trips)) best = p; }
+    if (!best) return null;
+    const ids = []; for (const Lg of best.legs) for (const s of Lg.stops) { const id = s.station.replace('-T', ''); if (ids[ids.length - 1] !== id) ids.push(id); }
+    // stations other patterns add (the SFO wye, Millbrae) go after the nearest listed one
+    for (const pid of L.patterns) for (const Lg of MN.patterns[pid].legs) for (let i = 0; i < Lg.stops.length; i++) { const id = Lg.stops[i].station.replace('-T', ''); if (!ids.includes(id)) { const prev = i ? Lg.stops[i - 1].station.replace('-T', '') : null; const at = prev ? ids.indexOf(prev) : -1; ids.splice(at >= 0 ? at + 1 : ids.length, 0, id); } }
+    const order = new Map(ids.map((id, i) => [id, i])); graphCache.line = lineId; graphCache.order = { ids, order };
+    return graphCache.order;
+  }
+  function drawGraph(g, c) {
+    const W = c.width, H = c.height, dpr = devicePixelRatio, now = Env.time.sec;
+    const O = graphOrder(graphLine); if (!O) return;
+    const left = 150 * dpr, right = 18 * dpr, top = 34 * dpr, bot = 24 * dpr, t0 = now - 1800, t1 = now + 5400;
+    const X = (t) => left + (t - t0) / (t1 - t0) * (W - left - right), Y = (i) => top + i / Math.max(1, O.ids.length - 1) * (H - top - bot);
+    const col = MetroSim.lineColor(graphLine);
+    // grid: stations, 10-minute ticks
+    g.font = `${11 * dpr}px Barlow, sans-serif`; g.textBaseline = 'middle'; g.textAlign = 'right';
+    O.ids.forEach((id, i) => { const y = Y(i); g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1; g.beginPath(); g.moveTo(left, y); g.lineTo(W - right, y); g.stroke(); g.fillStyle = 'rgba(243,239,230,.72)'; g.fillText(MetroSim.stName(id), left - 8 * dpr, y); });
+    g.textAlign = 'center'; g.textBaseline = 'top';
+    for (let t = Math.ceil(t0 / 600) * 600; t <= t1; t += 600) { const x = X(t); g.strokeStyle = t % 3600 === 0 ? 'rgba(255,255,255,.16)' : 'rgba(255,255,255,.06)'; g.beginPath(); g.moveTo(x, top - 6 * dpr); g.lineTo(x, H - bot); g.stroke(); g.fillStyle = 'rgba(243,239,230,.55)'; g.fillText(Env.clockText(t).replace(' ', '\u202f'), x, 8 * dpr); }
+    // every trip of the line in the window
+    g.lineWidth = 1.6 * dpr; g.lineJoin = 'round';
+    for (const p of MetroSim.plans) {
+      if (p.tEnd < t0 || p.tStart > t1) continue;
+      for (const l of p.legs) { if ((l.line === 'ebart' ? 'yellow' : l.line) !== graphLine) continue;
+        g.strokeStyle = l.stops[l.stops.length - 1].ps > l.stops[0].ps && p.trip.dir === 0 ? col : col; g.globalAlpha = p.trip.dir ? 0.9 : 0.55;
+        g.beginPath(); let started = false;
+        for (const s of l.stops) { const i = O.order.get(s.st.replace('-T', '')); if (i === undefined) continue; const y = Y(i);
+          for (const t of [s.tArr, s.tDep]) { const x = X(t); if (!started) { g.moveTo(x, y); started = true; } else g.lineTo(x, y); } }
+        g.stroke(); } }
+    g.globalAlpha = 1;
+    // now, and the trains running (interpolated between their stops)
+    const xn = X(now); g.strokeStyle = '#ff5a3c'; g.lineWidth = 2 * dpr; g.beginPath(); g.moveTo(xn, top - 10 * dpr); g.lineTo(xn, H - bot); g.stroke();
+    for (const tr of MetroSim.running) { if ((tr.line === 'ebart' ? 'yellow' : tr.line) !== graphLine) continue; const S = tr.leg.stops;
+      let y; if (tr.phase !== 'run' && tr.stopK >= 0) { const i = O.order.get(S[tr.stopK].st.replace('-T', '')); if (i === undefined) continue; y = Y(i); }
+      else { const a = S[Math.max(0, tr.nextK - 1)], b = S[tr.nextK]; if (!b) continue; const ia = O.order.get(a.st.replace('-T', '')), ib = O.order.get(b.st.replace('-T', '')); if (ia === undefined || ib === undefined) continue; const f = U.clamp((tr.s - a.ps) / Math.max(1, b.ps - a.ps), 0, 1); y = Y(ia + (ib - ia) * f); }
+      g.fillStyle = tr.driven ? '#ff5a3c' : '#ffffff'; g.beginPath(); g.arc(xn, y, (tr.key === Player.focus ? 5.5 : 4) * dpr, 0, 7); g.fill(); }
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = col; g.font = `600 ${13 * dpr}px Barlow, sans-serif`;
+    g.fillText(MetroSim.lineName(graphLine) + ' · pick a line with the chips above', left, H - 10 * dpr);
+  }
+
   // ---------------------------------------------------------------- side panel: station or train
   function nextTrainsHtml(stId, n = 8, cls = '') {
     const now = Env.time.sec, rows = MetroSim.arrivals(stId, now, 40).filter(ev => !hidden.has(ev.leg.line)).slice(0, n);
@@ -327,7 +378,9 @@ const MetroUI = (() => {
   function focusStation(s) { if (map.view === 'geo') { map.geo.cx = s.x; map.geo.cz = s.z; map.geo.scale = Math.max(map.geo.scale, 0.05); } else { const p = SCH[s.id]; if (p) { map.sch.cx = p[0]; map.sch.cz = p[1]; } } }
   function renderLines() {
     el.mlines.innerHTML = MetroSim.lines.filter(l => l.id !== 'ebart').map(l => `<button class="mchip${hidden.has(l.id) ? ' off' : ''}" data-l="${l.id}"><i style="background:${l.color}"></i>${esc(l.short)}</button>`).join('');
-    el.mlines.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { const id = b.dataset.l; if (hidden.has(id)) { hidden.delete(id); if (id === 'yellow') hidden.delete('ebart'); } else { hidden.add(id); if (id === 'yellow') hidden.add('ebart'); } renderLines(); renderSide(); }));
+    el.mlines.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { const id = b.dataset.l;
+      if (map.view === 'graph') { graphLine = id; hidden.delete(id); renderLines(); return; }
+      if (hidden.has(id)) { hidden.delete(id); if (id === 'yellow') hidden.delete('ebart'); } else { hidden.add(id); if (id === 'yellow') hidden.add('ebart'); } renderLines(); renderSide(); }));
   }
   function openMap(opts = {}) {
     build(); if (!on()) return;

@@ -218,7 +218,9 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     // pass-by: nearest other train outside
     let pb = null, pd = 700;
     for (const t2 of Sim.running) { if (t2 === tr && aboard) continue; if (t2 === tr) continue; const d = Math.hypot(t2.x - camP.x, t2.z - camP.z); if (d < pd && t2.v > 2) { pd = d; pb = t2; } }
-    if (pb) { let horn = false; for (const c of Track.feat.crossings) { const a = (c.s - pb.s) * (pb.dir ? 1 : -1); if (a > 20 && a < 320) { horn = true; break; } } Sound.passby({ dist: pd, speed: pb.v, kind: pb.kind, horn }); } else Sound.passby(null);
+    if (typeof MetroSim !== 'undefined' && MetroSim.enabled && MetroSim.ready) for (const t2 of MetroSim.running) { if (t2 === tr || t2.buried) continue; const d = Math.hypot(t2.x - camP.x, t2.z - camP.z, (t2.y - camP.y) * 0.8); if (d < pd && t2.v > 2) { pd = d; pb = t2; } }
+    if (pb && pb.metro) Sound.passby({ dist: pd, speed: pb.v, kind: pb.kind === 'dmu' ? 'diesel' : 'emu', horn: false });
+    else if (pb) { let horn = false; for (const c of Track.feat.crossings) { const a = (c.s - pb.s) * (pb.dir ? 1 : -1); if (a > 20 && a < 320) { horn = true; break; } } Sound.passby({ dist: pd, speed: pb.v, kind: pb.kind, horn }); } else Sound.passby(null);
     Sound.crossings(TrackGeo.crossingsNear(camP, 700));
     const urb = Terrain.urbanAt(camP.x, camP.z); let bay = 0; for (const [dx, dz] of [[400, 0], [-400, 0], [0, 400], [0, -400], [0, 0]]) if (Terrain.isWater(camP.x + dx, camP.z + dz)) bay += 0.2;
     const alt = camP.y - Terrain.h(camP.x, camP.z);
