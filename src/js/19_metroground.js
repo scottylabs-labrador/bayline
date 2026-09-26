@@ -226,6 +226,29 @@ const MetroGround = (() => {
     }
     if (R.length) Flora.refreshIn(R);
   }
+  // road traffic never drives on a BART track at ground level or over an open trench (an OSM road drawn across it, e.g.
+  // West Oakland): a keep-out in the shape of MetroStations' (Life's cutRoads cuts the lanes there). Trench: any road
+  // point within its half width + 3 m of the track that is not a bridge (cutRoads passes bridges and major roads);
+  // grade, embankment, median: the same, unless the road is 3 m or more above the rail
+  const roadKeepOut = {
+    keepOutAny(x0, z0, x1, z1) {                        // (the carve's 100 m grid of ground-level track segments)
+      if (!installed) return false;
+      const a = Math.floor((Math.min(x0, x1) - 12) / CELL), b = Math.floor((Math.max(x0, x1) + 12) / CELL);
+      const c = Math.floor((Math.min(z0, z1) - 12) / CELL), d = Math.floor((Math.max(z0, z1) + 12) / CELL);
+      if ((b - a + 1) * (d - c + 1) > 4096) return true;
+      for (let cz = c; cz <= d; cz++) for (let cx = a; cx <= b; cx++) if (grid.has(ck(cx, cz))) return true;
+      return false;
+    },
+    keepOut(x, z, kind, hw, y) {
+      if (!installed || !grid.has(ck(Math.floor(x / CELL), Math.floor(z / CELL)))) return false;
+      const n = MetroNet.nearest(x, z, (hw || 0) + 3.0);
+      if (!n) return false;
+      MetroNet.frame(n.track, n.s, fr);
+      const st = fr.struct;
+      if (st === 4) return true;
+      return (st === 0 || st === 3 || st === 5) && !(y > fr.y + 3.0);
+    },
+  };
   function dropTree(x, z, r, shrub) {
     if (onCutGround(x, z)) return true;
     if (shrub) return false;                           // (bushes: only the cut; the clearance below is for trees)
@@ -264,7 +287,7 @@ const MetroGround = (() => {
     }, 400);
   }
   let rects = null;
-  const api = { install, carveAt, carvePoint, onCutGround, cutNear, stats, get installed() { return installed; }, get rects() { return rects; },
+  const api = { install, carveAt, carvePoint, onCutGround, cutNear, roadKeepOut, stats, get installed() { return installed; }, get rects() { return rects; },
     // (QA handles: the modules this one works with, for headless checks)
     _dbg: { flora: () => (typeof Flora !== 'undefined' ? Flora : null), terrain: () => Terrain, world: () => (typeof World !== 'undefined' ? World : null), ground: () => (typeof GroundCover !== 'undefined' ? GroundCover : null) } };
   if (typeof window !== 'undefined') (window.__baylineMods ||= {}).MetroGround = api;

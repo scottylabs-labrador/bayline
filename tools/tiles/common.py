@@ -88,16 +88,22 @@ def jpeg_truncated(a, G=16):
     return bool(((b[..., 1] - np.maximum(b[..., 0], b[..., 2])) >= 80).mean() >= 0.9)
 
 
-def jpeg_bytes(u8, q, subsampling=2, tries=6):
-    """Checked JPEG encode of an HxWx3 uint8 array. Pillow 10.1 / libjpeg-turbo 3.0.0 sometimes (deterministically, for
-    some inputs, optimize=True or not) writes a scan that ends early: the file still ends with EOI, macOS ImageIO shows it
-    fine, but libjpeg-turbo decoders (Chrome) draw the missing last MCU(s) as pure green 16 px squares. The bytes are
-    decoded and compared blockwise with the source; a gross block error re-encodes at the next lower quality."""
+def jpeg_bytes(u8, q, subsampling=2, tries=3):
+    """JPEG bytes of an HxWx3 (RGB) uint8 array: quality q, optimized Huffman tables, 4:2:0 (subsampling=2) or 4:4:4 (0).
+    Encoded with OpenCV's libjpeg-turbo, not Pillow: Pillow 10.1 here writes a wrong scan tail for most images, at random
+    (the same input encodes right the next time): 'extraneous bytes before EOI' (harmless) or 'premature end of data
+    segment', where libjpeg-turbo decoders (Chrome) draw the last 16 px MCU wrong, up to a pure-green square. OpenCV's
+    output is deterministic and byte-identical to Pillow's good encodes. Decoded and compared blockwise as a check."""
     import io
+    import cv2
     from PIL import Image
-    im = Image.fromarray(u8)
+    params = [cv2.IMWRITE_JPEG_QUALITY, int(q), cv2.IMWRITE_JPEG_OPTIMIZE, 1,
+              cv2.IMWRITE_JPEG_SAMPLING_FACTOR, cv2.IMWRITE_JPEG_SAMPLING_FACTOR_420 if subsampling == 2 else cv2.IMWRITE_JPEG_SAMPLING_FACTOR_444]
     for k in range(tries):
-        buf = io.BytesIO(); im.save(buf, 'JPEG', quality=q - k, optimize=True, subsampling=subsampling); b = buf.getvalue()
+        ok, enc = cv2.imencode('.jpg', np.ascontiguousarray(u8[..., ::-1]), params)
+        if not ok:
+            continue
+        b = enc.tobytes()
         dec = np.asarray(Image.open(io.BytesIO(b)).convert('RGB'))
         if dec.shape == u8.shape:
             err, green = jpeg_block_err(dec, u8)
