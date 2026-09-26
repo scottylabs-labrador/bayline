@@ -241,7 +241,7 @@ const Globe = (() => {
     const u = Object.assign({ iTex: { value: null }, iUV: { value: new THREE.Vector4(0, 0, 1, 1) }, iHas: { value: 0 }, iTexel: { value: 10 }, iEox: { value: 1 },
       nTex: { value: null }, nUV: { value: new THREE.Vector4(0, 0, 1, 1) }, nHas: { value: 0 } }, shared);
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0, envMapIntensity: 0.5 });
-    m.userData.u = u; m.customProgramCacheKey = () => 'bayline-globe-v4';
+    m.userData.u = u; m.customProgramCacheKey = () => 'bayline-globe-v5';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader
@@ -269,6 +269,9 @@ const Globe = (() => {
             float lum = dot(pc, vec3(0.299, 0.587, 0.114));
             float blu = smoothstep(-0.02, 0.06, pc.b - pc.r) * (1.0 - smoothstep(0.42, 0.62, lum));
             gGWater = (1.0 - smoothstep(-0.2, 0.6, vGH)) * max(blu, 1.0 - smoothstep(0.1, 0.22, lum));
+            // open sea (the bathymetry well below sea level): hazy or glinting photo strips of the ocean are water too (a
+            // bluish photo is enough; below-sea-level land is brown or white)
+            gGWater = max(gGWater, smoothstep(-4.0, -12.0, vGH) * smoothstep(-0.05, 0.03, pc.b - pc.r));
             float bayK = 0.0;                           // mapped bay / inland water near sea level (Bay frame only)
             if (uBayOn > 0.5) { vec2 bq = (vGW.xz - uBayR.xy) / (uBayR.zw - uBayR.xy);
               if (bq.x > 0.0 && bq.x < 1.0 && bq.y > 0.0 && bq.y < 1.0) { bayK = smoothstep(0.35, 0.75, texture2D(uBayW, bq).r) * (1.0 - smoothstep(0.4, 2.5, vGH)); gGWater = max(gGWater, bayK); }
@@ -276,6 +279,9 @@ const Globe = (() => {
               // acquisition dates, kept a little of the photo's own variation (sediment plumes, channels)
               col = mix(col, vec3(0.29, 0.35, 0.34) * (0.85 + 0.3 * smoothstep(0.1, 0.45, lum)), bayK * 0.85);
               depth = mix(depth, min(depth, 2.5), bayK); }    // (the DEM tiles' bathymetry differs tile to tile: shallow bay tone)
+            // non-bay water off the shore shades at least 15 m deep, like the Bayline terrain's ocean next to it (the surf
+            // zone, above -0.5 m, keeps its own depth)
+            depth = max(depth, 15.0 * (1.0 - bayK) * smoothstep(-0.5, -3.0, vGH));
             gGN = normalize(vGN); gGRough = 0.93;
             // close to the ground a Sentinel-2 pixel (5-10 m) covers many screen pixels: add real surface texture (grass,
             // soil, asphalt, concrete from the Bayline detail set) tinted by the photo, plus metre-scale variation,
