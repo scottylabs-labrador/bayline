@@ -483,7 +483,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   }
   function failsafeNote(hit, x, y, z) {
     const now = performance.now();
-    if (!hit) { fsPos = null; return; }
+    if (!hit) { fsPos = null; stats.failsafe = null; return; }
     if (!fsPos || Math.hypot(fsPos[0] - x, fsPos[2] - z) > 20) { fsPos = [x, y, z]; fsSince = now; return; }
     stats.failsafe = hit;
     if (!DEBUG || now - fsSince < 3000) return;
