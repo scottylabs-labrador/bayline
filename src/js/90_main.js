@@ -17,6 +17,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     await step(0.5, 'Building stations…');
     Stations.init();
     TrackGeo.init();
+    // Bayline Metro guideway, tunnels and the underground engine (infra; #metro=1 only)
+    if (typeof MetroTrack !== 'undefined' && MetroTrack.enabled) safe('metrotrack', () => MetroTrack.init());
     await step(0.58, 'Reading the timetable…');
     await Sim.init();
     if (typeof MetroSim !== 'undefined' && MetroSim.enabled) MetroSim.init();   // Bayline Metro (#metro=1): loads in the background, never blocks boot
@@ -337,6 +339,7 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (typeof WorldTiles !== 'undefined' && World.started) safeFrame('worldtiles', () => WorldTiles.update(Env.camera));
     if (typeof Precip !== 'undefined' && World.started) safeFrame('precip', () => Precip.update(dt));
     if (bay) { TrackGeo.update(cp, dt); TrackGeo.updateDynamic(dt, Sim.running, cp); Stations.update(dt, cp, Sim.running); }
+    if (bay && typeof MetroTrack !== 'undefined' && MetroTrack.enabled) safeFrame('metrotrack', () => MetroTrack.update(cp, dt));
     if (bay && typeof Towns !== 'undefined' && Towns.group) safeFrame('towns', () => { Towns.update(cp, envArg); const R = Towns.stats.detailR; if (R) Terrain.setTownFade(R - 300, R + 300, 1); });
     if (bay && World.landmarks && World.landmarks.update) safeFrame('landmarks', () => World.landmarks.update(dt, envArg));
     if (bay && World.air) safeFrame('air', () => World.air.update(dt, envArg));
@@ -354,11 +357,16 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     Avatars.update();
     if (!started) cinematics(dt);
     if (World.started) { UI.update(dt); if (typeof MetroSim !== 'undefined' && MetroSim.enabled) safeFrame('metro-ui', () => { MetroUI.update(dt); MetroSound.update(dt); }); soundFrame(dt); if (typeof Net !== 'undefined') Net.setState(Player.state()); }
+    // underground (Bayline Metro): the camera's cell, portal visibility, the under map, interior exposure
+    if (typeof Under !== 'undefined' && Under.enabled) safeFrame('under', () => Under.update(Env.camera));
     draw(dt);
   }
   function draw(dt) {
+    const U2 = typeof Under !== 'undefined' && Under.enabled ? Under : null;   // (cells nobody sees and, deep underground, the outdoors: not drawn)
+    if (U2) safeFrame('under-pre', () => U2.preRender());
     if (typeof Post !== 'undefined' && Post.render && Post.enabled !== false && !postBroken) { try { Post.render(dt); } catch (e) { postBroken = true; console.error('post', e); Env.renderer.setRenderTarget(null); Env.renderer.render(Env.scene, Env.camera); } }
     else Env.renderer.render(Env.scene, Env.camera);
+    if (U2) U2.postRender();
   }
   // capture: let the world catch up with the camera without advancing time (level of detail, tile requests and the
   // incremental builders run; nothing moves), then draw the frame again. Resolves with what was still loading.
