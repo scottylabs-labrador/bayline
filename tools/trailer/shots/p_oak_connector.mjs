@@ -4,7 +4,7 @@
 // terminal's parking and its low buildings), looking into the low sun; a slow drift along the line.
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
-const S = 300, D = 240, H = 17, AZ = 264, FOV = 8.6, PITCH = -1.2;
+const S = 300, D = 240, H = 17, AZ = 264, FOV = 8.6, PITCH = -0.4;
 export default {
   hash: '#auto&t=18:40&q=ultra&w=clear', warm: 55, frames: 210,
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline, C = __cine;

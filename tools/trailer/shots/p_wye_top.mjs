@@ -1,11 +1,12 @@
 // P24, night: over the West Oakland aerial where it comes down into the Oakland Wye: the guideway runs ahead and splits,
 // one pair of tracks for Richmond/Concord and one for Lake Merritt/Fremont, each dropping into its trench and portal,
-// with downtown Oakland's lit towers beyond. A drone 16 m over the guideway, 50 mm, looking straight down the
+// with downtown Oakland's lit towers beyond. A drone 24 m up, 34 m off the guideway's south side (so the two tracks
+// separate in view), 50 mm, looking down the
 // line; two trains pass each other 270 m ahead (the timetable's meeting point there), headlights and lit windows, one
 // coming at us, one heading into the split (it comes from under us first). A slow eased push.
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
-const FOV = 28, BACK = 270, SIDE = 4, H = 18;
+const FOV = 28, BACK = 270, SIDE = 34, H = 24;
 export default {
   hash: '#auto&t=21:50&q=ultra&w=clear', warm: 50, frames: 120,
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline, C = __cine;
