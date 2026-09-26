@@ -204,7 +204,7 @@ const MetroTube = (() => {
   function appendGeo(gb, geo, m4, C) {
     const g = geo.index ? geo.toNonIndexed() : geo; const p = g.attributes.position; g.computeVertexNormals(); const n = g.attributes.normal;
     const v = new THREE.Vector3(), nn = new THREE.Vector3(), nm = new THREE.Matrix3().getNormalMatrix(m4), flip = m4.determinant() < 0;
-    for (let i = 0; i < p.count; i += 3) { const ids = []; for (let k = 0; k < 3; k++) { v.fromBufferAttribute(p, i + k).applyMatrix4(m4); nn.fromBufferAttribute(n, i + k).applyMatrix3(nm).normalize(); ids.push(gb.v(v.x, v.y, v.z, nn.x, nn.y, nn.z, C)); } if (flip) gb.i.push(ids[0], ids[2], ids[1]); else gb.i.push(ids[0], ids[1], ids[2]); }
+    for (let i = 0; i < p.count; i += 3) { const ids = []; for (let k = 0; k < 3; k++) { v.fromBufferAttribute(p, i + k).applyMatrix4(m4); nn.fromBufferAttribute(n, i + k).applyMatrix3(nm).normalize(); ids.push(gb.v(v.x, v.y, v.z, nn.x, nn.y, nn.z, C)); } if (flip) gb.i3(ids[0], ids[2], ids[1]); else gb.i3(ids[0], ids[1], ids[2]); }
     if (g !== geo) g.dispose();
   }
 
@@ -380,7 +380,7 @@ const MetroTube = (() => {
         const nx = r[0] * nl + u[0] * nu, ny = r[1] * nl + u[1] * nu, nz = r[2] * nl + u[2] * nu, C = R0.col[k];
         gb.v(o[0] + r[0] * A[0] + u[0] * A[1], o[1] + r[1] * A[0] + u[1] * A[1], o[2] + r[2] * A[0] + u[2] * A[1], nx, ny, nz, C);
         gb.v(o[0] + r[0] * B[0] + u[0] * B[1], o[1] + r[1] * B[0] + u[1] * B[1], o[2] + r[2] * B[0] + u[2] * B[1], nx, ny, nz, C); }
-      if (prev >= 0) for (let k = 0; k < np - 1; k++) { const a0 = prev + 2 * k, a1 = base + 2 * k; gb.i.push(a0, a0 + 1, a1, a0 + 1, a1 + 1, a1); }
+      if (prev >= 0) for (let k = 0; k < np - 1; k++) { const a0 = prev + 2 * k, a1 = base + 2 * k; gb.i6(a0, a0 + 1, a1, a0 + 1, a1 + 1, a1); }
       prev = base;
     }
   }
@@ -441,6 +441,7 @@ const MetroTube = (() => {
         const cell = { id, s0, s1, sec, tl, tgb: new MT.TGB(), R };
         // (built in pieces of ~50 m that share their boundary rows, a step each)
         ctx.ch.stage = 'tube:cell'; for (let i0 = 0; i0 < ss.length - 1;) { let i1 = i0 + 1; while (i1 < ss.length - 1 && ss[i1] - ss[i0] < 25) i1++; buildCell(ctx, cell, sec, tl, ss.slice(i0, i1 + 1)); i0 = i1; yield; }
+        MetroGuide.midRails(ctx, cell.tgb, R, s0, s1, tl.map(t => t.L));
         ctx.ch.stage = 'tube:strip';
         // where this box meets a bored section (the Oakland box and the Tube, a portal box and the Berkeley Hills
         // bores): a bulkhead across the box with the bores' openings
@@ -477,7 +478,7 @@ const MetroTube = (() => {
   // (the other tracks' segments are bucketed in a 6 m grid, so each vertex tests only the few segments near it; the
   // vertices are processed in batches between yields)
   function* cullInside(ctx, cell, own) {
-    const gb = cell.tgb, P = gb.p, I = gb.i; if (!I.length) return;
+    const gb = cell.tgb, P = gb.pos, I = gb.idx; if (!I.length) return;
     // other underground tracks near this cell, as polylines (x, z, y) around it
     let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for (const q of cell.strip.pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[2]); z1 = Math.max(z1, q[2]); }
     const mid = cell.strip.pts[Math.floor(cell.strip.pts.length / 2)], reach = Math.hypot(x1 - x0, z1 - z0) / 2 + 25;
@@ -504,8 +505,8 @@ const MetroTube = (() => {
       }
       if ((v & 8191) === 8191) yield;
     }
-    const out = []; for (let k = 0; k < I.length; k += 3) if (!(ins[I[k]] && ins[I[k + 1]] && ins[I[k + 2]])) out.push(I[k], I[k + 1], I[k + 2]);
-    gb.i = out;
+    const out = new Uint32Array(I.length); let no = 0; for (let k = 0; k < I.length; k += 3) if (!(ins[I[k]] && ins[I[k + 1]] && ins[I[k + 2]])) { out[no++] = I[k]; out[no++] = I[k + 1]; out[no++] = I[k + 2]; }
+    gb.setIdx(out.subarray(0, no));
   }
   // after the body job: one mesh per cell (so portal visibility can hide it), outdoor meshes registered with Under
   function* finish(ctx, g) {

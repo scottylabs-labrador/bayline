@@ -490,13 +490,15 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
 
   // ------------------------------------------------------------------ per frame
   let lastCam = new THREE.Vector3(1e9, 0, 0), wasNear = false, mapWait = 0, recentred = false;
-  // (failure isolation: an exception anywhere in Under resets it to "outdoors, nothing hidden, no map", logs one
-  // warning, and after three Under stays off; the main loop never sees it)
-  let broken = false, errN = 0;
+  // (failure isolation: an exception anywhere in Under first resets it to "outdoors, nothing hidden, no map"; then the
+  // metro switch (18_metro.js) is told, which turns the whole metro off for the session with its one warning; without
+  // the switch Under just stays off)
+  let broken = false;
+  const hasSwitch = () => typeof Metro !== 'undefined' && !!Metro.fail;
   function fail(where, e) {
-    errN++; try { resetState(); } catch (e2) {}
-    if (errN === 1) console.warn('Under: ' + where + ' failed; underground rendering off for this frame' + (errN >= 3 ? '' : ''), e);
-    if (errN >= 3) broken = true;
+    broken = true; try { resetState(); } catch (e2) {}
+    if (hasSwitch()) { try { Metro.fail('the underground engine (' + where + ')', e); } catch (e3) {} }
+    else console.warn('Under: ' + where + ' failed; underground rendering off', e);
   }
   function resetState() {
     state.cell = null; state.failsafe = null; state.depth = 0; state.daylight = 1; state.outsideVisible = true; state.visible.clear();
