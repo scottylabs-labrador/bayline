@@ -596,6 +596,22 @@ const MetroKit = (() => {
       }
       return this;
     }
+    // a plate / prism: outline (+ holes) in the x-y plane (current transform), extruded from z0 to z1: both caps and the
+    // side walls (flat normals, outward)
+    prism(outline, holes, z0, z1) {
+      const za = Math.min(z0, z1), zb = Math.max(z0, z1);
+      this.shape(outline, holes, (a, b) => ({ p: [a, b, zb], n: [0, 0, 1] }));
+      this.shape(outline, holes, (a, b) => ({ p: [a, b, za], n: [0, 0, -1] }));
+      const walls = (ring, outer) => {
+        let ar = 0; for (let i = 0; i < ring.length; i++) { const p = ring[i], q = ring[(i + 1) % ring.length]; ar += p[0] * q[1] - q[0] * p[1]; }
+        const sg = (ar > 0 ? 1 : -1) * (outer ? 1 : -1);
+        for (let i = 0; i < ring.length; i++) { const p = ring[i], q = ring[(i + 1) % ring.length], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy); if (L < 1e-9) continue;
+          const nx = sg * dy / L, ny = -sg * dx / L;
+          this.quadA(this.v(p[0], p[1], za, nx, ny, 0), this.v(q[0], q[1], za, nx, ny, 0), this.v(q[0], q[1], zb, nx, ny, 0), this.v(p[0], p[1], zb, nx, ny, 0)); }
+      };
+      walls(outline, true); for (const h of holes || []) walls(h, false);
+      return this;
+    }
     geometry() {
       const g = new THREE.BufferGeometry(), n = this.count;
       g.setAttribute('position', new THREE.Float32BufferAttribute(this.P, 3));
