@@ -136,5 +136,7 @@ const MetroLive = (() => {
     else { matched = 0; MetroSim.replan(); }                     // back to the pure timetable
     notify();
   }
-  return { setOn, poll, status, onChange(f) { listeners.push(f); }, get on() { return on; }, decodeFeed, _applyEtd: applyEtd };
+  const api = { setOn, poll, status, onChange(f) { listeners.push(f); }, get on() { return on; }, decodeFeed, _applyEtd: applyEtd };
+  if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroLive = api;
+  return api;
 })();

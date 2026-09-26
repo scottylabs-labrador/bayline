@@ -15,7 +15,9 @@ from metro import consist as CS
 LINES = {'1': ('yellow', 1), '2': ('yellow', 0), '3': ('orange', 0), '4': ('orange', 1), '5': ('green', 1), '6': ('green', 0),
          '7': ('red', 1), '8': ('red', 0), '11': ('blue', 1), '12': ('blue', 0), '19': ('grey', 0), '20': ('grey', 1)}
 XFER_EMU = 120        # s: EMU between the transfer platform (PITT-T) and Pittsburg/Bay Point station
-XFER_DMU = 180        # s: cross-platform transfer allowance at PITT-T
+XFER_DMU = 180        # s: cross-platform transfer allowance at PITT-T (shrinks to XFER_MIN when the GTFS times are tight)
+XFER_MIN = 60         # s: shortest cross-platform transfer
+DMU_RUN = 240        # s: shortest DMU run Pittsburg Center <-> transfer platform (3.9 km; research: ~3 min)
 
 
 def main():
@@ -64,13 +66,15 @@ def main():
                     if leg['sys'] == 'ebart':
                         if k == 0:            # DMU departs the transfer after the EMU from SF arrives there
                             arr_pitt = times[gi - 1][0] if gi > 0 else times[gi][0]
-                            dep = arr_pitt + XFER_EMU + XFER_DMU
-                            nxt = times[gi][0]
-                            dep = min(dep, nxt - 240)
+                            emu_arr = arr_pitt + XFER_EMU
+                            nxt = times[gi][0]                     # its arrival at Pittsburg Center
+                            dep = max(emu_arr + XFER_MIN, min(emu_arr + XFER_DMU, nxt - DMU_RUN))
                             lt += [dep, dep]
                         else:                 # DMU arrives at the transfer before the EMU leaves it
                             arr_pitt = times[gi][0]
-                            a = arr_pitt - XFER_EMU - XFER_DMU
+                            emu_dep = arr_pitt - XFER_EMU
+                            prev_dep = lt[-1] if lt else emu_dep - 600   # its departure from Pittsburg Center
+                            a = min(emu_dep - XFER_MIN, max(emu_dep - XFER_DMU, prev_dep + DMU_RUN))
                             lt += [a, a]
                     else:
                         if k == 0:            # EMU departs the transfer platform
@@ -88,10 +92,10 @@ def main():
                 lt += [a, d]
                 gi += 1
             legs_t.append(lt)
-        cars = CS.cars(line, t['service_id'], legs_t, p)
-        out.append(dict(id=t['trip_id'], svc=t['service_id'], line=line, dir=dirn, pat=p['id'], head=t['trip_headsign'], cars=cars, legs=legs_t))
+        out.append(dict(id=t['trip_id'], svc=t['service_id'], line=line, dir=dirn, pat=p['id'], head=t['trip_headsign'], cars=None, legs=legs_t))
     if miss:
         log('trips without a pattern path:', dict(miss))
+    CS.assign(out, {p['id']: p for p in net['patterns']}, services)
     out.sort(key=lambda r: (r['svc'], r['legs'][0][1] if r['legs'] and r['legs'][0] else 0))
     tt = dict(version=0, format='bayline-metro-timetable', generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'),
               feed=dict(publisher=feed['feed_publisher_name'], version=feed['feed_version'], start=feed['feed_start_date'], end=feed['feed_end_date'],
