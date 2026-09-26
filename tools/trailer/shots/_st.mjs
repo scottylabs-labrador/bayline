@@ -65,3 +65,10 @@ export const clearLine = `(a, b, pad = 1.5) => { const B = window.__bayline, T =
   for (let d = 0; d <= L; d += 1.5) { const k = d / L, x = a.x + (b.x - a.x) * k, z = a.z + (b.z - a.z) * k;
     for (const g of bl) { for (const [ox, oz] of [[0, 0], [pad, 0], [-pad, 0], [0, pad], [0, -pad]]) if (inP(g.pts, x + ox, z + oz)) return false; } }
   return true; }`;
+
+// a spot clear of the roads (Towns road ribbons, their half width + pad) and of the parked / moving traffic on them
+export const offRoad = `(x, z, pad = 3) => { const B = window.__bayline, T = B.Towns; if (!T || !T.roadsNear) return true;
+  for (const r of T.roadsNear(x, z, 40)) { const P = r.pts, hw = (r.width || 8) / 2 + pad;
+    for (let i = 0; i + 3 < P.length; i += 3) { const ax = P[i], az = P[i + 2], bx = P[i + 3], bz = P[i + 5], ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2)); if (Math.hypot(ax + ex * t - x, az + ez * t - z) < hw) return false; } }
+  return true; }`;
