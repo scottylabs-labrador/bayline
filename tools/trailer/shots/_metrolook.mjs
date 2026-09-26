@@ -10,8 +10,8 @@
 //   __cine installed; await it at the end of prime. o: { expo, lcd, refl, cab, frames (pre-roll) } overrides.
 //   Resolves to the settings (a string) for the capture log.
 export const cabLook = `async (key, o = {}) => { const B = window.__bayline; if (!B || !B.MetroKit || !B.MetroKit.look) return 'cabLook: no MetroKit.look in this build';
-  if (B.Post) { B.Post.debug.ae = false; B.Post.debug.expo = o.expo ?? 1.5; }
-  const L = B.MetroKit.look({ lcd: o.lcd ?? 1.9, refl: o.refl ?? 1.0, cab: o.cab ?? 0.03 });
+  if (B.Post) { B.Post.debug.ae = false; B.Post.debug.expo = o.expo ?? 1.85; }
+  const L = B.MetroKit.look({ lcd: o.lcd ?? 1.6, refl: o.refl ?? 1.0, cab: o.cab ?? 0.03 });
   const M = window.__m, C = window.__cine, t = B.Env.time.sec;
   if (M && C && B.capture && B.stepFrame) {
     const at = (c) => ({ x: c.p.x + c.fwd.x * 40, y: c.p.y - 3, z: c.p.z + c.fwd.z * 40 });
