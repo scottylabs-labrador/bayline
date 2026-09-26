@@ -6,11 +6,26 @@ Loader: `src/js/21_metronet.js` (`MetroNet`). Preview: `preview/metronet.html`.
 
 ## Status
 
-**M2b: STAGED in `data/pub/v2/metro-next/` — publish-ready, ships with the next gated deploy (lead, 05:50).**
-`data/pub/v2/metro/` is **production M2, byte-identical to both servers** (restored 05:52 from production after a
-05:46 promotion; sha256: network.json 11a2cf17, timetable.json 3eddf454, validation.json 7383cd10,
-tracks.6f6a7a6c04.bin = tracks.bin 6f6a7a6c). **Review M2b with `#metrodir=metro-next/`.** Bakes now write to
-metro-next by default and `promote.py` needs `--yes` (only when the lead asks).
+**M3 DATA FREEZE (lead, 08:15): `data/pub/v2/metro-next/` as staged at 08:06 is the data M3 ships with.** The lead
+promotes it (`promote.py --yes`) with the M3 deploy after the gate. No further changes to metro-next unless a
+re-verification or the gate finds a bug (the lead hears first). Further data work stages into `metro-next2` (the
+tools' default since 08:15). `data/pub/v2/metro/` stays byte-identical to production M2 until then.
+
+Frozen staged set (verify before promoting; `metro-next/` also holds older staged binaries nothing references):
+
+| metro-next/ file | bytes | sha256 |
+|---|---|---|
+| `network.json` (`tracksBin.path` = `metro-next/tracks.d6a6bd5b6e.bin`) | 451,530 | 10db67aca1deccff… |
+| `tracks.d6a6bd5b6e.bin` | 1,122,077 | d6a6bd5b6eaea104… |
+| `crossings.json` | 236,746 | 8b1e246520b49c4b… |
+| `timetable.json` | 1,345,334 | 8bdab8175a27501e… |
+| `validation.json` | 6,409 | d5913560183cf92e… |
+
+**Production M2 code reads it safely** (Node, 08:20): the MetroNet of 2d1d290 and the new one on `bart-data`, run
+on the frozen set AND on the promoted layout (network.json rewritten to `metro/tracks.d6a6bd5b6e.bin`), give identical
+results: 20,636 frames (every 25 m of all 374 tracks: position, speed limit, cant), 19,979 samples along all 34 pattern
+paths, all 107 platforms (track, side, rail): 0 differences. 2d1d290 ignores the new fields (`aliases`, `transfers`,
+`short`, `dirs`, `headsign`, `constants`, `yards`, platform `height`/`unused`) and never requests `crossings.json`.
 
 For the gated deploy, `python3 tools/metro/promote.py --yes` writes into data/pub/v2/metro (publish in this order;
 M2b bake of 08:06, supersedes the 05:35 list):
@@ -27,11 +42,10 @@ M2b bake of 08:06, supersedes the 05:35 list):
 Gzipped: network.json 102 kB (M2 95 kB), crossings.json 47 kB, timetable 163 kB.
 
 Old network.json readers: a cached M2 network.json keeps reading `tracks.6f6a7a6c04.bin` (kept) and an unchanged
-timetable; production code (2d1d290) reading the M2b network.json fetches `tracks.5bf8256c17.bin` (publish it
-first); new fields are additive (`aliases`, `yards`, `constants`, platform `height`/`unused`). The one unsafe pair is a
-stale pre-2d1d290 (M1) page with `#metro=1` reading the M2b network.json (it reads `metro/tracks.bin`, M2 bytes).
-Tested in Node: the production loader and the new loader give identical frames, paths and platforms on M2b.
-`21_metronet.js` on `bart-data` adds `loadCrossings()` / `crossings()` / `constants` / `yards`: please merge it.
+timetable; production code (2d1d290) reading the M2b network.json fetches `tracks.d6a6bd5b6e.bin` (publish it
+first; tested above); every new field is additive. The one unsafe pair is a stale pre-2d1d290 (M1) page with
+`#metro=1` reading the M2b network.json (it reads `metro/tracks.bin`, M2 bytes). `21_metronet.js` on `bart-data` adds
+`loadCrossings()` / `crossings()` / `constants` / `yards`: please merge it.
 
 ### M2b second round (06:00-08:10, lead + STATIONS + INFRA + SIM requests)
 
