@@ -5,6 +5,11 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 
 ## Status
 
+- 2026-09-26 (session 1, iteration 3): interior impression v2 in the exterior glass (the lit cabin, passengers by
+  load, far windows showing the scene, a D-cab view), matching the real interior when it is built (A/B checked);
+  collector shoes on infra's published contact rail, driven per truck from `MetroTrack.thirdRail` (checked in game
+  against infra's build); body sway on the air springs; detailed trucks; GTW nose raked and repainted; ASCII-only
+  sources. `bart` merged (62c83db).
 - 2026-09-26 (session 1, later): the Antioch DMU (GTW 2/6-like, articulated on bones) and the airport people mover
   (Cable Liner-like) exist; lamp glow billboards; the D-car cab rebuilt after the 2014 mock-up; the body's cant line
   lowered to 2.9 m after the Lake Merritt photo; interior brighter, teardrop straps, ad frames; standing spots.
@@ -87,8 +92,8 @@ unflipped) and `cabYaw`.
 
 | | draw calls | triangles |
 |---|---|---|
-| 10-car train, LOD0 exterior | 20 (body + glass per car) | 306k (D 32.6k, E 29.2k per car at quality 2) |
-| + interior of one car | +2 | +31-32k |
+| 10-car train, LOD0 exterior | 20 (body + glass per car) | 384k (D 41.5k, E 36.3k per car at quality 2; the trucks are 6.4k of it) |
+| + interior of one car | +2 | +33k |
 | 10-car train, LOD1 | 10 | 10.9k |
 | 10-car train, LOD2 | 10 | 1.0k |
 | far batch (all far trains) | 1 per car design + 1 for all lamps | 72-152 per car |
@@ -96,7 +101,8 @@ unflipped) and `cabYaw`.
 Build times (M2, first use, then cached): D exterior 95 ms, E 38 ms; interiors 21-36 ms; GTW unit 65 ms; APM cars 22 ms.
 
 Render time (preview, 1600 x 900, sun shadows on, `#gpu=1`: render + gl.finish, median of 40, with minus without the
-train): 10-car train exterior 3/4 view 0.3 ms, side view 0.2 ms, inside a car (interior of that car built) 0.6 ms.
+train): 10-car train exterior 3/4 view 0.6 ms (0.3 before the interior impression v2: the glass fragments now ray-cast
+the cabin; the 3/4 view has the most window area), side view 0.2 ms, inside a car (interior of that car built) 0.4 ms.
 DMU unit: 27k triangles, 2 draws (+1 glow at night); APM car: 4-6k triangles, 2 draws.
 
 ## Preview
@@ -165,11 +171,28 @@ Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 m
   nose ring palette bleeding fixed. In game (WOAK aerial, 10:30) the cars read as silver with the blue ends, passengers
   visible, window reflections of the street.
 
+- **it3** (`it3_*.jpg`): windows compared with the Lake Merritt 2026 photo (lit cabin seen from the platform: bright
+  ceiling bands at the window tops, grey walls, dark far windows, lime priority seats, poles) and the Millbrae 2026
+  photo (by day: dark tinted glass, the light bands and the far windows brighter than the cabin). The impression now
+  draws the cabin's convex section with the 0.5 m LED bands in the sloped ceiling, the far wall's windows (the scene's
+  environment through a second pane), reveals, doors with windows, ads and screens, the lime end walls with the end
+  door, seat backs/cushions (blue, lime priority), benches, partitions, poles, rails and passengers; it is shaded with
+  the real interior's light model, so `it3_imap_ab.jpg` (top: impression, bottom: real interior of car 1) match in
+  layout and brightness day and night. Bug found on the way: the mirrored ceiling plane had the wrong offset (a false
+  second light band). Shoes: under the coverboard on the rail side, free and tilted on the other (in game, infra's
+  build). Trucks: swan-neck frames, bellows, dampers, brake blocks, cables (`it3_shoes_truck.jpg`). GTW compared with
+  Stadler's rendering: raked windscreen, blue wrapping the lower corners of the white cab front, bigger lamp clusters.
+
 ## Known issues / open problems
+
+- The glass ray-cast costs ~0.3 ms more for a close 10-car 3/4 view (fragment-bound; rows are culled by the ray's x
+  span). If it shows in profiles: skip passengers beyond ~80 m or drop to the old flat impression at LOD0 > 100 m.
+- The Cable Liner's big panes show the dark outside through the far glass at night (physically right, but the real
+  cabins read brighter in photos: the far glass mirrors the lit interior more than modelled).
 
 - The D car's front is close to the reference in the head-on view but still simpler in 3/4 views (corner pillars'
   recessed panels, the chin's curvature).
-- The DMU and APM are first versions (simpler noses, simple interiors, no cabs).
+- The DMU and APM interiors are simple (no cabs); the GTW nose is closer to Stadler's rendering but still rounder.
 - Headlight pods are ovals rather than the real teardrops; the corner pillars lack their recessed panels.
 
 ## Requests for other workstreams
