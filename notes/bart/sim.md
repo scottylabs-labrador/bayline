@@ -284,6 +284,35 @@ location = /bartrt/tripupdate {
 API (`api.bart.gov/api/etd.aspx`, CORS `*`, public key), polled every 20 s by each client that turns Live on.
 The data is © BART under its developer license (free, as-is; no BART marks in the game).
 
+## Metro switch and failure isolation (M3 gate item 4, `src/js/18_metro.js`)
+
+- **The switch**: `Metro.on`. Every metro module reads it instead of the URL (one-line edits in `19_metroground.js`,
+  `23_metrotrack.js`, `24_metrounder.js`, `26_metrostations.js`: their `enabled` line only; owners please keep them).
+  **Ship = one line**: `const DEFAULT_ON = true;` in `18_metro.js`. `#metro=1` / `#metro=0` force it on / off.
+- **Boot gate**: `Metro.arm()` (90_main.js, before boot) makes `MetroNet.load` / `loadTimetable` wait for
+  `Metro.start()`, which runs right after the first frame is drawn. Measured (alternating, idle-ish GPU): first frame
+  5.6 s off / 5.4 s on (medians of 3, noise ±1 s); the first metro request starts ~0.8-1.0 s after the first frame.
+- **Failure isolation**: `Metro.fail(where, err)`: one `console.warn` ("Bayline Metro is off for this session: ... The
+  rest of the game is unaffected."), `Metro.on` false for the session, then every teardown: MetroSim (consists, far
+  batch, lights, dots), MetroUI (panels, overlays, the title card), MetroPlay (a player riding/following/driving a
+  metro train or standing in a station below the street is put in the open air, flying), MetroATC, MetroLive, and the
+  world (`tearDownWorld`): Under's cells/portals/cuts removed and its switch (`blUMK.x`) zeroed, `Terrain.cutTest` off,
+  MetroTrack's and MetroStations' groups out of the scene, the stations' keep-outs off, every terrain tile a metro
+  height filter touched reloaded (a no-op filter over each recorded rectangle), towns/trees/ground cover rebuilt.
+  Guards: the main loop's metro calls (`Metro.guard`), MetroNet's loads (a failed load resolves to a promise that never
+  settles, so callers stop quietly), `MetroTrack.init/update`, `MetroStations.init/update/floorAt/blocked/spawnPoint/
+  setBoard`, `Terrain.addHeightFilter` and `Towns.addDrop` (proxied: inert when off, a throw fails), MetroKit calls
+  (inside MetroSim's guard), MetroPlay/MetroUI entry points (`Metro.guardAll`).
+- **Fault injection**: `#metrofail=net|tracks|tt|build|stations|kit|sim|ground|under` (comma-separated): net = a real
+  404 on network.json, tracks = a corrupt tracks binary (parse error), tt = a real 404 on the timetable, the others a
+  throw ~150 frames after that part starts. `tools/qa_metro_isolation.sh` runs all of them at West Oakland: 11/11 PASS
+  (one warning, no console errors, nothing metro in the scene, frames advancing); shots:
+  `notes/bart/shots/sim/isolation_faults.jpg`.
+- Known side effect (world): `Towns.dispose()` (called by MetroGround and MetroStations when the metro data arrives,
+  and by the teardown) makes rebuilt building tiles render black for ~20-40 s until their photo textures reload (repro
+  with the metro off: `__bayline.Towns.dispose()`). With the gate the metro data arrives after the first frame, so a
+  visitor may see this briefly near the lines; WORLD: please keep a tile's imagery across dispose (or rebuild in place).
+
 ## Interfaces agreed with other workstreams
 
 ### STATIONS: walking in multi-level stations (agreed 2026-09-26, answering the request in `stations.md`)
