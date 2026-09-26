@@ -46,6 +46,12 @@ the 4K capture see the same trains, sun and moon whatever day they run.
   600 m over the bay by Treasure Island, past Yerba Buena (below the frame): San Francisco's skyline and its reflections
   fill the band, the Bay Bridge's west span leading in from the left. The waning gibbous moon of the 29th is high in the
   south-west, above the frame, its glitter well below it.
+- P01 alternative `p_dawn_east` (06:50 on the 29th, into the dawn): ~65 mm from ~220 m over the water off the northern
+  Embarcadero (Piers 35-39) looking east: the east span's white tower standing clear between Treasure Island and Yerba
+  Buena right in front of the glow (the sun rises at azimuth ~91 deg, behind it), the Skyway, the East Bay and the Oakland
+  hills as silhouettes with their lights on under a sky from deep blue to warm at the horizon; a slow lateral drift. Off
+  Rincon Hill, Yerba Buena hides the east span. No aircraft (live ADS-B off, simulated traffic hidden: a clean gradient,
+  and the draft and 4K captures match).
 - P20 `p_night_flyover` (evening, found by `metroFramed`): a slow glide west-north-west at ~85 m over the Port side of
   West Oakland, ~80 m north of the aerial, ~75 mm tilted down 6.5 deg: the aerial the leading line to the Tube portal, a
   train 280-480 m ahead in the lower-left third at every tap, the Bay Bridge's lights on the horizon inside the band,
