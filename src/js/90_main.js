@@ -22,7 +22,11 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     await step(0.58, 'Reading the timetable…');
     await Sim.init();
     if (typeof MetroSim !== 'undefined' && MetroSim.enabled) MetroSim.init();   // Bayline Metro (#metro=1): loads in the background, never blocks boot
-    const keepOut = (x, z) => { const L = World.landmarks; if (!L) return false; for (const l of L.list) { const r = l.radius || 0; if (r > 0 && Math.abs(x - l.x) < r && Math.abs(z - l.z) < r && Math.hypot(x - l.x, z - l.z) < r) return true; } return false; };
+    // Bayline Metro (#metro=1): nothing is placed in a station's ground-level footprint (what: 'house' by default, or
+    // 'lamp' / 'tree' / ...: MetroStations.keepOut); the landmarks keep out houses only
+    const metroKO = typeof MetroStations !== 'undefined' && MetroStations.enabled ? MetroStations.keepOut : null;
+    const keepOut = (x, z, what) => { if (metroKO && metroKO(x, z, what || 'house')) return true; if (what && what !== 'house') return false;
+      const L = World.landmarks; if (!L) return false; for (const l of L.list) { const r = l.radius || 0; if (r > 0 && Math.abs(x - l.x) < r && Math.abs(z - l.z) < r && Math.hypot(x - l.x, z - l.z) < r) return true; } return false; };
     // groundY = the base surface (L7): streets, buildings, landmarks and road traffic are built on it, and the lidar
     // detail layer is held at zero under them, so they meet the drawn ground exactly whatever has streamed
     const ctx = { ll2w: Geo.ll2w, groundY: (x, z) => Terrain.hBase(x, z), trackDist: (x, z) => Track.dist(x, z), rng: U.rng(7), isWater: (x, z) => Terrain.isWater(x, z), keepOut,
