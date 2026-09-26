@@ -128,8 +128,82 @@ def build(parents, plats, ents, tracks, plat_pos, st_tracks, E, raw_to_s, code_o
 
 
 # ====================================================================== M2 station records
+# names riders type (front-door search, SIM): official-name variants, neighbourhood/landmark names, abbreviations and the
+# four-letter station code. Place names only (no operator names). Shared aliases (Dublin, Pleasanton, El Cerrito,
+# Pittsburg) are deliberate: the search returns both stations.
+ALIASES = {
+    'LAKE': ['Lake Merritt', 'Laney College', 'Oakland Chinatown'],
+    'FTVL': ['Fruitvale', 'Fruitvale Village'],
+    'COLS': ['Coliseum', 'Oakland Coliseum', 'Oakland Arena', 'Coliseum/Oakland Airport'],
+    'SANL': ['San Leandro', 'Downtown San Leandro'],
+    'BAYF': ['Bay Fair', 'Bayfair', 'Bayfair Center', 'San Lorenzo'],
+    'HAYW': ['Hayward', 'Downtown Hayward'],
+    'SHAY': ['South Hayward', 'S Hayward'],
+    'UCTY': ['Union City'],
+    'FRMT': ['Fremont', 'Downtown Fremont'],
+    'ROCK': ['Rockridge', 'College Ave'],
+    'ORIN': ['Orinda'],
+    'LAFY': ['Lafayette'],
+    'WCRK': ['Walnut Creek'],
+    'PHIL': ['Pleasant Hill', 'Contra Costa Centre', 'Pleasant Hill/Contra Costa Centre'],
+    'CONC': ['Concord', 'Downtown Concord'],
+    'NCON': ['North Concord', 'Martinez', 'North Concord/Martinez'],
+    'PITT': ['Pittsburg/Bay Point', 'Pittsburg Bay Point', 'Bay Point', 'Pittsburg'],
+    'PCTR': ['Pittsburg Center', 'Pittsburg', 'Railroad Ave'],
+    'ANTC': ['Antioch', 'Hillcrest'],
+    'OAKL': ['Oakland Airport', 'Oakland International Airport', 'Oakland Intl', 'OAK'],
+    '12TH': ['12th St', '12th Street', '12th St Oakland', 'Oakland City Center', 'City Center', 'Downtown Oakland'],
+    '19TH': ['19th St', '19th Street', '19th St Oakland', 'Uptown', 'Uptown Oakland'],
+    'MCAR': ['MacArthur', 'Mac Arthur', 'McArthur', 'Temescal'],
+    'CAST': ['Castro Valley'],
+    'WDUB': ['West Dublin', 'West Dublin/Pleasanton', 'West Pleasanton', 'Stoneridge', 'Dublin', 'Pleasanton'],
+    'DUBL': ['Dublin', 'Pleasanton', 'Dublin/Pleasanton', 'East Dublin'],
+    'WOAK': ['West Oakland'],
+    'EMBR': ['Embarcadero', 'Ferry Building'],
+    'MONT': ['Montgomery', 'Montgomery St', 'Financial District'],
+    'POWL': ['Powell', 'Powell St', 'Union Square'],
+    'CIVC': ['Civic Center', 'Civic Center/UN Plaza', 'UN Plaza', 'City Hall'],
+    '16TH': ['16th St', '16th Street', '16th St Mission', '16th Street Mission'],
+    '24TH': ['24th St', '24th Street', '24th St Mission', '24th Street Mission'],
+    'GLEN': ['Glen Park'],
+    'BALB': ['Balboa Park', 'Balboa'],
+    'DALY': ['Daly City'],
+    'ASHB': ['Ashby', 'South Berkeley'],
+    'DBRK': ['Downtown Berkeley', 'Berkeley', 'UC Berkeley'],
+    'NBRK': ['North Berkeley'],
+    'PLZA': ['El Cerrito Plaza', 'El Cerrito'],
+    'DELN': ['El Cerrito Del Norte', 'Del Norte', 'El Cerrito'],
+    'RICH': ['Richmond'],
+    'WARM': ['Warm Springs', 'South Fremont', 'Warm Springs/South Fremont'],
+    'MLPT': ['Milpitas', 'Great Mall'],
+    'BERY': ['Berryessa', 'North San Jose', 'Berryessa/North San Jose', 'San Jose'],
+    'COLM': ['Colma'],
+    'SSAN': ['South San Francisco', 'South SF', 'SSF'],
+    'SBRN': ['San Bruno', 'Tanforan'],
+    'MLBR': ['Millbrae'],
+    'SFIA': ['SFO', 'San Francisco Airport', 'SF Airport', 'San Francisco International Airport'],
+    'PITT-T': [],                     # transfer platform only: no street access
+}
+
+
+# research for the pseudo station (from research B's PITT record, "ebart_transfer_platform")
+_EXTRA_RESEARCH = {
+    'PITT-T': dict(opened=2018, opened_date='2018-05-26', era='2018 eBART (BART to Antioch)',
+                   recognisable='A bare concrete island in the middle of SR-4 with a canopy over its middle: ten-car trains on '
+                                'the north face, one- or two-unit diesel trains on the south face, and nobody leaving the platform.',
+                   structure_notes='At grade in the SR-4 median east of Bailey Road. The two BART mainline tracks merge into one '
+                                   'along the north face and split into two dead-end tail tracks beyond the east end (storage '
+                                   'for up to three 10-car trains, EIR). The eBART stub track ends at a buffer stop at the west '
+                                   'end; its trackbed is raised ~1-1.5 ft so the DMU floor meets the platform.',
+                   platforms=dict(detail='Single at-grade concrete island, 700 ft (213 m) long (2008 EIR): BART face north '
+                                         '(C80-T), eBART face south (E10-T), cross-platform transfer.'),
+                   entrances='None: no street access, no faregates; emergency egress at the west end only.',
+                   sources=['https://www.bart.gov/about/projects/ecc', 'BART eBART (East Contra Costa BART Extension) FEIR, 2008 (via research B)']),
+}
+
+
 def _research():
-    out = {}
+    out = dict(_EXTRA_RESEARCH)
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'research')
     for f in ('stations_A.json', 'stations_B.json', 'stations_C.json'):
         p = os.path.join(d, f)
@@ -142,7 +216,7 @@ def _research():
 
 def build2(parents, plats, ents, tracks, platforms, E, code_of, curated, extra_stations=()):
     """Station records from the platforms (platforms.py), the solved profile and the curated facts."""
-    from metro.platforms import PLAT_H, EDGE_OFF, BERTH_MARGIN
+    from metro.platforms import PLAT_H_SYS, EDGE_OFF, BERTH_MARGIN
     from metro.profile2 import STRUCT_NAMES
     from metro.dem import ground as dem_ground
     research = _research()
@@ -177,17 +251,20 @@ def build2(parents, plats, ents, tracks, platforms, E, code_of, curated, extra_s
             rail, code = y_at(tr, c)
             lv = (cur.get('levelOf') or {}).get(pl['code'], 'main')
             levels.setdefault(lv, []).append(rail)
+            ph = PLAT_H_SYS.get(pl['sys'], 0.991)
             pl_out.append(dict(gtfs=pid, code=pl['code'], track=pl['track'], level=lv, s0=round(pl['s0'], 2), s1=round(pl['s1'], 2), s=round(c, 2),
-                               side='right' if pl['side'] > 0 else 'left', edge=EDGE_OFF, y=round(rail + PLAT_H, 3), rail=round(rail, 3),
+                               side='right' if pl['side'] > 0 else 'left', edge=EDGE_OFF, y=round(rail + ph, 3), rail=round(rail, 3), height=ph,
                                structure=STRUCT_NAMES[code], berth={'+': round(pl['s1'] - BERTH_MARGIN, 2), '-': round(pl['s0'] + BERTH_MARGIN, 2)},
-                               src=pl['src'], sys=pl['sys']))
+                               src=pl['src'], sys=pl['sys'], **({'unused': True} if pl.get('unused') else {})))
         gnd = float(dem_ground(np.array([x]), np.array([z]))[0][0])
         main_rails = levels.get('main') or [r for v in levels.values() for r in v]
         rail = float(np.mean(main_rails)) if main_rails else gnd
-        lv_out = dict(street=round(gnd, 2), rail=round(rail, 2), platform=round(rail + PLAT_H, 2))
+        ph = max((q['height'] for q in pl_out), default=0.991)
+        plats_y = [q['y'] for q in pl_out if q['level'] == 'main'] or [q['y'] for q in pl_out]
+        lv_out = dict(street=round(gnd, 2), rail=round(rail, 2), platform=round(float(np.mean(plats_y)) if plats_y else rail + ph, 2))
         if len(levels) > 1:
-            lv_out['byLevel'] = {k: dict(rail=round(float(np.mean(v)), 2), platform=round(float(np.mean(v)) + PLAT_H, 2)) for k, v in levels.items()}
-            lv_out['platform'] = round(max(float(np.mean(v)) for v in levels.values()) + PLAT_H, 2)
+            lv_out['byLevel'] = {k: dict(rail=round(float(np.mean(v)), 2), platform=round(float(np.mean(v)) + ph, 2)) for k, v in levels.items()}
+            lv_out['platform'] = round(max(float(np.mean(v)) for v in levels.values()) + ph, 2)
         # entrances: GTFS + OSM subway_entrance nodes not duplicating them
         ents_g = []
         for q in ents:
@@ -202,7 +279,7 @@ def build2(parents, plats, ents, tracks, platforms, E, code_of, curated, extra_s
         r = research.get(sid) or {}
         res = {k: r.get(k) for k in ('opened', 'opened_date', 'architect', 'era', 'recognisable', 'structure_notes', 'entrances') if r.get(k)}
         if isinstance(r.get('platforms'), dict):
-            res['platformsDetail'] = r['platforms'].get('detail') or r['platforms'].get('serves')
+            res['platformsDetail'] = r['platforms'].get('detail') or r['platforms'].get('arrangement') or r['platforms'].get('serves')
         if r.get('sources'):
             res['sources'] = r['sources']
         st = dict(id=sid, name=name, code=code_of.get(sid, ''), lat=lat, lon=lon, x=round(x, 2), z=round(z, 2),
@@ -210,6 +287,10 @@ def build2(parents, plats, ents, tracks, platforms, E, code_of, curated, extra_s
                   levels=lv_out, platforms=pl_out, entrances=ents_g, note=cur.get('note', ''), src=cur.get('src', []), url=url)
         if cur.get('platformStructure'):
             st['platformStructure'] = cur['platformStructure']
+        al = list(ALIASES.get(sid, []))
+        if sid != 'PITT-T' and sid not in al:
+            al.append(sid)                                  # the official four-letter code
+        st['aliases'] = [a for a in al if a != name]
         if res:
             st['research'] = res
         if eng.get('avg_weekday_exits_cy2025', {}).get(sid) is not None:

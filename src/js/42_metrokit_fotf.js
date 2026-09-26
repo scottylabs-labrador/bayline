@@ -198,7 +198,7 @@
   // ------------------------------------------------------------------------------------------ the design
   function buildFotf(type, q) {
     const isD = type === 'D', P = makeProfile(q), E = new MB(), G = new MB();   // E: palette (body etc.), G: glass
-    K.decalAtlas();
+    K.decalAtlas(K.atlasRes());
     const alu = isD ? 'aluD' : 'aluE';
     const tCant = tAtY(P, F.CANT), tFloor = tAtY(P, F.FLOOR);
     const xFront = isD ? F.NOSE_XC : F.BODY - F.END_R, xRear = -(F.BODY - F.END_R);
@@ -882,6 +882,7 @@
       bones, boneIdx: { bogie: [1, 2], axlesOf: [[3, 4], [5, 6]], handle: isD ? BONE.handle : undefined }, leaves, wipers, shoes,
       meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye, standSpots },
       units, imap, halfW: 1.47, floorY: F.FLOOR, ceilY: 3.12, signs: SIGNS(isD),
+      openings: F.DOORS.flatMap(dc => [1, -1].map(s => ({ x: dc, hw: F.PORTAL, y0: F.FLOOR, y1: F.PORTAL_TOP, z: 1.52, side: s, bone: 0 }))),
       lamps: isD ? [[1.175, 1.96, 'head'], [1.08, 1.7, 'head'], [1.17, 0.99, 'tail'], [1.02, 0.97, 'marker']].flatMap(([z, y, k]) => [1, -1].map(s => ({ p: [faceX(y, s * z) + 0.03, y, s * z], kind: k })))
         .concat([{ p: [10.3, 3.7, 0], kind: 'bar' }]) : [],
       cabBox: new THREE.Vector4(-(F.BODY - 1.0), isD ? F.CAB_BACK : F.BODY - 1.0, 0, 0),

@@ -120,12 +120,19 @@ const MetroUI = (() => {
     titleCard();
   }
   function closeAll() { if (el.sys) el.sys.hidden = true; if (el.board) el.board.hidden = true; }
+  // the metro failed (Metro.fail): every metro panel, button and overlay goes away; the page is as without the metro
+  function shutdown() {
+    closeAll(); document.body.classList.remove('mdriving');
+    for (const k of ['ride', 'dmi', 'strip']) if (el[k]) el[k].hidden = true;
+    for (const n of document.querySelectorAll('[data-metro-ui]')) n.remove();
+  }
+  if (typeof Metro !== 'undefined') Metro.onTeardown(shutdown);
   const anyOpen = () => !!(el.sys && (!el.sys.hidden || !el.board.hidden));
 
   // the title screen: one wide card under the four modes
   function titleCard() {
     const modes = document.querySelector('#title .modes'); if (!modes) return;
-    const b = document.createElement('button'); b.className = 'metro'; b.dataset.go = 'metro';
+    const b = document.createElement('button'); b.className = 'metro'; b.dataset.go = 'metro'; b.dataset.metroUi = '';
     b.innerHTML = `<span class="dots">${['#ffff33', '#ff0000', '#ff9933', '#339933', '#0099cc'].map(c => `<i style="background:${c}"></i>`).join('')}</span><span><b>Bayline Metro: the whole Bay Area rapid transit system</b><small>Five lines, 50 stations, the Transbay Tube, the real timetable. Ride, drive under ATC, or watch it all run on the live system map.</small></span>`;
     modes.after(b);
   }
@@ -405,7 +412,7 @@ const MetroUI = (() => {
     const now = Env.time.sec, rows = MetroSim.arrivals(stId, now, 40).filter(ev => !hidden.has(ev.leg.line)).slice(0, n);
     if (!rows.length) return `<div style="color:var(--ink-dim)">No more trains today.</div>`;
     return rows.map((ev, i) => { const inf = MetroSim.eventInfo(ev), m = Math.round((ev.t - now) / 60);
-      return `<div class="mrow ${cls}" data-ev="${i}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}${inf.platform ? ' · platform ' + esc(inf.platform) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('');
+      return `<div class="mrow ${cls}" data-ev="${i}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}${inf.change ? ' · change for ' + esc(inf.change) : ''}${inf.platform ? ' · platform ' + esc(inf.platform) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('');
   }
   function renderSide() {
     const S = el.mside, h = map.sel;
@@ -471,7 +478,7 @@ const MetroUI = (() => {
     el.mbp.innerHTML = plats.map(p => { const evs = byPlat.get(p).filter(ev => !ev.last).slice(0, 6), first = evs[0];
       const led = first ? (() => { const inf = MetroSim.eventInfo(first), m = Math.round((first.t - now) / 60); return `${inf.cars} CAR ${inf.dest.toUpperCase()} ${m <= 0 ? 'NOW BOARDING' : m + ' MIN'}`; })() : 'NO TRAINS';
       return `<div class="plat"><h4>Platform ${esc(p || '·')}</h4><div class="led">${esc(led)}</div>${evs.map(ev => { list.push(ev); const inf = MetroSim.eventInfo(ev), m = Math.round((ev.t - now) / 60);
-        return `<div class="mrow" data-ev="${list.length - 1}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('') || '<div style="color:var(--ink-dim)">No more trains today.</div>'}</div>`; }).join('');
+        return `<div class="mrow" data-ev="${list.length - 1}"><span class="mbar" style="background:${inf.color}"></span><span class="d">${esc(inf.dest)}<small>${esc(MetroSim.lineName(inf.line))} · ${carsText(inf.cars, inf.kind)}${inf.change ? ' · change for ' + esc(inf.change) : ''}</small></span><span class="t"><b>${m <= 0 ? 'now' : m + ' min'}</b><br>${Env.clockText(ev.pub)}</span></div>`; }).join('') || '<div style="color:var(--ink-dim)">No more trains today.</div>'}</div>`; }).join('');
     el.mbp.querySelectorAll('.mrow').forEach(r => r.addEventListener('click', (e) => { const ev = list[+r.dataset.ev]; closeAll(); if (e.shiftKey) drive(ev); else ride(ev); }));
     // connections: the Peninsula line at Millbrae, bus bridges today
     let conn = '';
@@ -524,7 +531,7 @@ const MetroUI = (() => {
   }
   function renderRide(tr) {
     const col = MetroSim.lineColor(tr.line), S = tr.leg.stops;
-    el.mrc.style.background = col; el.mrl.textContent = MetroSim.lineName(tr.line); el.mrd.textContent = 'to ' + MetroSim.termName(tr) + ' · ' + tr.cars + ' cars · car ' + (Player.ob.car + 1);
+    el.mrc.style.background = col; el.mrl.textContent = MetroSim.lineName(tr.line); { const ch = MetroSim.changeFor(tr); el.mrd.textContent = 'to ' + MetroSim.termName(tr) + (ch ? ' (change for ' + ch + ')' : '') + ' · ' + carsText(tr.cars, tr.kind) + ' · car ' + (Player.ob.car + 1); }
     const atSt = tr.phase !== 'run' && tr.stopK >= 0 ? S[tr.stopK] : null, ns = S[tr.nextK];
     el.mrk.textContent = atSt ? (tr.doorsOpen ? 'Doors open' : 'Now at') : 'Next station';
     el.mrn.textContent = atSt ? MetroSim.stName(atSt.st) : ns ? MetroSim.stName(ns.st) : '—';
@@ -617,8 +624,10 @@ const MetroUI = (() => {
   // train sizes: cars, or units for the Antioch shuttle (each a two-car articulated diesel)
   function carsText(n, kind) { return kind === 'dmu' ? `${n} unit${n > 1 ? 's' : ''}` : `${n} car${n > 1 ? 's' : ''}`; }
   function carsAdj(n, kind) { return kind === 'dmu' ? `${n}-unit` : `${n}-car`; }
-  function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK]; return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)} · ${carsText(tr.cars, tr.kind)} · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
+  function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK], ch = MetroSim.changeFor(tr); return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)}${ch ? ' (change for ' + ch + ')' : ''} · ${carsText(tr.cars, tr.kind)} · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
 
+  if (typeof Metro !== 'undefined') { const g = Metro.guardAll({ whereText, subText, stationSub, atMetro, openMap, openBoard, ride, drive }, 'the metro interface');
+    ({ whereText, subText, stationSub, atMetro, openMap, openBoard, ride, drive } = g); }
   const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
   return api;

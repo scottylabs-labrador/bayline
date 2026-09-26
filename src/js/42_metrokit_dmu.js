@@ -29,7 +29,7 @@
 
   // ------------------------------------------------------------------------------------------ the unit
   function build(type, q) {
-    K.decalAtlas();
+    K.decalAtlas(K.atlasRes());
     const { bodyAt, tAtY, sectionLoop } = K.fotfProfile, P = makeProfile(q), E = new MB(), G = new MB();
     const tCant = tAtY(P, 2.9);
     for (const e of [1, -1]) {                     // e = +1: end car A (+X), -1: end car B (mirrored)
@@ -288,7 +288,8 @@
       artic: { joints: [D.JOINT, -D.JOINT], mid: 0, pivots: [D.BOG_A, -D.BOG_A] },
       leaves, wipers: [], plugOut: 0.03, slide: 0.66,
       meta: { bogieOffsets: [D.BOG_A, -D.BOG_A], doors, floorRegions, ramps: [], gangways: { front: null, rear: null }, seats, cabEye: [D.CAB_BACK + 0.9, D.FLOOR + 1.9, 0.55] },
-      imap: dmuImap(), lamp: [0.55, 2.995, 17.6], halfW: 1.36, floorY: D.FLOOR, ceilY: 3.0, cabBox: new THREE.Vector4(-D.CAB_BACK, D.CAB_BACK, 1, 0),
+      imap: dmuImap(), lamp: [0.55, 2.995, 17.6],
+      openings: [1, -1].flatMap(e => [1, -1].map(s => ({ x: e * D.DOOR, hw: D.PORTAL, y0: D.FLOOR, y1: 2.58, z: D.W - 0.06, side: s, bone: e > 0 ? BONE.bodyA : BONE.bodyB }))), halfW: 1.36, floorY: D.FLOOR, ceilY: 3.0, cabBox: new THREE.Vector4(-D.CAB_BACK, D.CAB_BACK, 1, 0),
       signs: [{ a: [0, D.NOSE_XC + 0.08, -0.95, -0.35], b: [2.84, 2.96, -1] }, { a: [0, -(D.NOSE_XC + 0.08), 0.35, 0.95], b: [2.84, 2.96, 1] }],
       lamps: [1, -1].flatMap(e => [1, -1].flatMap(s => [{ p: [e * (D.NOSE_XC + 0.44), 1.3, e * s * 0.85], kind: e > 0 ? 'head' : 'headB' }, { p: [e * (D.NOSE_XC + 0.42), 1.3, e * s * 1.06], kind: e > 0 ? 'tail' : 'tailB' }])),
     };
