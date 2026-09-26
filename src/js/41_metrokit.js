@@ -497,6 +497,13 @@ const MetroKit = (() => {
       mkAlb = col;
       diffuseColor.rgb = col;
     }`;
+  // Underground (24_metrounder.js), the tunnel's ambient light is added to every lit material's irradiance at the end of
+  // the lights; inside a car it only comes in through the windows, like the sky's (mkIndoor.x): scaled in the Under
+  // engine's own term (blU, computed at the start of the lights), when its patch is in the build
+  const UNDER_IN = typeof THREE !== 'undefined' && THREE.ShaderChunk.lights_fragment_begin.includes('vec4 blU =') ? `
+    #ifdef BL_UNDER_DEF
+      blU.z *= mkIndoor.x;
+    #endif` : '';
   // One material per car and variant: 'ext' (clearcoat + anisotropy, skinned), 'int' (interior, skinned), 'lod' (plain).
   let _tmpl = null;
   function palMaterial(variant, S) {
@@ -521,7 +528,7 @@ const MetroKit = (() => {
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = clamp(mkMetal, 0.0, 1.0);')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n normal = normalize(normal - (mkBump - dot(mkBump, normal) * normal));')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance = mkEm;')
-        .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n if (mkInside > 0.5) { irradiance *= mkIndoor.x; iblIrradiance *= mkIndoor.x; radiance *= mkIndoor.y; }');
+        .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n if (mkInside > 0.5) { irradiance *= mkIndoor.x; iblIrradiance *= mkIndoor.x; radiance *= mkIndoor.y;' + UNDER_IN + '\n }');
       if (variant === 'bake') f = f.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n gl_FragColor = vec4(mkAlb, clamp(mkMetal, 0.0, 1.0) * 0.5);');
       if (variant !== 'lod' && variant !== 'bake') {
         f = f.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
@@ -1155,7 +1162,7 @@ const MetroKit = (() => {
           {
             mkDayK = 1.0; mkDayA = vec3(0.0); mkLitK = mkLv[1];
             #ifdef BL_UNDER_DEF
-              { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI; }
+              { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI * mkIndoor.x; }
             #endif
             vec3 rd = normalize(mkP - mkCamO);
             #ifdef MK_OPENING

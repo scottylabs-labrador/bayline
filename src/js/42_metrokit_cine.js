@@ -98,7 +98,7 @@
           if (mkReflK > 0.001 && mkCamInside(mkCamO) > 0.5) {
             mkDayK = 1.0; mkDayA = vec3(0.0); mkLitK = mkLv[1];
             #ifdef BL_UNDER_DEF
-              { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI; }
+              { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI * mkIndoor.x; }
             #endif
             vec3 rd = normalize(mkP - mkCamO), n = normalize(mkN); if (dot(n, rd) > 0.0) n = -n;     // (the inner face)
             float F = 0.04 + 0.96 * pow(1.0 - abs(dot(rd, n)), 5.0);
