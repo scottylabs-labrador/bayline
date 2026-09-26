@@ -17,7 +17,7 @@
 // 27_stationparts.js, 27_stationsigns.js).
 const MetroStations = (() => {
   const hash = new URLSearchParams(location.hash.slice(1));
-  const enabled = hash.get('metro') === '1' || hash.has('metrostations');
+  const enabled = (typeof Metro !== 'undefined' ? Metro.on : hash.get('metro') === '1') || hash.has('metrostations');   // (the switch: 18_metro.js)
   const group = new THREE.Group(); group.name = 'metrostations';
   const list = [], byId = {};
   let net = null, ready = false, initP = null;
