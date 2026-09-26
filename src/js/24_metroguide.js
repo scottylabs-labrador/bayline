@@ -58,7 +58,7 @@ const MetroGuide = (() => {
   const carved = () => typeof MetroGround !== 'undefined' && MetroGround.stats && MetroGround.stats.segments > 0;
   // ballast prism on carved ground: top at ~tie top, 0.305 m shoulders, 2:1 slopes down to the ground [BFS 34 05 17]
   function bedCarved(F, lo, hi) {
-    const tie = DIM.tieLen / 2, top = -DIM.railH - 0.02, sh = DIM.ballastShoulder;
+    const tie = DIM.tieLen / 2, top = -DIM.railH - 0.02 - 0.045, sh = DIM.ballastShoulder;   // crib ~4.5 cm below the tie tops
     const L = lo - tie, Rr = hi + tie, Ls = L - sh, Rs = Rr + sh;
     const toe = (edge, dir) => { let l = edge + dir * 1.3; for (let k = 0; k < 3; k++) { const g = gRel(F, l, -6, 3); l = edge + dir * Math.max(0.2, (top - g) * DIM.ballastSlope); } const g = gRel(F, l, -6, 3); return [l + dir * 0.15, Math.min(g - 0.08, top - 0.05)]; };
     const tl = toe(Ls, -1), tr = toe(Rs, 1);
@@ -427,9 +427,11 @@ const MetroGuide = (() => {
     for (const k of [-1, 1]) for (const fr of frogsOn(R, a, b, k)) {
       MT.frameAt(R, fr.s, F); const T = [F.tx, F.ty, F.tz], Up = [F.ux, F.uy, F.uz], Rt = [F.rx, F.ry, F.rz];
       // frog casting (once per crossing), then my guard rail on the other rail, 48 mm inside its gauge face
-      if (R.id < fr.Q.id) { const c = [F.x + F.rx * k * DIM.railC - ctx.ox, F.y - 0.086, F.z + F.rz * k * DIM.railC - ctx.oz];
-        gb.box(c[0], c[1], c[2], T, Up, Rt, 2.1, 0.086, 0.24, PAL.frog);
-        gb.box(c[0], c[1] + 0.084, c[2], T, Up, Rt, 1.6, 0.003, 0.07, PAL.railTop); }
+      // rail-bound manganese frog: a casting ~3 m long flush with the rails, polished where the wheels roll over it
+      if (R.id < fr.Q.id) { const c = [F.x + F.rx * k * DIM.railC - ctx.ox, F.y - 0.09, F.z + F.rz * k * DIM.railC - ctx.oz];
+        gb.box(c[0], c[1], c[2], T, Up, Rt, 1.55, 0.085, 0.17, PAL.frog);
+        gb.box(c[0], c[1] + 0.087, c[2], T, Up, Rt, 1.35, 0.003, 0.05, PAL.railTop);
+        gb.box(c[0], c[1] - 0.075, c[2], T, Up, Rt, 1.7, 0.012, 0.3, PAL.fastener); }
       const gl = -k * (DIM.railC - DIM.railHead - 0.048), ss = [fr.s - 2.4, fr.s - 1.6, fr.s + 1.6, fr.s + 2.4].filter(v => v > ctx.s0 && v < ctx.s1);
       if (ss.length >= 2) { const rows = ctx.rowsAt(ctx, ss, gl, 0, true); rows.forEach((rw, i) => { if (i === 0 || i === rows.length - 1) { rw.o[0] += F.rx * -k * 0.05; rw.o[2] += F.rz * -k * 0.05; } }); gb.sweep(rows, RAILS[-k], RAILC); }
     }
@@ -466,8 +468,9 @@ const MetroGuide = (() => {
         let piece = [];
         for (const q of fine) { if (inZone(R, q) && railDup(R, q, side)) { if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC); piece = []; } else piece.push(q); }
         if (piece.length > 1) gb.sweep(ctx.rowsAt(ctx, piece, side * DIM.railC, 0, true), RAILS[side], RAILC);
+        yield;
       }
-      if (zoned) for (const z of zonesOf(R)) { const za = Math.max(a, z[0]), zb = Math.min(b, z[1]); if (zb > za) buildJunctionParts(ctx, gb, za, zb); }
+      if (zoned) for (const z of zonesOf(R)) { const za = Math.max(a, z[0]), zb = Math.min(b, z[1]); if (zb > za) { buildJunctionParts(ctx, gb, za, zb); yield; } }
       // plinths (DF structures) under each rail, broken every 4.6 m for drainage; ties are instanced
       const PL = run.type === 'aerial' || run.type === 'bridge' ? 22.5 : 9.14;       // plinths break at deck joints / every 30 ft
       if (DF.has(run.type)) for (let q = Math.floor(a / PL) * PL; q < b; q += PL) {
@@ -560,9 +563,13 @@ const MetroGuide = (() => {
     }
     return gb.geometry();
   }
+  function tieFarGeo() {   // mid-distance tie: the top face and sides of the tie, no fastenings (8 triangles)
+    const gb = new GB(); const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1]; const top = -DIM.railH - 0.02, L = DIM.tieLen / 2;
+    gb.box(0, top - 0.02, 0, X, Y, Z, DIM.tieW / 2 - 0.02, 0.02, L, PAL.tie, 4 | 1 | 2); return gb.geometry();
+  }
   function tieGeo() {
     const gb = new GB(); const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1]; const top = -DIM.railH - 0.02, h = DIM.tieH, L = DIM.tieLen / 2;
-    gb.box(0, top - h / 2, 0, X, Y, Z, DIM.tieW / 2 - 0.02, h / 2, L, PAL.concreteLight, 4);
+    gb.box(0, top - h / 2, 0, X, Y, Z, DIM.tieW / 2 - 0.02, h / 2, L, PAL.tie, 4);
     for (const sd of [-1, 1]) { const rc = sd * DIM.railC; gb.box(0, top + 0.004, rc, X, Y, Z, 0.09, 0.006, 0.09, PAL.pad); for (const bs of [-1, 1]) gb.box(0, top + 0.03, rc + bs * 0.1, X, Y, Z, 0.045, 0.03, 0.018, PAL.clip); }
     return gb.geometry();
   }
@@ -584,7 +591,8 @@ const MetroGuide = (() => {
   function ensureInst() {
     if (inst) return inst;
     const mk = (geo, max, shadow) => { const m = new THREE.InstancedMesh(geo, MATS.infra, max); m.count = 0; m.frustumCulled = false; m.castShadow = shadow; m.receiveShadow = true; MT.group.add(m); return m; };
-    inst = { fastFull: mk(fastenerGeo(true), 2400, true), fast: mk(fastenerGeo(false), 5000, false), tie: mk(tieGeo(), 3000, true), ins: mk(insulGeo(false), 900, true), insDF: mk(insulGeo(true), 900, true) };
+    inst = { fastFull: mk(fastenerGeo(true), 2400, true), fast: mk(fastenerGeo(false), 6000, false), tie: mk(tieGeo(), 2400, true), tieFar: mk(tieFarGeo(), 9000, false),
+      ins: mk(insulGeo(false), 900, true), insDF: mk(insulGeo(true), 900, true) };
     return inst;
   }
   function place(mesh, k, R, s, lat, full) {
@@ -592,36 +600,43 @@ const MetroGuide = (() => {
     _x.set(F2.tx, F2.ty, F2.tz); _y.set(F2.ux, F2.uy, F2.uz); _z.set(F2.rx, F2.ry, F2.rz);
     _m4.makeBasis(_x, _y, _z); _m4.setPosition(F2.x + F2.rx * lat, F2.y + F2.ry * lat, F2.z + F2.rz * lat); mesh.setMatrixAt(k, _m4);
   }
+  // Placed nearest-first so the budgets go to what is close: full fasteners and ties within 70 m (fasteners with clips
+  // within 45 m), baseplates and flat ties to ~320 m, insulators within 150 m.
+  const NEAR = 70, MID = 320, cand = [];
   function updateInstances(cam, TRACKS) {
     if (!MATS) return;
     if (cam.distanceToSquared(lastC) < 144) return; lastC.copy(cam);
-    const I = ensureInst(); let nF = 0, nFF = 0, nT = 0, nI = 0, nD = 0;
-    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, 190) : [];
+    const I = ensureInst(); let nF = 0, nFF = 0, nT = 0, nTF = 0, nI = 0, nD = 0;
+    cand.length = 0;
+    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, MID) : [];
     for (const q of near) {
       const R = MT.trackOf(q.track); if (!R) continue;
       MT.frameAt(R, q.s, F); if (Math.abs(F.y - cam.y) > 60) continue;
-      const w = Math.sqrt(Math.max(0, 190 * 190 - q.dist * q.dist)); const a = Math.max(0, q.s - w), b = Math.min(R.len, q.s + w);
+      const w = Math.sqrt(Math.max(0, MID * MID - q.dist * q.dist)); const a = Math.max(0, q.s - w), b = Math.min(R.len, q.s + w);
       for (const run of R.runs) {
-        if (run.s1 <= a || run.s0 >= b) continue; const df = DF.has(run.type);
-        const sp = df ? DIM.fastSpacing : DIM.tieSpacing;
-        for (let s = Math.ceil(Math.max(a, run.s0) / sp) * sp; s < Math.min(b, run.s1); s += sp) {
-          const dAlong = Math.abs(s - q.s), d = Math.hypot(dAlong, q.dist);
-          if (df) { if (d < 45 && nFF < 2400) place(I.fastFull, nFF++, R, s, 0); else if (d < 190 && nF < 5000) place(I.fast, nF++, R, s, 0); }
-          else if (nT < 3000) place(I.tie, nT++, R, s, 0);
-        }
+        if (run.s1 <= a || run.s0 >= b) continue; const df = DF.has(run.type), sp = df ? DIM.fastSpacing : DIM.tieSpacing;
+        for (let s = Math.ceil(Math.max(a, run.s0) / sp) * sp; s < Math.min(b, run.s1); s += sp) { const d = Math.hypot(s - q.s, q.dist); cand.push(d, s, R.k, df ? 1 : 0); }
       }
-      // insulators every T3.insulator m along the third rail (same side logic as the rail itself)
-      for (let s = Math.ceil(Math.max(a, 14) / T3.insulator) * T3.insulator; s < Math.min(b, R.len - 14); s += T3.insulator) {
-        if (Math.abs(s - q.s) > 150) continue;
+      // insulators every T3.insulator m along the third rail (same side and gap logic as the rail itself), within 150 m
+      for (let s = Math.ceil(Math.max(a, 14, q.s - 150) / T3.insulator) * T3.insulator; s < Math.min(b, R.len - 14, q.s + 150); s += T3.insulator) {
         const run = R.runs.find(r => s >= r.s0 && s < r.s1), df = !!run && DF.has(run.type), mesh = df ? I.insDF : I.ins;
-        const k = df ? nD++ : nI++; if (k >= 900) continue;
-        const sd = MT.thirdSide(R, s); if (thirdFoul(R, s, sd)) { if (df) nD--; else nI--; continue; } place(mesh, k, R, s, sd * T3.lat);
-        if (sd < 0) { mesh.getMatrixAt(k, _m4); _m4.multiply(_flip); mesh.setMatrixAt(k, _m4); }
+        const k = df ? nD : nI; if (k >= 900) continue;
+        const sd = MT.thirdSide(R, s); if (thirdFoul(R, s, sd)) continue;
+        if (df) nD++; else nI++;
+        place(mesh, k, R, s, sd * T3.lat); if (sd < 0) { mesh.getMatrixAt(k, _m4); _m4.multiply(_flip); mesh.setMatrixAt(k, _m4); }
       }
     }
-    I.fastFull.count = nFF; I.fast.count = nF; I.tie.count = nT; I.ins.count = Math.min(nI, 900); I.insDF.count = Math.min(nD, 900);
-    for (const m of [I.fastFull, I.fast, I.tie, I.ins, I.insDF]) m.instanceMatrix.needsUpdate = true;
-    MT.stats.inst = nFF + nF + nT + nI + nD;
+    // nearest first
+    const order = []; for (let i = 0; i < cand.length; i += 4) order.push(i); order.sort((x, y) => cand[x] - cand[y]);
+    const TR = MT.TRACKS;
+    for (const i of order) {
+      const d = cand[i], s = cand[i + 1], R = TR[cand[i + 2]], df = cand[i + 3] === 1;
+      if (df) { if (d < 45 && nFF < 2400) place(I.fastFull, nFF++, R, s, 0); else if (nF < 6000) place(I.fast, nF++, R, s, 0); }
+      else { if (d < NEAR && nT < 2400) place(I.tie, nT++, R, s, 0); else if (nTF < 9000) place(I.tieFar, nTF++, R, s, 0); }
+    }
+    I.fastFull.count = nFF; I.fast.count = nF; I.tie.count = nT; I.tieFar.count = nTF; I.ins.count = nI; I.insDF.count = nD;
+    for (const m of [I.fastFull, I.fast, I.tie, I.tieFar, I.ins, I.insDF]) m.instanceMatrix.needsUpdate = true;
+    MT.stats.inst = nFF + nF + nT + nTF + nI + nD;
   }
 
   function init(o) { MATS = o.MATS; }
