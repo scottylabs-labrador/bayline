@@ -357,9 +357,12 @@ const MetroStations = (() => {
   // Millbrae is one intermodal building: the Caltrain-era depot's hall (Landmarks, 'depot:millbrae:hall', split off
   // only with the metro on) stands where BART's platform 3 and tracks are, so it is hidden while the BART station (which
   // draws the shared hall) is on screen, shown again when that station is dropped, and on a metro failure (teardown)
-  let depotHall = null, depotLook = 0;
+  let depotHall = null, depotLook = 0, depotTries = 0;
   function sharedBuildings() {
-    if (!depotHall) { if (--depotLook > 0) return; depotLook = 120; if (typeof Env === 'undefined') return;
+    if (!depotHall) {
+      // (looked for only while BART Millbrae is built, every 2 s, and given up after 30 tries: no Peninsula depot)
+      const mb = byId.MLBR; if (!mb || !mb.root) { depotTries = 0; return; } if (depotTries > 30) return;
+      if (--depotLook > 0) return; depotLook = 120; depotTries++; if (typeof Env === 'undefined') return;
       Env.scene.traverse(o => { if (!depotHall && o.name === 'depot:millbrae:hall') depotHall = o; });
       if (!depotHall) return;
       if (typeof Metro !== 'undefined' && Metro.onTeardown) Metro.onTeardown(() => { if (depotHall) depotHall.visible = true; }); }
