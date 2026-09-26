@@ -1678,7 +1678,7 @@ const Towns = (() => {
   }
 
   // ------------------------------------------------------------------ streaming
-  const pathOf = (tx, ty, sky) => DIR + '7/' + tx + '_' + ty + (sky ? '.sky.bin' : '.bin');
+  const pathOf = (tx, ty, sky) => { const e = index.get(K(tx, ty)); return ((e && e.dir) || DIR) + '7/' + tx + '_' + ty + (sky ? '.sky.bin' : '.bin'); };
   function newTile(e, sky) {
     const [ox, oz] = tileOrigin(e.tx, e.ty);
     const t = { key: K(e.tx, e.ty), tx: e.tx, ty: e.ty, ox, oz, e, sky, path: pathOf(e.tx, e.ty, sky), root: new THREE.Group(), state: 'new', data: null, raw: null,
@@ -1852,12 +1852,33 @@ const Towns = (() => {
   }
   function dispose() { for (const t of [...tiles.values()]) unload(t, tiles); for (const s of [...skyTiles.values()]) unload(s, skyTiles); decoded.clear(); scanX = 1e9; }
 
+  // Bayline Metro towns (tiles/b2/, optional): the BART corridors and the north strip, same tile format. A b2 tile
+  // replaces the b tile with the same key (a superset: the Caltrain-era content plus the BART corridor's); old clients
+  // never read b2 (notes/bart/world.md). #b2=0 turns it off (QA).
+  async function readB2() {
+    if (typeof location !== 'undefined' && new URLSearchParams(location.hash.slice(1)).get('b2') === '0') return;
+    try {
+      const i2 = await getJson('tiles/b2/index.json', 0);
+      if (!i2 || i2.version !== 3) return;
+      const strip = typeof Terrain !== 'undefined' && !!Terrain.north;       // (north of the old square only with the terrain there)
+      for (const [tx, ty, bytes, nb, sky] of i2.tiles) if (ty >= 0 || strip) index.set(K(tx, ty), { key: K(tx, ty), tx, ty, bytes, nb, sky, dir: 'tiles/b2/' });
+      stats.b2 = i2.tiles.length;
+    } catch (e) { /* not published (yet) */ }
+  }
+  // world rects [x0, z0, x1, z1] of the Towns tiles overlapping a rectangle (WorldTiles leaves those to Towns)
+  function rectsIn(x0, z0, x1, z1) {
+    const out = [];
+    for (let ty = Math.floor((z0 - Z0) / TILE); ty <= Math.floor((z1 - Z0) / TILE); ty++) for (let tx = Math.floor((x0 - X0) / TILE); tx <= Math.floor((x1 - X0) / TILE); tx++)
+      if (index.has(K(tx, ty))) out.push([X0 + tx * TILE, Z0 + ty * TILE, X0 + (tx + 1) * TILE, Z0 + (ty + 1) * TILE]);
+    return out;
+  }
   async function init(c) {
     ctx = Object.assign({ groundY: () => 0, trackDist: () => 1e9, ll2w: Geo.ll2w, stationList: [] }, c || {});
     stationW = (ctx.stationList || []).map(s => s.x !== undefined ? s : ctx.ll2w(s.lat, s.lon));
     const idx = await getJson(DIR + 'index.json', 0);
     if (!idx || idx.version !== 3) throw new Error('towns: unexpected index version');
     for (const [tx, ty, bytes, nb, sky] of idx.tiles) index.set(K(tx, ty), { key: K(tx, ty), tx, ty, bytes, nb, sky });
+    await readB2();
     facadeTex = makeFacadeArray(); skyMat = makeBldMat(skyU);
     buildVariants();
     for (const k of ['broad', 'conifer', 'palm', 'euc']) { TREEG[k] = treeGeo(k, false); TREEG_LO[k] = treeGeo(k, true); TREEG[k].userData.shared = TREEG_LO[k].userData.shared = true; }
@@ -1866,6 +1887,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality,
+  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

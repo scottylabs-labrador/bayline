@@ -267,6 +267,12 @@ def compute_coverage():
         return cov
     b = _coverage_bart(stage)
     L6 = set(cov[6]) | b[6]; L7 = set(cov[7]) | b[7]; L8 = set(cov[8]) | b[8]
+    # monotonic: a recompute (next stage, or a new corridor source) never drops what an earlier stage listed
+    for f in ('coverage_bart1.json', 'coverage_bart2.json'):
+        pf = os.path.join(WORK, f)
+        if os.path.exists(pf):
+            j = json.load(open(pf))
+            L6 |= {tuple(c) for c in j.get('6', [])}; L7 |= {tuple(c) for c in j.get('7', [])}; L8 |= {tuple(c) for c in j.get('8', [])}
     for (x, y) in L8:
         L7.add((x >> 1, y >> 1))
     for (x, y) in L7:

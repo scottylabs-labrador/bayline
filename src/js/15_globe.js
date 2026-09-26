@@ -6,7 +6,9 @@
 //   Globe.frame                 { lat0, lon0, mlat, mlon, bay, id }: x = (lon - lon0) mlon, z = -(lat - lat0) mlat
 //   Globe.ll2w(lat, lon) / w2ll(x, z)
 //   Globe.setFrame(lat, lon)    rebase to a new origin (Bay frame when within reach of the Peninsula)
-//   Globe.inBayline(x, z)       inside the Bayline square of the Bay frame
+//   Globe.inBayline(x, z)       inside the area the Bayline terrain draws (the square, plus the north strip when
+//                               its tiles are published: Terrain.area), in the Bay frame
+//   Globe.inSquare(x, z)        inside the original Bayline square (102.4 km) of the Bay frame
 //   Globe.h(x, z)               ground height (m, sea level clamps water) from the finest loaded elevation tile
 //   Globe.ensure(x, z)          promise: full-detail elevation around a point (for spawning)
 //   Globe.update(camera)        per frame
@@ -16,6 +18,9 @@ const Globe = (() => {
   const N = 32, NV = (N + 1) * (N + 1);                 // quads per tile side, grid vertices
   const HZ_MAX = 14, SIZE = 256;                        // terrarium: finest zoom used, pixels per tile
   const BX0 = -45056, BZ0 = -49152, BS = 102400;        // the Bayline square (Bay frame)
+  // the area the Bayline terrain draws and the globe leaves to it: the square, extended north over the Bayline Metro
+  // strip when its tiles are published (set from Terrain.area at init; see notes/bart/world.md)
+  const EX = [BX0, BZ0, BX0 + BS, BZ0 + BS];
   const group = new THREE.Group(); group.name = 'globe'; group.layers.enable(1);
   const stats = { nodes: 0, drawn: 0, hTiles: 0, iTiles: 0, loading: 0, built: 0, fails: 0 };
 
@@ -24,7 +29,8 @@ const Globe = (() => {
   const frame = { lat0: Geo.LAT0, lon0: Geo.LON0, mlat: Geo.MLAT, mlon: Geo.MLON, bay: true, id: 0 };
   const ll2w = (lat, lon) => ({ x: (lon - frame.lon0) * frame.mlon, z: -(lat - frame.lat0) * frame.mlat });
   const w2ll = (x, z) => ({ lat: frame.lat0 - z / frame.mlat, lon: frame.lon0 + x / frame.mlon });
-  const inBayline = (x, z) => frame.bay && x > BX0 && x < BX0 + BS && z > BZ0 && z < BZ0 + BS;
+  const inBayline = (x, z) => frame.bay && x > EX[0] && x < EX[2] && z > EX[1] && z < EX[3];
+  const inSquare = (x, z) => frame.bay && x > BX0 && x < BX0 + BS && z > BZ0 && z < BZ0 + BS;
   const frameListeners = [];
   function setFrame(lat, lon) {
     const bay = Math.hypot((lat - Geo.LAT0) * Geo.MLAT, (lon - Geo.LON0) * Geo.MLON) < 160000;
@@ -373,7 +379,7 @@ const Globe = (() => {
       const dh = Math.hypot(dxm, dzm);
       if (dh > viewR) continue;
       const x0 = (lonW - frame.lon0) * frame.mlon, x1 = (lonE - frame.lon0) * frame.mlon, z0 = -(latN - frame.lat0) * frame.mlat, z1 = -(latS - frame.lat0) * frame.mlat;
-      if (frame.bay && x0 >= BX0 && x1 <= BX0 + BS && z0 >= BZ0 && z1 <= BZ0 + BS) continue;   // wholly Bayline
+      if (frame.bay && x0 >= EX[0] && x1 <= EX[2] && z0 >= EX[1] && z1 <= EX[3]) continue;   // wholly Bayline
       const hr = z >= 2 ? bestH(z, x, y) : null; const mn = hr ? seaClamp(hr.mn) : 0, mx = hr ? Math.max(seaClamp(hr.mx), 0) : 4500;
       const dv = Math.max(0, cp.y - mx, mn - cp.y), dist = Math.hypot(dh, dv) + 1;
       const latC = (latN + latS) / 2, size = CIRC * Math.cos(latC * DEG) / 2 ** z;
@@ -436,8 +442,9 @@ const Globe = (() => {
   function invalidate() { for (const n of nodes.values()) n.hKey = -2; }
   function init() {
     try { maxAniso = Math.min(8, Env.renderer.capabilities.getMaxAnisotropy()); } catch (e) {}
+    if (typeof Terrain !== 'undefined' && Terrain.area) { const a = Terrain.area; EX[0] = a[0]; EX[1] = a[1]; EX[2] = a[2]; EX[3] = a[3]; shared.uExcl.value.set(a[0], a[1], a[2], a[3]); }
     Env.scene.add(group);
   }
-  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, maybeRebase, invalidate, inBayline, h, hAt, ensure, lodK,
+  return { init, update, group, stats, frame, debug: shared.uDebug, ll2w, w2ll, setFrame, onFrame, maybeRebase, invalidate, inBayline, inSquare, h, hAt, ensure, lodK,
     set enabled(v) { enabled = !!v; }, get enabled() { return enabled; }, tx, ty, lonOf, latOf, inUS };
 })();

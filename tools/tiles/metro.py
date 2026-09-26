@@ -66,17 +66,30 @@ def _from_osm():
     return out
 
 
-def _from_network():
-    d = json.load(open(NETWORK))
+STRUCT = ['grade', 'aerial', 'bridge', 'embankment', 'trench', 'median', 'portal', 'cutcover', 'bored', 'tube']
+UNDER = {6, 7, 8, 9}
+
+
+def network_tracks():
+    """The data workstream's tracks (metro/network.json + tracks.bin): [dict(id, sys, cls, step, P (n,3) x y z,
+    struct (n,) uint8 codes, cover (n,) uint8)] (see notes/bart-data.md)."""
+    import zlib
+    net = json.load(open(NETWORK))
+    buf = zlib.decompress(open(os.path.join(os.path.dirname(NETWORK), 'tracks.bin'), 'rb').read())
     out = []
-    for tr in d.get('tracks', []):
-        P = np.asarray(tr.get('polyline') or tr.get('pts') or [], np.float64)
-        if len(P) < 2:
-            continue
-        xz = P[:, [0, 2]] if P.shape[1] >= 3 else P[:, :2]
-        segs = tr.get('structure') or tr.get('segments') or []
-        tun = bool(segs) and all((s.get('type') if isinstance(s, dict) else s) in ('bored', 'cutcover', 'tube') for s in segs)
-        out.append(dict(xz=_resample(xz), tunnel=tun, kind='net', service=None))
+    for h in net['tracks']:
+        n, off = h['n'], h['off']
+        P = np.frombuffer(buf, '<f4', n * 3, off).reshape(n, 3).astype(np.float64)
+        A = np.frombuffer(buf, np.uint8, n * 4, off + n * 12)
+        out.append(dict(id=h['id'], sys=h['sys'], cls=h['cls'], step=h['step'], P=P, struct=A[:n].copy(), cover=A[3 * n:].copy()))
+    return out
+
+
+def _from_network():
+    out = []
+    for t in network_tracks():
+        xz = t['P'][:, [0, 2]]
+        out.append(dict(xz=_resample(xz), tunnel=bool(np.isin(t['struct'], list(UNDER)).all()), kind=t['sys'], service=t['cls']))
     return out
 
 
