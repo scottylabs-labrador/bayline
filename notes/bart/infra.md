@@ -7,6 +7,18 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **08:10 please take fb30fa3 with the M3 merge**: 32127f8 (the triangle work) reused palette kind 11 for the simple
+  mid-distance rails, and 11 is the Market St steel liner plates, so within 190 m of the camera the Market St bore
+  lining was discarded (black tunnel with floating lamps). Fixed in fb30fa3 (mid rails are kinds 21 / 22 now).
+- **08:10 day / night / dusk underground**: Tube, Market St and Berkeley Hills interiors measure the same at noon and
+  22:00 (mean luma 36.5 / 36.9, 17.5 / 18.3, 58.5 / 59.0): bloom and its threshold no longer follow the night below
+  ground, and the golden-hour tint fades out underground. Dusk (18:54, sun 0.5 deg): West Oakland approach -> mouth ->
+  20 m -> 80 m inside and the Berkeley Hills west portal both ways ramp smoothly (exposure 1.13 -> 1.01 -> 1.0; the low
+  sun glows in the Berkeley Hills mouth seen from inside). One world object: a town building (towns tile 32,4) stands in
+  the West Oakland portal mouth (red walls inside the openings); WORLD's `dropBuilding` only drops near raised
+  structures; request below.
+- **08:00 isolation**: SIM's `tools/qa_metro_isolation.sh` against this branch: 11/11 PASS (one warning, no errors,
+  metro off with track and stations removed, frames advancing), including `metrofail=under` and `build`.
 - **07:45 INFRA M2b OK** (`#metrodir=metro-next/`): Berkeley subway (spread islands: tunnels meet ASHB / DBRK / NBRK),
   Milpitas, Daly City and the Wye verified; every subway platform has its cell; fixes for crossovers' own structures,
   trench walls and shallow trenches are on `bart-infra` (see Status).
@@ -392,6 +404,9 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
   carved (the trench and its walls sat under a sand-coloured surface); infra now cuts the terrain itself wherever the
   ground over a trench is not actually below the rail (`carvedAlong`), but please check the carve there. Milpitas (M2b):
   the carve leaves steep facets behind the trench walls.
+- **WORLD (08:10)**: please extend MetroGround's `dropBuilding` to open cuts: buildings within ~8 m of a track whose
+  structure is `trench` or `portal`, and within 30 m outside a tunnel mouth (towns tile 32,4 has one standing in the
+  West Oakland portal, M1.1 s ~3400).
 - **DATA (07:40)**: Milpitas (M2b) alternates `cutcover` / `trench` every ~50 m (S1 3232-3942): a row of short boxes with
   headwalls. If the station's trench is open with a lid only under the concourse / roads, fewer and longer pieces
   would read better.
