@@ -133,3 +133,36 @@ def tree():
         tun = np.concatenate([np.full(len(l['xz']), l['tunnel']) for l in L])
         _TREE = (cKDTree(P), tun)
     return _TREE
+
+
+# ------------------------------------------------------------------ East Bay regions (towns styles, tree species)
+# The Peninsula-era regions are by latitude only (0 SF, 1 north Peninsula, 2 mid Peninsula, 3 South Bay, 4 San Jose,
+# 5 South County), which calls Berkeley and Walnut Creek "San Francisco". East of the Bay, Bayline Metro adds:
+#   6 East Bay flats and inner hills, Richmond .. San Leandro (craftsman bungalows, Victorians, brown shingle, stucco)
+#   7 Hayward, Castro Valley, Union City, Fremont, Newark, Milpitas (post-war ranch, two-story stucco tracts)
+#   8 behind the Berkeley Hills and the Tri-Valley: Orinda, Lafayette, Walnut Creek, Concord, Dublin, Pleasanton
+#     (ranch and two-story on big wooded lots, oak woodland)
+#   9 Pittsburg, Bay Point, Antioch (1990s-2000s stucco tracts, tile roofs, dry lawns)
+# Used only for NEW tiles (tiles/b2, new tree tiles); nothing already published changes.
+_BAYLINE = [(37.40, -121.99), (37.45, -122.05), (37.50, -122.11), (37.58, -122.19), (37.70, -122.30), (37.82, -122.35),
+            (37.93, -122.445), (38.12, -122.43)]
+_RIDGE = [(37.73, -122.05), (37.76, -122.12), (37.82, -122.19), (37.855, -122.21), (37.88, -122.24), (37.93, -122.27),
+          (38.12, -122.30)]
+
+
+def _interp(pts, lat):
+    la = np.array([p[0] for p in pts]); lo = np.array([p[1] for p in pts])
+    return float(np.interp(lat, la, lo))
+
+
+def ebay_region(lat, lon):
+    """6..9 for the East Bay zones above, None elsewhere (the Peninsula-era latitude regions apply)."""
+    if lat < 37.40 or lon <= _interp(_BAYLINE, lat):
+        return None
+    if lat > 37.96 and lon > -121.97:
+        return 9
+    if (lat > 37.73 and lon > _interp(_RIDGE, lat)) or (37.60 < lat <= 37.73 and lon > -121.99):
+        return 8
+    if lat <= 37.705 or (lat <= 37.73 and lon > -122.10):
+        return 7
+    return 6

@@ -3,6 +3,13 @@
 
     python3 tools/fetch_osm.py      # once: PBF -> pickles
     python3 tools/bake_towns.py     # ~2-4 min
+    python3 tools/bake_towns.py --metro   # Bayline Metro: data/raw/osm/v3_*.pkl -> data/pub/v2/tiles/b2/ (see below)
+
+--metro (notes/bart/world.md): the same bake over the BART corridors and the north strip (negative tile rows), with the
+BART tracks (above ground) and stations added to the track / station rules and the East Bay regions 6-9
+(tools/tiles/metro.py). tiles/b is never touched; tiles/b2 holds (a) every tile that tiles/b doesn't have and (b) tiles
+of tiles/b whose content changed, unless a pre-Metro lidar tile (tiles/h9, frozen in data/raw/lidar3dep/old_l8.json)
+lies under them (its detail was baked against the old roads). The client prefers b2 over b; old clients never read b2.
 
 Tiling = SPEC_v2 level 7: 800 m tiles, origin X0=-45056, Z0=-49152; tile (tx, ty) covers
 X in [X0+tx*800, X0+(tx+1)*800), Z in [Z0+ty*800, ...). Files:
@@ -31,7 +38,12 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(HERE)
-RAW = os.path.join(ROOT, 'data/raw/osm'); OUT = os.path.join(ROOT, 'data/pub/v2/tiles/b')
+METRO = '--metro' in sys.argv
+RAW = os.path.join(ROOT, 'data/raw/osm'); OUT = os.path.join(ROOT, 'data/pub/v2/tiles/b2' if METRO else 'data/pub/v2/tiles/b')
+OLD_B = os.path.join(ROOT, 'data/pub/v2/tiles/b')
+if METRO:
+    sys.path.insert(0, HERE)
+    from tiles import metro as MET
 corr = json.load(open(os.path.join(ROOT, 'data/baked/corridor.json')))
 LAT0, LON0, MLAT, MLON = corr['lat0'], corr['lon0'], corr['mPerDegLat'], corr['mPerDegLon']
 X0, Z0, TILE = -45056.0, -49152.0, 800.0
@@ -118,8 +130,11 @@ def num(v):
     if m.group(2) in ('ft', "'", 'feet'): x *= 0.3048
     return x
 
-def region_of(z):
+def region_of(z, x=None):
     lat = LAT0 - z / MLAT
+    if METRO and x is not None:
+        r = MET.ebay_region(lat, LON0 + x / MLON)
+        if r is not None: return r
     if lat > 37.708: return 0          # San Francisco
     if lat > 37.50: return 1           # north Peninsula
     if lat > 37.415: return 2          # mid Peninsula
@@ -135,11 +150,19 @@ def load_track():
     Z = np.frombuffer(b, '<f4', n, p)
     return np.stack([X, Z], 1).astype(np.float64)
 TRACK = load_track()
+if METRO:      # + the BART tracks where they are above ground (buildings stand over the subways and tunnels)
+    _bp = []
+    for _t in MET.network_tracks():
+        _m = ~np.isin(_t['struct'], list(MET.UNDER))
+        if _m.any(): _bp.append(_t['P'][_m][:, [0, 2]])
+    TRACK = np.concatenate([TRACK] + _bp, 0)
+    log('track points (Caltrain + BART above ground)', len(TRACK))
 track_tree = cKDTree(TRACK)
 def track_dist(pts):
     d, _ = track_tree.query(np.asarray(pts, np.float64).reshape(-1, 2), k=1)
     return d
 stations_w = [W(s['lat'], s['lon']) for s in corr['stations']]
+if METRO: stations_w += [(x, z) for (_i, _n, x, z) in MET.stations()]
 
 def landmarks():
     src = open(os.path.join(ROOT, 'src/js/50_landmarks.js'), encoding='utf-8').read()
@@ -161,7 +184,8 @@ log('landmarks', len(LANDMARKS))
 
 # ---------------------------------------------------------------- load OSM
 def load(name): return pickle.load(open(os.path.join(RAW, name + '.pkl'), 'rb'))
-B_RAW, R_RAW, A_RAW, P_RAW = load('v2_buildings'), load('v2_roads'), load('v2_areas'), load('v2_points')
+_PFX = 'v3_' if METRO else 'v2_'
+B_RAW, R_RAW, A_RAW, P_RAW = load(_PFX + 'buildings'), load(_PFX + 'roads'), load(_PFX + 'areas'), load(_PFX + 'points')
 log('loaded', len(B_RAW), 'buildings', len(R_RAW), 'roads', len(A_RAW), 'areas', len(P_RAW), 'points')
 
 # aerodromes the landmark module models (SFO, SJC): their terminals / towers are dropped
@@ -195,7 +219,7 @@ for wid, t, refs, pts in R_RAW:
     width = lanes * lw
     if c in (0, 2): width += 3.0 + (1.2 if oneway else 0)
     elif c in (1, 3): width += 2.0
-    elif c in (10, 11): width = max(width, 7.2) + (4.6 if region_of(pts[0][1]) != 5 else 1.0)
+    elif c in (10, 11): width = max(width, 7.2) + (4.6 if region_of(pts[0][1], pts[0][0]) != 5 else 1.0)
     elif c == 12: width = max(width, 6.0)
     elif c == 13: width = max(width, 4.2)
     elif c == 14: width = max(width, 5.0)
@@ -295,7 +319,7 @@ tdist = track_tree.query(cents, k=1)[0] if len(cents) else np.zeros(0)
 buildings = []; n_lm = n_air = n_track = n_depot = 0
 for i, (key, t, ring, is_part) in enumerate(cand):
     if i in drop: continue
-    cx, cz = cents[i]; td = tdist[i]; a = abs(area(ring)); reg = region_of(cz)
+    cx, cz = cents[i]; td = tdist[i]; a = abs(area(ring)); reg = region_of(cz, cx)
     kind = building_kind(t, a, reg)
     # rail modules draw their own stations; nothing may straddle the tracks
     if td < 7 or (kind in (5, 6, 7) and td < 22): n_track += 1; continue
@@ -400,11 +424,11 @@ for key, t, outers in A_RAW:
 log('areas', len(areas), 'residential landuse polygons', len(resid))
 
 # infill mask: 25 m cells inside residential landuse, with no OSM building within ~20 m, and a street within 70 m
-GX0, GZ0, GC = X0, Z0, 25.0; GN = int(102400 / GC)
-res_mask = np.zeros((GN, GN), bool)
+GX0, GZ0, GC = X0, (Z0 - 25600.0 if METRO else Z0), 25.0; GN = int(102400 / GC); GNZ = int((102400 + (25600 if METRO else 0)) / GC)
+res_mask = np.zeros((GNZ, GN), bool)
 for r in resid:
     xs = [p[0] for p in r]; zs = [p[1] for p in r]
-    j0, j1 = max(0, int((min(zs) - GZ0) / GC)), min(GN - 1, int((max(zs) - GZ0) / GC))
+    j0, j1 = max(0, int((min(zs) - GZ0) / GC)), min(GNZ - 1, int((max(zs) - GZ0) / GC))
     n = len(r)
     for j in range(j0, j1 + 1):
         pz = GZ0 + (j + 0.5) * GC; xsx = []
@@ -415,18 +439,18 @@ for r in resid:
         for m in range(0, len(xsx) - 1, 2):
             i0, i1 = max(0, int((xsx[m] - GX0) / GC + 0.5)), min(GN - 1, int((xsx[m + 1] - GX0) / GC - 0.5))
             if i1 >= i0: res_mask[j, i0:i1 + 1] = True
-occ = np.zeros((GN, GN), bool)
+occ = np.zeros((GNZ, GN), bool)
 for b in buildings:
     for x, z in b['ring'] + [(b['cx'], b['cz'])]:
         i, j = int((x - GX0) / GC), int((z - GZ0) / GC)
-        if 0 <= i < GN and 0 <= j < GN: occ[j, i] = True
+        if 0 <= i < GN and 0 <= j < GNZ: occ[j, i] = True
 from scipy import ndimage
 occ = ndimage.binary_dilation(occ, iterations=1)
-street = np.zeros((GN, GN), bool)
+street = np.zeros((GNZ, GN), bool)
 res_cls = rs_cls >= 10
 for (x, z) in rs_pts[res_cls[: len(rs_pts)]] if len(rs_pts) else []:
     i, j = int((x - GX0) / GC), int((z - GZ0) / GC)
-    if 0 <= i < GN and 0 <= j < GN: street[j, i] = True
+    if 0 <= i < GN and 0 <= j < GNZ: street[j, i] = True
 near_street = ndimage.distance_transform_edt(~street) * GC <= 70
 infill = res_mask & ~occ & near_street
 log('infill cells', int(infill.sum()), f'({infill.sum() * GC * GC / 1e6:.1f} km²)')
@@ -550,7 +574,7 @@ def tile_blob(tx, ty, T, sky=False):
         sub = infill[j0:j0 + 32, i0:i0 + 32]
         if sub.shape == (32, 32) and sub.any(): mask = np.packbits(sub.reshape(-1), bitorder='little').tobytes()
     out = bytearray(b'BLT3' + struct.pack('<6H', min(len(B), 65535), min(len(R), 65535), len(A), len(TR), len(I), len(LL)))
-    out += struct.pack('<BB', 1 if mask else 0, region_of(oz + TILE / 2))
+    out += struct.pack('<BB', 1 if mask else 0, region_of(oz + TILE / 2, ox + TILE / 2))
     if mask: out += mask
     for b in B[:65535]: out += enc_building(b, ox, oz)
     for r in R[:65535]:
@@ -567,13 +591,27 @@ def tile_blob(tx, ty, T, sky=False):
 os.makedirs(os.path.join(OUT, '7'), exist_ok=True)
 for f in os.listdir(os.path.join(OUT, '7')): os.remove(os.path.join(OUT, '7', f))
 index = []; total = 0; total_sky = 0
+if METRO:      # which tiles go to b2 (see the docstring)
+    old_idx = {(t[0], t[1]) for t in json.load(open(os.path.join(OLD_B, 'index.json')))['tiles']}
+    old_l8 = {tuple(t) for t in json.load(open(os.path.join(ROOT, 'data/raw/lidar3dep/old_l8.json')))}
+    n_new = n_over = n_same = n_held = 0
 for (tx, ty), T in sorted(tiles.items()):
     if not (T['b'] or T['r']): continue
     blob = tile_blob(tx, ty, T)
+    if METRO and (tx, ty) in old_idx:
+        oldp = os.path.join(OLD_B, '7', f'{tx}_{ty}.bin')
+        if os.path.exists(oldp) and open(oldp, 'rb').read() == blob: n_same += 1; continue
+        if any((2 * tx + dx, 2 * ty + dy) in old_l8 for dy in (0, 1) for dx in (0, 1)): n_held += 1; continue
+        n_over += 1
+    elif METRO: n_new += 1
     open(os.path.join(OUT, '7', f'{tx}_{ty}.bin'), 'wb').write(blob); total += len(blob)
     sky = tile_blob(tx, ty, T, sky=True); sb = 0
     if sky: open(os.path.join(OUT, '7', f'{tx}_{ty}.sky.bin'), 'wb').write(sky); sb = len(sky); total_sky += sb
     index.append([tx, ty, len(blob), len(T['b']), sb])
-json.dump({'version': 3, 'tile': TILE, 'x0': X0, 'z0': Z0, 'skyH': SKY_H, 'photoMaxH': PHOTO_MAX_H, 'attribution': '(c) OpenStreetMap contributors, ODbL 1.0',
-           'tiles': index}, open(os.path.join(OUT, 'index.json'), 'w'), separators=(',', ':'))
+meta = {'version': 3, 'tile': TILE, 'x0': X0, 'z0': Z0, 'skyH': SKY_H, 'photoMaxH': PHOTO_MAX_H, 'attribution': '(c) OpenStreetMap contributors, ODbL 1.0'}
+if METRO:
+    meta['layer'] = 'b2: Bayline Metro towns (BART corridors, north strip); a b2 tile replaces the b tile with the same key'
+    meta['regions'] = '0 SF, 1 north Peninsula, 2 mid Peninsula, 3 South Bay, 4 San Jose, 5 South County, 6 East Bay flats, 7 Hayward-Fremont-Milpitas, 8 Lamorinda-Walnut Creek-Concord-Tri-Valley, 9 Pittsburg-Antioch'
+    log(f'b2: {n_new} new tiles, {n_over} replacing changed b tiles, {n_same} unchanged (left to b), {n_held} changed but held (pre-Metro lidar under them)')
+json.dump(dict(meta, tiles=index), open(os.path.join(OUT, 'index.json'), 'w'), separators=(',', ':'))
 log(f'tiles {len(index)}  {total / 1e6:.1f} MB  (+ skyline {total_sky / 1e6:.2f} MB in {sum(1 for t in index if t[4])} files)  -> {OUT}')

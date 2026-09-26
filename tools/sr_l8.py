@@ -87,6 +87,7 @@ def main():
                 del cache[k]
         if n % 20 == 0 or n == len(parents) - 1:
             el = time.time() - t0; print(f'{n + 1}/{len(parents)} L7 parents, {made} L8 written, {el:.0f}s, ~{el / (n + 1) * (len(parents) - n - 1):.0f}s left', flush=True)
+    idx = json.load(open(os.path.join(C.PUB, 'index.json')))          # (re-read: other steps may have rewritten it meanwhile)
     idx['products']['img']['size8'] = 1024
     tmp = os.path.join(C.PUB, 'index.json.tmp'); json.dump(idx, open(tmp, 'w'), separators=(',', ':')); os.replace(tmp, os.path.join(C.PUB, 'index.json'))
     print('done', flush=True)
