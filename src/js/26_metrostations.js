@@ -149,6 +149,9 @@ const MetroStations = (() => {
   }
   function attach(st, res) {
     st.root = res.root; st.res = res; group.add(res.root);
+    // Under: a station without cells (aerial, at grade) is outdoor world: hidden with it while the camera is underground
+    // and no opening to the outdoors is in view; underground levels are cell groups (their visibility is Under's)
+    if (typeof Under !== 'undefined' && Under.enabled && !(res.cells && res.cells.length)) Under.outdoor(res.root, true);
     st.walk = res.walk || null;
     for (const c of res.cells || []) if (typeof Under !== 'undefined' && Under.addCell) try { Under.addCell(c.under); } catch (e) { console.warn('Under.addCell', e); }
     for (const p of res.portals || []) if (typeof Under !== 'undefined' && Under.addPortal) try { Under.addPortal(p); } catch (e) { console.warn('Under.addPortal', e); }
@@ -160,7 +163,8 @@ const MetroStations = (() => {
     if (!st.root) return;
     group.remove(st.root);
     st.root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
-    if (typeof Under !== 'undefined' && Under.remove && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {} }
+    if (typeof Under !== 'undefined' && Under.enabled && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {}
+      for (const p of st.res.portals || []) if (p.id) try { Under.remove(p.id); } catch (e) {} try { Under.outdoor(st.root, false); } catch (e) {} }
     if (typeof MetroSigns !== 'undefined') { MetroSigns.freeBoards(st); MetroSigns.releaseAtlas(st); }
     st.root = null; st.res = null; st.walk = null; st.boards.clear(); st.state = 'idle'; stats.built--;
   }
@@ -176,6 +180,9 @@ const MetroStations = (() => {
   function init() {
     if (!enabled || initP) return initP;
     Env.scene.add(group);
+    // the stations group stays drawn underground (Under hides the outdoor world there); visibility inside it is per cell
+    // group (underground levels) and per outdoor station root (Under.outdoor)
+    if (typeof Under !== 'undefined' && Under.enabled && Under.keep) Under.keep(group);
     const waitNet = MetroNet.load();
     initP = waitNet.then(() => { net = true; stationRecords(); ready = true; if (typeof MetroSigns !== 'undefined') MetroSigns.init(N.lines(), list); })
       .catch(e => { console.warn('MetroStations: no network data', e); });
@@ -202,7 +209,7 @@ const MetroStations = (() => {
       const eff = Math.hypot(st.dist, alt);
       st.root.visible = eff < FAR_R;
       const r = st.res;
-      if (r && r.near) r.near.visible = eff < NEAR_R;
+      if (r && r.nears) { const nv = eff < NEAR_R; for (const g of r.nears) g.visible = nv; }
       if (r && r.update) r.update(dt, camPos, night);
     }
     if (typeof MetroSigns !== 'undefined') MetroSigns.update(dt, list);

@@ -261,7 +261,9 @@ const StationTypes = (() => {
     const matsToTick = [];
     for (const z of zones) {
       const mat = stationMat({ env: z.under ? env : null, envK: z.under ? 0.9 : 1.0, rough: 0.8 }); mat.userData.sk.uLightK.value = 1; matsToTick.push({ mat, z });
-      const grp = new THREE.Group(); grp.name = 'zone-' + z.name; root.add(grp); const grpN = new THREE.Group(); grpN.name = 'zone-' + z.name + '-near'; near.add(grpN);
+      // each zone: its group (a Under cell group for underground levels) holding its structure and, in a child group, its
+      // near-only detail, so portal visibility and the near LOD act on the same subtree
+      const grp = new THREE.Group(); grp.name = 'zone-' + z.name; root.add(grp); const grpN = new THREE.Group(); grpN.name = 'zone-' + z.name + '-near'; grp.add(grpN);
       res.zones[z.name] = { group: grp, near: grpN, under: z.under };
       const mk = (g, m, parent, shadow) => { const geo = g.build(); if (!geo) return null; const mesh = new THREE.Mesh(geo, m); mesh.castShadow = shadow && !z.under; mesh.receiveShadow = true; parent.add(mesh); if (m === mat) z.lights.bind(mesh, root); return mesh; };
       mk(z.m.sk, mat, grp, true); mk(z.d.sk, mat, grpN, true);
@@ -272,7 +274,8 @@ const StationTypes = (() => {
       for (const b of z.boards) { const bd = MetroSigns.newBoard(st, b.key); const m = new THREE.Mesh(b.geo, new THREE.MeshBasicMaterial({ map: bd.tex, toneMapped: false })); m.material.color.setScalar(1.6); grpN.add(m); res.boards.push(bd); b.mat = m.material; }
       yield;
     }
-    if (T.esc.length) { const m = SP.escSteps(T.esc); if (m) { near.add(m); zP.lights.bind(m, root); } }
+    if (T.esc.length) { const m = SP.escSteps(T.esc); if (m) { res.zones.plat.near.add(m); zP.lights.bind(m, root); } }
+    res.nears = Object.values(res.zones).map(z => z.near);
     for (const c of T.cells) if (res.zones[c.zone]) c.under.group = res.zones[c.zone].group;
     indexWalk(walk);
     // crowd zones (station-local via toLocal/toWorld): platforms with their faces and circulation, the concourse
@@ -283,14 +286,17 @@ const StationTypes = (() => {
       conc: T.concZone || null,
     };
     // per-frame: light intensity follows the exposure underground (lit 24/7, the same at noon and midnight)
+    const underOn = typeof Under !== 'undefined' && Under.enabled;
+    // with Under: the cell ambient (bounce light) is Under's, for every material in the volume; mine would add it twice
+    if (underOn) for (const { mat, z } of matsToTick) if (z.under) z.lights.amb = [0, 0, 0];
     res.update = (dt, camPos, night) => {
       const expo = (typeof Env !== 'undefined' && Env.state.exposure) || 1;
-      const underK = (typeof Under !== 'undefined' && Under.fixesExposure) ? 1 : 1.0 / expo;
+      const underK = underOn ? 1 : 1.0 / expo;           // Under fixes the exposure underground (1.0, day and night)
       for (const { mat, z } of matsToTick) mat.userData.sk.uLightK.value = z.under ? underK : (0.6 + 0.4 * night);
       for (const { m, z } of signMats) m.emissiveIntensity = z.under ? 0.9 * underK : 0.3 + 0.6 * night;
       shared.glow.userData.k.value = under ? 5 * underK : 2.5 + 3 * night;
       // without the Under module: hide the underground levels while the camera is up in the street, away from entrances
-      if (under && typeof Under === 'undefined' && !MetroStations.debug.showAll) {
+      if (under && !underOn && !MetroStations.debug.showAll) {
         const upTop = camPos.y > street - 0.8; let nearEnt = false; for (const e of T.entrances || []) if (Math.hypot(camPos.x - e.wx, camPos.z - e.wz) < 30) { nearEnt = true; break; }
         const vis = !upTop || nearEnt;
         for (const k in res.zones) if (res.zones[k].under) { res.zones[k].group.visible = vis; res.zones[k].near.visible = vis; }
@@ -357,6 +363,9 @@ const StationTypes = (() => {
       }
     }
   }
+  // the cell ambient handed to Under: the fixtures' bounce light, a little generous so people and trains (which get no
+  // direct light from the station's line lights until Under.addLights) read under the lights
+  const ambOf = (S) => { const a = S.amb || [0.4, 0.4, 0.4]; return +(1.6 * (0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2])).toFixed(3); };
   const stairRun = (H) => { const n = Math.max(1, Math.round(H / SP.RISER)); const flights = Math.ceil(n / 16); return (n - flights) * SP.TREAD + (flights - 1) * 1.6 + 0.6; };
 
   // ------------------------------------------------------------------------------------------------ slabs with openings
@@ -420,7 +429,7 @@ const StationTypes = (() => {
     }
     const poly = []; for (const f of fr) { const v = edgeV(f.u, -1) - wallT; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
     for (let i = fr.length - 1; i >= 0; i--) { const f = fr[i]; const v = edgeV(f.u, 1) + wallT; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
-    T.cells.push({ zone: 'plat', under: { id: `st:${T.st.id}:plat`, kind: 'station', poly: poly.map(([x, zz]) => W2(x, zz)), floor: yRail - 1.2, ceil: ceilY + 0.9, ambient: S.amb } });
+    T.cells.push({ zone: 'plat', under: { id: `st:${T.st.id}:plat`, kind: 'station', poly: poly.map(([x, zz]) => W2(x, zz)), floor: yRail - 1.2, ceil: ceilY + 0.9, ambient: ambOf(S) } });
     // lights: continuous troughs over each platform (both edges of an island) + wall-wash coves along both track walls
     const LC = S.light, I = S.lightI; const trough = M([0x34332f, K.PAINT]);
     for (const p of plats) {
@@ -756,9 +765,14 @@ const StationTypes = (() => {
     const cu0 = pu0 + 12, cu1 = pu1 - 12;
     const vl = (u) => edgeV(u, -1), vr = (u) => edgeV(u, 1);
     const holes = T.ceilHoles.map(h => ({ u0: h.u0, u1: h.u1, v0: h.v0, v1: h.v1 }));
+    // entrances first: shafts inside the box footprint pass through the concourse ceiling and roof
+    T.entPlan = planEntrances(T, cu0, cu1);
+    const roofHoles = T.entPlan.filter(e => e.inBox).map(e => ({ u0: Math.min(e.uTop, e.uBot) - 0.3, u1: Math.max(e.uTop, e.uBot) + 0.3, v0: e.ve - e.W / 2 - 0.25, v1: e.ve + e.W / 2 + 0.25 }));
+    T.roofHoles = roofHoles;
     // floor (with the wells), ceiling, walls, end walls
     slab(T, g, cu0, cu1, vl, vr, yCF, holes, M(S.cFloor), true);
-    slab(T, g, cu0, cu1, vl, vr, yCC, [], M(S.cCeil), false);
+    slab(T, g, cu0, cu1, vl, vr, yCC, roofHoles, M(S.cCeil), false);
+    for (const h of roofHoles) holeRim(T, g, h, yCC, yCC + 0.9, M(S.cWall));
     const fr = frames(cu0, cu1);
     const mW = M(S.cWall), mL = M(S.wallLow);
     g.sweep(fr, (i, f) => { const v = vl(f.u); return [[v, yCC, yCC, mW], [v, yCF + 0.15, yCF + 0.15, mL], [v, yCF, yCF]]; });
@@ -807,78 +821,92 @@ const StationTypes = (() => {
     { const u = uc + 3; zC.signs.push({ u, v: vl(u) + 0.03, y: yCF + 1.5, yaw: T.yawAt(u) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T }); }
     // cell: the concourse footprint
     const poly = []; for (const f of fr) { const v = vl(f.u) - 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); } for (let i = fr.length - 1; i >= 0; i--) { const f = fr[i]; const v = vr(f.u) + 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
-    T.cells.push({ zone: 'conc', under: { id: `st:${T.st.id}:conc`, kind: 'station', poly: poly.map(([x, z]) => W2(x, z)), floor: yCF - 0.5, ceil: yCC + 0.9, ambient: S.amb } });
+    T.cells.push({ zone: 'conc', under: { id: `st:${T.st.id}:conc`, kind: 'station', poly: poly.map(([x, z]) => W2(x, z)), floor: yCF - 0.5, ceil: yCC + 0.9, ambient: ambOf(S) } });
     for (const h of T.ceilHoles) { const q = [[h.u0, h.v0], [h.u1, h.v0], [h.u1, h.v1], [h.u0, h.v1]].map(([u, v]) => { const [x, z] = T.WUV(u, v); return [x, yCF, z]; }); T.portals.push({ a: `st:${T.st.id}:plat`, b: `st:${T.st.id}:conc`, quad: q, day: 0 }); }
     // roof slab over the concourse
-    slab(T, g, cu0, cu1, (u) => vl(u) - 0.5, (u) => vr(u) + 0.5, yCC + 0.9, [], M([0x77746e, K.CONCRETE]), true);
+    slab(T, g, cu0, cu1, (u) => vl(u) - 0.5, (u) => vr(u) + 0.5, yCC + 0.9, roofHoles, M([0x77746e, K.CONCRETE]), true);
     yield* streetEntrances(T, cu0, cu1);
   }
 
   // ---------------------------------------------------------------- street entrances (subway)
   // Every entrance from the data (deduplicated) becomes a stair shaft on the sidewalk, running along the station
   // axis and descending toward the concourse; entrances beside the box get a short passage through its wall.
+  // where each entrance goes: a stair shaft on the sidewalk running along the station axis toward the concourse
+  function planEntrances(T, cu0, cu1) {
+    const { st, edgeV, yCF, street } = T; const out = []; const W = 3.0;
+    for (const e of dedupeEntrances(st.data.entrances || []).slice(0, 10)) {
+      const uv = toUV(T, e.x - T.OX, e.z - T.OZ); if (!uv) continue;
+      let [ue, ve] = uv; const inBox = ve > edgeV(ue, -1) + 1.8 && ve < edgeV(ue, 1) - 1.8;
+      const dir = ue > T.uc ? -1 : 1;
+      const gy = Terrain.h(...T.WUV(ue, ve)); const topY = Math.max(gy, street - 1.5); const riseE = topY - yCF; if (riseE < 1.5) continue;
+      const runE = stairRun(riseE);
+      let uTop = ue, uBot = ue + dir * runE;
+      if (uBot < cu0 + 2 || uBot > cu1 - 2) { const shift = uBot < cu0 + 2 ? cu0 + 2 - uBot : cu1 - 2 - uBot; uTop += shift; uBot += shift; }
+      // shafts that would overlap one already planned are dropped (duplicated corners, both sides of one exit)
+      if (out.some(o => Math.abs(o.ve - ve) < W + 0.6 && Math.min(o.uTop, o.uBot) < Math.max(uTop, uBot) + 1 && Math.min(uTop, uBot) < Math.max(o.uTop, o.uBot) + 1)) continue;
+      out.push({ e, ue, ve, dir, uTop, uBot, topY, riseE, runE, inBox, W });
+    }
+    return out;
+  }
+  // Every entrance becomes a stair shaft on the sidewalk, descending along the station axis to the concourse; entrances
+  // beside the box get a short passage through its wall. Each is a Under cell with portals to the street and the concourse.
   function* streetEntrances(T, cu0, cu1) {
-    const { st, S, M, frameAt, edgeV, place, walk, W2, yCF, street } = T;
-    const E = dedupeEntrances(st.data.entrances || []);
+    const { st, S, M, walk, yCF, yCC } = T;
     T.entrances = [];
     const zE = new Zone('ent', { under: false, amb: [0.02, 0.02, 0.02] }); T.zones.push(zE);
-    const g = zE.m.sk; const rise = street - yCF; if (rise < 1.5) return;
-    const run = stairRun(rise), W = 3.0;
+    const g = zE.m.sk;
     let k = 0;
-    for (const e of E) {
-      // entrance position in station coordinates
-      const lx = e.x - T.OX, lz = e.z - T.OZ; const uv = toUV(T, lx, lz); if (!uv) continue;
-      let [ue, ve] = uv; const inBox = ve > edgeV(ue, -1) + 1.5 && ve < edgeV(ue, 1) - 1.5;
-      // the stair descends toward the station middle along u
-      const dir = ue > T.uc ? -1 : 1;
-      let uTop = ue, uBot = ue + dir * run;
-      // keep the bottom inside the concourse's u-range
-      if (uBot < cu0 + 2 || uBot > cu1 - 2) { const shift = (uBot < cu0 + 2 ? cu0 + 2 - uBot : cu1 - 2 - uBot); uTop += shift; uBot += shift; }
-      const gy = Terrain.h(...W2(...T.L2(uTop, ve))) ;
-      const topY = Math.max(gy, street - 1.5);
-      const riseE = topY - yCF; if (riseE < 1.5) continue;
-      const runE = stairRun(riseE);
-      uBot = uTop + dir * runE;
+    for (const P of T.entPlan || []) {
+      const { e, ve, dir, uTop, uBot, topY, riseE, runE, inBox, W } = P;
       const yaw = dir > 0 ? 0 : Math.PI;
-      // the stair (foot at the bottom, rising toward the top = against dir)
       T.placeB(zE.m, uBot, ve, yCF, yaw + Math.PI); SP.stairs(zE.m, riseE, { W, cheeks: 'wall', wallH: 1.1, wallCol: lin(S.cWall[0]), wallKind: S.cWall[1], wallPrm: S.cWall[2], treadCol: lin(0x9a968e) }); T.popB(zE.m);
       slopeUV(T, uBot, -dir, ve, W / 2 - 0.1, yCF, riseE, runE);
       wallsUV(T, uBot, -dir, ve, W / 2, yCF, runE, riseE);
-      // shaft walls above the stair cheeks up to the street (tiled), ceiling over the lower part, street-level parapets
       const ua = Math.min(uTop, uBot), ub = Math.max(uTop, uBot);
+      // shaft walls above the stair cheeks up to the street, the sloped soffit over the lower part
       for (const side of [-1, 1]) {
         const vv = ve + side * (W / 2 + 0.2);
-        const fr = T.frames(ua - 0.3, ub + 0.3);
-        g.sweep(fr, (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const yb = yCF + riseE * t + 1.1; const yt = Math.max(yb + 0.3, topY + 0.02);
+        g.sweep(T.frames(ua - 0.3, ub + 0.3), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const yb = yCF + riseE * t + 1.1; const yt = Math.max(yb + 0.3, topY + 0.02);
           const mat = Object.assign(M(S.cWall), { sky: t });
           return side < 0 ? [[vv, yt, yt, mat], [vv, yb, yb]] : [[vv, yb, yb, mat], [vv, yt, yt]]; });
       }
-      // street parapet + railings around the opening (3 sides; the top end is where you walk in)
-      const rails = [[uBot, ve - W / 2 - 0.3], [uTop - dir * 0.2, ve - W / 2 - 0.3]], rails2 = [[uBot, ve + W / 2 + 0.3], [uTop - dir * 0.2, ve + W / 2 + 0.3]];
-      for (const R of [rails, rails2]) { const pts = R.map(([u, v]) => { const [x, z] = T.L2(u, v); return [x, topY, z]; }); SP.railing(zE.d, pts, 1.07, 'bars'); }
-      { const [x0, z0] = T.L2(uBot - dir * 0.1, ve - W / 2 - 0.3), [x1, z1] = T.L2(uBot - dir * 0.1, ve + W / 2 + 0.3); SP.railing(zE.d, [[x0, topY, z0], [x1, topY, z1]], 1.07, 'bars'); }
-      // the totem at the head: navy post with the station name face
-      const [tx, tz] = T.L2(uTop + dir * 0.9, ve + W / 2 + 0.7); zE.d.sk.push().at(tx, topY, tz, T.yawAt(uTop) + (dir > 0 ? 0 : Math.PI)); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 0, 0, 0.14, 3.2, 0.9); zE.d.sk.pop();
-      zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7 - 0.0, y: topY + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
-      zE.signs.push({ u: uBot + dir * 0.5, v: ve, y: yCF + 2.6, yaw: T.yawAt(uBot) + (dir > 0 ? Math.PI : 0), w: 2.0, h: 0.5, region: 'exit', both: false, T });
-      // ceiling over the part of the shaft below the street (sloped soffit)
-      g.sweep(T.frames(ua, ub), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const y = Math.min(yCF + riseE * t + 3.2, topY - 0.05); if (y >= topY - 0.1) return [[ve + W / 2 + 0.2, topY - 0.3, null, 'skip'], [ve - W / 2 - 0.2, topY - 0.3]];
+      g.sweep(T.frames(ua, ub), (i, f) => { const t = U.clamp((f.u - uBot) / (uTop - uBot), 0, 1); const y = Math.min(yCF + riseE * t + 3.2, topY - 0.05);
+        if (y >= topY - 0.1 || (inBox && y < yCC + 0.9)) return [[ve + W / 2 + 0.2, y, null, 'skip'], [ve - W / 2 - 0.2, y]];
         return [[ve + W / 2 + 0.2, y, null, Object.assign(M(S.cCeil), { sky: t * 0.5 })], [ve - W / 2 - 0.2, y]]; });
-      // passage through the concourse wall if the shaft is outside the box
-      if (!inBox) yield* passage(T, zE, uBot, ve, dir, W);
-      // light in the shaft
+      // street: railings on three sides, the totem at the head
+      for (const vv of [ve - W / 2 - 0.3, ve + W / 2 + 0.3]) { const pts = [[uBot, vv], [uTop - dir * 0.2, vv]].map(([u, v]) => { const [x, z] = T.L2(u, v); return [x, topY, z]; }); SP.railing(zE.d, pts, 1.07, 'bars'); }
+      { const [x0, z0] = T.L2(uBot - dir * 0.1, ve - W / 2 - 0.3), [x1, z1] = T.L2(uBot - dir * 0.1, ve + W / 2 + 0.3); SP.railing(zE.d, [[x0, topY, z0], [x1, topY, z1]], 1.07, 'bars'); }
+      const [tx, tz] = T.L2(uTop + dir * 0.9, ve + W / 2 + 0.7); zE.d.sk.push().at(tx, topY, tz, T.yawAt(uTop) + (dir > 0 ? 0 : Math.PI)); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 0, 0, 0.14, 3.2, 0.9); zE.d.sk.pop();
+      zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7, y: topY + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
+      zE.signs.push({ u: uBot + dir * 0.5, v: ve, y: yCF + 2.6, yaw: T.yawAt(uBot) + (dir > 0 ? Math.PI : 0), w: 2.0, h: 0.5, region: 'exit', both: false, T });
+      let door = null;
+      if (!inBox) { const r = yield* passage(T, zE, uBot, ve, dir, W); door = r; }
       const [ax, az] = T.L2(uBot, ve), [bx, bz] = T.L2(uTop, ve);
       zE.lights.add({ a: [ax, yCF + 3.0, az], b: [bx, topY - 0.2, bz], color: S.light.map(c => c * 0.8), range: 12, radius: 0.08, dir: [0, -1, 0], focus: 1 });
-      // Under: a cut in the sidewalk over the opening, the entrance cell and its portals
-      const cutPoly = [[ua - 0.2, ve - W / 2 - 0.35], [ub + 0.2, ve - W / 2 - 0.35], [ub + 0.2, ve + W / 2 + 0.35], [ua - 0.2, ve + W / 2 + 0.35]].map(([u, v]) => T.WUV(u, v));
+      // Under: the sidewalk cut, the shaft cell (and its passage), portals to the street and to the concourse
+      const rect = (u0, u1, v0, v1) => [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => T.WUV(u, v));
+      const cutPoly = rect(ua - 0.2, ub + 0.2, ve - W / 2 - 0.35, ve + W / 2 + 0.35);
       T.cuts.push({ id: `st:${st.id}:cut${k}`, poly: cutPoly, below: topY - 0.3 });
-      T.cells.push({ zone: 'ent', under: { id: `st:${st.id}:ent${k}`, kind: 'shaft', poly: cutPoly, floor: yCF - 0.3, ceil: topY + 3, ambient: [0.05, 0.05, 0.05], daylight: [yCF, topY] } });
+      let poly = cutPoly;
+      if (door) { const side = door.side; const vW = T.edgeV(uBot, side); const va = Math.min(vW, ve), vb = Math.max(vW, ve);
+        poly = hull([...cutPoly, ...rect(door.u0, door.u1, va - 0.2, vb + 0.2)]); }
+      const id = `st:${st.id}:ent${k}`;
+      T.cells.push({ zone: 'ent', under: { id, kind: 'shaft', poly, floor: (inBox ? yCC : yCF) - 0.3, ceil: topY + 3, ambient: 0.05, daylight: [yCF, topY] } });
+      const quad = (y) => cutPoly.map(([x, z]) => [x, y, z]);
+      T.portals.push({ id: `st:${st.id}:pe${k}o`, a: id, b: null, quad: quad(topY + 0.05) });
+      if (inBox) T.portals.push({ id: `st:${st.id}:pe${k}c`, a: id, b: `st:${st.id}:conc`, quad: rect(ua, ub, ve - W / 2 - 0.2, ve + W / 2 + 0.2).map(([x, z]) => [x, yCC + 0.4, z]) });
+      else if (door) { const vW = T.edgeV(uBot, door.side); T.portals.push({ id: `st:${st.id}:pe${k}c`, a: id, b: `st:${st.id}:conc`, quad: [[door.u0, yCF], [door.u1, yCF], [door.u1, yCF + door.h], [door.u0, yCF + door.h]].map(([u, y]) => { const [x, z] = T.WUV(u, vW); return [x, y, z]; }) }); }
       const [wx, wz] = T.WUV(uTop, ve); T.entrances.push({ wx, wz, name: e.name });
       k++;
-      if (k >= 10) break;
       yield;
     }
-    // entrance walls, stair walls, ceilings: the zone's sky factor fades with depth (set per face above)
+  }
+  // convex hull of [x, z] points (Andrew's monotone chain)
+  function hull(pts) {
+    const P = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]); const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = []; for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+    const up = []; for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    lo.pop(); up.pop(); return lo.concat(up);
   }
   // passage from a shaft outside the box to the concourse wall (at concourse level)
   function* passage(T, zE, uBot, ve, dir, W) {
@@ -898,6 +926,7 @@ const StationTypes = (() => {
       if (uv && uv[0] > u0 && uv[0] < u1 && Math.abs(uv[1] - vWall) < 0.3 && w.y0 < yCF + 1 && w.y1 > yCF + 1) walk.walls.splice(i, 1); }
     T.doors = T.doors || []; T.doors.push({ u0, u1, side, y0: yCF, y1: yCF + h });
     yield;
+    return { u0, u1, side, h };
   }
   function dedupeEntrances(list) {
     const out = [];
