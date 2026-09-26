@@ -429,6 +429,7 @@ const StationTypes = (() => {
     // ---------------------------------------------------------------- platform furniture, signs, boards
     st._phase = 'furnish';
     yield* furnish(T);
+    if (under && T.H.bigCircles) yield* bigCircles(T, T.levels[0]);
 
     // ---------------------------------------------------------------- finalise: meshes per zone
     st._phase = 'fin:env';
@@ -806,6 +807,32 @@ const StationTypes = (() => {
   // ------------------------------------------------------------------------------------------------ subway box
   // one box per level (stacked stations: the lower level's ceiling is the slab under the upper level's trackbed)
   function* subwayBox(T) { for (const L of T.levels) yield* subwayLevel(T, L); }
+  // Lake Merritt: "huge black tile circles and red tile arrows" on the trackway walls (research), in chunky tile
+  function* bigCircles(T, L) {
+    const g = L.zone.d.sk, edgeV = T.levels.length > 1 ? L.edgeV : T.edgeV, yC = L.yT + 1.9, N = 28;
+    const toward = (u) => (u < T.uc ? 1 : -1);
+    // (between the wall signs: circles and arrows keep 3.5 m clear of every sign on that level)
+    const signU = L.zone.signs.map(sg => [sg.u, (sg.w || 2) / 2]), clear = (u, r) => !signU.some(([su, hw]) => Math.abs(su - u) < r + hw + 1.0);
+    for (const side of [-1, 1]) {
+      const into = -side;                                                             // (the wall faces into the box)
+      const W = (u, y) => { const f = T.frameAt(u), v = edgeV(u, side) + into * 0.015; return [f.x - f.tz * v, y, f.z + f.tx * v]; };
+      const face = (p0, p1, p2, p3, uv) => { const f = T.frameAt((p0[3] ?? 0)); void f;
+        const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2], bx = p3[0] - p0[0], by = p3[1] - p0[1], bz = p3[2] - p0[2];
+        const nx = ay * bz - az * by, nz = ax * by - ay * bx; const fr = T.frameAt(T.uc), rx = -fr.tz * into, rz = fr.tx * into;
+        if (nx * rx + nz * rz >= 0) g.quad(p0, p1, p2, p3, uv); else g.quad(p3, p2, p1, p0, uv); };
+      for (let u = T.boxU0 + 14; u < T.boxU1 - 10; u += 18) {
+        if (!clear(u, 1.2)) { const ua0 = u + 9; if (!clear(ua0, 0.8)) continue; }
+        if (clear(u, 1.2)) { g.mat(0x121212, K.PLAIN, 0.95);
+        for (let k = 0; k < N; k++) { const a0 = 2 * Math.PI * k / N, a1 = 2 * Math.PI * (k + 1) / N, r0 = 0.05, r1 = 1.2;
+          face(W(u + Math.cos(a0) * r0, yC + Math.sin(a0) * r0), W(u + Math.cos(a0) * r1, yC + Math.sin(a0) * r1), W(u + Math.cos(a1) * r1, yC + Math.sin(a1) * r1), W(u + Math.cos(a1) * r0, yC + Math.sin(a1) * r0), [0, 0, 1, 0, 1, 1, 0, 1]); } }
+        // the red arrow halfway to the next circle, pointing toward the middle of the station (the way out)
+        const ua = u + 9; if (ua > T.boxU1 - 10 || !clear(ua, 0.8)) continue; const d = toward(ua); g.mat(0xb3342b, K.PLAIN, 0.9);
+        face(W(ua - d * 0.8, yC - 0.14), W(ua + d * 0.2, yC - 0.14), W(ua + d * 0.2, yC + 0.14), W(ua - d * 0.8, yC + 0.14), [0, 0, 1, 0, 1, 1, 0, 1]);
+        face(W(ua + d * 0.2, yC - 0.42), W(ua + d * 0.8, yC), W(ua + d * 0.8, yC), W(ua + d * 0.2, yC + 0.42), [0, 0, 1, 0, 1, 1, 0, 1]);
+      }
+      yield;
+    }
+  }
   // the box end farther south-west (world x east, z south)
   function canyonEnd(T) { const a = T.WUV(T.boxU0, 0), b = T.WUV(T.boxU1, 0); return (-a[0] + a[1]) > (-b[0] + b[1]) ? T.boxU0 : T.boxU1; }
   function* wallCanyon(T, g, ue, dir, holes, yT, ceilY, P) {

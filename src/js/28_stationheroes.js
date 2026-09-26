@@ -68,7 +68,7 @@ const StationHeroes = (() => {
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 1.2, depth: 1.2, col: 0x1f3570, kind: K.BRICK }, cFloor: [0xc8bca6, K.GRANITE, 0.4], cWall: [0x1f3570, K.BRICK, 1], cCeil: [0xecebe7, K.COFFER, 2.4], hero: 1 },
     MCAR: { layout: 'island', type: 'median', access: 'below', floor: CONC(0xa8a296), grid: 0x8c3f2e, canopy: { style: 'box', len: 95, off: 40, top: 0x3a2a22, under: 0x3a2a22, fascia: 0x3a2a22, span: 'all', posts: { shape: 'rect', col: 0x3a2a22, size: 0.4, spacing: 12, where: 'both' } }, hero: 1 },
     LAKE: { layout: 'island', type: 'subway', access: 'above', floor: TERR(0x9d8a82, 3.0), wall: [0xe8e2d6, K.CONCRETE, 0], band: 0xb3342b, wallUp: [0x3a3634, K.CONCRETE, 0], ceil: [0x4a4744, K.COFFER, 2.0],
-      cFloor: TERR(0x9d8a82), cWall: [0xb54a2a, K.MOSAIC, 0.03], skylights: true, hero: 1 },
+      cFloor: TERR(0x9d8a82), cWall: [0xb54a2a, K.MOSAIC, 0.03], skylights: true, bigCircles: true, hero: 1 },
     FTVL: { layout: 'side', type: 'aerial', access: 'below', floor: QUARRY(0x86412f), canopy: { style: 'shed', len: 100, top: 0x7a3f22, under: 0x5a3a2a, fascia: 0x3d2a20, tilt: true, posts: { shape: 'rect', col: 0x3d2a20, size: 0.3, spacing: 8, where: 'back' } },
       windscreen: 0x6b7a80, ends: 'wall', cCeil: [0xd96a1e, K.PANEL, 1.2], hero: 1 },
     COLS: { layout: 'island', type: 'aerial', access: 'below', floor: QUARRY(0x8a3a2a), canopy: { style: 'butterfly', len: 120, off: -25, top: 0x8f9396, under: 0xa2342a, fascia: 0x6f7377, posts: { shape: 'portal', col: 0xb5afa3, size: 0.6, spacing: 12, where: 'centre' } }, feature: ['oac'], hero: 1 },
