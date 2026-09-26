@@ -590,12 +590,57 @@ const MetroSim = (() => {
   const LS = {}, HF = {};
   function trainObj(key) { let o = trainObjs.get(key); if (!o) { o = { key, metro: true, v: 0, a: 0, s: 0, dir: 1, x: 0, y: 0, z: 0, hx: 1, hz: 0, dist: 1e9 }; trainObjs.set(key, o); } return o; }
   function lineColor(id) { const l = lineById.get(id); return l ? l.color : '#cccccc'; }
+  const lineCols = new Map();
+  function lineCol(id) { let c = lineCols.get(id); if (!c) lineCols.set(id, c = new THREE.Color(lineColor(id))); return c; }
   function isUnder(st) { return st === 'bored' || st === 'cutcover' || st === 'tube' || st === 'subway' || st === 'tunnel' || st === 'underground'; }
+  // ---------------------------------------------------------------- far from the metro (M3.1)
+  // With no metro track within the far-train range of the camera (4.5 km on the ground, more from the air), the air
+  // dots off (below 350 m), no metro train driven and the system map closed, nothing of the metro can be seen: the
+  // trains' state (positions and distances included: the HUD, Tab, the sounds and the missions read it) is refreshed
+  // twice a second and nothing is posed, batched or uploaded. "Any track within R" is a few hundred lookups in the set
+  // of 1 km cells that hold track, and the answer is kept until the camera has moved 250 m.
+  const TC = 1000, tcKey = (i, j) => (i + 32768) * 65536 + (j + 32768);
+  let trackCells = null, quietOn = false, quietT = 0, replanAt = -1e9, replanHr = NaN;
+  const QN = { x: NaN, z: NaN, R: 0, near: true };
+  function trackWithin(x, z, R) {
+    if (!trackCells) { trackCells = new Set(); for (const tk of MN.tracks) { const X = tk.X, Z = tk.Z; for (let i = 0; i < X.length; i++) trackCells.add(tcKey(Math.floor(X[i] / TC), Math.floor(Z[i] / TC))); } }
+    const ci = Math.floor(x / TC), cj = Math.floor(z / TC), r = Math.ceil(R / TC) + 1, R2 = R * R;
+    for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) {
+      if (!trackCells.has(tcKey(ci + a, cj + b))) continue;
+      const x0 = (ci + a) * TC, z0 = (cj + b) * TC, dx = Math.max(x0 - x, 0, x - x0 - TC), dz = Math.max(z0 - z, 0, z - z0 - TC);
+      if (dx * dx + dz * dz <= R2) return true;
+    }
+    return false;
+  }
+  function metroNear(cam, R) {
+    if (Math.abs(cam.x - QN.x) < 250 && Math.abs(cam.z - QN.z) < 250 && Math.abs(R - QN.R) < 250) return QN.near;
+    QN.x = cam.x; QN.z = cam.z; QN.R = R; return (QN.near = trackWithin(cam.x, cam.z, R + 300));
+  }
+  function hideAll() {                                        // (entering the quiet mode: consists, far batch, lamps, dots off)
+    for (const e of pool) { e.busy = false; if (e.shown !== 0) { for (const car of e.consist.cars) car.group.visible = false; e.shown = 0; } }
+    for (const tr of running) tr.entry = null;
+    far.count = 0; far.visible = false; lights.geometry.setDrawRange(0, 0); lights.visible = false; dots.geometry.setDrawRange(0, 0); dots.visible = false;
+    if (kitFar) { kitFar.begin(); kitFar.end(U.uNight.value); }
+    stats.consists = 0; stats.far = 0;
+  }
   function update(dt, camPos) {
     if (!isOn() || !ready) return;
     if (typeof Metro !== 'undefined' && Metro.fault('sim') && ++faultN > 120) throw Metro.injected('sim');
     const T0 = performance.now(); frameNo++; stats.frame = frameNo;
-    replan();
+    // the service day (Env.serviceDay builds an Intl formatter: ~0.1 ms): checked twice a second and on every new hour
+    const hr = Math.floor(Env.time.sec / 3600);
+    if (T0 - replanAt > 500 || hr !== replanHr) { replanAt = T0; replanHr = hr; replan(); }
+    const gH = typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0, alt = camPos.y - gH;
+    // far trains are drawn only where they could cover a pixel or two: ~4.5 km from the ground, out to 30 km from the air
+    // (a Peninsula view with no metro nearby draws nothing of it); the map dots from the air are separate
+    const farDist = U.clamp(4500 + Math.max(0, alt) * 9, 4500, 30000);
+    const quiet = !drive && alt <= 350 && !(typeof MetroUI !== 'undefined' && MetroUI.mapOpen) && !metroNear(camPos, farDist);
+    stats.quiet = quiet;
+    if (quiet) {
+      if (!quietOn) { quietOn = true; hideAll(); quietT = 0; }
+      if ((quietT -= dt) > 0) { stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05; return; }
+      quietT = 0.5;
+    } else quietOn = false;
     const t = Env.time.sec; running.length = 0;
     for (const p of plans) {
       if (p.tStart > t + 1) break; if (p.tEnd < t) continue;
@@ -611,25 +656,22 @@ const MetroSim = (() => {
     // world position of every head + distance to the camera
     for (const tr of running) { tr.leg.path.at(tr.s, HF); tr.x = HF.x; tr.y = HF.y; tr.z = HF.z; const hl = Math.hypot(HF.tx, HF.tz) || 1; tr.hx = HF.tx / hl; tr.hz = HF.tz / hl;
       tr.underground = isUnder(HF.st); tr.dist = Math.hypot(HF.x - camPos.x, HF.z - camPos.z, (HF.y - camPos.y) * 0.5); tr.lim = HF.lim;
-      tr.buried = tr.underground && isUnder(tr.leg.path.at(tr.s - tr.len, F2).st); }   // (head and tail both under the street)
+      tr.buried = tr.underground && (tr.dist > farDist + 1000 || isUnder(tr.leg.path.at(tr.s - tr.len, F2).st)); }   // (head and tail both under the street; far away the head decides)
     running.sort((a, b) => (b.key === focusKey) - (a.key === focusKey) || a.dist - b.dist);
+    if (quiet) { for (const tr of running) tr.entry = null; stats.running = running.length; stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05; return; }
     for (const e of pool) e.busy = false;
-    const night = U.uNight.value, maxNear = nearBudget();
+    const night = U.uNight.value, maxNear = nearBudget(), wantDots = alt > 350;
     let nNear = 0, fN = 0, lN = 0, dN = 0;
     if (kitFar) kitFar.begin();
     const fp = far.instanceMatrix.array, lp = lights.geometry.attributes.position.array, lc = lights.geometry.attributes.color.array, dp = dots.geometry.attributes.position.array, dc = dots.geometry.attributes.color.array;
-    const gH = typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0;
     const camUnder = !!(typeof Under !== 'undefined' && Under.state && Under.state.cell) || camPos.y < gH - 3;
-    // far trains are drawn only where they could cover a pixel or two: ~4.5 km from the ground, out to 30 km from the air
-    // (a Peninsula view with no metro nearby draws nothing of it); the map dots from the air are separate
-    const farDist = U.clamp(4500 + Math.max(0, camPos.y - gH) * 9, 4500, 30000);
     let nHidden = 0;
     for (const tr of running) {
       // out of sight costs nothing: a train entirely under the street seen from above ground, or a surface train far
       // from a camera that is itself underground (the map dots still show them)
       const own = tr.key === focusKey || tr.driven;
       if (!own && ((tr.buried && !camUnder) || (camUnder && !seenFromUnder(tr)))) { tr.entry = null; nHidden++;
-        if (dN < DMAX) { dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; _c.set(lineColor(tr.line)); dc[dN * 3] = _c.r; dc[dN * 3 + 1] = _c.g; dc[dN * 3 + 2] = _c.b; dN++; }
+        if (wantDots && dN < DMAX) { const c = lineCol(tr.line); dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; dc[dN * 3] = c.r; dc[dN * 3 + 1] = c.g; dc[dN * 3 + 2] = c.b; dN++; }
         continue; }
       const near = own || (nNear < maxNear && tr.dist < 1500);
       const e = near ? acquire(tr.kind, tr.key, tr.cars) : null; tr.entry = e;
@@ -639,7 +681,7 @@ const MetroSim = (() => {
         const P = PERF[tr.kind];
         if (kitFar && !kitBad.has(tr.kind) && farKit(tr, P, night)) { /* drawn by MetroKit */ } else {
         const pair = tr.dist > 12000 && tr.cars > 3 ? 2 : 1, n = Math.ceil(tr.cars / pair), L = P.carLen * pair;
-        _c.set(lineColor(tr.line));
+        _c.copy(lineCol(tr.line));
         // (beyond 4 km the cars sit on the chord between the first and last car: two path lookups per train, not n)
         const chord = tr.dist > 4000 && n > 2;
         if (chord) { tr.leg.path.at(tr.s - 0.5 * L, F1); tr.leg.path.at(tr.s - (n - 0.5) * L, F2); }
@@ -659,14 +701,14 @@ const MetroSim = (() => {
         }
         }
       }
-      if (dN < DMAX) { dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; _c.set(tr.remote ? (tr.remote.color || '#ffffff') : lineColor(tr.line)); dc[dN * 3] = _c.r; dc[dN * 3 + 1] = _c.g; dc[dN * 3 + 2] = _c.b; dN++; }
+      if (wantDots && dN < DMAX) { const c = tr.remote ? _c.set(tr.remote.color || '#ffffff') : lineCol(tr.line); dp[dN * 3] = tr.x; dp[dN * 3 + 1] = tr.y + 14; dp[dN * 3 + 2] = tr.z; dc[dN * 3] = c.r; dc[dN * 3 + 1] = c.g; dc[dN * 3 + 2] = c.b; dN++; }
     }
     for (const e of pool) if (!e.busy && e.shown !== 0) { for (const car of e.consist.cars) car.group.visible = false; e.shown = 0; }
     far.count = fN; far.visible = fN > 0; far.instanceMatrix.needsUpdate = true; if (far.instanceColor) far.instanceColor.needsUpdate = true;
     if (kitFar) kitFar.end(night, Env.renderer && Env.renderer.getDrawingBufferSize ? Env.renderer.getDrawingBufferSize(_res) : undefined);   // (lamp billboards keep a minimum pixel size)
     lights.geometry.setDrawRange(0, lN); lights.visible = lN > 0; lights.geometry.attributes.position.needsUpdate = true; lights.geometry.attributes.color.needsUpdate = true; lights.material.opacity = 0.95 * U.smooth(0.05, 0.5, night);
     dots.geometry.setDrawRange(0, dN); dots.geometry.attributes.position.needsUpdate = true; dots.geometry.attributes.color.needsUpdate = true;
-    const alt = camPos.y - (typeof Terrain !== 'undefined' ? Terrain.h(camPos.x, camPos.z) : 0); dots.visible = alt > 350 && dN > 0; dots.material.opacity = U.smooth(350, 1200, alt);
+    dots.visible = wantDots && dN > 0; dots.material.opacity = U.smooth(350, 1200, alt);
     stats.running = running.length; stats.consists = nNear; stats.far = fN; stats.runs = runCache.size; stats.hidden = nHidden;
     stats.ms = stats.ms * 0.95 + (performance.now() - T0) * 0.05;
   }
@@ -692,7 +734,7 @@ const MetroSim = (() => {
       const flip = spec[pi].flip !== (tr.lead !== 0);
       FK.x = F1.x; FK.y = F1.y; FK.z = F1.z; FK.yaw = Math.atan2(-F1.tz, F1.tx); FK.pitch = Math.atan2(F1.ty, h);
       if (MetroKit._k && MetroKit._k.builders && !MetroKit._k.builders[kind]) { kitBad.add(tr.kind); return false; }   // (a kind MetroKit doesn't build: ours)
-      kitFar.addCar(kind, type, FK, flip, lineColor(tr.line === 'ebart' ? 'yellow' : tr.line));   // (the cab car's front sign glows in the line colour)
+      kitFar.addCar(kind, type, FK, flip, lineCol(tr.line === 'ebart' ? 'yellow' : tr.line));   // (the cab car's front sign glows in the line colour)
     }
     if (night > 0.05 && !tr.underground) { kitFar.addLamp(tr.x, tr.y + 1.4, tr.z, 'head'); path.at(tr.s - n * P.carLen, F1); kitFar.addLamp(F1.x, F1.y + 1.4, F1.z, 'tail'); }
     return true;
@@ -963,7 +1005,7 @@ const MetroSim = (() => {
   }
   if (typeof Metro !== 'undefined') Metro.onTeardown(shutdown);
 
-  const api = { get enabled() { return isOn(); }, init, update, shutdown, setQuality(q) { quality = q; }, get ready() { return ready; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
+  const api = { get enabled() { return isOn(); }, init, update, shutdown, setQuality(q) { quality = q; }, get ready() { return ready; }, get quiet() { return quietOn; }, get error() { return loadError; }, running, trainByKey, nearestTrain, nearestStation, planFor, freeSeat, arrivals, eventInfo,
     owns: (k) => typeof k === 'string' && k.startsWith('M:'), setFocus(k) { focusKey = k; }, get focus() { return focusKey; },
     startDrive, stopDrive, driveNextLeg, get drive() { return drive; }, applyLive,
     stations, stById, lines, lineById, lineName, lineColor, stName, destText, termName, changeFor, legDest, nextStopName, PERF, MPH, netKey, resolveNet, platformSide, stopSide,

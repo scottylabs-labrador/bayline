@@ -16,7 +16,11 @@ PORT=${PORT:-8136} METRO=${METRO:-} python3 tools/wd.py 1500 sh tools/qa_all.sh 
 cat "$OUT/all.log" | cut -c1-300
 grep -qE '\[pageerror\]|\[console\.error\]' "$OUT/all.log" && note "FAIL qa_all: page or console errors" || note "PASS qa_all: no page or console errors"
 grep -q '"boarded":true' "$OUT/all.log" && note "PASS ride flow boards" || note "FAIL ride flow did not board"
-grep -q 'drive_qa.*maxMph' "$OUT/all.log" && note "PASS keyboard drive ran" || note "FAIL keyboard drive"
+# the keyboard drive (qa_all.sh's drive_qa, the Short Hop to its report card): its summary's short fields come first
+dq=$(grep '^\[drive_qa\] \[eval\] {' "$OUT/all.log" | tail -1); fld() { echo "$dq" | grep -o "\"$1\":[^,}]*" | head -1 | cut -d: -f2 | tr -d '"'; }
+mph=$(fld maxMph); dn=$(fld done); ns=$(fld stops); nm=$(fld missed); sc=$(fld score); gr=$(fld grade)
+if [ "${mph:-0}" -ge 30 ] 2>/dev/null && [ "$dn" = true ] && [ "${ns:-0}" -ge 2 ] 2>/dev/null && [ "$nm" = 0 ]; then note "PASS keyboard drive: $mph mph max, the run completed ($ns stops, 0 missed), score $sc ($gr)"
+else note "FAIL keyboard drive: maxMph=${mph:-?} done=${dn:-?} stops=${ns:-?} missed=${nm:-?} score=${sc:-?} (full output: $OUT/all/drive_qa.log)"; fi
 # 2. PTC: a reckless driver into the 30 mph Diridon zone must be warned, enforced to a stop, released
 python3 tools/wd.py 200 node tools/shot.mjs "$BASE#auto$MQ&t=08:00$X" "$OUT/ptc.png" --gpu --wait 90000 --eval "$(cat tools/qa_ptc.js)" --eval2 "JSON.stringify(window.__qa)" > "$OUT/ptc.log" 2>&1
 grep '^\[eval\]' "$OUT/ptc.log" | tail -1 | cut -c1-400

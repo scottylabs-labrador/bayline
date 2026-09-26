@@ -1,8 +1,9 @@
 // QA (Bayline Metro, M3 gate item 5): a phone (tools/shot.mjs --mobile: DPR 2, touch, a 390 x 844 screen) with the
 // metro on. Frame rate and memory after streaming, then the metro by touch only (synthetic touch pointer events and
 // taps, no keys): the HUD Metro button opens the system map, tapping Embarcadero selects it, "Go to the platform" puts
-// the walker there, tapping the prompt boards the train once its doors open, the ride panel shows; then the on-screen
-// driving buttons (ATO) drive a train. Results in window.__mob (JSON).
+// the walker there, tapping the prompt opens the arrivals board and tapping a train on it waits for that train, tapping
+// the prompt boards the train once its doors open, the ride panel shows; then the on-screen driving buttons (ATO) drive
+// a train. Results in window.__mob (JSON).
 new Promise(r => { const f = () => window.__bayline && __bayline.MetroSim && __bayline.MetroSim.ready ? r() : setTimeout(f, 300); f(); }).then(async () => {
   const B = __bayline, sleep = (ms) => new Promise(r => setTimeout(r, ms)), res = { coarse: matchMedia('(pointer: coarse)').matches, dpr: devicePixelRatio, steps: [] };
   const step = (s, ok, x) => res.steps.push({ s, ok: !!ok, ...(x || {}) });
@@ -22,7 +23,18 @@ new Promise(r => { const f = () => window.__bayline && __bayline.MetroSim && __b
   const go = document.getElementById('mgo'); step('tapping Embarcadero selects it', !!go, { at: p });
   tap(go); await sleep(12000);
   step('Go to the platform: on the platform', B.Player.mode === 'walk' && B.Player.onMetroFloor(), { y: +B.Player.walk.y.toFixed(1) });
-  // 2. board by tapping the prompt when a train's doors are open next to the walker
+  // 2. the arrivals board by touch: tapping the prompt ("Tap for Embarcadero trains"; with a train already at the door
+  //    the prompt boards instead, so then the board opens as B would), the touch hint, and tapping a train on it puts
+  //    the walker on that train's platform to wait for it
+  B.MetroUI.closeAll(); await sleep(400);
+  const pr0 = document.getElementById('prompt'), how = pr0 && !pr0.hidden && /^Tap for/.test(pr0.textContent) ? 'prompt' : 'B';
+  if (how === 'prompt') tap(pr0); else B.MetroUI.openBoard('EMBR');
+  await sleep(1200);
+  const hint = (document.getElementById('mbhint') || {}).textContent || '';
+  step('the arrivals board by touch (prompt tap)', B.MetroUI.boardOpen && /^Tap a train to ride it/.test(hint), { how, prompt: pr0 && pr0.textContent });
+  const row = document.querySelector('#mbp .mrow'); tap(row); await sleep(4000);
+  step('tapping a train on the board: on its platform', !!row && !B.MetroUI.boardOpen && B.Player.mode === 'walk' && B.Player.onMetroFloor(), { y: +B.Player.walk.y.toFixed(1) });
+  // 3. board by tapping the prompt when a train's doors are open next to the walker
   let boarded = false;
   B.Env.time.scale = 3;                                          // (the next train in a minute or two, not five)
   for (let i = 0; i < 150 && !boarded; i++) {
@@ -39,7 +51,7 @@ new Promise(r => { const f = () => window.__bayline && __bayline.MetroSim && __b
   step('tapping the prompt boards the train', boarded, { prompt: res.prompt });
   await sleep(4000);
   step('ride panel shows', !document.getElementById('mride').hidden);
-  // 3. drive by the on-screen buttons: a train from the map's train panel, ATO started with the Power button
+  // 4. drive by the on-screen buttons: a train from the map's train panel, ATO started with the Power button
   B.MetroUI.closeAll();
   const now = B.Env.time.sec, ev = B.MetroSim.arrivals('EMBR', now, 20).find(e => e.dep > now + 3 && e.leg.kind === 'bart' && e.k < e.leg.stops.length - 1);
   if (ev) B.MetroUI.drive(ev); await sleep(2500);
