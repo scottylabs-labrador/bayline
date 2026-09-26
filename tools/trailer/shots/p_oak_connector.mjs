@@ -1,10 +1,10 @@
 // P11, golden hour, low and long: the airport connector's guideway runs across the frame against the setting sun,
 // the Bay's glitter and the Peninsula hills behind it, and the little three-car cable train glides along the beam in
-// silhouette with a rim of light. 135 mm from 300 m east-northeast of the line near the airport, 9 m up (just over the
-// parking lot's cars), looking straight into the low sun; a slow drift along the line.
+// silhouette with a rim of light. 135 mm from 240 m east-northeast of the line near the airport, 17 m up (over the
+// terminal's parking and its low buildings), looking into the low sun; a slow drift along the line.
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
-const S = 300, D = 300, H = 9, AZ = 264, FOV = 8.6, PITCH = 0.25;
+const S = 300, D = 240, H = 17, AZ = 264, FOV = 8.6, PITCH = -1.2;
 export default {
   hash: '#auto&t=18:40&q=ultra&w=clear', warm: 55, frames: 210,
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline, C = __cine;
