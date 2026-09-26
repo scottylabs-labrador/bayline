@@ -284,7 +284,9 @@ hidden vs shown): +23 to +81 draw calls, +0.6 to +1.2 M triangles (crowds includ
 | Balboa Park platform | +43 | +0.70 M |
 | Millbrae from the air | +67 | +0.58 M |
 
-Stations alone: 13-80 k triangles each (Low 33-76 k with a quarter of the crowd). Builds: every step < 12 ms
+Stations alone: 13-80 k triangles each (Low 33-76 k with a quarter of the crowd). Memory (forced GC, `--gc`): four
+Market St stations built = 14 MB of geometry in the JS heap; the geometry builders' working arrays (~4 MB a station)
+are released once the meshes exist (514 -> 498 MB for the whole page with those four). Builds: every step < 12 ms
 (stepped build + stepped attach + one material's shaders per step); footprints for all 52 records ~45 ms in the
 background at network load (< 11 ms per step). Phones (`--mobile`, Low): platform views 46-206 draw calls for the
 whole page.
