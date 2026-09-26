@@ -5,7 +5,16 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
-## Status (2026-09-26 03:08 EDT) — M1 done, keep-out zones done, M2 under way
+## Status (2026-09-26 03:26 EDT) — M1 done, keep-out zones done, M2 under way
+
+- **Footbridge stations reach the street** (MLBR, WARM, WDUB, PITT, PCTR, ANTC and any `bridge` access above the
+  street): the mezzanine now spans the tracks only, and covered walkways (glass, box or blue truss sides per
+  station) run from it to the real entrances (MetroNet, GTFS first; one per side of the line, across the freeway at
+  the median stations), each ending in a landing tower: two stair flights with a mid landing, a sloped roof, glass
+  guards, a glass elevator, the wordmark over the foot; fare gates across each walkway's mouth. The mezzanine sits
+  over the main entrance so its walkway leaves square to the line. Walk floors/walls follow (checked with `floorAt`
+  along a WDUB landing); walkway supports stand clear of the streets; keep-out kinds `bridge`/`column`/`landing`.
+- **Per-vehicle platforms**: eBART (Antioch DMU) and airport people-mover faces use TRAINS' floor heights and widths.
 
 - **Keep-out zones (lead request, 02:10)**: every station's ground-level footprint is a keep-out zone for Towns
   buildings and infill houses, trees, grass, parked cars and moving traffic (API and hooks below). Verified at WOAK,
@@ -202,6 +211,12 @@ when a station builds (≤ 1.5 km) and removed with `Under.remove` when it is dr
 
 ### To DATA (network.json v0 → M2)
 
+0. **(2026-09-26) Pittsburg/Bay Point transfer platform (`PITT-T`)**: one island serves BART (`CT`, floor 0.991) and
+   the DMU (`ET`, sill 0.635), so the real eBART track there is raised 1–1.5 ft (research). In v0 both rails are at
+   34.22 m: please raise `ET` along the platform by **0.356 m** (the island then has one walking surface; today I
+   average, so each face is 0.18 m off). Also Antioch (`ANTC`) is an island (128 x 8.5 m) with trains on both faces;
+   the data has one face (`E1`, left).
+
 1. **Platform height**: please use **0.991 m** above top of rail (trains confirmed; the spec's A1 says 1.02 m).
 2. **Known depths / heights** (research, mostly the 1966–68 contract drawings; street = 0, values are top of rail):
    MONT -18.6 (drawing: mezz -6.4, Muni -11.6, BART floor -17.6); POWL ~-18.2; CIVC ~-19.8; EMBR ~-19..-21 (descending
@@ -223,6 +238,14 @@ when a station builds (≤ 1.5 km) and removed with `Under.remove` when it is dr
 ### To TRAINS
 
 - Confirmed (2026-09-26): platform top 0.991 m, edge 1.676 m; door centres 0, ±5.42 m per 21.336 m car. Locked in.
+- **Antioch DMU and the airport people mover (2026-09-26, done)**: platforms are built per vehicle from the track's
+  system (`MetroNet` track `sys`): eBART faces 0.635 m above the rail with the edge 1.549 m from the track centre (your
+  half width 1.473 + the BART gap of 76 mm); people-mover faces 0.36 m, edge 1.35 m (half width 1.30 + 50 mm, platform
+  screen doors); BART 0.991 / 1.676 as before. `MetroStations.VEH` holds the table; `spawnPoint` returns the right
+  height. **Research differs**: Pittsburg Center and Antioch platforms are "2 ft" high (0.61 m, research B, eBART
+  design notes), 25 mm below your assumed 0.635 m sill; I use your 0.635 (a 25 mm step up is within the ADA
+  tolerance), tell me if you move the sill. No research value for the people mover's floor (Oakland Airport has
+  platform screen doors, so the station is built to your 0.36).
 
 ### To SIM
 
