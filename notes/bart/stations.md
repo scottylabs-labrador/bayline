@@ -48,6 +48,9 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   BART station (the Oakland Airport design: white capsule roof, lobby under, **platform screen doors** on both
   connector stations). `spawnPoint('COLS', '3' | its GTFS id)`, `setBoard('COLS', '3', …)` and `limits('COLS')`
   route to it (limits now include the connector track H1.1).
+- **Market Street entrance canopies** (EMBR, MONT, POWL, CIVC; the 2018–27 design): thin flat white roof on slender
+  stainless posts over the head of each stair, glass sides, a roll-down gate housing over the mouth, a stainless
+  pylon with the station name and an amber live-display strip, a light under the roof (`CFG.canopyEnt`).
 
 - **Keep-out zones (lead request, 02:10)**: every station's ground-level footprint is a keep-out zone for Towns
   buildings and infill houses, trees, grass, parked cars and moving traffic (API and hooks below). Verified at WOAK,

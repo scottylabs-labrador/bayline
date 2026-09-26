@@ -1260,11 +1260,31 @@ const StationTypes = (() => {
             g.quad(P(u0, v1), P(u1, v1), P(u1, v0), P(u0, v0), [u0, v1, u1, v1, u1, v0, u0, v0]); } };
         band(hu0 - o, hu1 + o, hv1, hv1 + o); band(hu0 - o, hu1 + o, hv0 - o, hv0);            // along both sides
         band(hu0 - o, hu0, hv0, hv1); band(hu1, hu1 + o, hv0, hv1); }                          // across both ends
-      // street: railings on three sides, the totem at the head
-      for (const vv of [ve - W / 2 - 0.3, ve + W / 2 + 0.3]) { const pts = [[uBot, vv], [uTop - dir * 0.2, vv]].map(([u, v]) => { const [x, z] = T.L2(u, v); return [x, topY, z]; }); SP.railing(zE.d, pts, 1.07, 'bars'); }
-      { const [x0, z0] = T.L2(uBot - dir * 0.1, ve - W / 2 - 0.3), [x1, z1] = T.L2(uBot - dir * 0.1, ve + W / 2 + 0.3); SP.railing(zE.d, [[x0, topY, z0], [x1, topY, z1]], 1.07, 'bars'); }
-      const [tx, tz] = T.L2(uTop + dir * 0.9, ve + W / 2 + 0.7); zE.d.sk.push().at(tx, topY, tz, T.yawAt(uTop) + (dir > 0 ? 0 : Math.PI)); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 0, 0, 0.14, 3.2, 0.9); zE.d.sk.pop();
-      zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7, y: topY + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
+      // street: railings on three sides (glass under a canopy), the totem at the head
+      const canopyEnt = !!T.H.canopyEnt && !P.link;
+      for (const vv of [ve - W / 2 - 0.3, ve + W / 2 + 0.3]) { const pts = [[uBot, vv], [uTop - dir * 0.2, vv]].map(([u, v]) => { const [x, z] = T.L2(u, v); return [x, topY, z]; }); SP.railing(zE.d, pts, 1.07, canopyEnt ? 'glass' : 'bars'); }
+      { const [x0, z0] = T.L2(uBot - dir * 0.1, ve - W / 2 - 0.3), [x1, z1] = T.L2(uBot - dir * 0.1, ve + W / 2 + 0.3); SP.railing(zE.d, [[x0, topY, z0], [x1, topY, z1]], 1.07, canopyEnt ? 'glass' : 'bars'); }
+      if (canopyEnt) {
+        // downtown canopy (2018-27): a thin flat white roof on slender posts over the head of the stair, glass sides, a
+        // roll-down gate housing over the mouth, a stainless pylon with the station name and a live-display strip
+        const Lc = Math.min(runE, 7.5), uA = uTop - dir * 0.9, uB = uTop + dir * Lc, hw = W / 2 + 0.55, yR = topY + 3.05;
+        const ua2 = Math.min(uA, uB), ub2 = Math.max(uA, uB);
+        { const [x, z] = T.L2((ua2 + ub2) / 2, ve); const gg = zE.m.sk; gg.push().at(x, 0, z, T.yawAt(uTop)); gg.mat(0xf2f1ec, K.PAINT); gg.box(-(ub2 - ua2) / 2, yR, -hw, (ub2 - ua2) / 2, yR + 0.16, hw);
+          gg.mat(0xb9bec3, K.STEEL); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, -hw - 0.02, (ub2 - ua2) / 2 + 0.02, yR, -hw + 0.1); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, hw - 0.1, (ub2 - ua2) / 2 + 0.02, yR, hw + 0.02);
+          gg.pop(); }
+        for (const uu of [uA + dir * 0.3, uB - dir * 0.2]) for (const sv of [-1, 1]) { const [x, z] = T.L2(uu, ve + sv * (W / 2 + 0.3)); zE.d.sk.push().at(x, topY, z, 0); zE.d.sk.mat(0xb9bec3, K.STEEL); zE.d.sk.cyl(0, 0, 0, 0.055, 0.055, yR - topY, 10, false); zE.d.sk.pop(); }
+        { const [x, z] = T.L2(uTop - dir * 0.35, ve); zE.d.sk.push().at(x, 0, z, T.yawAt(uTop)); zE.d.sk.mat(0x8f959a, K.STEEL); zE.d.sk.box(-0.22, yR - 0.5, -W / 2 - 0.3, 0.22, yR - 0.02, W / 2 + 0.3); zE.d.sk.pop(); }
+        zE.m.glow.mat(S.light); { const [x, z] = T.L2((ua2 + ub2) / 2, ve); zE.m.glow.push().at(x, 0, z, T.yawAt(uTop)); zE.m.glow.box(-(ub2 - ua2) / 2 + 0.4, yR - 0.035, -0.12, (ub2 - ua2) / 2 - 0.4, yR - 0.005, 0.12); zE.m.glow.pop(); }
+        // the pylon beside the mouth, facing the sidewalk
+        const pu = uTop - dir * 1.2, pv = ve + W / 2 + 0.95; const [px, pz] = T.L2(pu, pv);
+        zE.d.sk.push().at(px, topY, pz, T.yawAt(uTop)); zE.d.sk.mat(0xc3c8cc, K.STEEL); zE.d.sk.cbox(0, 0, 0, 0.62, 3.9, 0.34); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 3.9, 0, 0.66, 0.08, 0.38); zE.d.sk.pop();
+        zE.m.glow.mat(lin(0xffb030)); zE.m.glow.push().at(px, topY, pz, T.yawAt(uTop)); for (const sd of [-1, 1]) zE.m.glow.box(-0.24, 1.55, sd * 0.172 - 0.004, 0.24, 1.95, sd * 0.172 + 0.004); zE.m.glow.pop();
+        zE.signs.push({ u: pu, v: pv, y: topY + 3.2, yaw: T.yawAt(uTop) + Math.PI / 2, w: 0.56, h: 0.7, region: 'totem', both: true, T });
+        zE.lights.add({ a: (() => { const [x, z] = T.L2(ua2 + 0.5, ve); return [x, yR - 0.1, z]; })(), b: (() => { const [x, z] = T.L2(ub2 - 0.5, ve); return [x, yR - 0.1, z]; })(), color: S.light.map(c => c * 0.7), range: 7, radius: 0.08, dir: [0, -1, 0], focus: 1 });
+      } else {
+        const [tx, tz] = T.L2(uTop + dir * 0.9, ve + W / 2 + 0.7); zE.d.sk.push().at(tx, topY, tz, T.yawAt(uTop) + (dir > 0 ? 0 : Math.PI)); zE.d.sk.mat(0x10263b, K.PAINT); zE.d.sk.cbox(0, 0, 0, 0.14, 3.2, 0.9); zE.d.sk.pop();
+        zE.signs.push({ u: uTop + dir * 0.9, v: ve + W / 2 + 0.7, y: topY + 2.55, yaw: T.yawAt(uTop) + (dir > 0 ? -Math.PI / 2 : Math.PI / 2), w: 0.8, h: 1.0, region: 'totem', both: true, T });
+      }
       zE.signs.push({ u: uBot + dir * 0.5, v: ve, y: yCF + 2.6, yaw: T.yawAt(uBot) + (dir > 0 ? Math.PI : 0), w: 2.0, h: 0.5, region: 'exit', both: false, T });
       let door = null;
       if (!inBox) { const r = yield* passage(T, zE, uBot, ve, dir, W); door = r; }
