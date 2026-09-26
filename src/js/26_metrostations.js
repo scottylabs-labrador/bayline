@@ -542,7 +542,9 @@ const MetroStations = (() => {
   const CHECK_R = 2500;
   let worldCheck = false, checkQ = null; const refresh = { towns: [], flora: [], ran: false, ms: 0 };
   function refreshWorld() {
-    const groundLater = typeof MetroGround !== 'undefined' && !MetroGround.installed;
+    // (with the old dispose-only Towns, MetroGround's install re-places everything anyway; with Towns.refresh it only
+    // refreshes its own carve, so the stations always re-place their own rects)
+    const groundLater = typeof MetroGround !== 'undefined' && !MetroGround.installed && !(typeof Towns !== 'undefined' && Towns.refresh);
     if (!groundLater) { worldCheck = true; footPending = true; checkQ = null; }
     try { if (typeof World !== 'undefined' && World.traffic && World.traffic.lanes && World.traffic.lanes.length) World.traffic.cx = 1e9; } catch (e) {}
   }
