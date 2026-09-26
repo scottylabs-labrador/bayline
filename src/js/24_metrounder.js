@@ -21,7 +21,7 @@ const Under = (() => {
   const stats = { cells: 0, portals: 0, cuts: 0, visCells: 0, mapDraws: 0, mapMs: 0, culled: 0, walk: 0 };
   if (!enabled) {
     const nop = () => {};
-    return { enabled: false, state, stats, addCell: nop, addPortal: nop, addCut: nop, remove: nop, cellAt: () => null, keep: nop, update: nop, preRender: nop, postRender: nop,
+    return { enabled: false, state, stats, addCell: nop, addPortal: nop, addCut: nop, remove: nop, cellAt: () => null, keep: nop, outdoor: nop, update: nop, preRender: nop, postRender: nop,
       dayAt: () => 1, cells: new Map(), debug: {} };
   }
   const R = Env.renderer;
@@ -74,7 +74,7 @@ const Under = (() => {
     if (portals.has(id)) remove(id);
     const q = o.quad.map(V3), c = new THREE.Vector3(); for (const v of q) c.add(v); c.multiplyScalar(1 / q.length);
     let r = 0; for (const v of q) r = Math.max(r, v.distanceTo(c));
-    const p = { id, a: o.a, b: o.b === undefined ? null : o.b, quad: q, center: c, radius: r, probe: o.probe ? V3(o.probe) : null, rb: null };
+    const p = { id, a: o.a, b: o.b === undefined ? null : o.b, quad: q, center: c, radius: r, probe: o.probe ? V3(o.probe) : null, rb: null, dead: !!o.dead };
     portals.set(id, p);
     stats.portals = portals.size;
   }
@@ -92,6 +92,10 @@ const Under = (() => {
     return false;
   }
   function keep(obj) { if (obj) { keepSet.add(obj); obj.userData.blUnderKeep = true; } return obj; }
+  // objects deeper in a kept group that are nevertheless outdoors (a module's aerial guideway next to its tunnels): hidden
+  // with the outdoor world while no opening to the outdoors is in view
+  const outdoorSet = new Set();
+  function outdoor(obj, on = true) { if (on) outdoorSet.add(obj); else outdoorSet.delete(obj); return obj; }
 
   // ------------------------------------------------------------------ point queries (CPU)
   function inPoly(poly, x, z) {
@@ -321,7 +325,13 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
 
   // ------------------------------------------------------------------ portal visibility
   const _v = new THREE.Vector3(), _pm = new THREE.Matrix4();
+  const _pn = new THREE.Vector3(), _pa = new THREE.Vector3(), _pb = new THREE.Vector3();
   const rectOf = (p, cam) => {       // screen rect [x0, y0, x1, y1] (NDC) of a portal quad; null when behind; full when straddling
+    // standing in the doorway (within ~1.5 m of the portal's plane, inside its extent): everything through it may show
+    if (p.center.distanceToSquared(cam.position) < (p.radius + 1.5) ** 2) {
+      _pa.subVectors(p.quad[1], p.quad[0]); _pb.subVectors(p.quad[p.quad.length - 1], p.quad[0]); _pn.crossVectors(_pa, _pb).normalize();
+      if (Math.abs(_pn.dot(_pa.subVectors(cam.position, p.quad[0]))) < 1.5) return [-1, -1, 1, 1];
+    }
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, behind = 0; const near = cam.near;
     const P = cam.projectionMatrix.elements;
     for (const q of p.quad) {
@@ -347,7 +357,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
       const o = other(p, cid); if (o === cid) continue;
       const pr = rectOf(p, cam); if (!pr) continue;
       const r = isect(rect, pr); if (!r) continue;
-      if (o === null || !cells.has(o)) { state.outsideVisible = true; continue; }
+      if (o === null || !cells.has(o)) { if (!(p.dead && p.b === 'auto')) state.outsideVisible = true; continue; }
       const had = seen.get(o); if (had && contains(had, r)) continue;
       seen.set(o, unionR(had, r)); state.visible.add(o);
       if (depth < 24) walk(o, r, cam, depth + 1);
@@ -368,7 +378,8 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
       // outdoors: every opening to the outdoors within 3 km and in view seeds a walk (what you see into from the street)
       state.outsideVisible = true;
       for (const p of portals.values()) {
-        const b = p.b === 'auto' ? p.rb : p.b; const inner = (b === null || !cells.has(b)) ? p.a : null;
+        const b = p.b === 'auto' ? p.rb : p.b; if (p.dead && p.b === 'auto' && !b) continue;
+        const inner = (b === null || !cells.has(b)) ? p.a : null;
         if (inner === null || !cells.has(inner)) continue;
         if (p.center.distanceToSquared(cp) > 9e6) continue;
         const r = rectOf(p, cam); if (!r) continue; const rr = isect(FULL, r); if (!rr) continue;
@@ -421,6 +432,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
         if (o.type === 'Object3D' && !o.children.length) continue;            // light targets
         o.visible = false; hidden.push(o);
       }
+      for (const o of outdoorSet) if (o.visible) { o.visible = false; hidden.push(o); }
     }
     stats.culled = hidden.length;
   }
@@ -436,7 +448,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     },
     levels: LV, rt,
   };
-  return { enabled: true, state, stats, addCell, addPortal, addCut, remove, cellAt, keep, update, preRender, postRender, cells, portals, cuts, debug, GLSL,
+  return { enabled: true, state, stats, addCell, addPortal, addCut, remove, cellAt, keep, outdoor, update, preRender, postRender, cells, portals, cuts, debug, GLSL,
     dayAt: (x, y, z) => { const id = cellAt(x, y, z); return id ? dayAt(cells.get(id), x, y, z) : 1; },
     INTERIOR_EXPOSURE, MAX_BOOST, get dirty() { return dirty; }, invalidate() { dirty = true; } };
 })();

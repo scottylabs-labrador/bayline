@@ -93,7 +93,56 @@ albedo ~0.35 under ~0.9 units of irradiance) needs no adaptation. Street dayligh
 
 ## Research: BART infrastructure facts (dimensions, sources, assumptions)
 
-(in progress)
+Sources: [NTSB] NTSB RAR-79-05 (1979 Transbay Tube fire report, Fig. 3 "Typical Section", App. B); [FM] BART Fire
+Manual rev. 2016; [BFS] BART Facilities Standards; [W] Wikipedia; Geolith "Engineering Geology of BART 1964-75"
+(snippets); FoundSF; SFMTA; ENR. Published figures don't reach cm accuracy: plan/profile come from MetroNet.
+
+### Tunnels
+- **Transbay Tube**: 57 steel-shell reinforced-concrete sections, 83-102 m (avg ~100 m); outside 14.63 x 7.32 m;
+  immersed tube 19,113 ft (5.83 km) between the SF and Oakland ventilation structures; trench 18.3 m wide on 0.61 m
+  gravel, 23-41 m below the water surface (max 41 m); not straight (36 straight sections, 15 curved in plan, 4 vertical,
+  2 both); grades 3 % max, 0.3 % min [W, FM, Geolith].
+  Section [NTSB Fig. 3]: bore ID **5.18 m** (17'0"); track centreline **0.20 m toward the outer wall** from the bore
+  centre; **track centres 8.03 m** apart (bore centres 7.62 m); lining ~0.69 m; central gallery 2.44 m wide = exactly
+  the gap between the two bore circles; upper gallery (exhaust duct) 2.30 m, lower gallery (walkway, carts,
+  substations) 2.74 m; **walkway 0.76 m wide on the gallery side, top 0.71 m above rail**; third rail on the **outer**
+  side (4x4 in steel/aluminium I-beam) on porcelain insulators every 3.05 m under a fibreglass cover board; 119 lb
+  rail on direct fixation every 0.91 m. Gallery doors: 56 per bore, ~100 m apart (one per section), push-bar from the
+  track side; exhaust dampers (1.83 x 0.91 m) above every third door. Fluorescent fixtures every 15.2 m (1979),
+  being replaced by LEDs every 7.6 m (2025-26); bare concrete, grimy with brake dust. Seismic retrofit (2017-24): steel
+  liner plates welded into 15 of the 57 sections.
+  Ends: SF vent structure (caisson 37 x 21 m, 33 m high, ~137 m off the Ferry Building at Pier 2, tracks at -25.9 m),
+  twin compressed-air bores to Embarcadero; Oakland vent/transition structure on 7th St in the Port, then ~1.08 km of
+  box to the Oakland portal (MP 2.67, ASSUMPTION near 7th St & Maritime St) and the West Oakland aerial.
+- **Standard BART bore**: 17 ft ID (5.18 m). **Market St**: twin tubes under Muni's twin tubes; **bolted steel rings
+  0.76 m wide** (6 segments + key, flanged, grouted); Civic Center-16th St bored at 5.49 m (Calweld machines).
+- **Berkeley Hills Tunnel**: twin bores 5.0-5.1 km, **15.2 m** between centres, finished diameter **5.33 m**
+  (horseshoe: W8x40 steel sets every 1.22 m + concrete lining, drill-and-blast 1965-67), grade ~1.2-1.5 % rising to
+  Orinda; the Hayward Fault ~300 m inside the west portal (creep narrows the bore); cross passages every 305 m;
+  walkway one side; LED fixtures (2018) mostly here; west portal 37°51'05"N 122°14'17"W beside Chabot Rd at SR-24/SR-13,
+  east portal ~0.5 km SW of Orinda station, essentially straight.
+- **Oakland Wye**: under Broadway & 9th, seven interlinked tunnels at different levels (-6 m at the portals to -27 m at
+  the lower platforms of 12th/19th St). Portals: M line near Washington & 5th, A line at 5th Ave & E 8th St, C line at
+  23rd St & Northgate.
+- **Cut-and-cover** (SFO/Millbrae): two cells ~**4.7 m wide x 5.3 m high** with a centre wall, ~11.5 m outside;
+  cross passages every 76-91 m (sliding doors onto the other track); Colma portal at +47 m. Warm Springs: 2.0 km box
+  under Fremont Central Park / Lake Elizabeth. Berryessa: 3.96 km retained cut + 244 m cut-and-cover; Dixon Landing
+  retained cut 671 m long, ~6.7 m deep. Berkeley subway: cut-and-cover ~5 km.
+- **Subway fittings**: continuous walkway on one side (a covered cable trough with hinged covers); cross-passage doors
+  nominally every 305 m; **blue-light stations** (grey box under a blue lamp: phone, third-rail cut-off) at most 305 m
+  apart; **milepost plates** blue with white numbers, 0.66 m tall, every 32.2 m underground (0.1 mi outdoors);
+  standpipe hose outlets every 76-91 m (blue dot on the walkway, blue reflector opposite).
+- **Portals** (ASSUMPTION): concrete U-section boat section rising 0 → 6-7 m over 150-250 m, then a board-formed
+  headwall at the box entrance with fencing along the top.
+- **Stations**: platforms 213.4 m + 2.4 m transitions; end walls ≥ 2.03 m from the track centre; Market St boxes 18.3 m
+  wide (Embarcadero 15.2 m); aerial platforms ~9 m above grade.
+
+### Modelling choices from this (infra)
+- Walkway on the **inner** side (toward the other track: gallery doors, cross passages), third rail on the **outer**
+  side (field side) outside stations; in stations the third rail is on the side away from the platform.
+- Bore profiles: circular 5.18 m (SF/Oakland/Tube, steel rings on Market St), horseshoe 5.33 m (Berkeley Hills),
+  box cells 4.7 x 5.3 m (cut-and-cover). Lights: fluorescent every 15.24 m (Tube, SF/Oakland subways), LED every 7.62 m
+  (Berkeley Hills).
 
 ## Costs
 
