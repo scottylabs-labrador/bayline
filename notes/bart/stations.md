@@ -15,6 +15,12 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   the soffit into branching struts, skylight drums and a light line instead of a canopy
   (`shots/stations/mlpt_covered_hall.jpg`); Balboa Park's trench walls take its fluted precast finish and its
   overhead conduit runs along each platform edge.
+- **End walls**: every subway box's end walls (both levels at 12th/19th) and every concourse's end walls were wound
+  outward and culled from inside (the platform ends looked like open tunnel mouths): now walls with the tunnel
+  openings around each track (found with the new `tools/metro_backfaces.js`); Embarcadero's SW end wall carries the
+  'Wall Canyon' relief (`shots/stations/embr_wall_canyon_end.jpg`); one-sided signs have a navy back.
+- **Transfer panels** (DATA's `stations[].transfers`, brand-neutral text, pictograms by kind) at each platform's
+  circulation and inside each concourse gate line, 21 stations.
 - **Entrances**: the Towns ground opens with the terrain's own fine cut test (BL_CUT + `Terrain.cutUniforms`);
   collars on sidewalks follow the base ground 8 cm proud; Market St canopies stop short of a facade (Powell NE).
   The jagged dark band beside Powell's NE entrance is the building's shadow-map edge, not geometry.
@@ -26,6 +32,16 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
    open to the east; the BART face keeps its height (0.991 m over its rail) and the Caltrain face its own, with a ramp
    between; the shared hall's west column row then moves onto the island. Needs Peninsula platform geometry and the
    Caltrain door/stop logic: after the flip.
+2. **Market St Muni Metro level** (EMBR, MONT, POWL, CIVC; research: "the mezzanine looks down onto the Muni
+   platforms"): a platform level between the mezzanine and BART with its own box and track (trains later), its
+   escalators from the mezzanine, the BART wells passing it behind glass; transfer panels already say "City light rail
+   in the same station".
+3. **Signature pieces still missing**: SFO's Wind Portal (a 4.9 m radius drum of loose stainless discs around the
+   escalators up to the AirTrain level), Warm Springs' round glass entrance rotunda joined to the concourse by a
+   footbridge, Richmond's semicircular metal canopy over the west plaza, Lake Merritt's black tile circles and red
+   arrows, 16th/24th St William Mitchell reliefs along the escalator entries.
+4. Minor surfaces seen from behind (`tools/metro_backfaces.js`, a few rays each): well-end faces at 12th/19th St, the
+   shed canopy's end caps at SFO; low visibility, left for after the gate.
 
 ## M3 gate (2026-09-26 08:30 EDT): items 2-4 done, Millbrae shared hall done (09:40)
 
