@@ -2,7 +2,8 @@
 //
 // Wayside ATC in the style of the real system: the line is cut into track circuits (~180 m) and each circuit carries a
 // speed code. The code at the head of the train is the lower of
-//   * the civil code: the civil speed limit there (MetroNet, with the timetable-consistent floor of the run), and
+//   * the civil code: MetroNet's civil code there (M2 data: BART's codes 6/18/27/36/50/70 per segment; a run's
+//     timetable-consistent floor rounds up to the next code), and
 //   * the occupancy code: counted in clear circuits to the next obstruction (the tail of any train on the tracks ahead,
 //     from any line, or the end of the track): 0 clear -> stop, 1 -> 6 mph, 2 -> 18, 3 -> 27, 4 -> 36, 5 -> 50, 6+ -> line
 //     speed. (The real system's codes: 0, 6, 18, 27, 36, 50, 70, 80 mph.)
@@ -47,25 +48,34 @@ const MetroATC = (() => {
     }
     return null;
   }
-  // effective civil limit at a path position for the driven leg (the run's floor keeps the published times possible)
-  function civil(D, ps) { const S = D.leg.stops; let fl = 0; for (let k = 0; k < S.length - 1; k++) if (ps >= S[k].ps - 1 && ps <= S[k + 1].ps + 1) { fl = S[k].floor || 0; break; } return Math.max(D.leg.path.limitAt(ps), fl); }
+  // a civil speed as a wayside code: BART's train-control codes 6/18/27/36/50/70 (MetroNet's M2 limits already are
+  // codes, so this is exact for them; a timetable floor rounds up to the next code), the DMU and the cable train in
+  // 5 mph steps like their data
+  const CODES = [6, 18, 27, 36, 50, 70].map(v => v * MPH);
+  function asCode(v, kind, up) {
+    if (kind !== 'bart') return Math.floor(v / MPH / 5 + 1e-6) * 5 * MPH;
+    if (up) { for (const c of CODES) if (c >= v - 0.05) return c; return CODES[CODES.length - 1]; }
+    let r = CODES[0]; for (const c of CODES) if (c <= v + 0.05) r = c; return r;
+  }
+  // the civil code at a path position for the driven leg: the data's code there, or the run's timetable floor (which
+  // keeps the published times possible) when that is higher
+  function civil(D, ps) { const S = D.leg.stops; let fl = 0; for (let k = 0; k < S.length - 1; k++) if (ps >= S[k].ps - 1 && ps <= S[k + 1].ps + 1) { fl = S[k].floor || 0; break; }
+    const lim = D.leg.path.limitAt(ps); return fl > lim + 0.05 ? asCode(fl, D.kind, true) : asCode(lim, D.kind, false); }
   function codeFor(D) {
     if (occFrame !== MetroSim.stats.frame) { buildOcc(MetroSim.trainByKey(D.key)); occFrame = MetroSim.stats.frame; }
     // civil code: the lowest limit over the train's length and the circuit ahead (the tail rule, in circuits)
     const len = D.cars * MetroSim.PERF[D.kind].carLen; let cv = 1e9;
     for (let p = D.s - len; p <= D.s + BLOCK * 0.5; p += 20) cv = Math.min(cv, civil(D, p));
-    cv = Math.floor(cv / MPH / 5 + 1e-6) * 5 * MPH;
     const ob = obstruction(D); let oc = 1e9, clear = 99;
     if (ob) { clear = Math.max(0, Math.floor(ob.dist / BLOCK)); oc = LADDER[Math.min(LADDER.length - 1, clear)]; }
     const code = Math.min(cv, oc, MetroSim.PERF[D.kind].vmax);
     return { code, civil: cv, occ: oc, clear, ob };
   }
   // the next civil restriction ahead and the station stop, for ATO and the braking guidance
-  // (quantised like the code, and brought forward by the half circuit the code looks ahead)
-  const q5 = (v) => Math.floor(v / MPH / 5 + 1e-6) * 5 * MPH;
+  // (as codes, and brought forward by the half circuit the code looks ahead)
   function targetsAhead(D, max = 2400) {
-    const out = []; let prev = q5(civil(D, D.s));
-    for (let a = 20; a <= max; a += 20) { const l = q5(civil(D, D.s + a)); if (l < prev - 0.3) out.push({ dist: Math.max(0, a - 20 - BLOCK * 0.5 - 15), v: l, why: 'limit' }); prev = l; }
+    const out = []; let prev = civil(D, D.s);
+    for (let a = 20; a <= max; a += 20) { const l = civil(D, D.s + a); if (l < prev - 0.3) out.push({ dist: Math.max(0, a - 20 - BLOCK * 0.5 - 15), v: l, why: 'limit' }); prev = l; }
     return out;
   }
 

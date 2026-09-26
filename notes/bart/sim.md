@@ -302,29 +302,16 @@ Also used: `MetroStations.spawnPoint(id, platformGtfsId) -> { x, y, z, yaw }` (y
   - PITT-T has no station entry (no platform extent/side): fine, the runtime centres the train on the stop point there.
   - Platform sides: resolved. Audit 2026-09-26 03:05 (`MetroStations.spawnPoint` vs `platforms[].side`, all 105
     platforms): 0 mismatches. The runtime still takes the side from the stations' geometry when it is in the build.
-- **TRAINS**
-  - MetroKit v1 (bart-trains 7dd7d47, tested in a scratch build, not committed here): the runtime now feeds the
-    PIS (`setDisplay({ line, lineName, color, destination, nextStop, arriving, doors, transfer, stops, index, clock })`,
-    redrawn only when the stop/phase/minute changes) and the VATC (`setCab({ speedMph, atcCodeMph, targetMph, effort,
-    handle, brake, mode, doors, cars, nextStop, distFt, clock, atc, lineColor, destination })`; `effort` is always a
-    number so your notch mapping never sees my notch text), uses `MetroKit.createFarBatch` when exported (else
-    `_k.createFarBatch`) and passes the drawing-buffer size to `end(night, res)`; `dispose()` is called on dropped consists.
-    `dmu` / `apm` still fall back to placeholders per kind (near and far) until their builders land.
-  - MetroKit v0 is integrated: consists come from `MetroKit.createConsist(kind, { cars, seed, name })` (exact length),
-    posed with `MetroKit.poseOnTrack` (bogie yaw; for a train led by its last car the frame function runs backwards
-    along the path with the tangent and bank flipped), `setDestination({ line, color, text })`, `setNextStop`,
-    `setDoors`, `setLights`, `setNight`, `setLOD(0|1)` (my LOD 2 is only used for placeholders: MetroKit's LOD 2 hides
-    the car), `setInteriorVisible`, `speed`, `update`. Kinds MetroKit doesn't build yet (`dmu`, `apm` stubs) fall back
-    to my placeholders automatically, per kind.
-  - Far trains: when `MetroKit._k.createFarBatch` exists I route far trains through it (`begin / addCar(kind, 'D'|'E',
-    {x,y,z,yaw,pitch}, flip) / addLamp / end(night)`), per kind, with my own instanced batch as the fallback. Please
-    export it publicly (`MetroKit.createFarBatch`) when it lands; keep `42_metrokit_far.js` loading AFTER
-    `42_metrokit_fotf.js` if it touches `K.builders.bart` at load (build.py sorts by name: `_far` < `_fotf`; in my scratch
-    test that ordering threw a TypeError at load, which kills the whole app).
-  - Please add `consist.dispose()` (geometry is shared; the per-consist sign canvas / textures / materials): the pool
-    recycles consists of other lengths (6/8/10 cars) and drops them from the scene.
-  - Cab display: `setCab({ speedMph, codeMph (AUTHORIZED), commandedMph, mode: 'ATO'|'MANUAL', notch, atc, nextStop,
-    distFt, clock, line, color, destination })` would feed your VATC screen; I call it only if it exists.
+- **TRAINS** (MetroKit v1 is on `bart` since 62c83db and merged here; all earlier requests are answered)
+  - In use: `createConsist` (exact length), `poseOnTrack`, `setDestination({ line, color, text })`, `setNextStop`,
+    `setDoors`, `setLights`, `setNight`, `setLOD(0|1|2)` (2 beyond 700 m when the builder has `lod()`),
+    `setInteriorVisible`, `setDisplay` (PIS: line id, lineName, arriving, doors, transfer, stops, index, clock; redrawn
+    only on change), `setCab` (VATC: `atcCodeMph`, `targetMph`, numeric `effort`/`handle`/`brake`, doors, cars, alarm
+    via `atc`), `dispose()` on dropped consists, `createFarBatch` (+ `end(night, res)` with the drawing-buffer size),
+    per-car `standSpots` for standees when present.
+  - `dmu` / `apm`: still stubs on `bart`; the runtime falls back to placeholders per kind (near and far) and will use
+    MetroKit's GTW and Cable Liner as soon as those builders are on `bart` (nothing to change here: `cars` = GTW units /
+    APM cars as your notes say).
 - **STATIONS**: `floorAt`, `blocked`, `spawnPoint(id, gtfs)`, `setBoard(...)` as above. Small one: the airport
   connector platforms (COLS `H10`, OAKL `H40`) return a `spawnPoint` more than 14 m from their MetroNet track (H1.1 /
   H1.2), so the side audit can't place them (the cable train's doors use the data side there).
