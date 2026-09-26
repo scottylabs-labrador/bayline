@@ -178,6 +178,40 @@ export const metro = `window.__m = window.__m || (() => {
     const f = new THREE.Vector3(rear ? -1 : 1, 0, 0).transformDirection(car.group.matrixWorld);
     return { p: { x: v.x, y: v.y, z: v.z }, fwd: { x: f.x, y: f.y, z: f.z }, car };
   }
+  // ---------------- location scouting: lines of sight through the loaded world
+  // points along a track around s (targets for sight()): n points over +-half m, h m above the rail (a train's middle ~2.2)
+  function trackPts(track, s, half = 60, n = 5, h = 2.2) { const T = typeof track === 'string' ? N().byId[track] : track, out = [];
+    for (let i = 0; i < n; i++) { N().frame(T, s - half + 2 * half * i / Math.max(1, n - 1), F); out.push({ x: F.x, y: F.y + h, z: F.z }); } return out; }
+  const SKIP = /^(flora-far|flora-shadow|streetlight-pools|streetlight-glow|skyline|metro-far|sky|water)/;
+  let occl = null, occlT = 0;
+  function occluders() {                  // the scene's solid meshes (not the terrain: sampled from its height function), cached 2 s
+    if (occl && performance.now() - occlT < 2000) return occl; occl = []; occlT = performance.now();
+    B.Env.scene.traverse(o => { if (o.name === 'terrain') return; if (!(o.isMesh || o.isInstancedMesh) || o.isPoints || o.isLine || o.isSprite) return;
+      let v = true; for (let q = o; q; q = q.parent) { if (q.visible === false || SKIP.test(q.name || '') || q.name === 'terrain') { v = false; break; } } if (!v) return;
+      if (o.isInstancedMesh && o.computeBoundingSphere) { try { o.computeBoundingSphere(); } catch (e) {} }     // (trees move between frames: a stale sphere misses them)
+      occl.push(o); });
+    return occl;
+  }
+  // the share of the targets visible from p (terrain and the loaded scene; hits within opt.near m of a target don't count)
+  const _rc = { r: null };
+  function sight(p, targets, opt = {}) {
+    const rc = _rc.r || (_rc.r = new THREE.Raycaster()), objs = occluders(), near = opt.near ?? 8; let clear = 0; const hits = [];
+    const o = new THREE.Vector3(p.x, p.y, p.z), dir = new THREE.Vector3();
+    for (const q of targets) { const dx = q.x - p.x, dy = q.y - p.y, dz = q.z - p.z, d = Math.hypot(dx, dy, dz); let hit = null;
+      for (let k = 1; k < 60 && !hit; k++) { const f = k / 60; if (d * (1 - f) < near) break; const x = p.x + dx * f, y = p.y + dy * f, z = p.z + dz * f; if (__cine.ground(x, z) > y) hit = { what: 'terrain', at: Math.round(d * f) }; }
+      if (!hit) { dir.set(dx / d, dy / d, dz / d); rc.set(o, dir); rc.near = 0.3; rc.far = Math.max(1, d - near);
+        const h = rc.intersectObjects(objs, false)[0]; if (h) hit = { what: h.object.name || h.object.type, at: Math.round(h.distance) }; }
+      if (hit) hits.push(hit); else clear++; }
+    return { clear: +(clear / targets.length).toFixed(2), hits };
+  }
+  // the first of the candidate camera positions (in order of preference) that sees at least opt.min of the targets;
+  // else the one that sees the most. -> { p, i, clear, hits, tried }
+  function scout(cands, targets, opt = {}) {
+    const min = opt.min ?? 0.8; let best = null;
+    for (let i = 0; i < cands.length; i++) { const r = sight(cands[i], targets, opt); if (r.clear >= min) return { p: cands[i], i, clear: r.clear, hits: r.hits, tried: i + 1 };
+      if (!best || r.clear > best.clear) best = { p: cands[i], i, clear: r.clear, hits: r.hits }; }
+    return Object.assign(best || {}, { tried: cands.length, short: true });
+  }
   // ---------------- the service day
   // pin the date for the whole game (Env's date: the Peninsula and metro timetables' service day, weekday or weekend,
   // and the sun), keeping the clock; the metro replans now, the Peninsula on its next frame. ymd: '2026-09-29'
@@ -190,7 +224,7 @@ export const metro = `window.__m = window.__m || (() => {
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); await new Promise(r => setTimeout(r, 250));
     return B.Env.serviceDay();
   }
-  return { ready, at, track, passes, pass, meet, crossings, arrive, depart, pair, pairs, train, focus, pick, pose, rel, ahead, cab, day, destOf };
+  return { ready, at, track, trackPts, sight, scout, passes, pass, meet, crossings, arrive, depart, pair, pairs, train, focus, pick, pose, rel, ahead, cab, day, destOf };
 })();`;
 
 // self-installing one-liners (page-side function sources), like _lib's passClock: usable without installing `metro`
@@ -205,5 +239,6 @@ export const mPairs = one('pairs');      // (metroStation, penStation, after, un
 export const mPick = one('pick');        // (lat, lon, opt) -> train | null
 export const mPose = one('pose');        // (train | key, car) -> { p, rail, fwd, right, up, v, s, head } | null
 export const mTrack = one('track');      // (where, r) -> nearest track frame | null
+export const mScout = one('scout');      // (candidate camera positions, target points, opt { min, near }) -> { p, i, clear, hits, tried }
 export const mDay = one('day');          // (ymd) -> Promise<serviceDay> (waits for the metro to load first)
 export const mReady = one('ready');      // () -> Promise (the metro's network and timetable loaded)
