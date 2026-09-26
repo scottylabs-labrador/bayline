@@ -126,7 +126,8 @@ const MetroKit = (() => {
   pal('handleBlack', '#111214', 0.4, 0.1, { ...IN, cc: 0.5 });
   pal('screenOff', '#060708', 0.08, 0, { ...IN, cc: 1 });
   // DMU / APM schemes (their own pattern ids)
-  pal('aluDmu', '#d2d5d8', 0.36, 0.7, { pat: PAT.aluDmu, an: 0.4, gr: 0.8 });
+  pal('aluDmu', '#d9dcdf', 0.36, 0.75, { pat: PAT.aluDmu, an: 0.4, gr: 0.8 });
+  pal('moduleGrey', '#aeb3b8', 0.45, 0.5, { pat: PAT.cast, gr: 0.9 });
   pal('paintDmu', '#e6e8e8', 0.3, 0, { cc: 1, pat: PAT.paintDmu, gr: 0.7 });
   pal('apmBody', '#e9ebeb', 0.3, 0, { cc: 1, pat: PAT.apmBody, gr: 0.5 });
   if (PAL.length > PALN) throw new Error('MetroKit palette overflow');
@@ -361,8 +362,18 @@ const MetroKit = (() => {
         float yy = fract((p.y - 1.89) / 0.95), sb = step(yy, 0.35) * step(0.1, fract(p.x / 0.755 + 0.3));
         mkEmW *= (0.35 + 0.65 * smoothstep(0.55, 1.0, yy)) * (1.0 - 0.6 * sb);
         mkEmW *= 0.25 + 0.75 * mkNight;
-      } else if (mkPat == 27.0 || mkPat == 29.0) {               // DMU / APM schemes (see 42_metrokit_*.js)
-        col *= 0.95 + 0.08 * mkV(vec2(p.x * 1.3, p.y * 60.0)) * fade;
+      } else if (mkPat == 27.0) {                                // DMU body: satin silver, the cab swoosh at both ends
+        col *= 0.95 + 0.07 * mkV(vec2(p.x * 1.3, p.y * 60.0)) * fade;
+        float ax = abs(p.x), t = clamp((3.0 - p.y) / 2.6, 0.0, 1.0);
+        float xb = 16.95 + 1.9 * pow(t, 1.7), wb = 0.06 + 0.42 * pow(1.0 - t, 1.5);
+        float blueA = smoothstep(-fw, fw, ax - xb), whiteA = smoothstep(-fw, fw, ax - (xb - wb)) * (1.0 - blueA);
+        if (blueA > 0.5) { col = vec3(0.008, 0.33, 0.72); mkMetal = 0.0; mkRough = 0.3; mkCC = 1.0; mkAniso = 0.0; }
+        else if (whiteA > 0.5) { col = vec3(0.86, 0.87, 0.87); mkMetal = 0.0; mkRough = 0.3; mkCC = 1.0; mkAniso = 0.0; }
+        mkBelt = mkLine(p.y, 1.2, 0.025, fw); col = mix(col, vec3(0.05), mkBelt * 0.8);
+      } else if (mkPat == 29.0) {                                // APM body: white, five light-blue stripes low on the side
+        float yy = p.y - 0.62, band = step(0.0, yy) * step(yy, 0.62), st = step(0.5, fract(yy / 0.124));
+        col = mix(col, vec3(0.13, 0.46, 0.78), band * st);
+        col *= 0.985 + 0.03 * mkV(p.xy * 31.0 + p.z * 23.0);
       }
       // ---------------- emissive light groups
       if (eg > 0.5) {
@@ -588,6 +599,17 @@ const MetroKit = (() => {
       g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(this.I, 1) : new THREE.Uint16BufferAttribute(this.I, 1));
       return g;
     }
+    // a grid of positions/normals (rows x cols, row-major arrays of [x, y, z]) emitted as quads whose palette entry comes
+    // from palAt(i, j) (quad between rows i, i+1 and columns j, j+1); vertices are duplicated per quad so palettes never
+    // blend across a quad, normals stay smooth
+    gridQuads(Pp, Nn, rows, cols, palAt) {
+      for (let i = 0; i < rows - 1; i++) for (let j = 0; j < cols - 1; j++) {
+        this.pal(palAt(i, j)); const k = [i * cols + j, (i + 1) * cols + j, (i + 1) * cols + j + 1, i * cols + j + 1];
+        const v = k.map(q => this.v(Pp[q][0], Pp[q][1], Pp[q][2], Nn[q][0], Nn[q][1], Nn[q][2]));
+        this.quadA(v[0], v[1], v[2], v[3]);
+      }
+      return this;
+    }
     // append another builder's content (same bone numbering)
     append(o) { const b = this.count; this.P.push(...o.P); this.N.push(...o.N); this.T.push(...o.T); this.T1.push(...o.T1); this.K.push(...o.K); for (const i of o.I) this.I.push(i + b); return this; }
   }
@@ -792,26 +814,33 @@ const MetroKit = (() => {
       const self = this;
       this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m); };
       this.lod = 0; this.int = null; this.intVisible = false;
-      this.wheelAng = 0; this.yaw = [0, 0]; this.doorPos = [0, 0]; this.wiperAng = [0, 0]; this.dirty = true;
+      if (!d.bogieList) d.bogieList = d.boneIdx.bogie.map((bi, k) => ({ bone: bi, pivot: d.bones[bi].pivot, axles: d.boneIdx.axlesOf[k] }));
+      this.wheelAng = 0; this.yaw = d.bogieList.map(() => 0); this.doorPos = [0, 0]; this.wiperAng = [0, 0]; this.dirty = true;
+      if (d.bodyList) { this.bodySt = d.bodyList.map(() => ({ yaw: 0, dx: 0, dz: 0 })); this.bodyM = d.bodyList.map(() => new THREE.Matrix4()); this.bogOff = d.bogieList.map(() => [0, 0]); }
       this.lv = S.mkLv.value;
       this._pose();
     }
     // write bone matrices (car-local) from the current state
     _pose() {
-      const d = this.design, B = d.bones, bm = this.bm;
-      // bogies
-      for (let b = 0; b < 2; b++) { const bi = d.boneIdx.bogie[b]; if (bi === undefined) continue; const pv = B[bi].pivot;
-        _m.makeTranslation(pv[0], pv[1], pv[2]).multiply(_m2.makeRotationY(this.yaw[b])).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
-        _m.toArray(bm, bi * 16);
-        // wheelsets of this bogie: bogie matrix x spin about the axle
-        for (const ai of d.boneIdx.axlesOf[b]) { const ap = B[ai].pivot;
+      const d = this.design, B = d.bones, bm = this.bm, BL = d.bogieList, BD = d.bodyList;
+      // articulated bodies (bone matrices in the car frame): yaw about the pivot, then a lateral / longitudinal shift
+      if (BD) for (let i = 0; i < BD.length; i++) { const b = BD[i], st = this.bodySt[i], pv = b.pivot;
+        _m.makeTranslation(pv[0] + st.dx, pv[1], pv[2] + st.dz).multiply(_m2.makeRotationY(st.yaw)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
+        _m.toArray(bm, b.bone * 16); this.bodyM[i].copy(_m); }
+      // bogies: yaw about the pivot (plus the offset of an articulated unit's middle bogie), wheelsets spin inside them
+      for (let b = 0; b < BL.length; b++) { const g = BL[b], pv = g.pivot, yaw = this.yaw[b], off = this.bogOff ? this.bogOff[b] : null;
+        _m.makeTranslation(pv[0] + (off ? off[0] : 0), pv[1], pv[2] + (off ? off[1] : 0)).multiply(_m2.makeRotationY(yaw)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
+        _m.toArray(bm, g.bone * 16);
+        for (const ai of g.axles) { const ap = B[ai].pivot;
           _m2.makeTranslation(ap[0], ap[1], ap[2]).multiply(_m3.makeRotationZ(-this.wheelAng)); _m2.multiply(_m3.makeTranslation(-ap[0], -ap[1], -ap[2]));
           _m3.multiplyMatrices(_m, _m2); _m3.toArray(bm, ai * 16); } }
       // door leaves: plug out, then slide away from the door centre. doorPos[0] = design-left (-Z), [1] = design-right (+Z)
       for (const L of d.leaves) {
         const t = this.doorPos[L.side > 0 ? 1 : 0];
-        const plug = smooth(0, 0.16, t) * 0.03, slide = smooth(0.1, 1, t) * 0.70;
-        _m.makeTranslation(L.k * slide, 0, L.side * plug); _m.toArray(bm, L.bone * 16);
+        const plug = smooth(0, 0.16, t) * (d.plugOut || 0.03), slide = smooth(0.1, 1, t) * (d.slide || 0.70);
+        _m.makeTranslation(L.k * slide, 0, L.side * plug);
+        if (L.body !== undefined && this.bodyM) _m.premultiply(this.bodyM[L.body]);
+        _m.toArray(bm, L.bone * 16);
       }
       // wipers: rotate about the face normal at the pivot
       for (let w = 0; w < (d.wipers || []).length; w++) { const W = d.wipers[w], a = this.wiperAng[w];
@@ -1075,17 +1104,33 @@ const MetroKit = (() => {
     for (const car of c.cars) {
       const dc = d - car.length / 2; d -= car.length;
       const [bf, br] = car.bogieOffsets;
-      frame(dc + bf, _F); frame(dc + br, _R);
+      frame(dc + bf, _F); frame(dc + br, _R); car._dc = dc;
       const bank = ((_F.bank || 0) + (_R.bank || 0)) / 2;
       poseCar(car, _F, _R, bank);
       const yawBody = Math.atan2(-(_F.z - _R.z), _F.x - _R.x);
       const yF = Math.atan2(-_F.tz, _F.tx) - yawBody, yR = Math.atan2(-_R.tz, _R.tx) - yawBody;
       // bogie 0 of the design sits at +X; a flipped car's design +X is at its rear
-      const a = U.wrapAngle(car.flip ? yR : yF), b = U.wrapAngle(car.flip ? yF : yR);
-      if (Math.abs(a - car.yaw[0]) > 1e-5 || Math.abs(b - car.yaw[1]) > 1e-5) { car.yaw[0] = a; car.yaw[1] = b; car.dirty = true; }
+      const a = U.wrapAngle(car.flip ? yR : yF), b = U.wrapAngle(car.flip ? yF : yR), nb = car.yaw.length;
+      if (Math.abs(a - car.yaw[0]) > 1e-5 || Math.abs(b - car.yaw[nb - 1]) > 1e-5) { car.yaw[0] = a; car.yaw[nb - 1] = b; car.dirty = true; }
+      if (car.design.artic) articulate(car, frame, dc, yawBody);
     }
   }
 
+  // Articulated units (the GTW): after the rigid pose from the outer bogies, the end bodies swing about their outer
+  // bogies so the joints sit on the track, the middle body spans the two joints, and its bogie follows the track.
+  const _J1 = { x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0 }, _J2 = { x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0 }, _JM = { x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0 };
+  function articulate(car, frame, dc, yawBody) {
+    const A = car.design.artic, g = car.group, cy = Math.cos(yawBody), sy = Math.sin(yawBody), sg = car.flip ? -1 : 1;
+    // design-frame joint positions (x) -> track distances; local (design) coordinates of the track points
+    const toLocal = (P, out) => { const dx = P.x - g.position.x, dz = P.z - g.position.z; const lx = dx * cy - dz * sy, lz = dx * sy + dz * cy; out[0] = sg * lx; out[1] = sg * lz; return out; };
+    frame(dc + sg * A.joints[0], _J1); frame(dc + sg * A.joints[1], _J2); frame(dc + sg * A.mid, _JM);
+    const j1 = toLocal(_J1, [0, 0]), j2 = toLocal(_J2, [0, 0]), jm = toLocal(_JM, [0, 0]);
+    const st = car.bodySt, pA = A.pivots[0], pB = A.pivots[1];
+    st[0].yaw = Math.atan2(j1[1], pA - j1[0]); st[2].yaw = Math.atan2(-j2[1], j2[0] - pB);
+    st[1].yaw = Math.atan2(-(j1[1] - j2[1]), j1[0] - j2[0]); st[1].dx = (j1[0] + j2[0]) / 2 - A.mid; st[1].dz = (j1[1] + j2[1]) / 2;
+    const ym = U.wrapAngle(Math.atan2(-_JM.tz, _JM.tx) - yawBody); car.yaw[1] = car.flip ? ym : ym; car.bogOff[1][0] = jm[0] - A.mid; car.bogOff[1][1] = jm[1];
+    car.dirty = true;
+  }
   function createConsist(kind, opts) { return new Consist(kind, opts); }
   K.builders = builders; K.SIGN = SIGN; K.getDesign = getDesign; K.glassMaterial = glassMaterial; K.LINE_COLORS = LINE_COLORS; K.ledText = ledText;
   K.FONT = FONT; K.Consist = Consist; K.Car = Car;

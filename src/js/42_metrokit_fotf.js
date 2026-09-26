@@ -29,7 +29,11 @@
     // vertical side to YC, then a superellipse quadrant (the rounded eaves and a nearly flat, cambered roof)
     const YC = F.YC, B = F.ROOF - YC, e = 2 / F.NSE;
     for (let i = 0; i <= 600; i++) { const th = (i / 600) * Math.PI / 2; dense.push([YC + B * Math.pow(Math.sin(th), e), 1.6 * Math.pow(Math.cos(th), e)]); }
-    // arc length and normals of the dense curve
+    return profileFrom(dense, q);
+  }
+  // a profile object from a dense right-half section curve [[y, z], ...] (skirt bottom -> roof centre, z = 0 last):
+  // arc length, normals, and the adaptive sample rows (denser where the curve turns). Shared by every car design.
+  function profileFrom(dense, q) {
     const n = dense.length, t = [0];
     for (let i = 1; i < n; i++) t.push(t[i - 1] + Math.hypot(dense[i][0] - dense[i - 1][0], dense[i][1] - dense[i - 1][1]));
     const nrm = dense.map((p, i) => { const a = dense[Math.max(0, i - 1)], b = dense[Math.min(n - 1, i + 1)]; const dy = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dy, dz) || 1; return [-dz / l, dy / l]; });   // [ny, nz]
@@ -400,24 +404,22 @@
   function nose(E, G, P) {
     E.bone = 0; G.bone = 0;
     const R = F.NOSE_R, xs = F.NOSE_XC, L = sectionLoop(P), n = L.length, A = 8;
-    // fillet ring (blending the face deformation in with w = 1 - cos a)
-    const base = E.count, ringPts = [];
+    // fillet ring (blending the face deformation in with w = 1 - cos a); normals from finite differences of the grid
+    const Pp = [], Nn = [], cols = A + 1;
     for (let i = 0; i < n; i++) for (let j = 0; j <= A; j++) {
       const a = (j / A) * Math.PI / 2, p = L[i], off = RYZ(p.y) * (1 - Math.cos(a)), w = 1 - Math.cos(a);
       const y = p.y - p.ny * off, z = p.z - p.nz * off;
-      E.pal(p.y < 0.86 && j > 2 ? 'frame' : 'cap');
-      E.v(xs + R * Math.sin(a) + w * noseD(y, z), y, z, Math.sin(a), p.ny * Math.cos(a), p.nz * Math.cos(a), 0, 0, 0);
+      Pp.push([xs + R * Math.sin(a) + w * noseD(y, z), y, z]); Nn.push([Math.sin(a), p.ny * Math.cos(a), p.nz * Math.cos(a)]);
     }
-    // normals of the ring from finite differences of its own grid (the deformation tilts them)
-    const idx = (i, j) => base + i * (A + 1) + j;
+    const idx = (i, j) => i * cols + j;
     for (let i = 0; i < n; i++) for (let j = 0; j <= A; j++) {
-      const P0 = mbP(E, idx(Math.min(n - 1, i + 1), j)), P1 = mbP(E, idx(Math.max(0, i - 1), j)), Q0 = mbP(E, idx(i, Math.min(A, j + 1))), Q1 = mbP(E, idx(i, Math.max(0, j - 1)));
+      const P0 = Pp[idx(Math.min(n - 1, i + 1), j)], P1 = Pp[idx(Math.max(0, i - 1), j)], Q0 = Pp[idx(i, Math.min(A, j + 1))], Q1 = Pp[idx(i, Math.max(0, j - 1))];
       const du = [P0[0] - P1[0], P0[1] - P1[1], P0[2] - P1[2]], dv = [Q0[0] - Q1[0], Q0[1] - Q1[1], Q0[2] - Q1[2]];
       let nx = du[1] * dv[2] - du[2] * dv[1], ny = du[2] * dv[0] - du[0] * dv[2], nz = du[0] * dv[1] - du[1] * dv[0]; const l = Math.hypot(nx, ny, nz) || 1;
-      const k = idx(i, j) * 3; const old = [E.N[k], E.N[k + 1], E.N[k + 2]]; if (nx * old[0] + ny * old[1] + nz * old[2] < 0) { nx = -nx; ny = -ny; nz = -nz; }
-      E.N[k] = nx / l; E.N[k + 1] = ny / l; E.N[k + 2] = nz / l;
+      const o = Nn[idx(i, j)]; if (nx * o[0] + ny * o[1] + nz * o[2] < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      Nn[idx(i, j)] = [nx / l, ny / l, nz / l];
     }
-    for (let i = 0; i < n - 1; i++) for (let j = 0; j < A; j++) { const a = idx(i, j), b = idx(i + 1, j); E.quadA(a, b, b + 1, a + 1); }
+    E.gridQuads(Pp, Nn, n, cols, (i, j) => (L[i].y < 0.86 && j > 2) ? 'frame' : 'cap');
     // the face: the inner offset loop, closed at the bottom
     const face = L.map(p => [p.z - p.nz * RYZ(p.y), p.y - p.ny * RYZ(p.y)]);
     const yBot = face[0][1];
@@ -787,5 +789,5 @@
   K.builders.bart.interior = (d, q) => K.buildFotfInterior(d, q);
   K.builders.bart.lod = (d, level) => K.fotfLod(d, level);
   K.buildFotf = buildFotf; K.sideGrid = sideGrid; K.rrXT = rrXT; K.ring = ring; K.fill = fill;
-  K.fotfProfile = { makeProfile, profAt, tAtY, bodyAt };
+  K.fotfProfile = { makeProfile, profAt, tAtY, bodyAt, profileFrom, sectionLoop };
 })();
