@@ -36,7 +36,7 @@ C = {
     'BALB': dict(type='trench', layout='island',
                  note='Island platform below grade beside the I-280 cut: open trench at both ends, covered by Geneva Ave '
                       'and the headhouse in the middle (A); the lidar sees the open-cut trackbed.', src=['A', 'LIDAR']),
-    'DALY': dict(type='aerial', layout='split', plat=7.0, w=20,
+    'DALY': dict(type='aerial', layout='split',             # no height prior: the typical-aerial guess (+7 m) was 5 m off what the approaches allow
                  note='Elevated 3-track station: west side platform (P3, terminating Blue/Green alight only since Aug 2026), '
                       'centre track (P1, southbound through) and east track (P2, SF-bound) share the island (A).', src=['A']),
     'COLM': dict(type='trench', layout='split',
@@ -50,9 +50,10 @@ C = {
     'SFIA': dict(type='aerial', layout='split', plat=10.0, w=40,
                  note='Elevated stub terminal inside the International Terminal complex: 3 dead-end tracks, 2 islands '
                       '(north track P1 Yellow, middle P2 Red + shuttle, south P3 unused) (A); platform ~+9-10 m (STW).', src=['A', 'STW']),
-    'MLBR': dict(type='surface', layout='side',
-                 note='At-grade intermodal station; BART track 3 (west) faces Caltrain NB across the shared island; the '
-                      'middle and east BART tracks + island store trains (A).', src=['A']),
+    'MLBR': dict(type='surface', layout='split',
+                 note='At-grade intermodal station; BART track 3 (west) faces Caltrain NB across the shared island (the only '
+                      'BART face in service: GTFS platform 3); the middle and east BART tracks share a BART-only island used for '
+                      'train storage (A). Layout "split": one face of a shared island + a BART island (was "side" until M2b).', src=['A']),
     # ------------------------------------------------------------------ Oakland
     'WOAK': dict(type='aerial', layout='side', plat=7.0, w=20,
                  note='Elevated with two side platforms (P1 north = SF-bound, P2 south) over a street-level fare lobby (A).', src=['A']),
@@ -89,9 +90,18 @@ C = {
     'NCON': dict(type='trench', layout='island', note='Shallow open cut, trackbed ~6 m below the ground either side at mid-platform (B, lidar); '
                       'overhead concourse and footbridge (B).', src=['B', 'STW', 'LIDAR']),
     'PITT': dict(type='median', layout='island', note='In the SR-4 median (lead, STW); eBART transfer platform ~1 km east.', src=['STW', 'OSM']),
+    'PITT-T': dict(type='median', layout='island',
+                   note='eBART transfer platform in the SR-4 median ~0.97 km east of Pittsburg/Bay Point (B): one 700 ft at-grade '
+                        'island, BART (broad gauge, track CT) on the north face, eBART DMUs (standard gauge, stub track ET ending '
+                        'at a buffer by the west end) on the south face; the DMU trackbed is raised so both floors meet the one '
+                        'platform (0.356 m here). No street access or faregates, emergency egress at the west end only.',
+                   src=['B', 'OSM', 'NAIP']),
     'PCTR': dict(type='median', layout='island', note='eBART; SR-4 median in a shallow depression under the Railroad Ave overcrossing, '
                       'stairs/elevator down from the overpass (B); lidar trackbed.', src=['B', 'STW', 'LIDAR']),
-    'ANTC': dict(type='median', layout='side', note='eBART terminal by the SR-4 median (lead, STW).', src=['STW']),
+    'ANTC': dict(type='median', layout='island',
+                 note='eBART terminal in the SR-4 median: one 410 ft island between the two tracks (B, EIR; NAIP and the '
+                      '11.2 m OSM track spacing agree), arrivals on platform 1, departures from platform 2; footbridge over '
+                      'the northern carriageway to the headhouse on Slatten Ranch Rd (B). Was "side" until M2b.', src=['B', 'STW', 'NAIP']),
     # ------------------------------------------------------------------ Fremont line
     'FTVL': dict(type='aerial', layout='side', plat=7.0, w=20,
                  note='Elevated, two side platforms on a 1972 viaduct; street-level fare lobby (C).', src=['C']),

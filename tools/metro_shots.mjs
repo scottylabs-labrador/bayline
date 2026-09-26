@@ -3,7 +3,7 @@
 // protocol (no dependencies, Node 22+), like tools/shot.mjs, but the page is loaded once and every view is staged with
 // MetroStations.shot() (capture-mode camera at station coordinates, waits for the build and the exposure) and captured.
 //   node tools/metro_shots.mjs --views views.json --out DIR [--base http://localhost:8135/stations.html] [--w 1600 --h 900]
-//        [--fmt jpeg|png] [--quality 88] [--hash "q=high"]
+//        [--fmt jpeg|png] [--quality 88] [--hash "q=high"] [--allconsole] [--mobile]
 // views.json: [{ "name": "embr_plat", "id": "EMBR", "t": "17:30", "opts": { "u": -40, "v": 0, "h": 1.65, "yaw": 0.2, "fov": 70 } }, ...]
 //   or { "name", "eval": "<expression>" } / { "name", "evalFile": "tools/metro_keepout_map.js", "args": {...} }: evaluated in the
 //   page (B = window.__bayline), the value printed (a PNG data URL, or { png }, is saved as <out>/<name>.png)
@@ -22,6 +22,8 @@ const W = +opt('w', 1600), H = +opt('h', 900), FMT = opt('fmt', 'jpeg'), QUAL = 
 const first = views[0];
 const base = opt('base', 'http://localhost:8135/stations.html');
 const hashExtra = opt('hash', '');
+const ALLCON = args.includes('--allconsole');            // print every console error / warning (clean-console tours)
+const MOBILE = args.includes('--mobile');                // phone profile: DPR 2, touch, mobile UA (Low tier by default)
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const prof = mkdtempSync(join(tmpdir(), 'mshots-'));
 const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check',
@@ -44,7 +46,7 @@ const ws = new WebSocket(wsUrl); await new Promise(r => ws.onopen = r);
 let id = 0; const pending = new Map();
 ws.onmessage = ev => { const m = JSON.parse(ev.data);
   if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); return; }
-  if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || m.params.type === 'warning')) { const s = m.params.args.map(a => a.value ?? a.description ?? '').join(' '); if (/metro|station|Station|Metro|TypeError|ReferenceError/.test(s)) console.log('[console.' + m.params.type + ']', s.slice(0, 500)); }
+  if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || m.params.type === 'warning')) { const s = m.params.args.map(a => a.value ?? a.description ?? '').join(' '); if (ALLCON || /metro|station|Station|Metro|TypeError|ReferenceError/.test(s)) console.log('[console.' + m.params.type + ']', s.slice(0, 500)); }
   if (m.method === 'Runtime.exceptionThrown') console.log('[pageerror]', (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text).slice(0, 800));
 };
 const send = (method, params = {}, ms = 180000) => new Promise((r, j) => { const i = ++id; const to = setTimeout(() => { pending.delete(i); j(new Error(`${method} timed out`)); }, ms);
@@ -52,7 +54,9 @@ const send = (method, params = {}, ms = 180000) => new Promise((r, j) => { const
 const ev = async (code, ms) => { const r = await send('Runtime.evaluate', { expression: code, awaitPromise: true, returnByValue: true }, ms);
   if (r.result?.exceptionDetails) { console.log('[eval error]', r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text); return null; } return r.result?.result?.value; };
 await send('Runtime.enable'); await send('Page.enable');
-await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+await send('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: MOBILE ? 2 : 1, mobile: MOBILE });
+if (MOBILE) { await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await send('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1' }); }
 // start near the first view's station so its surroundings stream first
 const ll = await (async () => { try { const j = JSON.parse(readFileSync(resolve('data/pub/v2/metro/network.json'), 'utf8')); const s = j.stations.find(x => x.id === first.id); return s ? `${s.lat.toFixed(5)},${s.lon.toFixed(5)},150,0.8,-0.4` : ''; } catch { return ''; } })();
 const url = `${base}#auto&metro=1&t=${first.t || '17:30'}${ll ? '&ll=' + ll : ''}${hashExtra ? '&' + hashExtra : ''}`;

@@ -12,6 +12,7 @@ from metro.common import ll2w, log
 PLAT_LEN = 213.4                  # 700 ft
 EDGE_OFF = 1.616                  # track centre -> platform edge (33 in half gauge + 30 5/8 in; BART Facilities Standards)
 PLAT_H = 0.991                    # platform edge above top of rail (39 in; BFS R3.2.3 Table 2)
+PLAT_H_SYS = {'bart': 0.991, 'ebart': 0.635, 'oac': 0.991}   # eBART: Stadler GTW sill (stations workstream); connector: assumed
 BERTH_MARGIN = 2.0                # m between the platform end and the stopped train's front
 
 
@@ -65,7 +66,10 @@ def extent_on_track(tr, cx, cz, feats, want_len=PLAT_LEN, maxlen=240.0):
     total = (len(X) - 1) * st
     if len(ss) >= 4:
         ss = np.array(ss); lats = np.array(lats)
-        side = 1 if np.median(lats) > 0 else -1
+        # the platform is on the side of the NEAREST platform feature: at side-platform stations the other track's
+        # platform (beyond the other track) often has more OSM points, so a median over all points picks the wrong side
+        near = np.abs(lats) < np.abs(lats).min() + 2.5
+        side = 1 if np.median(lats[near]) > 0 else -1
         on = np.sign(lats) == side
         a, b = np.percentile(ss[on], 1), np.percentile(ss[on], 99)
         if b - a > maxlen:                   # platform + ramps / adjacent features: keep 700 ft around the densest part
@@ -90,7 +94,7 @@ def build(tracks, parents, plats, plat_pos, raw_to_s, E, curated):
             s_hint = raw_to_s(tr, sraw)
             i = int(round(s_hint / tr['pub']['step']))
             cx, cz = tr['pub']['x'][min(i, len(tr['pub']['x']) - 1)], tr['pub']['z'][min(i, len(tr['pub']['z']) - 1)]
-            want = 150.0
+            want = PLAT_LEN                    # 700 ft island (2008 EIR; NAIP shows ~215 m): 10-car Yellow trains platform fully
         else:
             sid = plats[pid]['parent_station']
             q = plats[pid]
@@ -118,6 +122,36 @@ def build(tracks, parents, plats, plat_pos, raw_to_s, E, curated):
                 side = 1
         out[pid] = dict(gtfs=pid, station=sid, track=tr['id'], ti=ti, s0=s0, s1=s1, side=side, edge=EDGE_OFF, osmLateral=lat,
                         osmPts=npts, src=src, code=(plats.get(pid) or {}).get('platform_code') or pid.split('-')[-1], sys=tr['sys'])
+    # GTFS platform stops no trip uses (Antioch's second face, SFO's south track): the other main track beside the same
+    # OSM platform, flagged unused
+    used_tracks = {}
+    for pl in out.values():
+        used_tracks.setdefault(pl['station'], set()).add(pl['track'])
+    for pid, q in plats.items():
+        if pid in out or q.get('location_type') not in ('0', ''):
+            continue
+        sid = q.get('parent_station')
+        if sid not in parents or sid not in used_tracks:
+            continue
+        px, pz = ll2w(float(parents[sid]['stop_lat']), float(parents[sid]['stop_lon']))
+        sysn = next(iter({out[k]['sys'] for k in out if out[k]['station'] == sid}))
+        best = None
+        for ti, tr in enumerate(tracks):
+            if tr['service'] is not None or tr['sys'] != sysn or tr['id'] in used_tracks[sid]:
+                continue
+            p_ = tr['pub']
+            if np.hypot(p_['x'] - float(px), p_['z'] - float(pz)).min() > 60:
+                continue
+            want = 130.0 if sysn == 'ebart' else PLAT_LEN
+            s0, s1, side, lat, npts, src = extent_on_track(tr, float(px), float(pz), feats, want, maxlen=want + 30)
+            if src == 'osm' and (best is None or npts > best[-1]):
+                best = (ti, tr, s0, s1, side, lat, npts)
+        if best:
+            ti, tr, s0, s1, side, lat, npts = best
+            out[pid] = dict(gtfs=pid, station=sid, track=tr['id'], ti=ti, s0=s0, s1=s1, side=side, edge=EDGE_OFF, osmLateral=lat,
+                            osmPts=npts, src='osm', code=q.get('platform_code') or pid.split('-')[-1], sys=tr['sys'], unused=True)
+            used_tracks[sid].add(tr['id'])
+            log(f'  unused GTFS platform {pid} ({sid}) placed on {tr["id"]}')
     n_osm = sum(1 for p in out.values() if p['src'] == 'osm')
     log(f'platforms: {len(out)} ({n_osm} from OSM platform geometry, {len(out) - n_osm} from the station point)')
     return out

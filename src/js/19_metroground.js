@@ -144,7 +144,7 @@ const MetroGround = (() => {
     return true;
   }
   // self-start with #metro=1 (#mground=0 turns it off for QA): as soon as the terrain and MetroNet are there
-  if (typeof location !== 'undefined' && /(^|[#&])metro=1(&|$)/.test(location.hash) && !/(^|[#&])mground=0(&|$)/.test(location.hash)) {
+  if (typeof location !== 'undefined' && (typeof Metro !== 'undefined' ? Metro.on : /(^|[#&])metro=1(&|$)/.test(location.hash)) && !/(^|[#&])mground=0(&|$)/.test(location.hash)) {   // (the switch: 18_metro.js)
     const t = setInterval(() => {
       if (typeof Terrain === 'undefined' || !Terrain.tiled || typeof MetroNet === 'undefined') return;
       if (!MetroNet.tracks || !MetroNet.tracks.length) { if (MetroNet.load) MetroNet.load().catch(() => {}); return; }

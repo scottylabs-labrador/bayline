@@ -59,7 +59,12 @@ c.setNight(n)                                // 0 day .. 1 night (early-outs whe
 c.setDisplay({ line, color, lineName, destination, nextStop, arriving, doors: 'left'|'right', transfer, stops: [..], index, clock })
 c.setCab({ speedMph, atcCodeMph | codeMph, targetMph, effort | notch, mode: 'ATO'|'MANUAL', doors, nextStop, distFt, clock,
            cars, destination, lineColor | color, alarm | atc: 'ok'|'warn'|'brake'|'penalty', handle })  // ~8 Hz redraw max
-c.setInteriorVisible(bool) / car.setInteriorVisible(bool)   // builds the interior lazily (cached per design)
+c.setInteriorVisible(bool)                   // true: interiors allowed for a focus train (see "M3 gate"); the kit
+                                             // draws them for the car nearest the camera and its neighbours only,
+                                             // automatically within 45 m (c.intAuto = false turns that off)
+car.setInteriorVisible(bool)                 // (direct, per car; builds the interior lazily, cached per design)
+MetroKit.stats()                             // GPU memory estimate and counts (consists, cars, LOD0, interiors, MB)
+MetroKit.setWet(w | null)                    // force wetness 0..1 (null: follow MetroTrack.uWet, the rain)
 c.setLoad(f)                                 // 0 empty .. 1 crush: passengers seen through the windows (default 0.3)
 c.sway = true                                 // body sway on the air springs (default on; false = rigid body): roll
                                              // 0.07 rad per g of unbalanced lateral acceleration (v^2 k + g sin(bank), k
@@ -88,11 +93,42 @@ Per car (as TrainKit): `group` (rotation order YZX), `length`, `width`, `height`
 (eye positions, yaw 0 = +X, + `color`), `doors [{x, side, width 1.36, sillY 0.991}]`, `cabEye` (D: [9.3, 2.26, 0.72]
 unflipped) and `cabYaw`.
 
+## M3 gate (lead's items, 2026-09-26)
+
+1. **Performance.** 10-car train at LOD0 exterior: **20 draw calls** (body + glass per car), 386k triangles; +1
+   draw per car while its doors are open and its interior is not drawn (the doorway impression). Interiors: only the
+   car nearest the camera and its neighbours (at most 3 cars, +2 draws / +33k triangles each), decided by MetroKit every
+   update from the render camera; `setInteriorVisible(true)` from the sim only extends that to a focus train beyond
+   45 m. Far trains: the sim's `createFarBatch` (one instanced draw per car design + one for all lamps). **Low tier:**
+   cars never draw the full exterior (LOD 1, 1.1k triangles per car; the car you ride in keeps its interior).
+   GPU time for the train (preview, 1600x900, render + gl.finish): 3/4 view 0.6 ms, side 0.2 ms, inside 0.7 ms.
+2. **Phones / memory.** Low and Medium: 1024 px decal atlas (5.3 MB instead of 21.3 MB with mips), half-size
+   passenger/cab screens (1.3 MB per consist with an interior instead of 5.3 MB). A quality change rebuilds live
+   consists on the new designs and frees the old buffers, atlas and far-batch meshes (`setQuality`; checked:
+   High 36 MB -> Low 14.8 MB -> High 36 MB on the same consist). `MetroKit.stats()` reports it. Measured with
+   `MetroKit.stats()` in game at EMBR 17:30 (6-car train at the platform, interiors of 3 cars):
+
+   | profile | MetroKit GPU memory | of which geometry / atlas / screens |
+   |---|---|---|
+   | desktop High, on the platform | 36.2 MB | 9.5 / 21.3 / 5.3 |
+   | desktop High, riding (inside car 2) | 36.2 MB | 9.5 / 21.3 / 5.3 |
+   | phone (--mobile, DPR 2) Medium, platform | 19.9 MB (now 15.9: half screens) | 9.2 / 5.3 / 5.3 -> 1.3 |
+   | phone Medium, riding | 19.9 MB (now 15.9) | 9.2 / 5.3 / 5.3 -> 1.3 |
+   | phone Low, platform | 14.8 MB | 8.0 (upper bound: the unused LOD0 buffers are never uploaded) / 5.3 / 1.3 |
+
+3. **Clean console.** No MetroKit messages at EMBR, WOAK (D/E, with LOD0 + interiors forced), ANTC (GTW DMU) and
+   OAKL (Cable Liner) with `#q=high`, nor in the preview's 20 views. (The only warning seen: Under's "camera is
+   underground ... no cell claims it" at EMBR, infra's.)
+4. **See-through open doors** (lead's RICH 17:40 check): fixed. At RICH the car nearest the player draws its
+   interior (blue seats, far windows showing the outdoors), the cars further along with open doors draw the doorway
+   impression; the player beside car 4 of 6 gets cars 3-5's interiors and doorway impressions on 1-2 and 6.
+
 ## Costs (measured in preview/metro.html#view=exterior&cars=10&measure=1, consist only, no shadows)
 
 | | draw calls | triangles |
 |---|---|---|
-| 10-car train, LOD0 exterior | 20 (body + glass per car) | 384k (D 41.5k, E 36.3k per car at quality 2; the trucks are 6.4k of it) |
+| 10-car train, LOD0 exterior | 20 (body + glass per car) | 386k (D 42.1k, E 36.3k per car at quality 2; the trucks are 6.4k of it) |
+| + doorway impression (doors open, interior not drawn) | +1 per car | +12 per car |
 | + interior of one car | +2 | +33k |
 | 10-car train, LOD1 | 10 | 10.9k |
 | 10-car train, LOD2 | 10 | 1.0k |
