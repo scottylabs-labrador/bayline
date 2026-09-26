@@ -65,9 +65,12 @@ const MetroPlay = (() => {
     const p = (gtfs && S.platforms.find(q => q.gtfs === gtfs)) || (next && S.platforms.find(q => q.gtfs === next.sid)) || S.platforms[0];
     const t = MN.byId[p.track]; if (!t) return false;
     // the next train's direction along this track (+1: toward +s); it enters at the other end
-    let dirS = 1;
-    if (next && next.leg) { const q = next.leg.path.leg.locate(Math.max(0, next.leg.stops[next.k].ps - 5), {}); if (q.track === t) dirS = q.sign; }
-    const s0 = Math.max(0, p.s0), s1 = Math.min(t.length, p.s1), sQ0 = dirS > 0 ? s0 + 0.25 * (s1 - s0) : s1 - 0.25 * (s1 - s0);
+    let dirS = 1, sBerth = null;
+    if (next && next.leg) { const q = next.leg.path.leg.locate(Math.max(0, next.leg.stops[next.k].ps - 5), {}); if (q.track === t) { dirS = q.sign; sBerth = q.s + 5 * q.sign; } }
+    // a quarter of the way along the train as it will stand (from its tail): a quarter along the platform for a
+    // full-length train, beside the rear of a shorter one (it stops with its head at the far end)
+    const s0 = Math.max(0, p.s0), s1 = Math.min(t.length, p.s1), L = next ? next.leg.cars * (MetroSim.PERF[next.leg.kind] || MetroSim.PERF.bart).carLen : s1 - s0;
+    const sQ0 = sBerth !== null ? U.clamp(sBerth - dirS * 0.75 * L, s0 + 5, s1 - 5) : dirS > 0 ? s0 + 0.25 * (s1 - s0) : s1 - 0.25 * (s1 - s0);
     // the side and height of the platform as the stations workstream built it (what is drawn), else MetroNet's data
     const side = MetroSim.platformSide(id, p.gtfs) || (p.side === 'right' ? 1 : -1);
     const spS = spawnFromStations(id, p.gtfs);
@@ -101,14 +104,15 @@ const MetroPlay = (() => {
     const n = nextAt(W.st, W.gtfs, now); if (!n) { watch = null; return; }
     const key = n.leg.chainKey || n.plan.key; Player.setFocus(key); watch = { key, st: W.st, gtfs: W.gtfs, dep: n.dep };
   }
-  // the spot: near the quarter point (sQ0), on the platform's centreline (or a little either side of it), where the view up
-  // the platform is open: headroom along the line of sight and behind the walker (the camera), i.e. no escalator or
-  // stair overhead, and no wall, column or balustrade across it. Best of: open corridor > headroom only > just floor.
+  // the spot: near the quarter point (sQ0), on the platform's centreline (or either side of it, never more than 5 m in
+  // from the edge), where the view up the platform is open (walking is first-person): over a 2 m wide corridor 16 m
+  // ahead, no escalator or stair slope below 5.2 m overhead (the concourse slab is higher) and no wall, column or
+  // balustrade across the line of sight. Best of: open view > headroom only > just floor.
   function pickSpot(t, sQ0, s0, s1, side, dirS, yKnown) {
     const MN = MetroSim.net; let best = null, bs = -1;
     for (const ds of [0, 6, -6, 12, -12, 20, -20, 30, -30, 40, -40, 55, -55]) {
       const sq = U.clamp(sQ0 + ds * dirS, s0 + 5, s1 - 5), yP = yKnown !== null ? yKnown : MN.frame(t, sq, F2).y + FLOOR, r = probeAcross(t, sq, side, yP); if (!r) continue;
-      for (const f of [0.5, 0.36, 0.64]) {                        // (a very wide platform: at most 5 m in from the edge, so the train is in view)
+      for (const f of [0.5, 0.36, 0.64, 0.25, 0.75]) {
         const w = r.a + Math.min(f * (r.b - r.a), 5.0 + (f - 0.5) * 3), sc = spotClear(t, sq, side * w, dirS, yP);
         if (sc > bs) { bs = sc; best = { s: sq, lat: side * w, y: yP, score: sc }; }
         if (bs === 2) return best;
@@ -119,12 +123,13 @@ const MetroPlay = (() => {
   function spotClear(t, s, lat, dirS, yP) {
     MetroSim.net.frame(t, s, F2); const fx = -dirS * F2.tx, fz = -dirS * F2.tz, h = Math.hypot(fx, fz) || 1, ux = fx / h, uz = fz / h;
     const x = F2.x + F2.rx * lat, z = F2.z + F2.rz * lat;
-    for (const k of [-7, -4, -1.5, 1.5, 4, 7, 10, 14, 18]) {
-      const o = MetroStations.floorAt(x + ux * k, yP + 3.0, z + uz * k);
-      if (o === null || o > yP + 0.35) return 0;              // off the floor, or something overhead (an escalator, a stair)
+    for (const k of [0, 2, 4, 6, 9, 12, 16]) for (const l of [0, -1, 1]) {
+      const o = MetroStations.floorAt(x + ux * k - uz * l, yP + 4.6, z + uz * k + ux * l);
+      if (o === null) { if (l === 0) return 0; continue; }       // (off the floor beside the corridor: the platform edge)
+      if (o > yP + 0.35) return 0;                              // an escalator or a stair overhead / ahead
     }
     const B = MetroStations.blocked;
-    if (B && (B(x - ux * 7, z - uz * 7, x, z, yP) || B(x, z, x + ux * 18, z + uz * 18, yP))) return 1;
+    if (B && B(x, z, x + ux * 16, z + uz * 16, yP)) return 1;
     return 2;
   }
   // across the platform at (track t, s): the stretch of station floor at height yP on the given side -> {a, b} (m from the track)

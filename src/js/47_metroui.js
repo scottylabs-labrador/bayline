@@ -144,8 +144,8 @@ const MetroUI = (() => {
     HAYW: [19.2, 13.7, 'r'], SHAY: [19.2, 14.6, 'r'], UCTY: [19.2, 15.5, 'r'], FRMT: [19.2, 16.4, 'r'], WARM: [19.2, 17.3, 'r'], MLPT: [19.2, 18.2, 'r'], BERY: [19.2, 19.1, 'r'],
     CAST: [20.6, 12.8, 'b'], WDUB: [22.0, 12.8, 'a'], DUBL: [23.4, 12.8, 'b'],
     // Concord line and the Antioch shuttle
-    ROCK: [17.0, 5.0, 'a'], ORIN: [18.2, 5.0, 'b'], LAFY: [19.4, 5.0, 'a'], WCRK: [20.6, 5.0, 'b'], PHIL: [21.4, 4.2, 'r'], CONC: [22.2, 3.4, 'r'],
-    NCON: [23.0, 2.6, 'a'], PITT: [24.2, 2.6, 'b'], PCTR: [25.4, 2.6, 'a'], ANTC: [26.6, 2.6, 'b'] };
+    ROCK: [17.0, 5.0, 'a'], ORIN: [18.2, 5.0, 'b'], LAFY: [19.4, 5.0, 'a'], WCRK: [20.6, 5.0, 'b'], PHIL: [21.4, 4.2, 'br'], CONC: [22.2, 3.4, 'br'],
+    NCON: [23.0, 2.6, 'br'], PITT: [23.8, 1.8, 'br'], PCTR: [24.6, 1.0, 'br'], ANTC: [25.4, 0.2, 'br'] };
   // line segments (unordered station pairs) from the timetable's patterns; the order of strands on a shared segment
   let segs = null;                                           // key 'A|B' -> { a, b, lines: [...] }
   function buildSegs() {
@@ -240,34 +240,56 @@ const MetroUI = (() => {
       for (const pid of l.patterns || []) { const p = MN.patterns[pid]; if (!p) continue; for (let k = 0; k < p.legs.length; k++) { const P = MetroSim.legPath(pid, k); if (!P) continue; const sig = P.stops[0].station + P.stops[P.stops.length - 1].station + P.length.toFixed(0); if (seen.has(sig)) continue; seen.add(sig); set.push({ xz: P.samples(), line: p.legs[k].sys === 'ebart' ? 'ebart' : l.id }); } }
       geoPaths.set(l.id, set); }
   }
-  // station labels: the preferred side first (schematic: SCH's side; geographic: right), then right, left, above,
-  // below; a side is skipped when its box would overlap a label already placed, a station dot or a line bundle (sampled
-  // along each segment). Interchanges are placed first. Cached per view (scale, centre, size, font, hidden lines).
+  // station labels: eight spots around each station (right, left, above, below and the four diagonals), offset by the
+  // thickness of the line bundle through it; the preferred side first (schematic: SCH's side; geographic: right), then
+  // the others. A spot is taken only if its box clears the labels already placed, the station dots and the line bundles
+  // (circles of the bundle's half-width every few pixels along each segment); if none is clear, the one with the fewest
+  // hits. Interchanges are placed first. Cached per view (scale, centre, size, font, hidden lines).
   let lblKey = '', lblSides = new Map();
-  function labelBox(sd, p, tw, th, r, dpr) {
-    const cx = sd === 'r' ? p[0] + r + 6 * dpr + tw / 2 : sd === 'l' ? p[0] - r - 6 * dpr - tw / 2 : p[0];
-    const cy = sd === 'a' ? p[1] - r - 9 * dpr : sd === 'b' ? p[1] + r + 10 * dpr : p[1], pad = 2 * dpr;
-    return { x0: cx - tw / 2 - pad, x1: cx + tw / 2 + pad, y0: cy - th / 2, y1: cy + th / 2 };
+  const SPOTS = ['r', 'l', 'a', 'b', 'br', 'al', 'ar', 'bl'];
+  function labelAt(sd, p, tw, th, hw, dpr) {
+    const g1 = hw + 5 * dpr, dg = hw * 0.72 + 3 * dpr, up = -(hw + 4 * dpr + th / 2), dn = hw + 4 * dpr + th / 2;
+    let ax, ay, al;                                                 // text anchor and alignment
+    if (sd === 'r') { ax = p[0] + g1; ay = p[1]; al = 'left'; } else if (sd === 'l') { ax = p[0] - g1; ay = p[1]; al = 'right'; }
+    else if (sd === 'a') { ax = p[0]; ay = p[1] + up; al = 'center'; } else if (sd === 'b') { ax = p[0]; ay = p[1] + dn; al = 'center'; }
+    else { const right = sd[1] === 'r', above = sd[0] === 'a'; ax = p[0] + (right ? dg : -dg); ay = p[1] + (above ? -(dg + th / 2) : dg + th / 2); al = right ? 'left' : 'right'; }
+    const x0 = al === 'left' ? ax : al === 'right' ? ax - tw : ax - tw / 2, pad = 2 * dpr;
+    return { ax, ay, al, x0: x0 - pad, x1: x0 + tw + pad, y0: ay - th / 2, y1: ay + th / 2 };
   }
   function placeLabels(g, c, fs, dpr) {
     const v = V(), key = [map.view, v.scale.toFixed(6), v.cx.toFixed(3), v.cz.toFixed(3), c.width, c.height, fs, [...hidden].sort().join(',')].join('|');
     if (key === lblKey) return lblSides;
-    const boxes = [], hit = (b) => { for (const o of boxes) if (b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0) return true; return false; };
-    const geo = map.view === 'geo', W = c.width, H = c.height, lw = lineW();
-    for (const s of MetroSim.stations) { const p = stXY(s.id, c); if (!p) continue; const r = 7 * dpr; boxes.push({ x0: p[0] - r, x1: p[0] + r, y0: p[1] - r, y1: p[1] + r }); }
-    const bundle = (pts, w) => { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (7 * dpr)));
-      for (let k = 0; k <= n; k++) { const x = a[0] + (b[0] - a[0]) * k / n, y = a[1] + (b[1] - a[1]) * k / n; if (x < -50 || y < -50 || x > W + 50 || y > H + 50) continue; boxes.push({ x0: x - w, x1: x + w, y0: y - w, y1: y + w }); } } };
-    if (!geo && segs) for (const sg of segs.values()) { const n = sg.lines.filter(l => !hidden.has(l)).length; if (!n) continue; const a = stXY(sg.a, c), b = stXY(sg.b, c); if (a && b) bundle([a, b], (n * lw) / 2 + 1.5 * dpr); }
-    if (geo) for (const set of geoPaths.values()) for (const P of set) { if (hidden.has(P.line)) continue; const pts = []; const A = P.xz, st = Math.max(2, Math.floor(A.length / 2 / 60) * 2);
-      for (let i = 0; i < A.length; i += st) pts.push(w2s(A[i], A[i + 1], c)); bundle(pts, lw * 0.4 + 1.5 * dpr); }
+    const geo = map.view === 'geo', W = c.width, H = c.height, lw = lineW(), CS = 48 * dpr;
+    // obstacles: circles (dots, bundle samples) in a coarse grid, and the label boxes placed so far
+    const grid = new Map(), boxes = [];
+    const addC = (x, y, r) => { if (x < -60 || y < -60 || x > W + 60 || y > H + 60) return; const k = Math.floor(x / CS) + ',' + Math.floor(y / CS); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(x, y, r); };
+    const hits = (b) => {
+      let n = 0; for (const o of boxes) if (b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0) n += 3;
+      const m = 14 * dpr, gx0 = Math.floor((b.x0 - m) / CS), gx1 = Math.floor((b.x1 + m) / CS), gy0 = Math.floor((b.y0 - m) / CS), gy1 = Math.floor((b.y1 + m) / CS);
+      for (let gx = gx0; gx <= gx1; gx++) for (let gy = gy0; gy <= gy1; gy++) { const a = grid.get(gx + ',' + gy); if (!a) continue;
+        for (let i = 0; i < a.length; i += 3) { const dx = Math.max(b.x0 - a[i], 0, a[i] - b.x1), dy = Math.max(b.y0 - a[i + 1], 0, a[i + 1] - b.y1); if (dx * dx + dy * dy < a[i + 2] * a[i + 2]) n++; } }
+      return n; };
+    const bundle = (pts, w) => { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (4 * dpr)));
+      for (let k = 0; k <= n; k++) addC(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n, w); } };
+    const hwAt = new Map();                                          // bundle half-width at each station
+    if (!geo && segs) for (const sg of segs.values()) { const n = sg.lines.filter(l => !hidden.has(l)).length; if (!n) continue; const a = stXY(sg.a, c), b = stXY(sg.b, c); if (!a || !b) continue;
+      const w = (n * lw) / 2 + 1.5 * dpr; bundle([a, b], w); for (const id of [sg.a, sg.b]) hwAt.set(id, Math.max(hwAt.get(id) || 0, (n * lw) / 2)); }
+    if (geo) for (const set of geoPaths.values()) for (const P of set) { if (hidden.has(P.line)) continue; const pts = [], A = P.xz, st = Math.max(2, Math.floor(A.length / 2 / 80) * 2);
+      for (let i = 0; i < A.length; i += st) pts.push(w2s(A[i], A[i + 1], c)); bundle(pts, lw * 0.35 + 1.5 * dpr); }
+    for (const s of MetroSim.stations) { const p = stXY(s.id, c); if (p) addC(p[0], p[1], 7.5 * dpr); }
     lblSides = new Map();
     const order = [...MetroSim.stations].sort((a, b) => b.lines.size - a.lines.size);
     for (const s of order) {
-      const p = stXY(s.id, c); if (!p) continue; const pref = geo ? 'r' : (SCH[s.id] || [0, 0, 'r'])[2], tw = g.measureText(s.short).width, r = 6.5 * dpr * (geo ? 0.8 : 1);
-      let side = null, box = null;
-      for (const sd of [pref, 'r', 'l', 'a', 'b']) { const b = labelBox(sd, p, tw, fs, r, dpr); if (!hit(b)) { side = sd; box = b; break; } }
-      if (!side) { side = pref; box = labelBox(pref, p, tw, fs, r, dpr); }        // (nowhere free: the preferred side)
-      boxes.push(box); lblSides.set(s.id, side);
+      const p = stXY(s.id, c); if (!p) continue; if (p[0] < -200 || p[1] < -50 || p[0] > W + 200 || p[1] > H + 50) continue;
+      const nl = [...s.lines].filter(l => !hidden.has(l)).length; if (!nl && s.lines.size) continue;
+      if (geo && v.scale < 0.006 && nl < 2) continue;                // (not labelled at this zoom)
+      const pref = geo ? 'r' : (SCH[s.id] || [0, 0, 'r'])[2], tw = g.measureText(s.short).width, hw = Math.max(6.5 * dpr * (geo ? 0.8 : 1), hwAt.get(s.id) || 0);
+      let best = null, bn = 1e9;
+      for (const sd of [pref, ...SPOTS.filter(q => q !== pref)]) {
+        const L = labelAt(sd, p, tw, fs, hw, dpr); let n = hits(L); if (L.x0 < 0 || L.x1 > W || L.y0 < 0 || L.y1 > H) n += 2;
+        if (n < bn) { bn = n; best = L; } if (n === 0) break; }
+      if (geo && bn > 0) continue;                                    // (geographic: a crowded label waits for a closer zoom; interchanges go first)
+      boxes.push(best); lblSides.set(s.id, best);
     }
     lblKey = key; return lblSides;
   }
@@ -305,11 +327,9 @@ const MetroUI = (() => {
       const p = stXY(s.id, c); if (!p) continue; const nl = [...s.lines].filter(l => !hidden.has(l)).length; if (!nl && s.lines.size) continue;
       const r = (nl > 1 ? 6.5 : 5) * dpr * (map.view === 'geo' ? 0.8 : 1), sel = map.sel && map.sel.st === s, hov = map.hover && map.hover.st === s;
       g.fillStyle = '#f3efe6'; g.strokeStyle = '#0d1217'; g.lineWidth = 2.2 * dpr; g.beginPath(); g.arc(p[0], p[1], r + (sel || hov ? 2 * dpr : 0), 0, 7); g.fill(); g.stroke();
-      if (map.view === 'geo' && V().scale < 0.006 && nl < 2 && !sel && !hov) continue;
-      const side = sides.get(s.id) || 'r', label = s.short;
-      g.fillStyle = sel ? '#ffffff' : 'rgba(243,239,230,.86)'; g.textAlign = side === 'l' ? 'right' : side === 'r' ? 'left' : 'center';
-      const dx = side === 'l' ? -(r + 6 * dpr) : side === 'r' ? r + 6 * dpr : 0, dy = side === 'a' ? -(r + 9 * dpr) : side === 'b' ? r + 10 * dpr : 0;
-      g.lineWidth = 3.5 * dpr; g.strokeStyle = 'rgba(13,18,23,.9)'; g.strokeText(label, p[0] + dx, p[1] + dy); g.fillText(label, p[0] + dx, p[1] + dy);
+      const L = sides.get(s.id) || ((sel || hov) ? labelAt('r', p, g.measureText(s.short).width, fs, r, dpr) : null), label = s.short; if (!L) continue;
+      g.fillStyle = sel ? '#ffffff' : 'rgba(243,239,230,.86)'; g.textAlign = L.al;
+      g.lineWidth = 3.5 * dpr; g.strokeStyle = 'rgba(13,18,23,.9)'; g.strokeText(label, L.ax, L.ay); g.fillText(label, L.ax, L.ay);
     }
     g.textAlign = 'left';
     // live trains
@@ -427,7 +447,7 @@ const MetroUI = (() => {
     build(); if (!on()) return;
     if (typeof UI !== 'undefined') UI.closeAll(); closeAll(); el.sys.hidden = false; if (typeof Player !== 'undefined') Player.releaseLock();
     const c = el.msysc, r = c.getBoundingClientRect(); c.width = Math.max(200, r.width * devicePixelRatio); c.height = Math.max(200, r.height * devicePixelRatio);
-    if (!map.opened) { map.opened = true; map.sch.scale = Math.min(c.width / 24.5, c.height / 21.5); map.sch.cx = 15.45; map.sch.cz = 10.75; const cp = Env.camera.position; map.geo.cx = cp.x; map.geo.cz = cp.z; map.geo.scale = Math.min(c.width / 70000, c.height / 60000); map.geoFit = true; }
+    if (!map.opened) { map.opened = true; map.sch.scale = Math.min(c.width / 24.5, c.height / 22.4); map.sch.cx = 15.45; map.sch.cz = 10.3; const cp = Env.camera.position; map.geo.cx = cp.x; map.geo.cz = cp.z; map.geo.scale = Math.min(c.width / 70000, c.height / 60000); map.geoFit = true; }
     if (opts.view) setView(opts.view);
     if (ready()) { renderLines(); const ms = MetroSim.nearestStation(Env.camera.position, 1500); if (!map.sel && ms) map.sel = { st: ms }; renderSide(); }
   }
