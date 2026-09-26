@@ -1896,7 +1896,10 @@ const Towns = (() => {
   // Unlike dispose(), nothing else reloads. Tiles not loaded yet simply decode with the filters when they come.
   function refresh(rects) {
     const hit = (ox, oz) => rects.some(r => r[0] < ox + TILE && r[2] > ox && r[1] < oz + TILE && r[3] > oz);
-    for (const k of [...decoded.keys()]) { const d = decoded.get(k); if (d && hit(d.ox, d.oz)) decoded.delete(k); }
+    const busy = (t) => t.state === 'dead' || t.state === 'empty' || t.state === 'new' || t.state === 'fetch' || t.state === 'decode';
+    // a loaded tile keeps its decoded data (roadsNear: road traffic, grass) until the fresh one replaces it (takeFresh)
+    const live = new Set(); for (const t of tiles.values()) if (hit(t.ox, t.oz) && !busy(t)) live.add(t.key);
+    for (const k of [...decoded.keys()]) { const d = decoded.get(k); if (d && hit(d.ox, d.oz) && !live.has(k)) decoded.delete(k); }
     let n = 0;
     for (const t of tiles.values()) {
       if (!hit(t.ox, t.oz) || t.state === 'dead' || t.state === 'empty') continue;

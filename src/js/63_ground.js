@@ -125,6 +125,9 @@ const GroundCover = (() => {
     // Bayline Metro (#metro=1): no grass in a station's lobby, trackway or entrances (MetroStations.keepOut)
     if (typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.keepOutAny && MetroStations.keepOutAny(ox, oz, ox + OG, oz + OG, 'grass'))
       for (let j = 0; j < OG; j++) for (let i = 0; i < OG; i++) if (MetroStations.keepOut(ox + i + 0.5, oz + j + 0.5, 'grass')) occ[j * OG + i] = 1;
+    // Bayline Metro: no grass where the metro's openings cut the ground away (portal approaches, open cuts, chambers: Under.cutAt)
+    if (typeof MetroGround !== 'undefined' && MetroGround.cutNear && MetroGround.cutNear(ox, oz, ox + OG, oz + OG))
+      for (let j = 0; j < OG; j++) for (let i = 0; i < OG; i++) { if (!occ[j * OG + i] && MetroGround.onCutGround(ox + i + 0.5, oz + j + 0.5)) occ[j * OG + i] = 1; }
     for (const rd of roads) {
       const P = rd.pts, half = (rd.width || (rd.lanes || 2) * 3.4) / 2 + 2.6;          // + sidewalk
       for (let i = 0; i + 5 < P.length; i += 3) {
@@ -191,7 +194,8 @@ const GroundCover = (() => {
     const now = performance.now();
     // rebuild after moving, or when new road data streamed in (a teleport lands before the streets do, and grass
     // must never grow through them)
-    const roadGen = typeof Towns !== 'undefined' && Towns.stats ? Towns.stats.roadGen : 0;
+    const roadGen = (typeof Towns !== 'undefined' && Towns.stats ? Towns.stats.roadGen : 0)
+      + (typeof Under !== 'undefined' && Under.enabled && Under.stats ? (Under.stats.cuts * 65536 + Under.stats.cells) * 1e6 : 0);   // (+ the metro's ground cuts)
     if (Math.hypot(camPos.x - lastX, camPos.z - lastZ) > 5 || (roadGen !== lastRoadGen && now - lastBind > 400)) {
       lastX = camPos.x; lastZ = camPos.z; lastRoadGen = roadGen;
       if (!bindImagery(camPos.x, camPos.z)) { mesh.visible = false; return; }

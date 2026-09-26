@@ -1352,8 +1352,8 @@ const Flora = (() => {
     for (const m of nearMesh) m.castShadow = false;
     dirty = true;
   }
-  // Bayline Metro (world workstream): drop filters fn(x, z, crown radius m) -> true drops a tree when its tile loads (and in
-  // adjust); adjust(rects, dy) re-places the trees of the loaded tiles overlapping rects [x0, z0, x1, z1] in place: each
+  // Bayline Metro (world workstream): drop filters fn(x, z, crown radius m, bush) -> true drops a tree when its tile loads (and
+  // in adjust, where bush is true for the shrubs, incl. the generated right-of-way hedges); adjust(rects, dy) re-places the trees of the loaded tiles overlapping rects [x0, z0, x1, z1] in place: each
   // moves by dy(x, z) metres (the ground change under it, e.g. MetroGround's carve) and the drop filters apply, with no
   // reload, so nothing else pops. dy null: only the drop filters.
   const dropFilters = [];
@@ -1367,9 +1367,9 @@ const Flora = (() => {
       const D = t.D, K = t.K; let m = 0, ysum = 0, changed = false;
       for (let i = 0; i < t.n; i++) {
         const b = i * NF, x = D[b], z = D[b + 2];
-        if (K[i] !== SHRUB && dropFilters.length) {
-          const dm = DIM[KINDS[K[i]]], rad = Math.hypot(D[b + 3], D[b + 4]) * (dm ? dm[1] : 4);
-          if (dropFilters.some(f => f(x, z, rad))) { changed = true; dropped++; continue; }
+        if (dropFilters.length) {                        // (4th argument: a bush, which only some filters drop)
+          const dm = DIM[KINDS[K[i]]], rad = Math.hypot(D[b + 3], D[b + 4]) * (dm ? dm[1] : 4), shrub = K[i] === SHRUB;
+          if (dropFilters.some(f => f(x, z, rad, shrub))) { changed = true; dropped++; continue; }
         }
         if (m !== i) { D.copyWithin(m * NF, b, b + NF); K[m] = K[i]; }
         const d = dy ? dy(x, z) : 0;
