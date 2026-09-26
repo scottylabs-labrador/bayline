@@ -1,0 +1,6 @@
+{"note": "levels.platform (m) of each station in the M1 v0 bake (2026-09-26 00:43, platform = rail + 1.02), for the M2 'what moved' report",
+ "platform": {"LAKE": -1.1, "FTVL": 22.0, "COLS": 15.2, "SANL": 26.5, "BAYF": 20.8, "HAYW": 40.9, "SHAY": 12.2, "UCTY": 23.6, "FRMT": 23.7,
+  "ROCK": 65.8, "ORIN": 198.4, "LAFY": 114.0, "WCRK": 63.8, "PHIL": 37.6, "CONC": 28.4, "NCON": 38.8, "PITT": 48.2, "PCTR": 18.3, "ANTC": 22.4,
+  "OAKL": 7.9, "12TH": 1.2, "19TH": -3.0, "MCAR": 34.9, "CAST": 57.6, "WDUB": 106.6, "DUBL": 109.8, "WOAK": 15.3, "EMBR": -8.1, "MONT": -0.9,
+  "POWL": 0.1, "CIVC": 4.3, "16TH": -0.5, "24TH": 10.7, "GLEN": 49.0, "BALB": 64.8, "DALY": 89.6, "ASHB": 25.9, "DBRK": 45.5, "NBRK": 22.0,
+  "PLZA": 26.3, "DELN": 30.8, "RICH": 14.9, "WARM": 15.8, "MLPT": 12.8, "BERY": 36.6, "COLM": 49.8, "SSAN": 13.0, "SBRN": 3.0, "MLBR": 5.1, "SFIA": 13.3}}

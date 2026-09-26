@@ -31,8 +31,8 @@ const MetroKit = (() => {
     vinyl: 11, fabric: 12, plastic: 13, cast: 14, wheel: 15, coil: 16, lens: 17, led: 18, lcd: 19, decal: 20, topbar: 21, pole: 22,
     wall: 23, ceil: 24, mask: 25, glow: 26, aluDmu: 27, paintDmu: 28, apmBody: 29, num: 30, lodwin: 31 };
   // emissive light groups (per-car levels in mkLv[8])
-  const G = { none: 0, interior: 1, head: 2, tail: 3, marker: 4, bar: 5, doorR: 6, sign: 7, doorL: 8, cab: 9, idoorR: 10, idoorL: 11 };
-  const NLV = 12;
+  const G = { none: 0, interior: 1, head: 2, tail: 3, marker: 4, bar: 5, doorR: 6, sign: 7, doorL: 8, cab: 9, idoorR: 10, idoorL: 11, headB: 12, tailB: 13 };
+  const NLV = 16;
   const PAL = [], PI = Object.create(null), PALN = 256;
   function pal(name, hex, rough, metal, o = {}) {
     PI[name] = PAL.length;
@@ -40,16 +40,16 @@ const MetroKit = (() => {
       an: o.an || 0, gr: o.gr === undefined ? 0.5 : o.gr, sec: o.sec || null, inside: !!o.inside });
   }
   // --- exterior
-  pal('aluE', '#c5c9cc', 0.30, 1, { pat: PAT.aluE, an: 0.75, gr: 0.8 });          // brushed aluminium body, E-car scheme
-  pal('aluD', '#c5c9cc', 0.30, 1, { pat: PAT.aluD, an: 0.75, gr: 0.8 });          // D-car scheme (cab swoosh)
-  pal('aluDoor', '#c7cbce', 0.28, 1, { pat: PAT.aluDoor, an: 0.75, gr: 0.7 });
+  pal('aluE', '#dde0e3', 0.34, 0.88, { pat: PAT.aluE, an: 0.7, gr: 0.8 });          // brushed aluminium body, E-car scheme
+  pal('aluD', '#dde0e3', 0.34, 0.88, { pat: PAT.aluD, an: 0.7, gr: 0.8 });          // D-car scheme (cab swoosh)
+  pal('aluDoor', '#dfe2e5', 0.32, 0.88, { pat: PAT.aluDoor, an: 0.7, gr: 0.7 });
   pal('aluDull', '#a7abaf', 0.42, 0.9, { an: 0.4, gr: 1 });
   pal('cap', '#eceeec', 0.26, 0, { cc: 1, pat: PAT.paint, gr: 0.55 });             // white fibreglass cab cap
   pal('capSide', '#eceeec', 0.26, 0, { cc: 1, pat: PAT.paint, gr: 0.6 });
-  pal('blue', '#1b86c8', 0.3, 0, { cc: 1, pat: PAT.paint, gr: 0.5 });              // Bayline Metro blue
+  pal('blue', '#1a9ade', 0.3, 0, { cc: 1, pat: PAT.paint, gr: 0.5 });              // Bayline Metro blue
   pal('blueDk', '#15659e', 0.34, 0, { cc: 0.8, pat: PAT.paint, gr: 0.8 });
   pal('roof', '#e2e4e1', 0.46, 0.05, { cc: 0.3, pat: PAT.roof, gr: 1 });
-  pal('mask', '#07090b', 0.08, 0.1, { cc: 1, pat: PAT.mask, gr: 0.25 });           // black glazed mask of the cab front
+  pal('mask', '#050607', 0.05, 0.1, { cc: 1, pat: PAT.mask, gr: 0.2 });           // black glazed mask of the cab front
   pal('rubber', '#15171a', 0.82, 0, { pat: PAT.rubber, gr: 0.4 });
   pal('seam', '#1a1c1f', 0.6, 0.2, { gr: 0.3 });
   pal('frame', '#2a2d31', 0.62, 0.35, { pat: PAT.cast, gr: 1 });                  // underframe, bogie frames
@@ -72,6 +72,8 @@ const MetroKit = (() => {
   pal('reflector', '#e2e6ea', 0.06, 1, { eg: G.head, ew: 0.08 });
   pal('headLamp', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.head });
   pal('tailLamp', '#d0121c', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.tail });
+  pal('headLampB', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.headB });
+  pal('tailLampB', '#d0121c', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.tailB });
   pal('markerLamp', '#f4f1e8', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.marker });
   pal('topBar', '#1a1614', 0.1, 0, { cc: 1, pat: PAT.topbar, eg: G.bar });
   pal('doorLampR', '#d8141e', 0.1, 0, { cc: 1, eg: G.doorR, ew: 2 });
@@ -126,7 +128,8 @@ const MetroKit = (() => {
   pal('handleBlack', '#111214', 0.4, 0.1, { ...IN, cc: 0.5 });
   pal('screenOff', '#060708', 0.08, 0, { ...IN, cc: 1 });
   // DMU / APM schemes (their own pattern ids)
-  pal('aluDmu', '#d2d5d8', 0.36, 0.7, { pat: PAT.aluDmu, an: 0.4, gr: 0.8 });
+  pal('aluDmu', '#d9dcdf', 0.36, 0.75, { pat: PAT.aluDmu, an: 0.4, gr: 0.8 });
+  pal('moduleGrey', '#aeb3b8', 0.45, 0.5, { pat: PAT.cast, gr: 0.9 });
   pal('paintDmu', '#e6e8e8', 0.3, 0, { cc: 1, pat: PAT.paintDmu, gr: 0.7 });
   pal('apmBody', '#e9ebeb', 0.3, 0, { cc: 1, pat: PAT.apmBody, gr: 0.5 });
   if (PAL.length > PALN) throw new Error('MetroKit palette overflow');
@@ -190,7 +193,7 @@ const MetroKit = (() => {
       mkAz = normalize(normalMatrix * (mkM * vec3(0.0, 0.0, 1.0))); }`;
   const MK_FRAG_HEAD = `
     uniform sampler2D mkPalA, mkPalB, mkPalC, mkPalD;
-    uniform float mkLv[12]; uniform float mkNight, mkAge, mkSeed, mkBar, mkHalfW, mkFloorY, mkCeilY;
+    uniform float mkLv[16]; uniform float mkNight, mkAge, mkSeed, mkBar, mkHalfW, mkFloorY, mkCeilY;
     uniform vec4 mkIndoor, mkLamp;
     uniform sampler2D mkSign, mkLcd, mkAtlas; uniform vec2 mkSignRes; uniform float mkNum[6];
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
@@ -210,16 +213,15 @@ const MetroKit = (() => {
       float x = p.x, y = p.y, ax = abs(x);
       mkBelt = mkLine(y, 1.675, 0.028, fw);
       float r = 0.0;
-      // end bands (E both ends; D only at -X): blue from |x| = 9.62 out, the inner edge bows out a little toward the bottom
-      float bandEdge = 9.62 - 0.06 * smoothstep(3.0, 0.8, y);
+      // end bands (E both ends; D only at -X): blue from |x| ~ 9.6 out, the inner edge bowing in a little at mid-height
+      float bandEdge = 9.6 - 0.05 * sin(3.14159 * clamp((y - 0.62) / 2.4, 0.0, 1.0));
       if ((isD < 0.5 || x < 0.0) && ax > bandEdge) r = 1.0;
       if (isD > 0.5 && x > 0.0) {
-        // swoosh: blue ahead of a line leaning forward toward the bottom: x = 8.50 at y = 3.0, 9.52 at y = 0.62 (slight curve)
+        // the cab swoosh: blue from the cab back to a curve that sweeps forward toward the bottom (8.83 at the eaves,
+        // 9.70 at the skirt), a white band behind it that tapers from 0.58 m at the top to 0.08 m at the bottom
         float t = clamp((3.0 - y) / 2.38, 0.0, 1.0);
-        float edge = mix(8.50, 9.52, t) - 0.10 * sin(t * 3.14159);
-        float d = x - edge;
-        float blueA = smoothstep(-fw, fw, d);
-        float whiteA = smoothstep(-fw, fw, d + 0.30) * (1.0 - blueA);
+        float xb = 8.83 + 0.87 * pow(t, 2.4), wb = 0.08 + 0.5 * pow(1.0 - t, 1.6);
+        float blueA = smoothstep(-fw, fw, x - xb), whiteA = smoothstep(-fw, fw, x - (xb - wb)) * (1.0 - blueA);
         r = blueA > 0.5 ? 1.0 : (whiteA > 0.5 ? 2.0 : r);
       }
       return r;
@@ -235,7 +237,7 @@ const MetroKit = (() => {
         float along = smoothstep(mkLamp.z + 0.8, mkLamp.z - 0.8, abs(p.x));
         e += max(dot(n, L), 0.0) * along * 0.42 / d;
       }
-      float fill = 0.34 + 0.1 * n.y + 0.2 * max(-n.y, 0.0);
+      float fill = 0.36 + 0.1 * n.y + 0.42 * max(-n.y, 0.0);
       return e + fill;
     }
     // height field of a pattern (metres) for bump normals
@@ -243,6 +245,12 @@ const MetroKit = (() => {
       if (pat == 1.0 || pat == 2.0 || pat == 3.0) {
         float h = -0.0012 * mkLine(p.y, 1.675, 0.028, 0.004);                               // belt groove
         h += 0.00035 * (mkV(vec2(p.x * 0.9, p.y * 2.2)) - 0.5);                              // oil-canning
+        if (pat < 2.5) {
+          // extrusion joints (floor line, cant rail), the end-frame seams, and a line of huck bolts along the cant rail
+          h -= 0.0009 * (mkLine(p.y, 1.04, 0.006, 0.002) + mkLine(p.y, 2.955, 0.006, 0.002) + mkLine(abs(p.x), 9.58, 0.005, 0.002));
+          vec2 hb = vec2(fract(p.x / 0.075) - 0.5, (p.y - 2.935) / 0.075);
+          h += 0.0011 * (1.0 - smoothstep(0.1, 0.16, length(hb))) * step(abs(p.y - 2.935), 0.02);
+        }
         return h;
       }
       if (pat == 5.0) return -0.0018 * mkRep(mkUv.y, 0.105, 0.012, 0.004);                   // roof ribs (arc length)
@@ -277,10 +285,11 @@ const MetroKit = (() => {
         col *= 0.96 + 0.07 * mkV(vec2(p.x * 0.23, p.y * 0.9) + mkSeed);          // sheet-to-sheet tone
         mkRough += (st - 0.5) * 0.12 * fade;
         if (sch > 0.5) {                                        // painted: non-metallic, clearcoated
-          col = sch < 1.5 ? vec3(0.009, 0.235, 0.58) : vec3(0.83, 0.85, 0.85);
+          col = sch < 1.5 ? vec3(0.008, 0.33, 0.72) : vec3(0.86, 0.87, 0.87);
           mkMetal = 0.0; mkRough = 0.3; mkCC = 1.0; mkAniso = 0.0;
         }
         col = mix(col, vec3(0.03, 0.035, 0.04), mkBelt * 0.92);
+        if (mkPat < 2.5) col *= 1.0 - 0.25 * fade * (mkLine(p.y, 1.04, 0.005, fw) + mkLine(p.y, 2.955, 0.005, fw) + mkLine(abs(p.x), 9.58, 0.004, fw));
         mkRough = mix(mkRough, 0.6, mkBelt); mkMetal = mix(mkMetal, 0.2, mkBelt); mkAniso *= 1.0 - mkBelt;
       } else if (mkPat == 4.0 || mkPat == 25.0 || mkPat == 28.0) {    // paint / gloss black: orange peel
         col *= 0.985 + 0.03 * mkV(p.xy * 31.0 + p.z * 23.0);
@@ -362,8 +371,18 @@ const MetroKit = (() => {
         float yy = fract((p.y - 1.89) / 0.95), sb = step(yy, 0.35) * step(0.1, fract(p.x / 0.755 + 0.3));
         mkEmW *= (0.35 + 0.65 * smoothstep(0.55, 1.0, yy)) * (1.0 - 0.6 * sb);
         mkEmW *= 0.25 + 0.75 * mkNight;
-      } else if (mkPat == 27.0 || mkPat == 29.0) {               // DMU / APM schemes (see 42_metrokit_*.js)
-        col *= 0.95 + 0.08 * mkV(vec2(p.x * 1.3, p.y * 60.0)) * fade;
+      } else if (mkPat == 27.0) {                                // DMU body: satin silver, the cab swoosh at both ends
+        col *= 0.95 + 0.07 * mkV(vec2(p.x * 1.3, p.y * 60.0)) * fade;
+        float ax = abs(p.x), t = clamp((3.0 - p.y) / 2.6, 0.0, 1.0);
+        float xb = 16.95 + 1.9 * pow(t, 1.7), wb = 0.06 + 0.42 * pow(1.0 - t, 1.5);
+        float blueA = smoothstep(-fw, fw, ax - xb), whiteA = smoothstep(-fw, fw, ax - (xb - wb)) * (1.0 - blueA);
+        if (blueA > 0.5) { col = vec3(0.008, 0.33, 0.72); mkMetal = 0.0; mkRough = 0.3; mkCC = 1.0; mkAniso = 0.0; }
+        else if (whiteA > 0.5) { col = vec3(0.86, 0.87, 0.87); mkMetal = 0.0; mkRough = 0.3; mkCC = 1.0; mkAniso = 0.0; }
+        mkBelt = mkLine(p.y, 1.2, 0.025, fw); col = mix(col, vec3(0.05), mkBelt * 0.8);
+      } else if (mkPat == 29.0) {                                // APM body: white, five light-blue stripes low on the side
+        float yy = p.y - 0.62, band = step(0.0, yy) * step(yy, 0.62), st = step(0.5, fract(yy / 0.124));
+        col = mix(col, vec3(0.13, 0.46, 0.78), band * st);
+        col *= 0.985 + 0.03 * mkV(p.xy * 31.0 + p.z * 23.0);
       }
       // ---------------- emissive light groups
       if (eg > 0.5) {
@@ -432,7 +451,9 @@ const MetroKit = (() => {
         f = f.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
           material.clearcoat = clamp(mkCC, 0.0, 1.0); material.clearcoatRoughness = max(mkCCR + mkGrime * 0.4, 0.03);
           #ifdef USE_ANISOTROPY
-            { vec3 ta = normalize(mkAx - dot(mkAx, normal) * normal); vec3 tb = cross(normal, ta);
+            { vec3 ta = mkAx - dot(mkAx, normal) * normal; float la = length(ta);
+              if (la < 1e-3) { ta = mkAy - dot(mkAy, normal) * normal; la = max(length(ta), 1e-6); }   // (a face normal to the car's axis)
+              ta /= la; vec3 tb = cross(normal, ta);
               material.anisotropy = clamp(mkAniso, 0.0, 0.95);
               material.alphaT = mix(pow2(material.roughness), 1.0, pow2(material.anisotropy));
               material.anisotropyT = ta; material.anisotropyB = tb; }
@@ -587,6 +608,17 @@ const MetroKit = (() => {
       g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(this.I, 1) : new THREE.Uint16BufferAttribute(this.I, 1));
       return g;
     }
+    // a grid of positions/normals (rows x cols, row-major arrays of [x, y, z]) emitted as quads whose palette entry comes
+    // from palAt(i, j) (quad between rows i, i+1 and columns j, j+1); vertices are duplicated per quad so palettes never
+    // blend across a quad, normals stay smooth
+    gridQuads(Pp, Nn, rows, cols, palAt) {
+      for (let i = 0; i < rows - 1; i++) for (let j = 0; j < cols - 1; j++) {
+        this.pal(palAt(i, j)); const k = [i * cols + j, (i + 1) * cols + j, (i + 1) * cols + j + 1, i * cols + j + 1];
+        const v = k.map(q => this.v(Pp[q][0], Pp[q][1], Pp[q][2], Nn[q][0], Nn[q][1], Nn[q][2]));
+        this.quadA(v[0], v[1], v[2], v[3]);
+      }
+      return this;
+    }
     // append another builder's content (same bone numbering)
     append(o) { const b = this.count; this.P.push(...o.P); this.N.push(...o.N); this.T.push(...o.T); this.T1.push(...o.T1); this.K.push(...o.K); for (const i of o.I) this.I.push(i + b); return this; }
   }
@@ -631,8 +663,27 @@ const MetroKit = (() => {
   // mapping": floor, ceiling with its two light strips, far wall and windows, seat rows with occupants) with Fresnel
   // reflections of the environment on top; with the interior built it becomes clear, tinted glass.
   const GLASS_FRAG_HEAD = `
-    uniform vec3 mkCamO; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY; uniform float mkLv[12];
+    uniform vec3 mkCamO; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY; uniform float mkLv[16];
     uniform vec4 mkRows[24]; uniform float mkRowN; uniform vec4 mkCab;
+    uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
+    // LED signs behind the glass: plane (axis 0: x = c, 1: z = c), extent a0..a1 along the other horizontal axis,
+    // y0..y1, u direction; returns the LED emission (rgb) and whether the ray hit a sign (a)
+    vec4 mkSigns(vec3 ro, vec3 rd) {
+      for (int k = 0; k < 6; k++) {
+        vec4 A = mkSgnA[k], B = mkSgnB[k]; if (B.w < 0.5) continue;
+        float den = A.x < 0.5 ? rd.x : rd.z; if (abs(den) < 1e-4) continue;
+        float t = (A.y - (A.x < 0.5 ? ro.x : ro.z)) / den; if (t <= 0.0) continue;
+        vec3 h = ro + rd * t; float al = A.x < 0.5 ? h.z : h.x;
+        if (al < A.z || al > A.w || h.y < B.x || h.y > B.y) continue;
+        float u = (al - A.z) / (A.w - A.z); if (B.z < 0.0) u = 1.0 - u;
+        float v = (h.y - B.x) / (B.y - B.x);
+        vec2 cellUv = vec2(u, 32.0 / 48.0 + v * 16.0 / 48.0) * mkSignRes; vec2 cid = floor(cellUv) + 0.5; vec2 f = fract(cellUv) - 0.5;
+        vec3 led = texture2D(mkSign, cid / mkSignRes).rgb;
+        float cell = fwidth(cellUv.x), dotm = 1.0 - smoothstep(0.26, 0.38 + cell, length(f)), near = 1.0 - smoothstep(0.35, 0.9, cell);
+        return vec4(led * mix(0.62, dotm * 1.5, near) * 3.0 + vec3(0.004), 1.0);
+      }
+      return vec4(0.0);
+    }
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
     float gH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     // cast a ray from the glass into the cabin box; returns radiance of what it hits
@@ -704,11 +755,12 @@ const MetroKit = (() => {
             vec3 rd = normalize(mkP - mkCamO);
             float lit = mkLv[1];
             vec3 ro = mkP + rd * 0.03;
-            vec3 inside = mkInterior(ro, rd, lit);
+            vec4 sg = mkSigns(mkP, rd);
+            vec3 inside = sg.a > 0.5 ? sg.rgb : mkInterior(ro, rd, lit);
             // tinted glass (grey-green) and a Fresnel term: at grazing angles the reflection wins
             float cosT = abs(dot(normalize(vNormal), normalize(vViewPosition)));
             float F = 0.04 + 0.96 * pow(1.0 - cosT, 5.0);
-            totalEmissiveRadiance = inside * vec3(0.36, 0.42, 0.42) * (1.0 - F) * mkIntOn;
+            totalEmissiveRadiance = inside * (sg.a > 0.5 ? vec3(0.75) : vec3(0.36, 0.42, 0.42)) * (1.0 - F) * mkIntOn;
           }`);
     };
     m.customProgramCacheKey = () => 'mk-glass-1';
@@ -716,7 +768,8 @@ const MetroKit = (() => {
   }
   // clear glass (interior built): tinted, reflective, see-through
   function glassClearMaterial() {
-    return new THREE.MeshPhysicalMaterial({ color: 0x1d2a2e, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.0 });
+    const m = new THREE.MeshPhysicalMaterial({ color: 0x1d2a2e, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.0 });
+    m.forceSinglePass = true; return m;
   }
 
   // ------------------------------------------------------------------------------------------ designs
@@ -750,6 +803,8 @@ const MetroKit = (() => {
       S.mkCamO = { value: new V3() }; S.mkIntOn = { value: 1 }; const rows = (d.rows || []).slice(0, 24); while (rows.length < 24) rows.push(new THREE.Vector4(1e4, 0, 0, 0));
       S.mkRows = { value: rows }; S.mkRowN = { value: d.rows ? Math.min(24, d.rows.length) : 0 };
       S.mkCab = { value: new THREE.Vector4(-d.length / 2, d.length / 2, 0, 0) };
+      { const A = [], B = []; for (let i = 0; i < 6; i++) { const g = (d.signs || [])[i]; A.push(g ? new THREE.Vector4(...g.a) : new THREE.Vector4()); B.push(g ? new THREE.Vector4(...g.b, 1) : new THREE.Vector4(0, 0, 1, 0)); }
+        S.mkSgnA = { value: A }; S.mkSgnB = { value: B }; }
       if (d.cabBox) S.mkCab.value.copy(d.cabBox);
       S.mkHalfW.value = d.halfW || 1.47; S.mkFloorY.value = d.floorY || 0.991; S.mkCeilY.value = d.ceilY || 3.1;
       this.mat = palMaterial('ext', S);
@@ -767,27 +822,40 @@ const MetroKit = (() => {
       // camera position in car space for the glass (interior mapping), computed just before the glass draws
       const self = this;
       this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m); };
+      // lamp glow billboards (one instanced draw per lamp-carrying car, visible when lit at dusk / night / in tunnels)
+      this.glow = null;
+      if (d.lamps && d.lamps.length && K.makeGlow) {
+        const gl = K.makeGlow(d.lamps.length); d.lamps.forEach((L, i) => { gl.pos.array.set([L.p[0], L.p[1], L.p[2], L.kind === 'bar' ? 0.9 : 0.55], i * 4); });
+        gl.mesh.geometry.instanceCount = d.lamps.length; gl.pos.needsUpdate = true; gl.mesh.name = 'glow'; gl.mesh.visible = false; root.add(gl.mesh); this.glow = gl;
+      }
       this.lod = 0; this.int = null; this.intVisible = false;
-      this.wheelAng = 0; this.yaw = [0, 0]; this.doorPos = [0, 0]; this.wiperAng = [0, 0]; this.dirty = true;
+      if (!d.bogieList) d.bogieList = d.boneIdx.bogie.map((bi, k) => ({ bone: bi, pivot: d.bones[bi].pivot, axles: d.boneIdx.axlesOf[k] }));
+      this.wheelAng = 0; this.yaw = d.bogieList.map(() => 0); this.doorPos = [0, 0]; this.wiperAng = [0, 0]; this.dirty = true;
+      if (d.bodyList) { this.bodySt = d.bodyList.map(() => ({ yaw: 0, dx: 0, dz: 0 })); this.bodyM = d.bodyList.map(() => new THREE.Matrix4()); this.bogOff = d.bogieList.map(() => [0, 0]); }
       this.lv = S.mkLv.value;
       this._pose();
     }
     // write bone matrices (car-local) from the current state
     _pose() {
-      const d = this.design, B = d.bones, bm = this.bm;
-      // bogies
-      for (let b = 0; b < 2; b++) { const bi = d.boneIdx.bogie[b]; if (bi === undefined) continue; const pv = B[bi].pivot;
-        _m.makeTranslation(pv[0], pv[1], pv[2]).multiply(_m2.makeRotationY(this.yaw[b])).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
-        _m.toArray(bm, bi * 16);
-        // wheelsets of this bogie: bogie matrix x spin about the axle
-        for (const ai of d.boneIdx.axlesOf[b]) { const ap = B[ai].pivot;
+      const d = this.design, B = d.bones, bm = this.bm, BL = d.bogieList, BD = d.bodyList;
+      // articulated bodies (bone matrices in the car frame): yaw about the pivot, then a lateral / longitudinal shift
+      if (BD) for (let i = 0; i < BD.length; i++) { const b = BD[i], st = this.bodySt[i], pv = b.pivot;
+        _m.makeTranslation(pv[0] + st.dx, pv[1], pv[2] + st.dz).multiply(_m2.makeRotationY(st.yaw)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
+        _m.toArray(bm, b.bone * 16); this.bodyM[i].copy(_m); }
+      // bogies: yaw about the pivot (plus the offset of an articulated unit's middle bogie), wheelsets spin inside them
+      for (let b = 0; b < BL.length; b++) { const g = BL[b], pv = g.pivot, yaw = this.yaw[b], off = this.bogOff ? this.bogOff[b] : null;
+        _m.makeTranslation(pv[0] + (off ? off[0] : 0), pv[1], pv[2] + (off ? off[1] : 0)).multiply(_m2.makeRotationY(yaw)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
+        _m.toArray(bm, g.bone * 16);
+        for (const ai of g.axles) { const ap = B[ai].pivot;
           _m2.makeTranslation(ap[0], ap[1], ap[2]).multiply(_m3.makeRotationZ(-this.wheelAng)); _m2.multiply(_m3.makeTranslation(-ap[0], -ap[1], -ap[2]));
           _m3.multiplyMatrices(_m, _m2); _m3.toArray(bm, ai * 16); } }
       // door leaves: plug out, then slide away from the door centre. doorPos[0] = design-left (-Z), [1] = design-right (+Z)
       for (const L of d.leaves) {
         const t = this.doorPos[L.side > 0 ? 1 : 0];
-        const plug = smooth(0, 0.16, t) * 0.03, slide = smooth(0.1, 1, t) * 0.70;
-        _m.makeTranslation(L.k * slide, 0, L.side * plug); _m.toArray(bm, L.bone * 16);
+        const plug = smooth(0, 0.16, t) * (d.plugOut || 0.03), slide = smooth(0.1, 1, t) * (d.slide || 0.70);
+        _m.makeTranslation(L.k * slide, 0, L.side * plug);
+        if (L.body !== undefined && this.bodyM) _m.premultiply(this.bodyM[L.body]);
+        _m.toArray(bm, L.bone * 16);
       }
       // wipers: rotate about the face normal at the pivot
       for (let w = 0; w < (d.wipers || []).length; w++) { const W = d.wipers[w], a = this.wiperAng[w];
@@ -837,6 +905,7 @@ const MetroKit = (() => {
     o.seats = m.seats.map(s => ({ ...s, x: -s.x, z: -s.z, yaw: U.wrapAngle(s.yaw + Math.PI) }));
     o.doors = m.doors.map(d => ({ ...d, x: -d.x, side: -d.side }));
     o.cabEye = m.cabEye ? [-m.cabEye[0], m.cabEye[1], -m.cabEye[2]] : null;
+    if (m.standSpots) o.standSpots = m.standSpots.map(p => ({ ...p, x: -p.x, z: -p.z, yaw: U.wrapAngle(p.yaw + Math.PI) }));
     o.cabYaw = m.cabEye ? Math.PI : 0;
     void L; return o;
   }
@@ -874,21 +943,32 @@ const MetroKit = (() => {
     setNight(n) { n = clamp(+n || 0, 0, 1); if (Math.abs(n - this.night) < 1e-3) return; this.night = n; this._applyLights(); }
     _applyLights() {
       const n = this.night, L = this.lights, cars = this.cars, first = cars[0], last = cars[cars.length - 1];
-      const leadCar = this.lead === 'rear' ? last : first, trailCar = this.lead === 'rear' ? first : last;
+      const leadSide = this.lead === 'rear' ? -1 : 1;         // the consist's leading side (+X front / -X rear)
       for (const c of cars) {
-        const lv = c.lv, isLead = c === leadCar, isTrail = c === trailCar;
-        // which end of this car is the consist's leading end? lamps are on the design's +X (cab) end
-        const cabLeads = isLead && ((this.lead === 'front') !== c.flip), cabTrails = isTrail && ((this.lead === 'front') === c.flip);
-        lv[G.interior] = L.interior * (0.55 + 0.45 * n);
-        lv[G.head] = cabLeads ? L.head * (6 + 16 * n) : 0;
-        lv[G.marker] = cabLeads ? L.head * (1.5 + 3 * n) : 0;
-        lv[G.tail] = cabTrails || (!c.design.meta.cabEye && (isTrail || isLead)) ? L.tail * (3 + 7 * n) : 0;
-        lv[G.bar] = (cabLeads || cabTrails) ? (1.2 + 2.5 * n) : 0;
-        c.S.mkBar.value = cabTrails ? 1 : 0;
+        const lv = c.lv;
+        // an end of a design (+1 = its +X end, -1 = its -X end) is exposed if it faces out of the consist; it then leads
+        // or trails. (A cab car's lamps are at its +X end; the DMU carries lamps at both ends, the B lamps at -X.)
+        const endState = e => { const side = e * (c.flip ? -1 : 1); if ((side > 0 && c !== first) || (side < 0 && c !== last)) return 0; return side === leadSide ? 1 : -1; };
+        const A = endState(1), B = endState(-1);
+        lv[G.interior] = L.interior * (0.8 + 0.2 * n);
+        lv[G.head] = A > 0 ? L.head * (6 + 16 * n) : 0; lv[G.headB] = B > 0 ? L.head * (6 + 16 * n) : 0;
+        lv[G.marker] = A > 0 ? L.head * (1.5 + 3 * n) : 0;
+        lv[G.tail] = A < 0 ? L.tail * (3 + 7 * n) : 0; lv[G.tailB] = B < 0 ? L.tail * (3 + 7 * n) : 0;
+        lv[G.bar] = A !== 0 ? (1.2 + 2.5 * n) : 0; c.S.mkBar.value = A < 0 ? 1 : 0;
         lv[G.sign] = L.signs * (0.8 + 0.4 * n);
         lv[G.cab] = L.cab;
-        c.S.mkNight.value = n;
-        c.S.mkIntOn.value = 1;
+        c.S.mkNight.value = n; c.S.mkIntOn.value = 1;
+        if (c.glow) {                                   // billboard colours follow the lamps' state; they matter at dusk and night
+          const C = c.glow.col.array, lamps = c.design.lamps, k = 0.25 + 0.75 * n; let any = false;
+          lamps.forEach((Lm, i) => {
+            const st = Lm.kind.endsWith('B') ? B : A, kind = Lm.kind.replace(/B$/, ''); let r = 0, g = 0, b = 0;
+            if (kind === 'head' && st > 0) { r = 3.0 * L.head; g = 2.9 * L.head; b = 2.6 * L.head; }
+            else if (kind === 'marker' && st > 0) { r = 1.6; g = 1.5; b = 1.3; }
+            else if (kind === 'tail' && st < 0) { r = 2.6 * L.tail; g = 0.1; b = 0.06; }
+            else if (kind === 'bar' && st !== 0) { if (st > 0) { r = 2.6; g = 1.1; b = 0.15; } else { r = 2.6; g = 0.1; b = 0.06; } }
+            C[i * 4] = r * k; C[i * 4 + 1] = g * k; C[i * 4 + 2] = b * k; if (r + g + b > 0) any = true; });
+          c.glow.col.needsUpdate = true; c.glow.mesh.visible = any && n > 0.04;
+        }
       }
       this._applyDoorLamps();
     }
@@ -1051,17 +1131,33 @@ const MetroKit = (() => {
     for (const car of c.cars) {
       const dc = d - car.length / 2; d -= car.length;
       const [bf, br] = car.bogieOffsets;
-      frame(dc + bf, _F); frame(dc + br, _R);
+      frame(dc + bf, _F); frame(dc + br, _R); car._dc = dc;
       const bank = ((_F.bank || 0) + (_R.bank || 0)) / 2;
       poseCar(car, _F, _R, bank);
       const yawBody = Math.atan2(-(_F.z - _R.z), _F.x - _R.x);
       const yF = Math.atan2(-_F.tz, _F.tx) - yawBody, yR = Math.atan2(-_R.tz, _R.tx) - yawBody;
       // bogie 0 of the design sits at +X; a flipped car's design +X is at its rear
-      const a = U.wrapAngle(car.flip ? yR : yF), b = U.wrapAngle(car.flip ? yF : yR);
-      if (Math.abs(a - car.yaw[0]) > 1e-5 || Math.abs(b - car.yaw[1]) > 1e-5) { car.yaw[0] = a; car.yaw[1] = b; car.dirty = true; }
+      const a = U.wrapAngle(car.flip ? yR : yF), b = U.wrapAngle(car.flip ? yF : yR), nb = car.yaw.length;
+      if (Math.abs(a - car.yaw[0]) > 1e-5 || Math.abs(b - car.yaw[nb - 1]) > 1e-5) { car.yaw[0] = a; car.yaw[nb - 1] = b; car.dirty = true; }
+      if (car.design.artic) articulate(car, frame, dc, yawBody);
     }
   }
 
+  // Articulated units (the GTW): after the rigid pose from the outer bogies, the end bodies swing about their outer
+  // bogies so the joints sit on the track, the middle body spans the two joints, and its bogie follows the track.
+  const _J1 = { x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0 }, _J2 = { x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0 }, _JM = { x: 0, y: 0, z: 0, tx: 1, ty: 0, tz: 0 };
+  function articulate(car, frame, dc, yawBody) {
+    const A = car.design.artic, g = car.group, cy = Math.cos(yawBody), sy = Math.sin(yawBody), sg = car.flip ? -1 : 1;
+    // design-frame joint positions (x) -> track distances; local (design) coordinates of the track points
+    const toLocal = (P, out) => { const dx = P.x - g.position.x, dz = P.z - g.position.z; const lx = dx * cy - dz * sy, lz = dx * sy + dz * cy; out[0] = sg * lx; out[1] = sg * lz; return out; };
+    frame(dc + sg * A.joints[0], _J1); frame(dc + sg * A.joints[1], _J2); frame(dc + sg * A.mid, _JM);
+    const j1 = toLocal(_J1, [0, 0]), j2 = toLocal(_J2, [0, 0]), jm = toLocal(_JM, [0, 0]);
+    const st = car.bodySt, pA = A.pivots[0], pB = A.pivots[1];
+    st[0].yaw = Math.atan2(j1[1], pA - j1[0]); st[2].yaw = Math.atan2(-j2[1], j2[0] - pB);
+    st[1].yaw = Math.atan2(-(j1[1] - j2[1]), j1[0] - j2[0]); st[1].dx = (j1[0] + j2[0]) / 2 - A.mid; st[1].dz = (j1[1] + j2[1]) / 2;
+    const ym = U.wrapAngle(Math.atan2(-_JM.tz, _JM.tx) - yawBody); car.yaw[1] = car.flip ? ym : ym; car.bogOff[1][0] = jm[0] - A.mid; car.bogOff[1][1] = jm[1];
+    car.dirty = true;
+  }
   function createConsist(kind, opts) { return new Consist(kind, opts); }
   K.builders = builders; K.SIGN = SIGN; K.getDesign = getDesign; K.glassMaterial = glassMaterial; K.LINE_COLORS = LINE_COLORS; K.ledText = ledText;
   K.FONT = FONT; K.Consist = Consist; K.Car = Car;

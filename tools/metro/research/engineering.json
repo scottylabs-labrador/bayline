@@ -1,0 +1,1324 @@
+{
+ "transbay_tube": {
+  "length": [
+   {
+    "value": 3.6,
+    "unit": "mi",
+    "note": "BART figure for the immersed tube",
+    "source": "https://www.bart.gov/news/articles/2024/news20240916",
+    "confidence": "high"
+   },
+   {
+    "value": 19113,
+    "unit": "ft",
+    "note": "Twin tube laid between the Oakland and SF ventilation structures (about 3.62 mi)",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   {
+    "value": 3.65,
+    "unit": "mi",
+    "note": "From the 1979 milepost table: Oakland vent structure MP 3.34 to SF vent structure MP 6.99. The same report's text says about 3.7 mi. The Oakland Fire Dept manual says about 3.5 mi.",
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "medium"
+   }
+  ],
+  "number_of_sections": {
+   "value": 57,
+   "source": "https://www.bart.gov/news/articles/2024/news20240916",
+   "confidence": "high"
+  },
+  "section_length_ft": [
+   {
+    "value": {
+     "min": 273,
+     "max": 336,
+     "avg": 328
+    },
+    "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+    "confidence": "medium"
+   },
+   {
+    "value": {
+     "min": 273,
+     "max": 366
+    },
+    "note": "Conflicts with the 336 ft maximum above",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "low"
+   },
+   {
+    "value": 330,
+    "note": "BART gives 'each averaging 330 ft'",
+    "source": "https://www.bart.gov/news/articles/2024/news20240916",
+    "confidence": "high"
+   }
+  ],
+  "section_geometry_counts": {
+   "value": {
+    "horizontally_curved": 15,
+    "vertically_curved": 4,
+    "both": 2,
+    "straight": 36
+   },
+   "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+   "confidence": "medium"
+  },
+  "deepest_point": {
+   "depth_below_water_surface_ft": {
+    "value": 135,
+    "source": "https://www.bart.gov/news/articles/2024/news20240916",
+    "confidence": "high"
+   },
+   "depth_below_mean_sea_level_ft": {
+    "value": 132,
+    "source": "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf",
+    "confidence": "high"
+   },
+   "trench_depth_range_ft": [
+    {
+     "value": [
+      33,
+      133
+     ],
+     "note": "Trench was 60 ft wide at the base",
+     "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+     "confidence": "medium"
+    },
+    {
+     "value": [
+      75,
+      135
+     ],
+     "note": "BART fact sheet, about 2002: 'buried in an underwater trench ranging from 75 feet to 135 feet deep'",
+     "source": "https://web.archive.org/web/20051221201812/http://www.samceda.org/Nothing%20but%20the%20Facts.pdf",
+     "confidence": "medium"
+    }
+   ],
+   "location_description": "The design profile dips to avoid the bedrock 'Yerba Buena rise'. From my digitization of the 1965 profile, the low point is south of the SW corner of Yerba Buena Island, in the channel between SF and the island.",
+   "distance_from_SF_vent_structure_ft": {
+    "value": 7450,
+    "uncertainty_ft": 500,
+    "note": "Digitized by me from the 1965 PBQD profile image (Rogers & Peck Fig. 3, lower panel). Approximate.",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/figure3.html",
+    "confidence": "low"
+   },
+   "approx_M_line_milepost": {
+    "value": 5.6,
+    "note": "SF vent MP 6.99 minus about 1.41 mi",
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "low"
+   },
+   "approx_lat_lon": {
+    "value": [
+     37.8044,
+     -122.3681
+    ],
+    "note": "Digitized distance placed along the OSM tube way, which OSM itself marks 'routing is approximate'",
+    "source": "https://www.openstreetmap.org/way/29059321",
+    "confidence": "low"
+   },
+   "top_of_rail_elev_ft_msl": {
+    "value": -128,
+    "note": "Digitized profile line",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/figure3.html",
+    "confidence": "low"
+   },
+   "tube_bottom_elev_ft_msl": {
+    "value": -133,
+    "note": "Digitized. Agrees with the EA's 132 ft below MSL.",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/figure3.html",
+    "confidence": "low"
+   }
+  },
+  "approx_profile_digitized": {
+   "method": "Pixel-traced from the 1965 'General Profile' drawing reproduced by Rogers & Peck (Fig. 3, lower panel; image figure3-2.jpg), calibrated to its MSL grid (every 50 ft) and station labels 550+00/650+00/750+00. The line is taken as the track (profile) line. Cross-checks: the SF end matches Rogers' '-85 ft' at the SF vent, the minimum matches the EA's 132 ft below MSL, and the Oakland-side 0.3-0.4% stretch matches the NTSB '0.30% for about 4,000 ft'. This was the 1965 concept, not as-built.",
+   "datum": "MSL (1965 drawing)",
+   "points_distance_from_SF_vent_ft__track_elev_ft": [
+    [
+     0,
+     -88
+    ],
+    [
+     700,
+     -96
+    ],
+    [
+     1350,
+     -106
+    ],
+    [
+     1800,
+     -112
+    ],
+    [
+     2700,
+     -114
+    ],
+    [
+     3850,
+     -117
+    ],
+    [
+     5000,
+     -120
+    ],
+    [
+     6350,
+     -124
+    ],
+    [
+     7450,
+     -128
+    ],
+    [
+     7900,
+     -121
+    ],
+    [
+     8600,
+     -107
+    ],
+    [
+     9500,
+     -87
+    ],
+    [
+     10200,
+     -74
+    ],
+    [
+     10850,
+     -80
+    ],
+    [
+     11750,
+     -90
+    ],
+    [
+     13100,
+     -92
+    ],
+    [
+     14250,
+     -88
+    ],
+    [
+     15400,
+     -84
+    ],
+    [
+     16500,
+     -80
+    ],
+    [
+     17200,
+     -77
+    ],
+    [
+     17650,
+     -65
+    ]
+   ],
+   "derived_grades": "SF vent to about 1,800 ft: about 1.3% down (eastbound). 1,800 to 7,450 ft: about 0.3% down. 7,450 to 10,200 ft: about 2.0% up (steepest about 2.1%). Crest at about 10,200 ft, then about 0.6% down to a sag at about 13,100 ft. About 0.37% up to about 17,200 ft. Then roughly 2.5-3% up to the Oakland vent, where the track is roughly -25 to -30 ft MSL (very low confidence).",
+   "source": "http://sonic.net/~mly/www.geolith.com/bart/figure3.html",
+   "confidence": "low"
+  },
+  "sf_ventilation_structure": {
+   "track_elevation_ft": {
+    "value": -85,
+    "note": "'where the tracks reach elevation -85 feet'",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "plan_ft": {
+    "value": [
+     122,
+     68
+    ],
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "height_ft": [
+    {
+     "value": 108,
+     "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+     "confidence": "medium"
+    },
+    {
+     "value": 120,
+     "note": "Caisson sunk more than 75 ft into soft fill and Bay Mud",
+     "source": "https://web.archive.org/web/2016/http://tunneltalk.com/Immersed-tubes-Mar04-BART-seismic-retrofit.php",
+     "confidence": "medium"
+    }
+   ],
+   "offshore_of_Ferry_Building_ft": {
+    "value": 450,
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "milepost": {
+    "value": 6.99,
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "medium"
+   },
+   "approx_lat_lon": {
+    "value": [
+     37.796,
+     -122.3914
+    ],
+    "source": "https://www.openstreetmap.org/way/29059321",
+    "confidence": "medium"
+   },
+   "notes": "Stands in the Bay. The Ferry Plaza platform is built over it. Seismic joints are on both faces."
+  },
+  "oakland_ventilation_structure": {
+   "milepost": {
+    "value": 3.34,
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "medium"
+   },
+   "setting": "On land (fill) in the Port of Oakland, between 7th St and Berth 32. Accessed through the TraPac terminal at 1155 Maritime St.",
+   "setting_source": "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf",
+   "top_of_tube_below_ground_ft_near_Oakland_end": {
+    "value": [
+     20,
+     60
+    ],
+    "note": "Excavation needed to reach the tube top for pile stitching within about 2,000 ft west of the Oakland transition structure",
+    "source": "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf",
+    "confidence": "medium"
+   },
+   "track_elevation_ft": {
+    "value": null,
+    "note": "My digitization suggests roughly -25 to -30 ft MSL (very low confidence)",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/figure3.html",
+    "confidence": "low"
+   },
+   "harbor_channel_crossing": {
+    "value": 2300,
+    "unit": "ft",
+    "note": "Length of tube under the Oakland Outer Harbor Entrance Channel, which is maintained to -42 ft",
+    "source": "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf",
+    "confidence": "high"
+   }
+  },
+  "cross_section": {
+   "overall_width_ft": {
+    "value": 48,
+    "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+    "confidence": "high"
+   },
+   "overall_height_ft": {
+    "value": 24,
+    "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+    "confidence": "high"
+   },
+   "bore_diameter_ft": {
+    "value": 17,
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "high"
+   },
+   "central_gallery_width_ft": {
+    "value": 8,
+    "note": "Upper part is the exhaust duct; lower part is the utility/egress gallery",
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "high"
+   },
+   "walkway_width_ft": {
+    "value": 2.5,
+    "note": "At car-floor height, next to the gallery wall",
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "high"
+   },
+   "track_offset_from_bore_centerline_in": {
+    "value": 8,
+    "note": "Toward the outside",
+    "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+    "confidence": "medium"
+   },
+   "concrete_lining_ft": {
+    "value": 2.3,
+    "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+    "confidence": "medium"
+   },
+   "cross_passage_spacing_ft": {
+    "value": 330,
+    "note": "NTSB counts 56 doors; the Oakland Fire Dept manual counts 57",
+    "source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+    "confidence": "high"
+   },
+   "direction_note": "Westbound (to SF) uses the north (right-hand looking west) bore, M-1. Eastbound uses M-2.",
+   "direction_note_source": "https://www.bart.gov/news/articles/2024/news20240916"
+  },
+  "connection_to_embarcadero": {
+   "description": "From the SF transition/vent structure, twin shield-driven tunnels built under compressed air run through the foot of Market St to Embarcadero and Montgomery. A 1961 report recommended twin shield-driven tubes for the SF approach.",
+   "description_source": "http://sonic.net/~mly/www.geolith.com/bart/",
+   "vent_to_Embarcadero_tunnel_length_m": {
+    "value": 750,
+    "note": "OSM layer -3 ways, about 748-871 m",
+    "source": "https://www.openstreetmap.org/way/29059310",
+    "confidence": "medium"
+   }
+  },
+  "connection_to_west_oakland": {
+   "description": "From the Oakland vent structure (MP 3.34) the line continues in a buried approach to a portal on 7th St (MP 2.67). A short at-grade ramp leads to the 'Aerial Transition Structure' and then the continuous West Oakland Aerial Guideway into West Oakland station (aerial).",
+   "description_sources": [
+    "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf"
+   ],
+   "buried_approach_length_mi": {
+    "value": 0.67,
+    "note": "MP 2.67 portal to MP 3.34 vent. The 1961 report recommended braced cut-and-cover for the Oakland approach; I could not confirm the as-built method.",
+    "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "confidence": "medium"
+   },
+   "portal_lat_lon": {
+    "value": [
+     37.8088,
+     -122.316
+    ],
+    "note": "On 7th St, west of I-880",
+    "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+    "confidence": "high"
+   },
+   "at_grade_ramp_length_m": {
+    "value": 148,
+    "source": "https://www.openstreetmap.org/way/50969011",
+    "confidence": "low"
+   },
+   "aerial_height_above_ground_ft": {
+    "value": 22,
+    "note": "Aerial guideway carrying the tracks from the tube portal",
+    "source": "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf",
+    "confidence": "high"
+   },
+   "approach_grades": {
+    "value": null,
+    "note": "Not documented. Digitized profile suggests roughly 2.5-3% near the Oakland vent; the design limit was 3%.",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "low"
+   }
+  },
+  "max_grade_pct": {
+   "value": 3.0,
+   "note": "Design limits were 3% maximum and 0.3% minimum (for drainage)",
+   "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+   "confidence": "medium"
+  },
+  "measured_grade_note": {
+   "value": 0.3,
+   "unit": "%",
+   "note": "M-1 track is straight and on a 0.30% grade (descending westbound) for about 4,000 ft, starting 1/2 mile west of the Oakland entrance",
+   "source": "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+   "confidence": "high"
+  },
+  "speed_limit": [
+   {
+    "value": 80,
+    "unit": "mph",
+    "note": "Design maximum; used historically and to make up delays. OSM tags the tube 80 mph.",
+    "source": "https://en.wikipedia.org/wiki/Transbay_Tube",
+    "confidence": "medium"
+   },
+   {
+    "value": 70,
+    "unit": "mph",
+    "note": "Normal operation; BART's maximum operating speed",
+    "source": "https://www.bart.gov/news/articles/2024/news20240916",
+    "confidence": "high"
+   }
+  ],
+  "operating_constraints": {
+   "value": 3,
+   "unit": "trains per direction in the tube (CPUC limit); flow is metered above this",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "high"
+  }
+ },
+ "market_street_subway": {
+  "layout": "Three levels at Embarcadero, Montgomery, Powell and Civic Center: fare mezzanine, then Muni Metro island platform, then BART island platform. BART is on the lowest level.",
+  "layout_source": "https://en.wikipedia.org/wiki/Montgomery_Street_station",
+  "general_depth": {
+   "value": [
+    80,
+    100
+   ],
+   "unit": "ft below street",
+   "note": "BART history: 'Market Street subway and stations 80-100 feet below heavy downtown traffic'; stations are 'five-story-high'",
+   "source": "https://www.bart.gov/about/history/history2",
+   "confidence": "medium"
+  },
+  "embarcadero": {
+   "rail_level_below_street_ft": {
+    "value": 80,
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "station_depth_ft": {
+    "value": 80,
+    "note": "Station is 700 ft long. Deepest and most difficult BART station, in up to about 80 ft of Young Bay Mud.",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "width_ft": {
+    "value": 50,
+    "note": "Other shared stations are 60 ft wide",
+    "source": "https://en.wikipedia.org/wiki/Embarcadero_station",
+    "confidence": "medium"
+   }
+  },
+  "montgomery_powell_civic_center": {
+   "excavation_depth_ft": {
+    "value": 80,
+    "note": "'Cut-and-cover excavations up to 80 feet deep and 61 feet wide' at the three stations. Per-station top-of-rail depths were not found.",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "excavation_width_ft": {
+    "value": 61,
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "montgomery_platform_depth_ft": null,
+   "powell_platform_depth_ft": null,
+   "civic_center_platform_depth_ft": null
+  },
+  "muni_metro_level_depth_ft": null,
+  "construction_method": "Stations were braced cut-and-cover with soldier-pile tremie-concrete walls (Montgomery, Powell, Embarcadero). Running tunnels were mostly bored, not cut-and-cover: twin shield tunnels under compressed air from Montgomery to the SF vent, and 17.5 ft 'quad' bores on two levels (BART below, Muni above), up to 70 ft deep, driven by a mole under 10-12 psi air. Wikipedia describes the whole subway as cut-and-cover, which is only true for the stations.",
+  "construction_method_sources": [
+   "http://sonic.net/~mly/www.geolith.com/bart/",
+   "https://en.wikipedia.org/wiki/Market_Street_subway"
+  ],
+  "quad_tunnel_depth_ft": {
+   "value": 70,
+   "note": "Up to 70 ft",
+   "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+   "confidence": "medium"
+  },
+  "quad_bore_diameter_ft": {
+   "value": 17.5,
+   "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+   "confidence": "medium"
+  },
+  "civic_center_to_16th": {
+   "description": "BART leaves Market St near Van Ness/11th-12th St, where it separates from the Muni level, and curves south under several blocks of buildings onto Mission St. The 1961 plan routed it via Otis St to join Mission St at about 14th St. The segment is twin bored tunnels (18 ft TBMs), partly under 12 psi compressed air.",
+   "description_sources": [
+    "http://sonic.net/~mly/www.geolith.com/bart/",
+    "http://libraryarchives.metro.net/DPGTL/bart/1961-parsons-engineering-report-to-sf-bart-district.pdf"
+   ],
+   "segment_length_ft": {
+    "value": 5000,
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "tunnel_depth_ft": {
+    "value": [
+     40,
+     80
+    ],
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   "curve_radius_ft": null
+  },
+  "mission_street_subway": {
+   "16th_st_depth_ft": null,
+   "24th_st_depth_ft": null,
+   "station_form": "Two underground levels: vaulted mezzanine above one 700 ft island platform",
+   "station_form_source": "https://en.wikipedia.org/wiki/16th_Street_Mission_station",
+   "tunnels": "Twin tunnels south of 16th St were bored with a Calweld oscillating TBM. South of that, the 3,450 ft twin 'Fairmont Hills' rock tunnels (about 20 ft bores, up to 140 ft cover) run from a Randall St shaft to Glen Park.",
+   "tunnels_source": "http://sonic.net/~mly/www.geolith.com/bart/",
+   "platform_length_ft": {
+    "value": 700,
+    "source": "https://en.wikipedia.org/wiki/16th_Street_Mission_station",
+    "confidence": "high"
+   }
+  }
+ },
+ "oakland_subway": {
+  "12th_and_19th_st": {
+   "layout": "Three underground levels. Level 1 is the concourse. Level 2 is an island platform with tracks C1 and CX (northbound, platforms 1 and 3). Level 3 is a side platform with track C2 (southbound toward SF and Berryessa, platform 2).",
+   "layout_sources": [
+    "https://en.wikipedia.org/wiki/12th_Street_Oakland_City_Center_station",
+    "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf"
+   ],
+   "lower_level_platform2_depth_ft": {
+    "value": 90,
+    "note": "The Wye's 7 bores range from about 20 ft below grade at the exit portals to about 90 ft at platform 2 of 12th and 19th St",
+    "source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+    "confidence": "medium"
+   },
+   "upper_level_depth_ft": null
+  },
+  "lake_merritt_depth_ft": null,
+  "lake_merritt_form": "Island platform two levels below ground",
+  "lake_merritt_form_source": "https://en.wikipedia.org/wiki/Lake_Merritt_station",
+  "oakland_wye": "Underground flying junction of 7 interconnecting bores, centered under Broadway and 9th St. Emergency exits are at 7th and Broadway and at 9th and Harrison.",
+  "oakland_wye_sources": [
+   "https://en.wikipedia.org/wiki/Oakland_Wye",
+   "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf"
+  ],
+  "portal_depth_below_grade_ft": {
+   "value": 20,
+   "source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+   "confidence": "medium"
+  },
+  "k_line_portal": {
+   "location": "23rd St and Northgate Ave (tracks C1/CX/C2), next to I-980. North of it the line is on berm and aerial crossings (27th/Sycamore, 29th, 30th, MacArthur Blvd) in the I-980/SR-24 corridor to MacArthur, which sits in the SR-24 median. So yes, there is a portal near the I-980/SR-24 interchange.",
+   "sources": [
+    "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+    "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf"
+   ],
+   "confidence": "high"
+  },
+  "a_line_portal": {
+   "location": "5th Ave at E 8th St (tracks A1/A2). The line then runs on aerial/at-grade structure on the former Western Pacific right-of-way to Fruitvale (elevated station).",
+   "sources": [
+    "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+    "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit"
+   ],
+   "confidence": "high"
+  },
+  "m_line_portal": {
+   "location": "5th St at Clay St (tracks M1/MX/M2). Wikipedia says near Washington and 5th. Beyond it is the elevated West Oakland viaduct.",
+   "sources": [
+    "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+    "https://en.wikipedia.org/wiki/Oakland_Wye"
+   ],
+   "confidence": "high"
+  },
+  "milepost_origin": "All mileposts are measured from the line anchor inside the Oakland Wye. Markers are every 0.1 mi above ground and every 1/50 mi underground.",
+  "milepost_origin_source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf"
+ },
+ "berkeley_subway": {
+  "ashby_depth_ft": null,
+  "ashby_note": "Shallow and only partly underground: the west side of the mezzanine is level with the parking lot, and the island platform is below.",
+  "ashby_source": "https://en.wikipedia.org/wiki/Ashby_station_(BART)",
+  "downtown_berkeley_depth_ft": null,
+  "downtown_berkeley_form": "Two levels (mezzanine over an island platform) under Shattuck Ave",
+  "downtown_berkeley_source": "https://en.wikipedia.org/wiki/Downtown_Berkeley_station",
+  "north_berkeley_depth_ft": null,
+  "north_berkeley_form": "Underground station box running diagonally under the site on the old Key System Westbrae right-of-way",
+  "north_berkeley_source": "https://en.wikipedia.org/wiki/North_Berkeley_station",
+  "south_portal": {
+   "location": "On Adeline St (Lorin district) where MLK Jr Way meets Adeline. Coming north from MacArthur, the aerial along MLK Jr Way (formerly Grove St) ends, then about 60 m of embankment and 70 m of cutting lead to the portal about 0.55 km south of Ashby.",
+   "lat_lon": {
+    "value": [
+     37.8484,
+     -122.2713
+    ],
+    "source": "https://www.openstreetmap.org/way/654069775",
+    "confidence": "medium"
+   }
+  },
+  "north_portal": {
+   "location": "On the Ohlone Greenway (Westbrae), about 0.73 km NW of North Berkeley. Cutting, then embankment, then aerial structure along the Greenway through Albany and El Cerrito toward El Cerrito Plaza. So yes, it is on the Ohlone Greenway.",
+   "lat_lon": {
+    "value": [
+     37.879,
+     -122.2889
+    ],
+    "source": "https://www.openstreetmap.org/way/772406554",
+    "confidence": "medium"
+   },
+   "greenway_source": "https://en.wikipedia.org/wiki/Ohlone_Greenway"
+  },
+  "construction_method": null
+ },
+ "berkeley_hills_tunnel": {
+  "length": [
+   {
+    "value": 3.1,
+    "unit": "mi",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   {
+    "value": 3.2,
+    "unit": "mi",
+    "note": "Portal-to-portal distance from OSM is about 5.13 km (3.19 mi)",
+    "source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+    "confidence": "medium"
+   }
+  ],
+  "twin_bores": true,
+  "bore_inside_diameter_ft": {
+   "value": 17.5,
+   "source": "https://en.wikipedia.org/wiki/Berkeley_Hills_Tunnel",
+   "confidence": "high"
+  },
+  "bore_spacing_ft": [
+   {
+    "value": 50,
+    "source": "https://en.wikipedia.org/wiki/Berkeley_Hills_Tunnel",
+    "confidence": "medium"
+   },
+   {
+    "value": 100,
+    "note": "Design spacing, narrowing to 55 ft at each portal",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   }
+  ],
+  "cross_passages": {
+   "value": 27,
+   "note": "At 1,000 ft intervals",
+   "source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+   "confidence": "high"
+  },
+  "west_portal": {
+   "location": "Oakland (Rockridge), near Golden Gate Ave and Chabot Rd, about 1.4 km NE of Rockridge station. EBMUD's Claremont Tunnel portal is about 500 ft NW.",
+   "lat_lon": {
+    "value": [
+     37.8514,
+     -122.2382
+    ],
+    "source": "https://www.openstreetmap.org/way/154650336",
+    "confidence": "medium"
+   },
+   "source": "http://sonic.net/~mly/www.geolith.com/bart/"
+  },
+  "east_portal": {
+   "location": "Orinda, beside CA-24, about 0.55 km WSW of Orinda station. The East Portal Structure holds 4 ventilation fans and roll-down doors.",
+   "lat_lon": {
+    "value": [
+     37.8747,
+     -122.1878
+    ],
+    "source": "https://www.openstreetmap.org/way/154650336",
+    "confidence": "medium"
+   },
+   "source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf"
+  },
+  "west_portal_area_elevation_ft_msl": {
+   "value": 280,
+   "note": "Ground topography, not track. The Chabot Rd footing excavation is at 274 ft MSL.",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf",
+   "confidence": "low"
+  },
+  "east_portal_elevation_ft_msl": null,
+  "rise_west_to_east_ft": [
+   {
+    "value": 250,
+    "source": "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf",
+    "confidence": "medium"
+   },
+   {
+    "value": 190,
+    "note": "My calculation from the Rogers & Peck as-built grades below",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "low"
+   }
+  ],
+  "grade": [
+   {
+    "value": "As built: +1.75% rising east to a high point 5,100 ft from the east portal, then -0.3% down to the east portal. The original design was +2% to mid-tunnel then +0.3%, overall +1.2%.",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   {
+    "value": 2.1,
+    "unit": "%",
+    "note": "'Steep grade ... rising from Rockridge to Orinda of 2.1%'",
+    "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+    "confidence": "medium"
+   }
+  ],
+  "hayward_fault_from_west_portal_ft": {
+   "value": [
+    700,
+    900
+   ],
+   "note": "Creep has offset the tracks, which are periodically realigned",
+   "source": "https://en.wikipedia.org/wiki/Berkeley_Hills_Tunnel",
+   "confidence": "medium"
+  },
+  "rockridge_to_orinda_runtime_s": {
+   "value": 318,
+   "note": "CPUC allows 2 trains per direction in the tunnel",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "high"
+  }
+ },
+ "sfo_extension": {
+  "composition": {
+   "value": {
+    "total_mi": 8.7,
+    "subway_mi": 6.1,
+    "aerial_mi": 1.2,
+    "at_grade_mi": 1.4
+   },
+   "source": "https://web.archive.org/web/20051221201812/http://www.samceda.org/Nothing%20but%20the%20Facts.pdf",
+   "confidence": "high"
+  },
+  "structure_sequence": "Colma station (underground tail tracks south of it, 1993). Continuous subway through South San Francisco station and San Bruno station. Subway continues about 1.5 km south of San Bruno. Then at grade along the old SP right-of-way. The SFO wye legs and SFO station are elevated (OSM layers 3-4). The Millbrae leg dips into a short tunnel near the wye before at-grade Millbrae station.",
+  "structure_sequence_sources": [
+   "https://en.wikipedia.org/wiki/Colma_station",
+   "https://www.openstreetmap.org/way/1335811932",
+   "https://www.openstreetmap.org/way/157556523",
+   "https://www.openstreetmap.org/way/363194170",
+   "https://www.openstreetmap.org/way/363194171"
+  ],
+  "structure_sequence_confidence": "medium",
+  "south_san_francisco_station": {
+   "form": "Underground island platform",
+   "depth_ft": null,
+   "source": "https://en.wikipedia.org/wiki/South_San_Francisco_station_(BART)"
+  },
+  "san_bruno_station": {
+   "form": "Underground island platform",
+   "depth_ft": null,
+   "source": "https://en.wikipedia.org/wiki/San_Bruno_station_(BART)"
+  },
+  "sfo_station_and_wye": {
+   "form": "Elevated stub terminal: 3 tracks, 2 island platforms, about 100 ft by 900 ft. An elevated wye and crossovers west of the station let trains from north or south use any track.",
+   "width_ft": {
+    "value": 100,
+    "source": "https://en.wikipedia.org/wiki/San_Francisco_International_Airport_station",
+    "confidence": "medium"
+   },
+   "length_ft": {
+    "value": 900,
+    "source": "https://en.wikipedia.org/wiki/San_Francisco_International_Airport_station",
+    "confidence": "medium"
+   }
+  },
+  "millbrae": {
+   "form": "At ground level: 5 tracks and 3 platforms (shared with Caltrain), mezzanine above",
+   "source": "https://en.wikipedia.org/wiki/Millbrae_station"
+  }
+ },
+ "other_structures": {
+  "glen_park_balboa_daly_city": {
+   "glen_park_station": {
+    "form": "Cut-and-cover. Excavation 750 ft long and 45 ft wide.",
+    "excavation_depth_ft": {
+     "value": 75,
+     "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+     "confidence": "medium"
+    }
+   },
+   "south_portal": {
+    "location": "Beside I-280 (Sunnyside/Excelsior), about 0.8 km SW of Glen Park station. The line then runs at grade along I-280.",
+    "lat_lon": {
+     "value": [
+      37.7292,
+      -122.4409
+     ],
+     "source": "https://www.openstreetmap.org/way/28049694",
+     "confidence": "medium"
+    }
+   },
+   "balboa_park": {
+    "form": "Below-grade 700 ft island platform. The northern third and a small part of the south end are in an open trench; the rest is under Geneva Ave and the headhouse. Short tunnels are under Ocean Ave to the north and just south of the station.",
+    "sources": [
+     "https://en.wikipedia.org/wiki/Balboa_Park_station",
+     "https://www.openstreetmap.org/way/51052483"
+    ],
+    "confidence": "medium"
+   },
+   "balboa_to_daly_city": {
+    "description": "Short tunnel, then at grade, then about 0.8 km of aerial structure (OSM layer 2) crossing to the Daly City side",
+    "source": "https://www.openstreetmap.org/way/30636597",
+    "confidence": "medium"
+   }
+  },
+  "daly_city_station": {
+   "form": "Elevated station, built after BART dropped an underground station plan in 1966. OSM maps the station tracks at grade, with aerial turnback/tail structures just south toward Colma and the yard. From 10 Aug 2026 it operates as a center-platform station, with platform 3 a Blue/Green terminal.",
+   "sources": [
+    "https://en.wikipedia.org/wiki/Daly_City_station",
+    "https://www.openstreetmap.org/way/101809133",
+    "https://www.bart.gov/news/articles/2026/news20260709"
+   ],
+   "confidence": "medium"
+  },
+  "warm_springs_lake_elizabeth": {
+   "description": "From the south end of elevated Fremont station: embankment, then aerial over Walnut Ave. The line then enters a one-mile cut-and-cover subway starting north of Stevenson Blvd, passing under Fremont Central Park, the eastern lobe of Lake Elizabeth (built inside a cofferdam in the drained lake) and the UPRR freight track. It has 2 ventilation structures and surfaces north of Paseo Padre Pkwy. Then a bridge over Paseo Padre, at grade under the Washington Blvd overpass, to the at-grade Warm Springs island platform.",
+   "subway_length_mi": {
+    "value": 1,
+    "source": "https://web.archive.org/web/2016/https://www.bart.gov/about/projects/wsx/faq",
+    "confidence": "high"
+   },
+   "source": "https://web.archive.org/web/2016/https://www.bart.gov/about/projects/wsx/alignment"
+  },
+  "berryessa_extension": {
+   "description": "Phase I is 10 mi with 2 stations. Milpitas has a ground-level concourse and below-grade platforms in a trench (two 700 ft side platforms). Berryessa has a ground-level concourse and an aerial center platform. Detailed trench and aerial segment lengths were not found.",
+   "berryessa_platform_height_above_ground_ft": {
+    "value": 35,
+    "source": "https://www.vta.org/sites/default/files/2023-12/VTABSV_FactSheet_2023_Phase%20I%20Berryessa_0.pdf",
+    "confidence": "high"
+   },
+   "sources": [
+    "https://www.vta.org/sites/default/files/2023-12/VTABSV_FactSheet_2023_Phase%20I%20Berryessa_0.pdf",
+    "https://en.wikipedia.org/wiki/Milpitas_station"
+   ]
+  },
+  "typical_aerial_guideway": {
+   "height_ft": null,
+   "span_ft": null,
+   "notes": "No systemwide typical found. Aerial spans are precast prestressed concrete box girders on mostly single-column bents. Known heights: 22 ft above ground at the West Oakland/Transbay approach; Berryessa platform 35 ft above ground.",
+   "sources": [
+    "http://libraryarchives.metro.net/DPGTL/bart/1961-parsons-engineering-report-to-sf-bart-district.pdf",
+    "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf"
+   ]
+  },
+  "east_bay_aerial_footing_elevations_ft_msl": {
+   "value": {
+    "Chabot Rd": 274,
+    "Golden Gate Ave": 266.5,
+    "Patton St": 252.3,
+    "Presley Way": 219,
+    "Forest St": 182.5,
+    "Claremont Ave": 157.2,
+    "Telegraph & 56th St": 133.5,
+    "55th St": 130.7,
+    "Shattuck": 125,
+    "52nd St": 120.47,
+    "Grove St": 107,
+    "45th St": 91.0,
+    "MacArthur Blvd": 75.99,
+    "30th St": 47.71,
+    "29th St": 46.75,
+    "Sycamore & 27th St": 31.0,
+    "West Oakland viaduct": [
+     -0.2,
+     5.5
+    ],
+    "West Oakland station": 3
+   },
+   "note": "Bottom elevations of proposed retrofit footing excavations: a ground-level proxy along the Rockridge-MacArthur-downtown and West Oakland aerials, not track elevations. Line assignment for each site was not given.",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART_EQS_EA.pdf",
+   "confidence": "medium"
+  },
+  "macarthur_flyover": {
+   "description": "About 0.5 km north of MacArthur, near 45th St. C-line (Concord/Antioch) tracks rise on a layer-2 flyover while an R-line (Richmond) track drops into a short underpass (layer -1), making a grade-separated junction. MacArthur itself is one level with 4 tracks: outer 1/2 are Richmond (R), inner 3/4 are Concord (C).",
+   "sources": [
+    "https://www.openstreetmap.org/way/154657647",
+    "https://www.openstreetmap.org/way/154657675",
+    "https://en.wikipedia.org/wiki/MacArthur_station_(BART)"
+   ],
+   "confidence": "medium"
+  },
+  "oakland_wye_structure": {
+   "value": "Underground, not aerial: a flying junction of 7 bores",
+   "source": "https://en.wikipedia.org/wiki/Oakland_Wye",
+   "confidence": "high"
+  }
+ },
+ "design_criteria": {
+  "max_grade_pct": [
+   {
+    "value": 4,
+    "note": "Systemwide figure from a secondary source (Garbutt, World Metro Systems 1997)",
+    "source": "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit",
+    "confidence": "medium"
+   },
+   {
+    "value": 3.5,
+    "note": "BART requirement for the SR-24 median corridor (Orinda-Walnut Creek)",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   },
+   {
+    "value": 3.0,
+    "note": "Transbay Tube limit; 0.3% minimum for drainage",
+    "source": "http://sonic.net/~mly/www.geolith.com/bart/",
+    "confidence": "medium"
+   }
+  ],
+  "min_curve_radius": {
+   "value": 394,
+   "unit": "ft",
+   "note": "120 m; secondary source, and it is unclear whether this is mainline or yard",
+   "source": "https://en.wikipedia.org/wiki/Bay_Area_Rapid_Transit",
+   "confidence": "low"
+  },
+  "max_speed_design_mph": {
+   "value": 80,
+   "note": "Only certain sections were designed for 80. Original design range was 50-80 mph.",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "high"
+  },
+  "max_speed_operating_mph": {
+   "value": 70,
+   "source": "https://www.bart.gov/sites/default/files/2026-01/BART_Facts_2026.pdf",
+   "confidence": "high"
+  },
+  "average_speed_mph": {
+   "value": 35,
+   "note": "Including 20 s station stops",
+   "source": "https://www.bart.gov/about/history/facts",
+   "confidence": "high"
+  },
+  "speed_code_steps_mph": {
+   "value": [
+    0,
+    6,
+    18,
+    27,
+    36,
+    50,
+    70
+   ],
+   "note": "Fixed steps of the legacy train control. Communications-based train control is now being installed.",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "high"
+  },
+  "vertical_curve_criteria": null,
+  "max_superelevation": null,
+  "platform_length_ft": {
+   "value": 700,
+   "source": "http://libraryarchives.metro.net/DPGTL/bart/1961-parsons-engineering-report-to-sf-bart-district.pdf",
+   "confidence": "high"
+  },
+  "platform_edge_height_above_top_of_rail_in": {
+   "value": 39,
+   "tolerance_in": 0.5,
+   "source": "https://www.bart.gov/sites/default/files/2025-09/Standard_Specificatios_3_2_3.pdf",
+   "confidence": "high"
+  },
+  "platform_edge_offset_from_gauge_line_in": {
+   "value": 30.625,
+   "source": "https://www.bart.gov/sites/default/files/2025-09/Standard_Specificatios_3_2_3.pdf",
+   "confidence": "high"
+  },
+  "car_floor_height_above_top_of_rail": {
+   "value": "3 ft 3 in (39 in)",
+   "source": "https://www.bart.gov/about/history/facts",
+   "confidence": "high"
+  },
+  "track_gauge": {
+   "value": "5 ft 6 in (66 in, 1676 mm)",
+   "source": "https://www.bart.gov/about/history/facts",
+   "confidence": "high"
+  },
+  "rail": {
+   "value": "119 lb/yd; rail cant 1:40",
+   "source": "https://www.bart.gov/sites/default/files/2025-09/Standard_Specificatios_3_2_3.pdf",
+   "confidence": "high"
+  },
+  "third_rail": {
+   "voltage": {
+    "value": "1000 V DC",
+    "source": "https://www.bart.gov/sites/default/files/2026-01/BART_Facts_2026.pdf",
+    "confidence": "high"
+   },
+   "centerline_offset_from_gauge_line_of_nearest_running_rail_in": {
+    "value": 26,
+    "source": "https://www.bart.gov/sites/default/files/2025-09/Standard_Specificatios_3_2_3.pdf",
+    "confidence": "high"
+   },
+   "top_above_top_of_running_rails_in": {
+    "value": 6.75,
+    "source": "https://www.bart.gov/sites/default/files/2025-09/Standard_Specificatios_3_2_3.pdf",
+    "confidence": "high"
+   },
+   "side": "In the Transbay Tube it is on the outside of each track, next to the outer tunnel wall (NTSB 1979). It is covered by fiberglass coverboard. Gaps shorter than 55 ft (the collector-shoe spread) are bridgeable.",
+   "side_sources": [
+    "https://www.ntsb.gov/investigations/AccidentReports/Reports/RAR7905.pdf",
+    "https://web.archive.org/web/20230106194200/https://wbcapp.oaklandnet.com/cs/groups/public/documents/procedure/b2fr/mdcy/~edisp/oak072793.pdf"
+   ]
+  },
+  "track_centers_note": "Line rail is set 2 ft 9 in horizontally from the design track centerline",
+  "track_centers_source": "https://www.bart.gov/sites/default/files/2025-09/Standard_Specificatios_3_2_3.pdf"
+ },
+ "speed_restrictions": [
+  {
+   "location": "Oakland Wye (most tracks)",
+   "value": 18,
+   "unit": "mph",
+   "note": "Original speed code was 27 mph; kept as a precaution after design problems (2013).",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "high"
+  },
+  {
+   "location": "Oakland Wye, CX track (West Oakland to 12th St)",
+   "value": 36,
+   "unit": "mph",
+   "source": "https://en.wikipedia.org/wiki/Oakland_Wye",
+   "confidence": "medium"
+  },
+  {
+   "location": "L-Line (Dublin/Pleasanton), several miles next to I-580",
+   "value": 50,
+   "unit": "mph",
+   "note": "Reduced from 70 because of debris from I-580 (as of 2013); current status unknown",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "medium"
+  },
+  {
+   "location": "Transbay Tube",
+   "value": 70,
+   "unit": "mph",
+   "note": "Normal; designed for 80 (OSM tags 80)",
+   "source": "https://www.bart.gov/news/articles/2024/news20240916",
+   "confidence": "high"
+  },
+  {
+   "location": "West Oakland aerial approach to the tube (OSM tags, unofficial)",
+   "value": {
+    "west_oakland_station_area_mph": 50,
+    "about_600m_before_portal_mph": 70
+   },
+   "source": "https://www.openstreetmap.org/way/1335805963",
+   "confidence": "low"
+  },
+  {
+   "location": "Balboa Park station area (OSM, unofficial)",
+   "value": 36,
+   "unit": "mph",
+   "source": "https://www.openstreetmap.org/way/24141683",
+   "confidence": "low"
+  },
+  {
+   "location": "Balboa Park to Daly City (OSM, unofficial)",
+   "value": 50,
+   "unit": "mph",
+   "source": "https://www.openstreetmap.org/way/30636597",
+   "confidence": "low"
+  },
+  {
+   "location": "Daly City station and turnback (OSM, unofficial)",
+   "value": 36,
+   "unit": "mph",
+   "source": "https://www.openstreetmap.org/way/24204350",
+   "confidence": "low"
+  },
+  {
+   "location": "Aerial curve just south of Daly City station toward Colma (OSM, unofficial)",
+   "value": 27,
+   "unit": "mph",
+   "source": "https://www.openstreetmap.org/way/101809133",
+   "confidence": "low"
+  },
+  {
+   "location": "SFO extension (OSM, unofficial)",
+   "value": {
+    "colma_to_ssf_and_ssf_to_san_bruno_mph": 70,
+    "station_approaches_mph": [
+     36,
+     50
+    ],
+    "south_of_san_bruno_mph": 70,
+    "near_sfo_millbrae_junction_mph": 50
+   },
+   "source": "https://www.openstreetmap.org/way/24142238",
+   "confidence": "low"
+  },
+  {
+   "location": "Berkeley Hills Tunnel",
+   "value": null,
+   "note": "No civil speed found. There is a 2.1% grade and a CPUC limit of 2 trains per direction. Tracks through the Hayward fault creep zone are periodically realigned.",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "medium"
+  },
+  {
+   "location": "Systemwide earthquake early warning",
+   "value": 26,
+   "unit": "mph",
+   "note": "Trains are service-braked to this speed on a ShakeAlert",
+   "source": "https://en.wikipedia.org/wiki/History_of_Bay_Area_Rapid_Transit",
+   "confidence": "medium"
+  },
+  {
+   "location": "MacArthur and Daly City",
+   "value": null,
+   "note": "Named as train-control reliability hotspots (MacArthur: 4 tracks converge to 3). No speed value found.",
+   "source": "https://www.bart.gov/sites/default/files/docs/BART%20SCOA%20Final%20Report%20June%202013.pdf",
+   "confidence": "medium"
+  }
+ ],
+ "consists": {
+  "car_length_D_E_ft": {
+   "value": 70,
+   "note": "Gen2 D/E cars, length over coupler faces. A 10-car Fleet of the Future train is therefore about 700 ft; the old 710 ft figure was 2 x 75 ft A cars plus 8 x 70 ft.",
+   "source": "https://www.bart.gov/about/history/facts",
+   "confidence": "high"
+  },
+  "car_width_in": {
+   "value": 126,
+   "note": "130 in at closed doors",
+   "source": "https://www.bart.gov/about/history/facts",
+   "confidence": "high"
+  },
+  "car_height_top_of_rail_to_roof": {
+   "value": "12 ft 8-1/8 in",
+   "source": "https://www.bart.gov/about/history/facts",
+   "confidence": "high"
+  },
+  "train_length_range_cars": {
+   "value": [
+    5,
+    10
+   ],
+   "note": "As of 2026. Historically 3-10.",
+   "source": "https://www.bart.gov/news/articles/2026/news20260709",
+   "confidence": "high"
+  },
+  "pre_sept_2023": {
+   "value": {
+    "Yellow": 10,
+    "Red": 10,
+    "Orange": 8,
+    "Blue": 10,
+    "Green": 10
+   },
+   "source": "https://www.bart.gov/sites/default/files/2023-08/Sizing%20Trains%20for%20Safety%20and%20Efficiency%20FY2024.pdf",
+   "confidence": "high"
+  },
+  "from_2023_09_11": {
+   "value": {
+    "Yellow": 8,
+    "Red": 6,
+    "Orange": 6,
+    "Blue": 6,
+    "Green": 6
+   },
+   "note": "Weekday and weekend. Base service became Fleet of the Future cars only; longer trains for events.",
+   "source": "https://www.bart.gov/sites/default/files/2023-08/Sizing%20Trains%20for%20Safety%20and%20Efficiency%20FY2024.pdf",
+   "confidence": "high"
+  },
+  "from_2025_09_29": {
+   "value": "All Yellow trains 9 cars. Red, Blue and Green each run four 8-car trains in the AM peak and four in the PM peak; other trains 6.",
+   "source": "https://www.bart.gov/news/articles/2025/news20250929",
+   "confidence": "high"
+  },
+  "current_from_2026_07_20": {
+   "value": {
+    "Red": "10 cars peak, 5 cars off-peak",
+    "Yellow": "9 cars; the 8 busiest AM and 6 busiest PM peak trains are 10",
+    "Green": "6 cars; six AM trains toward SF are 8",
+    "Blue": "6 cars; about five PM trains toward the East Bay are 8",
+    "Orange": "6 cars; four trains are 5"
+   },
+   "note": "Carried into the 10 Aug 2026 schedule. Current weekend lengths are not stated.",
+   "source": "https://www.bart.gov/news/articles/2026/news20260709",
+   "confidence": "high"
+  }
+ },
+ "ridership": {
+  "metric": "Average weekday exits by station, CY2025 (Jan-Dec 2025). My weighted mean of BART's monthly origin-destination files: row totals by exit station, weighted by weekdays per month. Sum is 180,714 against BART's official CY2025 average weekday of 180,649.",
+  "official_system_avg_weekday_cy2025": {
+   "value": 180649,
+   "source": "https://www.bart.gov/about/reports/ridership",
+   "confidence": "high"
+  },
+  "official_system_avg_weekday_cy2024": {
+   "value": 165502,
+   "source": "https://www.bart.gov/about/reports/ridership",
+   "confidence": "high"
+  },
+  "source": "https://www.bart.gov/sites/default/files/2026-02/ridership_OD_2025.zip",
+  "confidence": "high",
+  "avg_weekday_exits_cy2025": {
+   "EMBR": 18924,
+   "MONT": 15269,
+   "POWL": 11402,
+   "CIVC": 9748,
+   "DBRK": 6029,
+   "16TH": 5869,
+   "24TH": 5684,
+   "12TH": 5530,
+   "DALY": 5051,
+   "19TH": 4923,
+   "BALB": 4166,
+   "FTVL": 4046,
+   "DELN": 4014,
+   "MCAR": 4008,
+   "SFIA": 3989,
+   "WOAK": 3798,
+   "SANL": 3455,
+   "GLEN": 3290,
+   "DUBL": 3216,
+   "WCRK": 3067,
+   "LAKE": 2900,
+   "ROCK": 2863,
+   "CONC": 2770,
+   "BAYF": 2709,
+   "PHIL": 2672,
+   "RICH": 2516,
+   "COLS": 2479,
+   "PITT": 2357,
+   "HAYW": 2337,
+   "PLZA": 2205,
+   "FRMT": 2134,
+   "ASHB": 2053,
+   "UCTY": 1947,
+   "MLBR": 1908,
+   "NBRK": 1862,
+   "ANTC": 1861,
+   "LAFY": 1749,
+   "COLM": 1612,
+   "BERY": 1572,
+   "SBRN": 1571,
+   "SHAY": 1484,
+   "SSAN": 1400,
+   "ORIN": 1376,
+   "WDUB": 1330,
+   "MLPT": 1299,
+   "CAST": 1297,
+   "WARM": 1224,
+   "NCON": 662,
+   "PCTR": 554,
+   "OAKL": 533
+  },
+  "avg_weekday_exits_fy2026_jul2025_jun2026": {
+   "EMBR": 20372,
+   "MONT": 16410,
+   "POWL": 11991,
+   "CIVC": 10378,
+   "DBRK": 6565,
+   "16TH": 6201,
+   "24TH": 5996,
+   "12TH": 5883,
+   "DALY": 5324,
+   "19TH": 5234,
+   "SFIA": 4559,
+   "BALB": 4365,
+   "MCAR": 4301,
+   "DELN": 4216,
+   "FTVL": 4171,
+   "WOAK": 4078,
+   "SANL": 3624,
+   "GLEN": 3426,
+   "DUBL": 3411,
+   "WCRK": 3277,
+   "ROCK": 3112,
+   "LAKE": 2988,
+   "CONC": 2868,
+   "BAYF": 2819,
+   "PHIL": 2818,
+   "RICH": 2618,
+   "COLS": 2527,
+   "PITT": 2505,
+   "HAYW": 2384,
+   "PLZA": 2336,
+   "FRMT": 2272,
+   "ASHB": 2235,
+   "UCTY": 2080,
+   "MLBR": 2069,
+   "NBRK": 1991,
+   "ANTC": 1965,
+   "LAFY": 1868,
+   "BERY": 1752,
+   "COLM": 1750,
+   "SBRN": 1688,
+   "SSAN": 1550,
+   "SHAY": 1529,
+   "ORIN": 1479,
+   "MLPT": 1460,
+   "WDUB": 1417,
+   "CAST": 1382,
+   "WARM": 1317,
+   "NCON": 677,
+   "PCTR": 539,
+   "OAKL": 517
+  },
+  "fy2026_source": "https://www.bart.gov/sites/default/files/2026-07/Ridership_202606.xlsx",
+  "code_notes": "Codes follow BART GTFS: PLZA=El Cerrito Plaza, DELN=El Cerrito del Norte, SFIA=SFO, OAKL=Oakland Airport, WARM=Warm Springs, MLPT=Milpitas, BERY=Berryessa, PCTR=Pittsburg Center, PITT=Pittsburg/Bay Point, CAST=Castro Valley, WDUB/DUBL=West Dublin / Dublin-Pleasanton, NCON=North Concord."
+ },
+ "_meta": {
+  "notes": "This session's web-search quota was already used up (200/200). I did not use other search engines to get around it. Everything here comes from fetching known primary pages and PDFs directly, reading OCR of scanned reports, and small OpenStreetMap API reads. OSM geometry, portal locations and maxspeed tags are community data (the tube way is marked 'routing approximate'). The tube profile is my digitization of a 1965 concept drawing. Still missing (null): per-station platform depths other than Embarcadero and 12th/19th lower level, vertical curve and superelevation limits, typical aerial span and height, and SSF/San Bruno depths. A few more searches would likely fill some of these."
+ }
+}

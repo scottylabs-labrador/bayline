@@ -16,7 +16,7 @@ const MetroNet = (() => {
   const MPH = 0.44704, RAIL_CC = 1.75;
   const tracks = [], byId = {}, stations = [], stationById = {}, lines = [], lineById = {}, patterns = {}, junctions = [];
   const GC = 200; const grid = new Map();                  // spatial grid: cell -> [track idx, sample idx, ...]
-  let net = null, tt = null, ready = null, base = null;
+  let net = null, tt = null, ready = null, base = null, dir = 'metro/';
   const gkey = (cx, cz) => cx * 65536 + cz;               // cx, cz in [-32768, 32767] cells
 
   // ---------------------------------------------------------------- loading
@@ -39,12 +39,19 @@ const MetroNet = (() => {
     const u8 = new Uint8Array(await r.arrayBuffer());
     return (u8.length > 2 && (u8[0] & 0x0f) === 8 && ((u8[0] << 8) | u8[1]) % 31 === 0) ? inflate(u8) : u8;
   }
+  // opts: { base (data root, default: the game's), dir ('metro/' or e.g. 'metro-next/' for a staged bake), prio }
   function load(opts = {}) {
     if (ready) return ready;
     base = root(opts);
+    dir = opts.dir || (typeof location !== 'undefined' && new URLSearchParams(location.hash.slice(1)).get('metrodir')) || 'metro/';
+    if (!dir.endsWith('/')) dir += '/';
     ready = (async () => {
       const prio = opts.prio ?? 2;
-      const [j, bin] = await Promise.all([getJSON('metro/network.json', prio), getBin('metro/tracks.bin', prio)]);
+      const j = await getJSON(dir + 'network.json', prio);
+      // the binary is content-addressed (tracks.<sha>.bin, named by network.json) so an edge cache can never pair a new
+      // network.json with an old binary
+      const binPath = (j.tracksBin && j.tracksBin.path) || (dir + 'tracks.bin');
+      const bin = await getBin(binPath, prio);
       net = j; build(bin); return api;
     })();
     return ready;
@@ -52,11 +59,12 @@ const MetroNet = (() => {
   function build(bin) {
     const buf = bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
     for (const h of net.tracks) {
-      const n = h.n, P = new Float32Array(buf, h.off, n * 3), A = new Uint8Array(buf, h.off + n * 12, n * 4);
+      const n = h.n, np_ = h.planes || 4, P = new Float32Array(buf, h.off, n * 3), A = new Uint8Array(buf, h.off + n * 12, n * np_);
       const X = new Float32Array(n), Y = new Float32Array(n), Z = new Float32Array(n), CA = new Float32Array(n);
       const ST = A.subarray(0, n), VL = A.subarray(n, 2 * n), CR = A.subarray(2 * n, 3 * n), CV = A.subarray(3 * n, 4 * n);
+      const TR = np_ > 4 ? A.subarray(4 * n, 5 * n) : new Uint8Array(n);     // third rail side: 0 none, 1 left, 2 right
       for (let i = 0; i < n; i++) { X[i] = P[i * 3]; Y[i] = P[i * 3 + 1]; Z[i] = P[i * 3 + 2]; CA[i] = (CR[i] - 128) * 0.002; }
-      const t = Object.assign({}, h, { idx: tracks.length, X, Y, Z, ST, VL, CA, CV });
+      const t = Object.assign({}, h, { idx: tracks.length, X, Y, Z, ST, VL, CA, CV, TR });
       let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
       for (let i = 0; i < n; i++) { if (X[i] < x0) x0 = X[i]; if (X[i] > x1) x1 = X[i]; if (Z[i] < z0) z0 = Z[i]; if (Z[i] > z1) z1 = Z[i]; }
       t.bbox = [x0, z0, x1, z1];
@@ -98,6 +106,7 @@ const MetroNet = (() => {
     out.cant = cant; out.bank = bank;
     const k = a < 0.5 ? i : i + 1;
     out.struct = t.ST[k]; out.structName = STRUCT[out.struct]; out.vlim = t.VL[k] * MPH; out.cover = t.CV[k];
+    out.third = t.TR[k] === 1 ? -1 : t.TR[k] === 2 ? 1 : 0;       // contact rail side: -1 left, +1 right (facing +s), 0 none
     out.s = f * st; out.track = t; out.i = k;
     return out;
   }
@@ -195,7 +204,7 @@ const MetroNet = (() => {
 
   // ---------------------------------------------------------------- timetable
   function loadTimetable(prio = 4) {
-    if (!tt) tt = getJSON('metro/timetable.json', prio).then((j) => { const byTrip = {}; for (const t of j.trips) byTrip[t.id] = t; j.byTrip = byTrip; return j; });
+    if (!tt) tt = getJSON(dir + 'timetable.json', prio).then((j) => { const byTrip = {}; for (const t of j.trips) byTrip[t.id] = t; j.byTrip = byTrip; return j; });
     return tt;
   }
   let ttJ = null;

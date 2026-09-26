@@ -76,17 +76,21 @@ C = {
     'DELN': dict(type='aerial', layout='side', plat=7.0, w=20, note='Elevated, side platforms (STW).', src=['STW']),
     'RICH': dict(type='surface', layout='island', note='At-grade terminal (STW); lidar trackbed.', src=['STW', 'LIDAR']),
     # ------------------------------------------------------------------ Concord / Antioch
-    'ROCK': dict(type='median', layout='island', plat=10.0, w=60,
-                 note='In the SR-24 median, elevated over College Ave (lead, STW ~+10 m).', src=['STW']),
-    'ORIN': dict(type='median', layout='island', plat=10.0, w=40,
-                 note='In the SR-24 median, elevated over Camino Pablo (STW ~+10 m).', src=['STW']),
+    'ROCK': dict(type='median', layout='island',
+                 note='In the elevated SR-24 median on a ~420 m viaduct over College Ave and Forest St (B); platform ~5-10 m '
+                      'above College Ave (B, STW); height from the lidar at the viaduct ends.', src=['B', 'STW', 'LIDAR']),
+    'ORIN': dict(type='median', layout='island',
+                 note='SR-24 median ~0.55 km east of the Berkeley Hills Tunnel; a short aerial span over Camino Pablo with the '
+                      'fare lobby beneath, median trackbed ~151-154 m either side (B); lidar decides.', src=['B', 'LIDAR']),
     'LAFY': dict(type='median', layout='island', note='In the SR-24 median (lead, STW); lidar trackbed.', src=['STW', 'LIDAR']),
     'WCRK': dict(type='aerial', layout='side', plat=7.0, w=20, note='Elevated, side platforms (STW).', src=['STW']),
     'PHIL': dict(type='aerial', layout='side', plat=7.0, w=20, note='Elevated, side platforms (STW).', src=['STW']),
     'CONC': dict(type='aerial', layout='island', plat=6.96, w=150, note='Elevated; platform +6.96 m measured (STW).', src=['STW']),
-    'NCON': dict(type='trench', layout='island', tor=-9.0, w=60, note='Below grade (STW ~-9 m).', src=['STW']),
+    'NCON': dict(type='trench', layout='island', note='Shallow open cut, trackbed ~6 m below the ground either side at mid-platform (B, lidar); '
+                      'overhead concourse and footbridge (B).', src=['B', 'STW', 'LIDAR']),
     'PITT': dict(type='median', layout='island', note='In the SR-4 median (lead, STW); eBART transfer platform ~1 km east.', src=['STW', 'OSM']),
-    'PCTR': dict(type='median', layout='island', tor=-8.0, w=60, note='eBART; SR-4 median below street level (STW ~-8 m).', src=['STW']),
+    'PCTR': dict(type='median', layout='island', note='eBART; SR-4 median in a shallow depression under the Railroad Ave overcrossing, '
+                      'stairs/elevator down from the overpass (B); lidar trackbed.', src=['B', 'STW', 'LIDAR']),
     'ANTC': dict(type='median', layout='side', note='eBART terminal by the SR-4 median (lead, STW).', src=['STW']),
     # ------------------------------------------------------------------ Fremont line
     'FTVL': dict(type='aerial', layout='side', plat=7.0, w=20,
@@ -98,11 +102,11 @@ C = {
     'BAYF': dict(type='aerial', layout='island', plat=7.0, w=20,
                  note='Elevated island; the Dublin line leaves through a flying junction just SE (C).', src=['C']),
     'HAYW': dict(type='aerial', layout='side', plat=7.0, w=20, note='Elevated, side platforms on T-bents (C).', src=['C']),
-    'SHAY': dict(type='aerial', layout='side', plat=4.8, w=20, platformStructure='embankment',
+    'SHAY': dict(type='aerial', layout='side', platformStructure='embankment',
                  note='"Aerial" per BART, but ballasted track on retained fill with an underpass (C, photos).', src=['C', 'STW']),
-    'UCTY': dict(type='aerial', layout='side', plat=4.8, w=20, platformStructure='embankment',
+    'UCTY': dict(type='aerial', layout='side', platformStructure='embankment',
                  note='Side platforms raised on fill, passage underneath (C).', src=['C', 'STW']),
-    'FRMT': dict(type='aerial', layout='island', plat=4.8, w=20, platformStructure='embankment',
+    'FRMT': dict(type='aerial', layout='island', platformStructure='embankment',
                  note='Island on a retaining-wall podium / embankment with underpasses (C).', src=['C', 'STW']),
     'WARM': dict(type='surface', layout='island', note='At-grade island with an overhead concourse (C); lidar trackbed.', src=['C', 'LIDAR']),
     'MLPT': dict(type='trench', layout='side',

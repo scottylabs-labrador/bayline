@@ -2,7 +2,8 @@
 //
 // Wayside ATC in the style of the real system: the line is cut into track circuits (~180 m) and each circuit carries a
 // speed code. The code at the head of the train is the lower of
-//   * the civil code: the civil speed limit there (MetroNet, with the timetable-consistent floor of the run), and
+//   * the civil code: MetroNet's civil code there (M2 data: BART's codes 6/18/27/36/50/70 per segment; a run's
+//     timetable-consistent floor rounds up to the next code), and
 //   * the occupancy code: counted in clear circuits to the next obstruction (the tail of any train on the tracks ahead,
 //     from any line, or the end of the track): 0 clear -> stop, 1 -> 6 mph, 2 -> 18, 3 -> 27, 4 -> 36, 5 -> 50, 6+ -> line
 //     speed. (The real system's codes: 0, 6, 18, 27, 36, 50, 70, 80 mph.)
@@ -47,25 +48,34 @@ const MetroATC = (() => {
     }
     return null;
   }
-  // effective civil limit at a path position for the driven leg (the run's floor keeps the published times possible)
-  function civil(D, ps) { const S = D.leg.stops; let fl = 0; for (let k = 0; k < S.length - 1; k++) if (ps >= S[k].ps - 1 && ps <= S[k + 1].ps + 1) { fl = S[k].floor || 0; break; } return Math.max(D.leg.path.limitAt(ps), fl); }
+  // a civil speed as a wayside code: BART's train-control codes 6/18/27/36/50/70 (MetroNet's M2 limits already are
+  // codes, so this is exact for them; a timetable floor rounds up to the next code), the DMU and the cable train in
+  // 5 mph steps like their data
+  const CODES = [6, 18, 27, 36, 50, 70].map(v => v * MPH);
+  function asCode(v, kind, up) {
+    if (kind !== 'bart') return Math.floor(v / MPH / 5 + 1e-6) * 5 * MPH;
+    if (up) { for (const c of CODES) if (c >= v - 0.05) return c; return CODES[CODES.length - 1]; }
+    let r = CODES[0]; for (const c of CODES) if (c <= v + 0.05) r = c; return r;
+  }
+  // the civil code at a path position for the driven leg: the data's code there, or the run's timetable floor (which
+  // keeps the published times possible) when that is higher
+  function civil(D, ps) { const S = D.leg.stops; let fl = 0; for (let k = 0; k < S.length - 1; k++) if (ps >= S[k].ps - 1 && ps <= S[k + 1].ps + 1) { fl = S[k].floor || 0; break; }
+    const lim = D.leg.path.limitAt(ps); return fl > lim + 0.05 ? asCode(fl, D.kind, true) : asCode(lim, D.kind, false); }
   function codeFor(D) {
     if (occFrame !== MetroSim.stats.frame) { buildOcc(MetroSim.trainByKey(D.key)); occFrame = MetroSim.stats.frame; }
     // civil code: the lowest limit over the train's length and the circuit ahead (the tail rule, in circuits)
     const len = D.cars * MetroSim.PERF[D.kind].carLen; let cv = 1e9;
     for (let p = D.s - len; p <= D.s + BLOCK * 0.5; p += 20) cv = Math.min(cv, civil(D, p));
-    cv = Math.floor(cv / MPH / 5 + 1e-6) * 5 * MPH;
     const ob = obstruction(D); let oc = 1e9, clear = 99;
     if (ob) { clear = Math.max(0, Math.floor(ob.dist / BLOCK)); oc = LADDER[Math.min(LADDER.length - 1, clear)]; }
     const code = Math.min(cv, oc, MetroSim.PERF[D.kind].vmax);
     return { code, civil: cv, occ: oc, clear, ob };
   }
   // the next civil restriction ahead and the station stop, for ATO and the braking guidance
-  // (quantised like the code, and brought forward by the half circuit the code looks ahead)
-  const q5 = (v) => Math.floor(v / MPH / 5 + 1e-6) * 5 * MPH;
+  // (as codes, and brought forward by the half circuit the code looks ahead)
   function targetsAhead(D, max = 2400) {
-    const out = []; let prev = q5(civil(D, D.s));
-    for (let a = 20; a <= max; a += 20) { const l = q5(civil(D, D.s + a)); if (l < prev - 0.3) out.push({ dist: Math.max(0, a - 20 - BLOCK * 0.5 - 15), v: l, why: 'limit' }); prev = l; }
+    const out = []; let prev = civil(D, D.s);
+    for (let a = 20; a <= max; a += 20) { const l = civil(D, D.s + a); if (l < prev - 0.3) out.push({ dist: Math.max(0, a - 20 - BLOCK * 0.5 - 15), v: l, why: 'limit' }); prev = l; }
     return out;
   }
 
@@ -105,7 +115,8 @@ const MetroATC = (() => {
     run = { plan, trip: plan.trip, k0, k: k0 + 1, atK: k0, state: 'dwell', score: 0, dwellT: 0, stopT: 0, mission: opts.mission || null, title: opts.title || '',
       stats: { stops: 0, ontime: 0, perfect: 0, errSum: 0, overs: 0, atcBrakes: 0, penalties: 0, harsh: 0, dist: 0, t0: Env.time.sec, missed: 0 }, warnT: 0, atc: { state: 'ok' }, log: [], announced: {} };
     Player.setFocus(D.key); Player.setMode('cab');
-    toast(`You have the ${MetroSim.lineName(L.line)} to ${MetroSim.stName(L.stops[L.stops.length - 1].st)}. ${D.ato ? 'ATO is on: at departure press W (doors close, the train goes).' : 'Manual: W for power once the doors are closed.'} A switches ATO / manual.`, 7);
+    let LL = L; while (LL.next) LL = LL.next;
+    toast(`You have the ${MetroSim.lineName(L.line)} to ${MetroSim.stName(LL.stops[LL.stops.length - 1].st)}. ${D.ato ? 'ATO is on: at departure press W (doors close, the train goes).' : 'Manual: W for power once the doors are closed.'} A switches ATO / manual.`, 7);
     return run;
   }
   function doorSideAt(L, k) { const trav = MetroSim.stopSide(L, k); return (trav > 0) === (L.lead === 0) ? 'right' : 'left'; }
@@ -277,18 +288,33 @@ const MetroATC = (() => {
     for (const t of targetsAhead(D, 2000)) { const va = Math.sqrt(t.v * t.v + 2 * 0.8 * t.dist); if (va < vAllow) { vAllow = va; tgt = t; } }
     for (const t of occTargets(C, OT)) { const va = Math.sqrt(t.v * t.v + 2 * 0.8 * t.dist); if (va < vAllow) { vAllow = va; tgt = t; } }
     return { v: D.v, code: C.code, civil: C.civil, clear: C.clear, target: tgt, vAllow, mode: D.ato ? 'ATO' : 'MANUAL', notch: D.emergency ? 'EB' : notchText(D.lever), lever: D.lever,
-      atc: D.penalty ? 'penalty' : run.atc.state, guide: guide(), reverse: !!D.reverse, doors: D.doors, next: inf, score: run.score, late: inf ? Env.time.sec - inf.sched : 0 };
+      atc: D.penalty ? 'penalty' : run.atc.state, guide: guide(), reverse: !!D.reverse, doors: D.doors, next: inf, score: run.score, late: inf ? behind(D) : 0 };
   }
   // what the cab screen shows on any metro train you are in (driving or riding in the cab)
   function cabDisplay(tr) {
     const D = MetroSim.drive, d = D && tr.driven ? dmi() : null;
     const S = tr.leg.stops, k = d && d.next ? d.next.k : tr.nextK, ns = S[k];
-    return { speedMph: tr.v / MPH, codeMph: d ? d.code / MPH : Math.min(70, tr.lim ? tr.lim / MPH : 70), commandedMph: D && tr.driven ? (D.ato ? (D.commanded || 0) : d.vAllow) / MPH : tr.v / MPH,
-      mode: d ? d.mode : 'ATO', notch: d ? d.notch : '',
+    // (MetroKit's VATC screen: ACTUAL speedMph, AUTHORIZED atcCodeMph, COMMANDED targetMph, effort -1 brake .. 1 power)
+    const code = d ? d.code / MPH : Math.min(70, tr.lim ? tr.lim / MPH : 70), cmd = D && tr.driven ? (D.ato ? (D.commanded || 0) : d.vAllow) / MPH : tr.v / MPH;
+    const lever = D && tr.driven ? (D.emergency || D.penalty ? -1 : D.lever) : U.clamp((tr.a || 0) / 1.34, -1, 1);
+    return { speedMph: tr.v / MPH, codeMph: code, atcCodeMph: Math.round(code), commandedMph: cmd, targetMph: Math.round(cmd), effort: lever, handle: lever, brake: Math.max(0, -lever),
+      mode: d ? d.mode : 'ATO', notchText: d ? d.notch : '', doors: tr.doorT > 0.02 ? 'open ' + (tr.doorSide || '') : 'closed', cars: tr.cars,
       nextStop: ns ? MetroSim.stName(ns.st) : '', distFt: ns ? Math.max(0, ns.ps - tr.s) * 3.281 : 0, clock: Env.clockText(Env.time.sec), atc: d ? d.atc : 'ok',
-      line: MetroSim.lineName(tr.line), color: MetroSim.lineColor(tr.line), destination: MetroSim.termName(tr) };
+      line: MetroSim.lineName(tr.line), color: MetroSim.lineColor(tr.line), lineColor: MetroSim.lineColor(tr.line), destination: MetroSim.termName(tr) };
   }
-  const api = { start, end, update, supervise, driveKeys, dmi, guide, stopInfo, cabDisplay, codeFor, get run() { return run; }, best, LADDER, BLOCK };
+  // how far behind the timetable plan the driven train is (s, negative = early): at a stop, the planned departure
+  // (never negative while boarding); between stops, the planned time at the train's position on that run's profile
+  const RB = {};
+  function behind(D) {
+    const l = D.leg, S = l.stops, R = l.runs, now = Env.time.sec; if (!R || !R.length) return 0;
+    let k = -1; for (let i = 0; i < R.length; i++) if (S[R[i].k].ps <= D.s + 0.5) k = i; if (k < 0) return 0;
+    const run = R[k], a = S[run.k];
+    if (D.s <= a.ps + 0.5) return Math.max(0, now - a.tDep);
+    if (!run.R) run.R = MetroSim.getRun(l.path, a.ps, S[run.k + 1].ps, l.kind, l.cars, run.T, a.floor || 0);
+    let lo = 0, hi = run.T; for (let it = 0; it < 28; it++) { const m = (lo + hi) / 2; MetroSim.runAt(run.R, m, RB); if (RB.ps < D.s) lo = m; else hi = m; }
+    return now - (run.t0 + (lo + hi) / 2);
+  }
+  const api = { start, end, update, supervise, driveKeys, dmi, guide, stopInfo, cabDisplay, codeFor, behind, get run() { return run; }, best, LADDER, BLOCK };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroATC = api;
   return api;
 })();
