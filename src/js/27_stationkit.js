@@ -271,7 +271,7 @@ const StationKit = (() => {
         float grout = mix(gw * 2.0 * (1.0 / sz.x + 1.0 / sz.y), 1.0 - smoothstep(gw, gw + fw * 1.2, g.x), aa);
         float v = skH(g.yz) * aa + 0.5 * (1.0 - aa); col *= 0.94 + 0.1 * v; col *= 1.0 - 0.05 * skN(q * 0.7);
         col = mix(col, vec3(0.42, 0.41, 0.39), grout * 0.85);
-        gRough = mix(0.16 + 0.08 * v, 0.85, grout); gBump = (-grout * 0.0015 + 0.0004 * skN(q * 30.0)) * aa;
+        gRough = w < 0.0 ? mix(0.52 + 0.12 * v, 0.9, grout) : mix(0.16 + 0.08 * v, 0.85, grout); gBump = (-grout * 0.0015 + 0.0004 * skN(q * 30.0)) * aa;   // running bond = unglazed quarry tile
         return col;
       }
       if (k < 2.5) {                                        // terrazzo: chips at two scales, brass divider strips every w m
@@ -301,8 +301,9 @@ const StationKit = (() => {
       }
       if (k < 6.5) {                                        // brick, running bond (w: 1 glazed)
         vec2 sz = vec2(0.203, 0.0677); vec2 qq = q; qq.x += step(1.0, mod(floor(q.y / sz.y), 2.0)) * sz.x * 0.5;
-        vec3 g = skGrid(qq, sz); float m = 1.0 - smoothstep(0.004, 0.004 + fw, g.x);
-        col *= 0.85 + 0.25 * skH(g.yz); col = mix(col, vec3(0.6, 0.58, 0.55), m); gBump = -m * 0.004;
+        vec3 g = skGrid(qq, sz); float aa = clamp(0.006 / fw, 0.0, 1.0);
+        float m = mix(0.2, 1.0 - smoothstep(0.004, 0.004 + fw, g.x), aa);
+        col *= 0.85 + 0.25 * mix(0.5, skH(g.yz), aa); col = mix(col, vec3(0.6, 0.58, 0.55), m * 0.9); gBump = -m * 0.004 * aa;
         gRough = w > 0.5 ? mix(0.2, 0.8, m) : 0.85; return col;
       }
       if (k < 7.5) {                                        // metal panels (ceilings, cladding): joints, faint perforation
@@ -339,7 +340,7 @@ const StationKit = (() => {
         col *= 0.85 + 0.2 * skN(vec2(q.x * 2.0, floor(q.y / s) * 7.0 + q.y * 30.0)); col *= 1.0 - 0.5 * gap; gBump = -gap * 0.004; gRough = 0.6; return col;
       }
       if (k < 17.5) {                                       // corrugated / standing seam (ribs across v)
-        float s = w > 0.0 ? w : 0.2; float ph = q.y / s * 6.2832; gBump = sin(ph) * s * 0.08; col *= 0.95 + 0.05 * sin(ph); gRough = 0.45; return col;
+        float s = w > 0.0 ? w : 0.2; float ph = q.y / s * 6.2832; float aa = clamp(0.02 / fw, 0.0, 1.0); gBump = sin(ph) * s * 0.06 * aa; col *= 0.98 + 0.02 * sin(ph) * aa; gRough = 0.5; return col;
       }
       if (k < 18.5) {                                       // fluted concrete (vertical flutes across u)
         float s = w > 0.0 ? w : 0.15; float ph = fract(q.x / s); float fl = sqrt(max(0.0, 1.0 - pow(2.0 * ph - 1.0, 2.0)));
@@ -432,7 +433,7 @@ const StationKit = (() => {
         PhysicalMaterial m2 = material; float al0 = material.roughness * material.roughness;
         float al1 = clamp(al0 + rad / (2.0 * ld), 0.0, 1.0); m2.roughness = sqrt(al1);
         float norm = al0 / max(al1, 1e-4);
-        reflectedLight.directSpecular += col * (2.2 / max(ld, 0.35)) * NoL * norm * win * dirk * BRDF_GGX(L, V, N, m2);
+        reflectedLight.directSpecular += col * (1.6 / max(ld, 0.35)) * NoL * norm * win * dirk * BRDF_GGX(L, V, N, m2);
       }
     }
   `;
