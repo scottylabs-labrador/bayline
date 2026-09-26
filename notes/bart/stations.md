@@ -84,6 +84,26 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   builders, several MB each, stayed alive through the update closure): about 4 MB per built station
   (`metro_shots.mjs --gc` for exact heap numbers).
 
+## Promo v3 (lead, 13:30): the station shots
+
+Modules in `tools/trailer/shots/` (the lead runs the 4K captures; previews at 1280x720 with `--preview 6`), all on
+SIM's `_metro.mjs` with the service day pinned (`__m.day('2026-09-29')`, a Tuesday) and my `_st.mjs` (stop frames from
+the timetable, the platform's side from the built walk floors, people placed by hand, a guard that hides anyone at the
+lens):
+- P03 `p_embr_arrival` 07:50 Embarcadero: low on the island edge (0.56 m, 40 mm), the train glides in and stops 7 m
+  short of the camera, doors open, the crowd boards; a 1.6 m ease forward.
+- P04 `p_mont_well` 08:00 Montgomery: down the middle stair of an escalator bank in the inclined well, 1.7 m over the
+  nosings (32 mm), riders standing on both escalators moving with the steps.
+- P10 `p_lake_merritt` 17:40: beside a standing train, diagonally across the empty far track at the black circles; its
+  doors close (a departure chosen with the far platform empty).
+- P12 `p_warm_rotunda` 19:24 blue hour: outside the rotunda (50 mm), the art glass lit, a train running in beyond.
+- P14 `p_millbrae_hall` 18:07 (SIM's meet: the Peninsula train leaves as the Red Line arrives): from the Peninsula
+  island's south end, 85 mm, north under the vault.
+- P18 `p_12th_night` 22:40: the lower level, one rider 22 m ahead, the southbound train's lights in the tunnel mouth,
+  70 mm.
+Support in the stations: `res.esc` (escalators in world coordinates), `info.rotunda` (its centre, radius, stair),
+`StationCrowds` on `window.__baylineMods`.
+
 ## Post-M3 backlog (first item, lead 09:00)
 
 1. **Millbrae cross-platform island**: Caltrain NB becomes the east face of the shared island (Peninsula layout `R`
