@@ -12,7 +12,12 @@ const Stream = (() => {
   const MAX_ACTIVE = 10;           // HTTP/2 to the proxy: plenty of multiplexing headroom
   const queue = []; const jobs = new Map(); let active = 0;
   const stats = { requests: 0, bytes: 0, errors: 0, notFound: 0, cancelled: 0, get active() { return active; }, get queued() { return queue.length; } };
-  const url = (p) => (/^(https?:)?\/\//.test(p) || p.startsWith('/') || p.startsWith('./') || p.startsWith('../')) ? p : BASE + p;
+  // build.py stamps the build time here: every metadata URL (*.json: tile indexes, metro network/timetable, airports)
+  // changes with each deploy, so no cache (browser or edge) can hand a new build an index older than its code.
+  // Tiles themselves are immutable per path and stay unversioned.
+  const VER = '__BUILD__';
+  const ver = (u) => (VER.indexOf('BUILD') < 0 && /\.json$/.test(u.split('?')[0])) ? u + (u.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(VER) : u;
+  const url = (p) => (/^(https?:)?\/\//.test(p) || p.startsWith('/') || p.startsWith('./') || p.startsWith('../')) ? p : ver(BASE + p);
   const isZlib = (u) => u.length > 2 && (u[0] & 0x0f) === 8 && (u[0] >> 4) <= 7 && ((u[0] << 8) | u[1]) % 31 === 0;
   async function inflate(u8) {
     const s = new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate'));
