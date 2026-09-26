@@ -5,6 +5,15 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 `notes/bart/shots/infra/`, plus small, clearly marked hooks in `10_env.js`, `12_terrain.js`, `13_gfx.js`, `14_post.js`,
 `90_main.js` (underground support). Everything is behind `#metro=1`.
 
+## To the lead (latest first)
+
+- **07:45 INFRA M2b OK** (`#metrodir=metro-next/`): Berkeley subway (spread islands: tunnels meet ASHB / DBRK / NBRK),
+  Milpitas, Daly City and the Wye verified; every subway platform has its cell; fixes for crossovers' own structures,
+  trench walls and shallow trenches are on `bart-infra` (see Status).
+- **07:30 M3 gate (infra)**: numbers in Status below (Peninsula ~0; MacArthur aerial 278 k tris / 54 calls; hitches
+  from metro code max 8.7 ms on a 50 m/s Tube-approach flight, 7.7 ms on a Market St ride; Low = structures and rails;
+  failures through `Metro.fail`; debug-only diagnostics). SIM's `tools/qa_metro_isolation.sh` run against this branch.
+
 ## Status
 
 - **2026-09-26 07:30 — M3 gate items (infra) + M2 / M2b profile** (on `bart-infra`, merged with `bart` 26b10ee):
@@ -15,7 +24,7 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
   - **Triangles / shadows** (lead's MacArthur aerial probe, 110 m up): metro-infra **841 k -> 278 k triangles incl.
     shadows, 69 -> 54 calls** (lead measured 274 k / 55). Detail ring 240 m in 200 m chunks; the running rails switch at
     190 m (dithered 16 m band; 150 Medium, 110 Low) from the detail layer's rails to simple 3-face rails in the body layer
-    (palette kinds 11 / 12, drawn only beyond the switch); rails, small parts and fence fabric cast no shadows;
+    (palette kinds 21 / 22, drawn only beyond the switch); rails, small parts and fence fabric cast no shadows;
     structures cast only within 650 m; fences show within 450 m; instanced parts to 150 m (insulators 120 m); bodies to
     1.6 km, far silhouettes beyond.
   - **Low tier**: structures and rails only (no instanced fasteners / ties / insulators, no fences). `MetroTrack.setQuality`
@@ -379,5 +388,12 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
   calls `side` (West Oakland: M1.1 and M2 both `left`, so both faces sit between tracks 4.2 m apart), and the third-rail
   plane follows them (rail under the platform edges). STATIONS correct the sides from the layout, and so do I for the
   contact rail within stations; please flip the sides (and the plane) there so everyone reads the same answer.
+- **WORLD (07:40)**: at the West Oakland portal approach (M1.1 s 3330-3402, `trench` on M2) the rendered terrain was not
+  carved (the trench and its walls sat under a sand-coloured surface); infra now cuts the terrain itself wherever the
+  ground over a trench is not actually below the rail (`carvedAlong`), but please check the carve there. Milpitas (M2b):
+  the carve leaves steep facets behind the trench walls.
+- **DATA (07:40)**: Milpitas (M2b) alternates `cutcover` / `trench` every ~50 m (S1 3232-3942): a row of short boxes with
+  headwalls. If the station's trench is open with a lid only under the concourse / roads, fewer and longer pieces
+  would read better.
 - **TRAINS / SIM**: metro trains in tunnels are lit by the under map's ambient only (tunnel fixtures light my own
   geometry); `Under.keep(car.group)` is already in 46_metrosim.js, good.

@@ -56,6 +56,11 @@ const MetroGuide = (() => {
   // 1:2 slopes; trenches cut to rail - 1.2 m within 3.0 m): notes/bart/world.md "Ground meets BART". When it is active the
   // bed needs no terrain cut and its slopes simply run down to the (carved) ground.
   const carved = () => typeof MetroGround !== 'undefined' && MetroGround.stats && MetroGround.stats.segments > 0;
+  // is the ground over this stretch of track actually carved down (the rendered terrain below the rail)? Where the
+  // world's carve did not reach (a road deck, a tile not re-carved yet), a trench still needs its own terrain cut
+  function carvedAlong(R, a, b) { let n = 0, high = 0;
+    for (let s = a; ; s = Math.min(b, s + 10)) { MT.frameAt(R, s, F2); let h = 0; try { h = Terrain.h(F2.x, F2.z); } catch (e) {} n++; if (isFinite(h) && h > F2.y - 0.4) high++; if (s >= b) break; }
+    return high <= n * 0.2; }
   // ballast prism on carved ground: top at ~tie top, 0.305 m shoulders, 2:1 slopes down to the ground [BFS 34 05 17]
   function bedCarved(F, lo, hi) {
     const tie = DIM.tieLen / 2, top = -DIM.railH - 0.02 - 0.045, sh = DIM.ballastShoulder;   // crib ~4.5 cm below the tie tops
@@ -148,7 +153,7 @@ const MetroGuide = (() => {
       }
       for (const R of rows) R.top = R.o[1] + 1.2;
       sweepVar(ctx.B.infra, rows);
-      if (!carved()) addCut(ctx, 'mt:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
+      if (!carved() || !carvedAlong(ctx.R, s0, s1)) addCut(ctx, 'mt:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
       // drainage grates in the floor gutter and wall weep holes every 6 m (small, near only: part of the body for now)
       for (let s = Math.ceil(s0 / 6) * 6; s < s1; s += 6) { MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s);
         for (const lat of [ln.lo - 3.05 + 0.02, ln.hi + 3.05 - 0.02]) ctx.B.infra.box(F.x + F.lx * lat - ctx.ox, F.y - 0.1, F.z + F.lz * lat - ctx.oz, [F.tx, F.ty, F.tz], [F.vx, F.vy, F.vz], [F.lx, F.ly, F.lz], 0.05, 0.05, 0.025, PAL.black, 4); }
@@ -387,7 +392,7 @@ const MetroGuide = (() => {
       }
     }
   }
-  // simple rails for the body layer (kinds 11 / 12: the shader shows them only beyond the rail switch, where the detail
+  // simple rails for the body layer (kinds 21 / 22: the shader shows them only beyond the rail switch, where the detail
   // layer's rails give way): three faces per rail, rows every ~10 m; lats = the tracks' laterals in R's frame (a
   // paired tunnel cell carries both)
   const MIDRAIL = [[-0.036, -0.16], [-0.036, 0], [0.036, 0], [0.036, -0.16]];
