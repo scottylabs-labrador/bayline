@@ -6,21 +6,32 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Updated 2026-09-26 11:15. The world is LIVE** (Sheltie 08:51, Velroi after): 56,327 tile files + 5 indexes, the 49
-NAIP-dropout replacements (08:51) and the 269 JPEG replacements (10:11, both servers). Lead's flight QA: Antioch,
-Concord, Pittsburg, Richmond, Lafayette, Orinda, Dublin, Milpitas detailed; the three seams invisible; Marin fixed.
+**Updated 2026-09-26 12:55. M3 is LIVE (11:36) on the world: all world sets are published on both servers.**
 
-| item | state |
+| set / change | state |
 |---|---|
-| L8 to 1024 px: the 1706 L8 published at 512 px | `sr_l8.py` staged into `data/raw/tiles/sr_l8_stage` (OpenCV encoder), 301/518 parents at 11:00; paused for the lead's M3 GPU window; then `sr_manifest.py` -> SR READY |
-| JPEG scan tails (Pillow 10.1; see Findings) | 269 files re-made and published 10:11 (`fix_jpeg`); 90 broadly different mosaic parents left alone (lead) |
-| water: San Pablo Bay patchwork, the 38.07 line, the Sausalito / Richardson Bay wedge | `fix_water.py` (tone field + Richardson Bay box): L2-L7 staged (2,251 img + 42 m tiles, 104 MB, 41 of them pre-Metro in the 1.6 km band); L8/L9 after the SR set is published (their input is the 1024 px L8); then WATER READY. Shots: `shots/world/water_*_before_after.jpg` |
-| Globe ocean west of Marin (pale bands along lon -122.609) | `15_globe.js` fix on bart-world (a2d5bda, for M3.1): open sea = water whatever the photo's haze, non-bay water at least 15 m deep off the shore. Marin 8 km verified; Half Moon Bay / Peninsula / KLAX checks after the GPU window |
-| SF downtown plazas (STATIONS: Market & Post, entrance A1) | `fix_plaza.py`: lidar detail held at zero on paved ground in downtown SF (535 h9 tiles, max change 8.5 m at pits); in a dev overlay, visual check after the GPU window |
-| INFRA: buildings in tunnel mouths / open cuts | done (40bae4e) |
-| INFRA: trees / bushes / grass on cut ground | done (74ec930): Daly City 1 tree dropped, Powell 0 |
-| INFRA: traffic near BART | done (0bb0e39): no lanes on a ground-level track or across an open trench; Towns.refresh keeps roads during the swap. Walnut Creek float = pre-existing (same with the carve off) |
-| INFRA: carve at West Oakland / Milpitas | West Oakland + Lake Merritt channel: the terrain can't go below sea level (clamp for open water), infra's carvedAlong cut covers it. Milpitas (M3 profile): carve correct (rail - 1.22); the facets behind the walls are the terrain grid (one cell of slope behind the wall): proposed a ground-coloured coping on the walls' outer top (infra) |
+| the world (56,327 tile files + 5 indexes) | published 08:51 |
+| NAIP dropout fixes (49) | published 08:51 |
+| JPEG scan-tail fixes (269, `fix_jpeg`) | published 10:11 |
+| L8 to 1024 px (1,706, `sr_l8_stage`) | published 12:20-12:25 |
+| bay water re-tone (2,359: 2,317 img + 42 masks, `fix_water`) | published ~12:40 |
+| downtown SF plazas (535 h9, `fix_plaza`) | published ~12:40 |
+| Globe ocean (pale bands west of Marin) | bart-world a2d5bda, accepted for M3.1 |
+| night lights from the air (checkerboard, dusk) | bart-world 9f03eff, accepted for M3.1 |
+| INFRA items (tunnel-mouth / open-cut buildings, trees / grass on cut ground, traffic near BART, carve checks) | done (40bae4e, 74ec930, 0bb0e39; analyses below) |
+
+**Backlog (post-M3, queued):**
+1. Night aerials (lead): the glow almost entirely from the street / road mask at L7-L9 (thin bright lines), blocks dark apart
+   from sparse building points, the wash only at L5-L6 distances.
+2. Milpitas trench facets: infra geometry (a ground-coloured coping on the walls' outer top); DATA: fewer, longer
+   trench / cut-and-cover pieces.
+3. The faint line at lat 38.07 over San Pablo Bay (terrain vs Globe water shading; the data now match in tone).
+4. Plazas beyond downtown SF (the Peninsula downtowns): the same `fix_plaza.py` rule, a wider region list.
+5. Road traffic on cross slopes (outer lanes keep the centreline height; up to ~1.5 m at Walnut Creek, pre-existing):
+   re-sample the ground per lane point in `Life.setRoads`.
+6. The 90 broadly different pre-Metro mosaic parents (built from older children; left alone by the lead's call) and the
+   invisible JPEG tails (~8,600 files, extra bytes or a last MCU off by a few levels): no action unless wanted.
+7. Housekeeping once Velroi has everything: delete the staging folders (`data/raw/tiles/sr_l8_stage` 470 MB, `fix_*`).
 
 **M3 blocker fixed (bart-world ebd8fba ... 44c7379):** MetroGround no longer disposes Towns / Flora. Terrain re-filters its
 loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched tiles keeping their meshes and photo
