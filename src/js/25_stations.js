@@ -572,7 +572,10 @@ const Stations = (() => {
       const L = L0.filter(rec => { const w = Geo.ll2w(rec[0], rec[1]); return !!platOf(st, w.x - OX, w.z - OZ, 0.8, 2); }); if (!L.length) continue; used.add(kind);
       for (const rec of L) {
         const w = Geo.ll2w(rec[0], rec[1]); const x = w.x - OX, z = w.z - OZ; const on = platOf(st, x, z, 0.8, 2); if (!on) continue;   // station furniture only
-        if (on.p.xplat) { const [li, lo] = platLat(on.p, on.s); if ((on.lat - lo) * Math.sign(lo - li) > -0.3 || xplatOpenings(on.p).some(s => Math.abs(s - on.s) < 2.6)) continue; }
+        // (Millbrae with the metro's island: OSM's points a metre or two off put two ticket machines on the southbound
+        // edge; those within the tactile zone, on the island face's outer 0.3 m (the metro's side) or in its openings stay out)
+        if (st.xplat) { const [li, lo] = platLat(on.p, on.s), sg = Math.sign(lo - li) || 1, ed = (on.lat - li) * sg;
+          if (ed < TAC + 0.3 || (on.p.xplat && (ed > Math.abs(lo - li) - 0.3 || xplatOpenings(on.p).some(s => Math.abs(s - on.s) < 2.6)))) continue; }
         const y = groundAt(st, x, z); const [proto, bucket] = OSMMAP[kind];
         put(B[bucket], proto, x, y, z, facingTrackYaw(x, z));
         if (kind === 'help') put(B.blue, PROTO.helpBeacon, x, y, z, 0);

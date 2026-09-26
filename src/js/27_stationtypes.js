@@ -2266,6 +2266,10 @@ const StationTypes = (() => {
       const top = X.y(q.u), dF = q.n * 0.32;
       addSlope(walk, [[q.u - 1.45, -o * 0.05, top], [q.u + 1.45, -o * 0.05, top], [q.u + 1.45, o * dF, yP], [q.u - 1.45, o * dF, yP]].map(([u, dv, y]) => [...WUV(u, vf + dv), y]));
       for (const x of [-1.5, 1.5]) addWall(walk, WUV(q.u + x, vf - o * 0.3), WUV(q.u + x, vf + o * (q.D + 0.2)), yP - 0.5, top + 1.1);
+      // the transfer panel over the steps, facing platform 3, hung from its roof where the roof reaches
+      const cv = X.p3.canopy; if (cv && q.u > cv[0] + 2 && q.u < cv[1] - 2) { const vs = vf + o * Math.min(q.D + 0.8, X.width(q.u) - 0.4), ys = yP + 2.75;
+        z.signs.push({ u: q.u, v: vs, y: ys, yaw: T.yawAt(q.u) + (o > 0 ? 0 : Math.PI), w: 3.4, h: 0.64, region: 'info', both: false, T });
+        T.place(z.d.sk, q.u, vs, ys + 0.3, 0); z.d.sk.mat(0x2a2c2e, K.PAINT); for (const x of [-1.5, 1.5]) z.d.sk.cbox(x, 0, 0, 0.03, 0.72, 0.03); z.d.sk.pop(); }
     }
     yield;
     // the ramp: a landing level with the face at the opening, then 1:12 down along the face to the strip; a curb and a
