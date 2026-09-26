@@ -41,9 +41,7 @@ def is1024(p):
 
 
 def save(p, x01, q):
-    im = Image.fromarray(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8))
-    buf = io.BytesIO(); im.save(buf, 'JPEG', quality=q, optimize=True, subsampling=2)
-    C.write_atomic(p, buf.getvalue())
+    C.write_atomic(p, C.jpeg_bytes(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8), q))      # (checked encode)
 
 
 def main():

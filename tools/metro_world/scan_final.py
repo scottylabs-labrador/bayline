@@ -33,9 +33,16 @@ def main():
         d = os.path.join(C.PUB, 'img', str(L))
         if os.path.isdir(d):
             files += [(L, os.path.join(d, f)) for f in os.listdir(d) if f.endswith('.jpg') and os.path.getmtime(os.path.join(d, f)) >= REF]
+    # the files written since the previous full scan (data/raw/tiles/new_img_dropouts.json) first, then the rest
+    prev = os.path.join(C.WORK, 'new_img_dropouts.json'); t_prev = os.path.getmtime(prev) if os.path.exists(prev) else 0
+    files.sort(key=lambda t: (os.path.getmtime(t[1]) < t_prev, t[0], t[1]))
+    n_recent = sum(os.path.getmtime(t[1]) >= t_prev for t in files)
+    print(f'{len(files)} new imagery files, {n_recent} written since the previous full scan (first)', flush=True)
     bad, green, unread, sizes = [], [], [], collections.Counter()
     with cf.ThreadPoolExecutor(3) as ex:
-        for (L, p), r in zip(files, ex.map(one, files)):
+        for i, ((L, p), r) in enumerate(zip(files, ex.map(one, files))):
+            if i == n_recent - 1 or (i + 1) % 1000 == 0:
+                print(f'{i + 1} scanned: dropout {bad} green {green} unreadable {unread}', flush=True)
             name = f'{L}/{os.path.basename(p)}'
             if r[0] != 'ok':
                 unread.append(name); continue

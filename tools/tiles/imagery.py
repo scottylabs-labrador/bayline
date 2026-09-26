@@ -14,7 +14,7 @@ import numpy as np
 from PIL import Image
 import cv2
 from . import fetch
-from .common import IMG, bbox_ll, path, write_atomic, exists, children, log, WORK
+from .common import IMG, bbox_ll, path, write_atomic, exists, children, log, WORK, jpeg_bytes
 
 JPEG_Q = 87
 
@@ -158,10 +158,7 @@ def load_hires(L, tx, ty):
 
 
 def _save_jpg(p, x01):
-    im = Image.fromarray(to_u8(x01))
-    buf = io.BytesIO()
-    im.save(buf, 'JPEG', quality=JPEG_Q, optimize=True, subsampling=2)
-    write_atomic(p, buf.getvalue())
+    write_atomic(p, jpeg_bytes(to_u8(x01), JPEG_Q))          # (checked encode: see common.jpeg_bytes)
 
 
 def _down(x, n=IMG):

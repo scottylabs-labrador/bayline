@@ -51,8 +51,7 @@ def cur(L, x, y):
 
 def save(p, x01, q):
     C.ensure_dir(p)
-    im = Image.fromarray(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8)); buf = io.BytesIO()
-    im.save(buf, 'JPEG', quality=q, optimize=True, subsampling=2); C.write_atomic(p, buf.getvalue())
+    C.write_atomic(p, C.jpeg_bytes(np.clip(x01 * 255 + 0.5, 0, 255).astype(np.uint8), q))       # (checked encode)
 
 
 def load01(p, n=None):

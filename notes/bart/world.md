@@ -78,25 +78,60 @@ drawing in the strip wherever Towns has no tile), `66_ui.js` (map rows), `16_air
 
 ## Budget (<= ~18 GB raw + published)
 
-Measured 01:27 (stage 1 partial): raw +3.2 GB (NAIP cache 2.7 -> 4.8 GB, lidar 0.83 -> 1.5 GB, terrarium +0.23 GB,
-OSM extract v3 0.16 GB); published +0.65 GB in 9.6k files (512 px L8 before the GPU pass). Estimate at the end of stage
-1: ~2.2 GB published + ~3.5 GB raw; stage 2 adds ~0.45 GB published + ~2.3 GB raw. Total ~8.5 GB.
+**Measured 08:05 (everything baked):** raw **+7.0 GB** (files written since the pre-Metro snapshot: NAIP cache +5.05 GB,
+lidar +1.10 GB, OSM +0.32 GB, terrarium +0.33 GB, tile work files +0.21 GB); published **+2.35 GB** in 56,327 tile files
+(+ 5 index files), **+~0.3 GB** more when the 1706 L8 tiles still at 512 px are replaced by their 1024 px versions.
+Total **~9.7 GB**. The staging folders (`data/raw/tiles/sr_l8_stage` ~0.45 GB, `fix_dropouts` 6 MB) go once applied.
 
 ## Publish list
 
-(exact list with sizes when stage 1 completes; index files last.) Safety for old clients (the page in production
-before the Bayline Metro code ships):
+**Exact list, 08:10** (from `tools/metro_world/verify.py` -> `data/raw/tiles/publish_manifest.json`: every file under
+`data/pub/v2/tiles` written since the pre-Metro snapshot). All paths under `data/pub/v2/`; every one is a NEW file
+(the production indexes, fetched from the public site, list only files that are unchanged locally).
+
+| dir | new files | MB |
+|---|---|---|
+| `tiles/img/2 .. 5` (the north strip, complete) | 4 / 16 / 64 / 256 | 0.4 / 1.6 / 6.2 / 24.2 |
+| `tiles/img/6` | 1635 | 152.9 |
+| `tiles/img/7` | 6480 | 584.6 |
+| `tiles/img/8` (1297 at 1024 px, **1706 at 512 px**: replaced later, see below) | 3003 | 511.2 |
+| `tiles/img/9` | 3594 | 597.2 |
+| `tiles/h/2 .. 7` | 4 / 16 / 64 / 256 / 1635 / 6480 | 82.2 total |
+| `tiles/m/2 .. 7` | 4 / 16 / 64 / 256 / 1635 / 6480 | 127.9 total |
+| `tiles/t/7` | 1803 | 25.0 |
+| `tiles/h9/8`, `tiles/h9/9` | 3003, 11430 | 30.7, 94.2 |
+| `tiles/mat/7` | 1749 | 63.5 |
+| `tiles/t2/7` | 4541 | 32.2 |
+| `tiles/b2/7` (new layer: 1819 tiles + 20 `.sky.bin`) | 1839 | 14.2 |
+| **total tile files** | **56,327** | **2,348** |
+
+Then the index files, in this order: `tiles/h9/index.json` (0.10 MB), `tiles/mat/index.json` (0.03), `tiles/t2/index.json`
+(0.07), `tiles/b2/index.json` (0.03, new), **`tiles/index.json` last** (0.23). `tiles/globe/baywater.{json,png}` are
+already in production (M2) and unchanged.
+
+Commands (the lead runs them; `DRY=1` in front lists what would be sent): `sh tools/metro_world/publish_world.sh tiles`
+(every dir above with `rsync --ignore-existing`: a file already on the server is never touched), then
+`sh tools/metro_world/publish_world.sh indexes`.
+
+Replacement sets (separate; each with a manifest of path, old_sha256, new_sha256):
+- **NAIP dropout fixes** (approved): 49 files, 6.4 MB, `data/raw/tiles/fix_dropouts/manifest.json`, staged under
+  `data/raw/tiles/fix_dropouts/tiles/img/L/x_y.jpg` (L1 1, L2 2, L3 5, L4 8, L5 9, L6 8, L7 9, L8 6, L9 1; same pixel
+  sizes as the originals). `publish_world.sh fixes-check` (server sha == old), `publish_world.sh fixes` (server, then the
+  local `data/pub` copy, so a later `publish_data.sh` never reverts them, then server sha == new).
+- **L8 to 1024 px** (later): exactly the 1706 paths of `data/raw/tiles/sr_l8_stage/pending_512.txt` (path + sha256 of
+  the 512 px file as published); `tools/sr_l8.py` with `BAYLINE_SR_STAGE` writes their 1024 px versions to
+  `data/raw/tiles/sr_l8_stage/tiles/img/8/`; `tools/metro_world/sr_manifest.py` writes the manifest;
+  `publish_world.sh sr-check` / `sr` like the fixes.
+
+Safety for old clients (the page in production before the Bayline Metro code):
 
 | what | harmless to old clients? |
 |---|---|
 | new tiles in the square (`tiles/{img,h,m,t}/L/x_y` with y >= 0, `h9`, `mat`, `t2` tiles) and the square entries they add to `tiles/index.json` `levels`, `h9/index.json` `l8`, `mat` / `t2` `tiles` | yes: exactly how the SF and Oakland AOIs were added; old clients just get more detail along the BART corridors (Fremont, Hayward, Dublin, Colma ...) |
 | strip tiles (negative rows: `x_-N`) | yes: old clients never request them |
-| `north` / `l8n` keys in the indexes | yes: old clients never read them (checked: their tile-key collisions land out of range) |
+| `north` / `l8n` keys in the indexes | yes: old clients never read them (checked: their tile-key collisions land out of range). The M2 code in production reads them: publishing `tiles/index.json` turns the strip on there |
 | `tiles/b2/**` | yes: old clients never read b2 |
-| **L8 imagery: publish only after the GPU pass** (`sr_l8.py` upgrades new L8 tiles from 512 to 1024 px in place, locally) | publishing a 512 px L8 file and then the 1024 px one would change a published file; wait for the "SR done" milestone |
-
-Order: tile files first, then `tiles/h9/index.json`, `tiles/mat/index.json`, `tiles/t2/index.json`, `tiles/b2/index.json`,
-and `tiles/index.json` last.
+| 512 px L8 files now, 1024 px later on the same paths | valid either way (the runtime takes any size; `size8` is informational); a client may keep the 512 px file until its cache / the edge TTL expires |
 
 ## Ground meets BART (the carve rule; `src/js/19_metroground.js`, `MetroGround`)
 
