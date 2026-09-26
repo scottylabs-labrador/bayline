@@ -7,6 +7,11 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **08:40 wrap-up** (f4c0d47 on top of `bart` 4dfaca7): the portal visibility walk is time-budgeted (after 4 ms every
+  cell within 300 m is drawn instead: a superset, never a hole; `Under.stats.visOver` counts it; one 30 ms walk was
+  seen once on a Market St ride under load) and chunk disposal is capped at 3 per frame (a 10.7 ms dispose frame was
+  seen on the Tube flight). Last profiles on the shared machine: Tube-approach flight metro max 12 ms, Market St ride
+  15 ms before these two caps, 0 frames over 16 ms from metro code in both. Dev server stopped.
 - **08:10 please take fb30fa3 with the M3 merge**: 32127f8 (the triangle work) reused palette kind 11 for the simple
   mid-distance rails, and 11 is the Market St steel liner plates, so within 190 m of the camera the Market St bore
   lining was discarded (black tunnel with floating lamps). Fixed in fb30fa3 (mid rails are kinds 21 / 22 now).
