@@ -7,6 +7,16 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **13:20 lens-aware ranges (M3.2, promo tele shots)**: every guideway range now uses an effective distance: in the
+  view frustum, distance x tan(fov / 2) / tan(27.5°) (clamped to at most 1, so wider lenses keep today's budgets, and
+  to at least 1/8), and in capture mode (`__bayline.capture.on`) every distance is divided by 3 as well. It applies to
+  the detail ring (240 m), the body ring (1.6 km), shadow casters (650 m), fences (450 m), the rail switch (190 m:
+  `uRailSwitch` = tier value x 3 (capture) / k), and the instanced ties, fasteners and insulators (a 20 m-piece frustum
+  test, re-placed when a long lens turns 1.5° or zooms). Chunks outside the frustum keep their normal distance, so a
+  narrow lens only builds more along what it sees. `MetroTrack.lens` = { k, cap, tele, frustum }. At 55° nothing
+  changes. Tele preview, West Oakland aerial at 120 mm (11.4°) from ~335 m: detail chunks 8 -> 19, instanced parts
+  798 -> 2,509, rails detailed out to ~1 km along the view; draw calls 187 -> 190, triangles 2.35 M -> 2.54 M.
+  Before / after: `notes/bart/shots/infra/tele_lens_before_after.jpg`.
 - **12:40 M3.1 performance (under-map reads)**: the hypothesis holds. Before, every lit material and the post composite
   read the under map (2 fetches from a 32 MB atlas per fragment, 4 on cut terrain) wherever cells were within ~4 km,
   i.e. all of central SF and Oakland. Now:
