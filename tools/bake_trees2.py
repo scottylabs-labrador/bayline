@@ -18,10 +18,10 @@ from bake_tiles import run_pool
 
 def l7_tiles(limit=0):
     """the imagery L7 tiles (photo crowns + CHM) and the L7 tiles under L6-only imagery (CHM trees), in row order (the CHM
-    source is striped by rows, so neighbouring tiles reuse decoded rows)"""
-    lv = json.load(open(os.path.join(C.PUB, 'index.json')))['levels']
-    s7 = {tuple(c) for c in lv['7']}
-    hills = {(2 * x + dx, 2 * y + dy) for (x, y) in lv['6'] for dy in (0, 1) for dx in (0, 1)} - s7
+    source is striped by rows, so neighbouring tiles reuse decoded rows). From the coverage (square + north strip)."""
+    cov = C.coverage()
+    s7 = {tuple(c) for c in cov[7]}
+    hills = {(2 * x + dx, 2 * y + dy) for (x, y) in cov[6] for dy in (0, 1) for dx in (0, 1)} - s7
     t = sorted(s7 | hills, key=lambda c: (c[1], c[0]))
     return t[:limit] if limit else t
 
@@ -42,10 +42,14 @@ def _register_row(row):
 
 
 def step_register(a):
-    tiles = [t for t in l7_tiles(a.limit) if os.path.exists(C.path('t', 7, t[0], t[1], 'bin'))]
-    C.log(f'trees v2: registering {len(tiles)} imagery tiles against the canopy model')
+    old = json.load(open(SHIFTS)) if os.path.exists(SHIFTS) else {}
+    # (add-only: tiles registered before keep their shift; only tiles with a t tile and no t2 tile yet are registered)
+    tiles = [t for t in l7_tiles(a.limit) if os.path.exists(C.path('t', 7, t[0], t[1], 'bin')) and f'{t[0]}_{t[1]}' not in old
+             and not os.path.exists(T2.out_path(*t))]
+    C.log(f'trees v2: registering {len(tiles)} imagery tiles against the canopy model ({len(old)} registered before)')
     res = run_pool(_register_row, _rows(tiles), a.workers, 'register', kind='process')
-    out = {f'{t[0]}_{t[1]}': r for row in res for (t, r) in row if r}
+    out = dict(old)
+    out.update({f'{t[0]}_{t[1]}': r for row in res for (t, r) in row if r})
     C.write_atomic(SHIFTS, json.dumps(out).encode())
     q = [r for r in out.values() if r['q'] >= 3.0]
     import numpy as np
@@ -86,13 +90,22 @@ def step_bake(a):
 
 
 def step_index(a):
-    rows = [[tx, ty] for (tx, ty) in l7_tiles(a.limit) if os.path.exists(T2.out_path(tx, ty))]
+    try:
+        prev = json.load(open(os.path.join(C.PUB, 't2', 'index.json')))
+    except Exception:
+        prev = {}
+    have = {(tx, ty) for (tx, ty) in l7_tiles(a.limit) if os.path.exists(T2.out_path(tx, ty))}
+    have |= {tuple(t) for t in prev.get('tiles', []) + prev.get('north', [])}          # never drop a published row
+    rows = [list(t) for t in sorted((t for t in have if t[1] >= 0), key=lambda c: (c[1], c[0]))]
+    north = [list(t) for t in sorted((t for t in have if t[1] < 0), key=lambda c: (c[1], c[0]))]
     out = {'version': 1, 'product': 't2', 'level': 7, 'path': 'tiles/t2/7/{x}_{y}.bin', 'layout': 'as tiles/t (tools/tiles/trees.py)',
            'tiles': rows,
            'attribution': 'Tree heights: Meta and World Resources Institute, Global Canopy Height Map (CC BY 4.0). Crowns: USDA NAIP.'}
+    if north:
+        out['north'] = north                        # the Bayline Metro north strip (negative rows): new clients only
     p = os.path.join(C.PUB, 't2', 'index.json')
     C.write_atomic(p, json.dumps(out, separators=(',', ':')).encode())
-    C.log(f't2 index: {len(rows)} tiles -> {p}')
+    C.log(f't2 index: {len(rows)} tiles (+ {len(north)} in the north strip) -> {p}')
 
 
 if __name__ == '__main__':

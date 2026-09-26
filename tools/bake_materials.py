@@ -5,7 +5,9 @@
   python3 tools/bake_materials.py index                  # publish it last
   python3 tools/bake_materials.py all
 
-Coverage = every L7 tile of the imagery index. Additive: clients without tiles/mat/index.json never ask for it.
+Coverage = every L7 tile of the imagery coverage (data/raw/tiles/coverage.json) within 3 km of a railway (Caltrain or
+BART; the north strip's far hills get none). Additive and add-only: existing tiles are never rewritten, and the index
+keeps every row it had; north-strip rows (negative ty) go to `north` (old clients never read it).
 """
 import argparse, json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -15,8 +17,14 @@ from bake_tiles import run_pool
 
 
 def l7_tiles(limit=0):
-    t = [tuple(c) for c in json.load(open(os.path.join(C.PUB, 'index.json')))['levels']['7']]
-    return t[:limit] if limit else t
+    """the square's L7 imagery tiles, plus the north strip's within the BART L7 band (3 km)"""
+    cov = [tuple(c) for c in C.coverage()[7]]
+    sq = [t for t in cov if t[1] >= 0]
+    if any(t[1] < 0 for t in cov):
+        from tiles import metro
+        band = C._cand_near(7, metro.points(), C.BART_R7, range(-C.north_rows(7), 0))
+        sq += sorted(band, key=lambda c: (c[1], c[0]))
+    return sq[:limit] if limit else sq
 
 
 def _bake(args):
@@ -37,14 +45,23 @@ def step_bake(a):
 
 
 def step_index(a):
-    rows = [[tx, ty] for (tx, ty) in l7_tiles(a.limit) if os.path.exists(MT.out_path(tx, ty))]
+    try:
+        prev = json.load(open(os.path.join(C.PUB, 'mat', 'index.json')))
+    except Exception:
+        prev = {}
+    have = {(tx, ty) for (tx, ty) in l7_tiles(a.limit) if os.path.exists(MT.out_path(tx, ty))}
+    have |= {tuple(t) for t in prev.get('tiles', []) + prev.get('north', [])}          # never drop a published row
+    rows = [list(t) for t in sorted((t for t in have if t[1] >= 0), key=lambda c: (c[1], c[0]))]
+    north = [list(t) for t in sorted((t for t in have if t[1] < 0), key=lambda c: (c[1], c[0]))]
     out = {'version': 1, 'product': 'mat', 'level': 7, 'n': MT.N, 'cell': MT.CELL, 'path': 'tiles/mat/7/{x}_{y}.bin',
            'layout': 'n x n uint8 class ids, cell (i,j) centred at x0+(i+0.5)*cell, z0+(j+0.5)*cell, row-major, zlib',
            'classes': MT.NAMES, 'tiles': rows,
            'attribution': 'Classified from USDA NAIP imagery (RGB + NIR) and OpenStreetMap (ODbL).'}
+    if north:
+        out['north'] = north                        # the Bayline Metro north strip (negative rows): new clients only
     p = os.path.join(C.PUB, 'mat', 'index.json')
     C.write_atomic(p, json.dumps(out, separators=(',', ':')).encode())
-    C.log(f'mat index: {len(rows)} tiles -> {p}')
+    C.log(f'mat index: {len(rows)} tiles (+ {len(north)} in the north strip) -> {p}')
 
 
 if __name__ == '__main__':
