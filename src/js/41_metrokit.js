@@ -1,4 +1,4 @@
-// MetroKit — Bayline Metro rolling stock (trains workstream). See notes/bart/trains.md for the API, the research behind
+// MetroKit: Bayline Metro rolling stock (trains workstream). See notes/bart/trains.md for the API, the research behind
 // every dimension, and measured costs.
 //   'bart' : "Fleet of the Future"-type D (cab) and E (no cab) cars, 2..10 cars in valid orders.
 //   'dmu'  : the Antioch shuttle (Stadler GTW 2/6-like articulated DMU, 42_metrokit_dmu.js).
@@ -70,6 +70,7 @@ const MetroKit = (() => {
   pal('louver', '#3a3e44', 0.55, 0.5, { pat: PAT.louver, gr: 1 });
   pal('podBlack', '#0c0e10', 0.16, 0.2, { cc: 1, gr: 0.3 });
   pal('reflector', '#e2e6ea', 0.06, 1, { eg: G.head, ew: 0.08 });
+  pal('podSilver', '#c9ced3', 0.22, 0.35, { cc: 1, eg: G.head, ew: 0.05 });            // headlight housings behind their covers
   pal('headLamp', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.head });
   pal('tailLamp', '#d0121c', 0.08, 0, { cc: 1, pat: PAT.lens, eg: G.tail });
   pal('headLampB', '#fbf8ef', 0.05, 0, { cc: 1, pat: PAT.lens, eg: G.headB });
@@ -294,6 +295,9 @@ const MetroKit = (() => {
       } else if (mkPat == 4.0 || mkPat == 25.0 || mkPat == 28.0) {    // paint / gloss black: orange peel
         col *= 0.985 + 0.03 * mkV(p.xy * 31.0 + p.z * 23.0);
         mkCCR = 0.03 + 0.03 * mkV(p.zy * 13.0);
+        // the GTW's cab front: white, the side's blue wrapping round the lower corners (its edge sweeps out as it rises)
+        if (mkPat == 28.0) { float az = abs(p.z), eb = 0.7 + 0.38 * smoothstep(0.55, 1.95, p.y);
+          float bl = smoothstep(-fw, fw, az - eb) * step(p.y, 2.0); col = mix(col, vec3(0.008, 0.33, 0.72), bl); }
       } else if (mkPat == 5.0) {                                 // roof: white paint with ribs and dirt
         col *= 0.9 + 0.1 * mkF(p.xz * 0.7 + 3.0);
         col *= 1.0 - 0.25 * mkRep(mkUv.y, 0.105, 0.012, fw) * fade;
@@ -370,7 +374,9 @@ const MetroKit = (() => {
       } else if (mkPat == 31.0) {                                // far-LOD window: lit cabin impression (ceiling glow, seat backs)
         float yy = fract((p.y - 1.89) / 0.95), sb = step(yy, 0.35) * step(0.1, fract(p.x / 0.755 + 0.3));
         mkEmW *= (0.35 + 0.65 * smoothstep(0.55, 1.0, yy)) * (1.0 - 0.6 * sb);
-        mkEmW *= 0.25 + 0.75 * mkNight;
+        mkEmW *= 0.45 + 0.55 * mkNight;
+        // the lit cabin's colour (not the dark glass albedo), about the LOD0 impression's average through the tint
+        mkEm += vec3(0.46, 0.45, 0.41) * mkLv[1] * mkEmW; eg = 0.0;
       } else if (mkPat == 27.0) {                                // DMU body: satin silver, the cab swoosh at both ends
         col *= 0.95 + 0.07 * mkV(vec2(p.x * 1.3, p.y * 60.0)) * fade;
         float ax = abs(p.x), t = clamp((3.0 - p.y) / 2.6, 0.0, 1.0);
@@ -596,6 +602,22 @@ const MetroKit = (() => {
       }
       return this;
     }
+    // a plate / prism: outline (+ holes) in the x-y plane (current transform), extruded from z0 to z1: both caps and the
+    // side walls (flat normals, outward)
+    prism(outline, holes, z0, z1) {
+      const za = Math.min(z0, z1), zb = Math.max(z0, z1);
+      this.shape(outline, holes, (a, b) => ({ p: [a, b, zb], n: [0, 0, 1] }));
+      this.shape(outline, holes, (a, b) => ({ p: [a, b, za], n: [0, 0, -1] }));
+      const walls = (ring, outer) => {
+        let ar = 0; for (let i = 0; i < ring.length; i++) { const p = ring[i], q = ring[(i + 1) % ring.length]; ar += p[0] * q[1] - q[0] * p[1]; }
+        const sg = (ar > 0 ? 1 : -1) * (outer ? 1 : -1);
+        for (let i = 0; i < ring.length; i++) { const p = ring[i], q = ring[(i + 1) % ring.length], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy); if (L < 1e-9) continue;
+          const nx = sg * dy / L, ny = -sg * dx / L;
+          this.quadA(this.v(p[0], p[1], za, nx, ny, 0), this.v(q[0], q[1], za, nx, ny, 0), this.v(q[0], q[1], zb, nx, ny, 0), this.v(p[0], p[1], zb, nx, ny, 0)); }
+      };
+      walls(outline, true); for (const h of holes || []) walls(h, false);
+      return this;
+    }
     geometry() {
       const g = new THREE.BufferGeometry(), n = this.count;
       g.setAttribute('position', new THREE.Float32BufferAttribute(this.P, 3));
@@ -659,13 +681,27 @@ const MetroKit = (() => {
   const SIGN = { W: 192, H: 48, front: [0, 32 / 48, 1, 1], side: [0, 32 / 48, 1, 1], next: [0, 16 / 48, 1, 32 / 48], spare: [0, 0, 1, 16 / 48] };
 
   // ------------------------------------------------------------------------------------------ glass
-  // Exterior glass. With the interior hidden it shows a ray-cast impression of the lit cabin behind it ("interior
-  // mapping": floor, ceiling with its two light strips, far wall and windows, seat rows with occupants) with Fresnel
-  // reflections of the environment on top; with the interior built it becomes clear, tinted glass.
+  // Exterior glass. With the interior hidden it ray-casts an impression of the lit cabin behind it ("interior
+  // mapping", per design in d.imap): the cabin's convex section (floor, side walls, sloped ceiling with its LED bands)
+  // closed by the end walls; on the far wall its windows (the scene's environment seen through a second tinted pane,
+  // plus a faint reflection of the cabin), doors with their windows, ads and passenger screens; seat rows (backs and
+  // cushions), longitudinal benches, doorway partitions, grab poles and the overhead rails; seated and standing
+  // passengers by the car's load; the D cab behind the windscreen. It is shaded like the real interior (the same
+  // line-light model, daylight scaled by mkIndoor, dimmed underground through the Under hook) so nothing jumps when the
+  // real interior is built; the glass then turns clear with the same tint (constant-colour blending keeps the
+  // reflections at full strength).
+  const GLASS_TINT = new THREE.Color(0.42, 0.47, 0.46);          // per pane (grey-green tinted glazing)
   const GLASS_FRAG_HEAD = `
-    uniform vec3 mkCamO; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY; uniform float mkLv[16];
-    uniform vec4 mkRows[24]; uniform float mkRowN; uniform vec4 mkCab;
+    uniform vec3 mkCamO, mkTint; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY, mkLoad; uniform float mkLv[16];
+    uniform vec4 mkIndoor, mkLamp, mkCab, mkCabI, mkRail, mkDoorWin, mkBand, mkEnds, mkCnt;
+    uniform vec4 mkRows[40]; uniform float mkRowN, mkImDet;
+    uniform vec4 mkSec[8]; uniform vec4 mkWin[16]; uniform vec4 mkDoor[4]; uniform vec4 mkPole[16]; uniform vec4 mkStand[8]; uniform vec4 mkPan[12];
     uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
+    varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
+    const vec3 MK_WALL = vec3(0.776, 0.768, 0.730), MK_WALL2 = vec3(0.651, 0.651, 0.624), MK_CEIL = vec3(0.807, 0.807, 0.776);
+    const vec3 MK_FLOOR = vec3(0.093, 0.100, 0.109), MK_BLUE = vec3(0.011, 0.136, 0.337), MK_LIME = vec3(0.451, 0.521, 0.011);
+    const vec3 MK_SHELL = vec3(0.578, 0.604, 0.617), MK_POLE = vec3(0.56, 0.59, 0.62), MK_DOORI = vec3(0.60, 0.61, 0.60);
+    float mkLitK, mkDayK; vec3 mkDayA;
     // LED signs behind the glass: plane (axis 0: x = c, 1: z = c), extent a0..a1 along the other horizontal axis,
     // y0..y1, u direction; returns the LED emission (rgb) and whether the ray hit a sign (a)
     vec4 mkSigns(vec3 ro, vec3 rd) {
@@ -684,63 +720,245 @@ const MetroKit = (() => {
       }
       return vec4(0.0);
     }
-    varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
     float gH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
-    // cast a ray from the glass into the cabin box; returns radiance of what it hits
-    vec3 mkInterior(vec3 ro, vec3 rd, float lit) {
-      float hw = mkHalfW, fy = mkFloorY, cy = mkCeilY;
-      if (ro.x > mkCab.y + 0.05 || ro.x < mkCab.x - 0.05) { float sh = 0.04 + 0.1 * smoothstep(fy + 0.9, fy + 1.3, ro.y + rd.y); return vec3(sh) * (0.4 + lit) * (1.0 - 0.5 * mkNight); }
-      float tHit = 1e9; int what = 0; vec3 nrm = vec3(0.0);
-      if (rd.y < -1e-4) { float t = (fy - ro.y) / rd.y; if (t > 0.0 && t < tHit) { tHit = t; what = 1; nrm = vec3(0, 1, 0); } }
-      if (rd.y > 1e-4) { float t = (cy - ro.y) / rd.y; if (t > 0.0 && t < tHit) { tHit = t; what = 2; nrm = vec3(0, -1, 0); } }
-      if (abs(rd.z) > 1e-4) { float zw = rd.z > 0.0 ? hw : -hw; float t = (zw - ro.z) / rd.z; if (t > 0.02 && t < tHit) { tHit = t; what = 3; nrm = vec3(0, 0, -sign(rd.z)); } }
-      if (abs(rd.x) > 1e-4) { float xw = rd.x > 0.0 ? mkCab.y : mkCab.x; float t = (xw - ro.x) / rd.x; if (t > 0.0 && t < tHit) { tHit = t; what = 4; nrm = vec3(-sign(rd.x), 0, 0); } }
-      // seat rows: x planes (backs) spanning |z| in [zi, zo] below the back top; rows = (x, zInner, zOuter, facing)
-      vec3 seatCol = vec3(0.0); float seatT = 1e9; float occ = 0.0; vec3 seatN = vec3(0.0);
-      for (int k = 0; k < 24; k++) {
-        if (float(k) >= mkRowN) break;
-        vec4 r = mkRows[k];
-        if (abs(rd.x) < 1e-4) continue;
-        float t = (r.x - ro.x) / rd.x;
-        if (t > 0.0 && t < tHit && t < seatT) {
-          vec3 h = ro + rd * t;
-          if (h.z > r.y && h.z < r.z && h.y < fy + 1.02 && h.y > fy + 0.05) {
-            seatT = t; seatN = vec3(-sign(rd.x), 0, 0);
-            float cell = floor((abs(h.z) - 0.44) / 0.51); float key = gH(vec2(r.x * 7.1 + mkSeed, cell + sign(h.z) * 3.0));
-            occ = step(key, 0.3 + 0.2 * mkNight);
-            seatCol = mix(vec3(0.05, 0.2, 0.36), vec3(0.42, 0.46, 0.08), step(0.85, gH(vec2(r.x, 3.0))));
-            if (occ > 0.5 && h.y > fy + 0.62) seatCol = mix(vec3(0.1, 0.11, 0.14), vec3(0.3, 0.2, 0.15), gH(vec2(r.x * 3.0, cell)));
-          }
+    vec3 mkToView(vec3 d) { return mkAx * d.x + mkAy * d.y + mkAz * d.z; }
+    float mkRB(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+    // the cabin's two LED line lights + multi-bounce fill (mkIntLight of the palette material)
+    float mkIL(vec3 p, vec3 n) {
+      float e = 0.0;
+      for (int k = 0; k < 2; k++) {
+        vec3 L = vec3(0.0, mkLamp.y, k == 0 ? mkLamp.x : -mkLamp.x) - vec3(0.0, p.y, p.z);
+        float d = length(L) + 0.08; L /= d;
+        e += max(dot(n, L), 0.0) * smoothstep(mkLamp.z + 0.8, mkLamp.z - 0.8, abs(p.x)) * 0.42 / d;
+      }
+      return e + 0.36 + 0.1 * n.y + 0.42 * max(-n.y, 0.0);
+    }
+    // radiance of an interior surface (albedo alb, car-space normal n): the cabin light (mkLitK) with contact shadows,
+    // daylight (the scene's ambient/hemisphere/IBL irradiance x mkIndoor.x, x the Under daylight) and the tunnel ambient
+    vec3 mkShade(vec3 p, vec3 n, vec3 alb) {
+      float ao = 1.0 - 0.3 * exp(-max(p.y - mkFloorY, 0.0) * 7.0) * step(p.y, mkFloorY + 0.6);
+      ao *= 1.0 - 0.18 * smoothstep(0.25, 0.0, mkHalfW - abs(p.z));
+      vec3 nv = normalize(mkToView(n)), e = ambientLightColor;
+      #if NUM_HEMI_LIGHTS > 0
+        e += getHemisphereLightIrradiance(hemisphereLights[0], nv);
+      #endif
+      #if defined(USE_ENVMAP) && defined(ENVMAP_TYPE_CUBE_UV)
+        e += getIBLIrradiance(nv);
+      #endif
+      return alb * (mkLitK * mkIL(p, n) * ao + e * (mkIndoor.x * mkDayK * RECIPROCAL_PI) + mkDayA);
+    }
+    // the outside seen through a far window (the scene's environment, sharp)
+    vec3 mkOut(vec3 rd) {
+      #if defined(USE_ENVMAP) && defined(ENVMAP_TYPE_CUBE_UV)
+        vec3 wd = inverseTransformDirection(normalize(mkToView(rd)), viewMatrix);
+        return textureCubeUV(envMap, wd, 0.0).rgb * envMapIntensity * mkDayK;
+      #else
+        return mix(vec3(0.5, 0.58, 0.66), vec3(0.01, 0.012, 0.02), mkNight) * mkDayK;
+      #endif
+    }
+    // a far pane: the outside through it (tinted again) and a faint reflection of the lit cabin
+    vec3 mkFarPane(vec3 rd) { return mkOut(rd) * mkTint + mkLitK * vec3(0.05, 0.052, 0.055); }
+    vec3 mkCloth(float h) {
+      vec3 c = vec3(0.016, 0.017, 0.02);
+      c = mix(c, vec3(0.02, 0.03, 0.08), step(0.3, h)); c = mix(c, vec3(0.1, 0.1, 0.1), step(0.48, h));
+      c = mix(c, vec3(0.04, 0.08, 0.17), step(0.6, h)); c = mix(c, vec3(0.3, 0.035, 0.035), step(0.72, h));
+      c = mix(c, vec3(0.08, 0.1, 0.04), step(0.8, h)); c = mix(c, vec3(0.42, 0.34, 0.22), step(0.87, h));
+      c = mix(c, vec3(0.62, 0.62, 0.6), step(0.93, h)); c = mix(c, vec3(0.55, 0.3, 0.05), step(0.97, h));
+      return c;
+    }
+    vec3 mkLegs(float h) { return h < 0.45 ? vec3(0.012, 0.013, 0.016) : (h < 0.8 ? vec3(0.03, 0.05, 0.1) : vec3(0.2, 0.17, 0.11)); }
+    vec3 mkSkin(float h) { return mix(vec3(0.5, 0.31, 0.22), vec3(0.055, 0.032, 0.022), h * h); }
+    vec3 mkHair(float h) { return h < 0.6 ? vec3(0.01, 0.008, 0.007) : (h < 0.85 ? vec3(0.07, 0.04, 0.018) : (h < 0.95 ? vec3(0.32, 0.24, 0.12) : vec3(0.35))); }
+    // nearest entry of a sphere / an upright elliptic cylinder (radii along x and z, capped at y1); 1e9 when missed
+    float mkSph(vec3 ro, vec3 rd, vec3 c, float r, inout vec3 n) {
+      vec3 o = ro - c; float b = dot(o, rd), h = b * b - dot(o, o) + r * r; if (h < 0.0) return 1e9;
+      float t = -b - sqrt(h); if (t <= 0.0) return 1e9; n = (o + rd * t) / r; return t;
+    }
+    float mkCylE(vec3 ro, vec3 rd, vec2 c, vec2 rad, float y0, float y1, inout vec3 n) {
+      vec2 o = (ro.xz - c) / rad, d = rd.xz / rad; float a = dot(d, d); if (a < 1e-8) return 1e9;
+      float b = dot(o, d), h = b * b - a * (dot(o, o) - 1.0); if (h < 0.0) return 1e9;
+      float t = (-b - sqrt(h)) / a; if (t <= 0.0) return 1e9;
+      float y = ro.y + rd.y * t;
+      if (y > y1 && rd.y < 0.0) { float tc = (y1 - ro.y) / rd.y; vec2 q = (ro.xz + rd.xz * tc - c) / rad; if (dot(q, q) < 1.0) { n = vec3(0.0, 1.0, 0.0); return tc; } return 1e9; }
+      if (y < y0 || y > y1) return 1e9;
+      vec2 q = (o + d * t) / rad; n = normalize(vec3(q.x, 0.0, q.y)); return t;
+    }
+    // a passenger: body (elliptic cylinder from b.y to the shoulders) and head (centre hh above b); standing ones
+    // show their trousers below the hips
+    void mkPerson(vec3 ro, vec3 rd, vec3 b, float hh, vec2 rad, float key, float standing, inout float tB, inout vec3 cB, inout vec3 nB) {
+      vec3 n = vec3(0.0, 1.0, 0.0);
+      float t = mkSph(ro, rd, b + vec3(0.0, hh, 0.0), 0.1, n);
+      if (t < tB) { tB = t; nB = n; float hk = gH(vec2(key, 2.3)); cB = n.y > (hk < 0.3 ? -0.25 : 0.3) ? mkHair(gH(vec2(key, 8.1))) : mkSkin(gH(vec2(key, 1.7))); }
+      t = mkCylE(ro, rd, b.xz, rad, b.y, b.y + hh - 0.16, n);
+      if (t < tB) { tB = t; nB = n; float y = ro.y + rd.y * t - b.y;
+        cB = standing > 0.5 && y < hh - 0.7 ? mkLegs(gH(vec2(key, 4.4))) : mkCloth(gH(vec2(key, 3.9))); }
+    }
+    // the far side wall at h (z = +-halfW): doors, windows, ads / screens, the wall itself
+    vec3 mkWall(vec3 h, vec3 n, vec3 rd) {
+      float fy = mkFloorY, side = sign(h.z);
+      for (int k = 0; k < 4; k++) { if (float(k) >= mkCnt.y) break; vec4 D = mkDoor[k]; float ax = abs(h.x - D.x);
+        if (ax < D.y && h.y < D.z) {
+          if (ax < 0.012) return mkShade(h, n, vec3(0.02));
+          if (ax > mkDoorWin.x && ax < mkDoorWin.y && h.y > mkDoorWin.z && h.y < mkDoorWin.w) return mkFarPane(rd);
+          return mkShade(h, n, MK_DOORI * (h.y < fy + 0.12 ? 0.5 : 1.0));
         }
-        // occupants' heads and shoulders above the backs, 0.2 m in front of them
-        float tt = (r.x + r.w * 0.2 - ro.x) / rd.x;
-        if (tt > 0.0 && tt < tHit && tt < seatT) { vec3 h = ro + rd * tt;
-          if (h.z > r.y && h.z < r.z) { float cell = floor((abs(h.z) - 0.44) / 0.51); float key = gH(vec2(r.x * 7.1 + mkSeed, cell + sign(h.z) * 3.0));
-            vec2 q = vec2((fract((abs(h.z) - 0.44) / 0.51) - 0.5) * 0.51, h.y - fy - 1.2);
-            float headD = length(q * vec2(1.0, 0.85)), torso = step(abs(q.x), 0.19) * step(q.y, -0.16) * step(-0.62, q.y);
-            if (key < 0.3 + 0.2 * mkNight && (headD < 0.11 || torso > 0.5)) { seatT = tt; seatN = vec3(-sign(rd.x), 0, 0);
-              seatCol = headD < 0.11 ? mix(vec3(0.36, 0.24, 0.17), vec3(0.09, 0.07, 0.06), step(0.55, gH(vec2(cell, r.x)))) : mix(vec3(0.08, 0.09, 0.12), vec3(0.4, 0.14, 0.12), gH(vec2(r.x, cell * 1.7))); } } }
+        if (ax < D.y + 0.035 && h.y < D.z + 0.035) return mkShade(h, n, vec3(0.03));
       }
-      vec3 hit = ro + rd * min(tHit, seatT);
-      vec3 base = vec3(0.0);
-      if (seatT < tHit) base = seatCol;
-      else if (what == 1) { base = vec3(0.30, 0.31, 0.33) * (0.9 + 0.2 * gH(floor(hit.xz * 40.0))); }
-      else if (what == 2) { float strip = 1.0 - smoothstep(0.05, 0.09, abs(abs(hit.z) - 0.6)); base = mix(vec3(0.82, 0.82, 0.8), vec3(9.0) * lit, strip); }
-      else if (what == 3) {
-        // far wall: windows (the outside, dim sky) between y 1.89 and 2.84, panels elsewhere
-        float wy = step(fy + 0.9, hit.y) * step(hit.y, fy + 1.85);
-        float wx = step(0.18, fract(hit.x / 0.98 + 0.37));
-        vec3 sky = mix(vec3(0.55, 0.62, 0.7), vec3(0.03, 0.035, 0.05), mkNight);
-        base = mix(vec3(0.8, 0.8, 0.78), sky * (1.0 - 0.5 * lit), wy * wx);
-        base = mix(base, vec3(0.72, 0.76, 0.2), step(hit.y, fy + 0.45) * 0.0);
+      if (mkCnt.x > 0.5) {
+        for (int k = 0; k < 16; k++) { if (float(k) >= mkCnt.x) break; vec4 W = mkWin[k];
+          float d = mkRB(h.xy - vec2(0.5 * (W.x + W.y), 0.5 * (W.z + W.w)), vec2(0.5 * (W.y - W.x), 0.5 * (W.w - W.z)), 0.09);
+          if (d < 0.0) return mkFarPane(rd);
+          if (d < 0.014) return mkShade(h, n, vec3(0.025));                  // gasket
+          if (d < 0.065) return mkShade(h, n, MK_WALL2 * 0.82);             // the window reveal
+        }
+      } else {
+        // no window list: a generic band of windows
+        if (h.y > fy + 0.85 && h.y < fy + 1.85 && fract(h.x / 1.4 + 0.37) > 0.1) return mkFarPane(rd);
       }
-      else if (what == 4) { base = mix(vec3(0.72, 0.77, 0.22), vec3(0.8, 0.8, 0.78), mkCab.z); }
-      // light: the cabin's own lighting (the same absolute level day and night: outdoors is what changes), plus a
-      // little daylight through the far windows by day
-      vec3 n = seatT < tHit ? seatN : nrm;
-      float il = lit * 0.34 * (0.6 + 0.4 * smoothstep(fy, cy, hit.y));
-      float day = (1.0 - mkNight) * 0.06;
-      return base * (il + day);
+      for (int k = 0; k < 12; k++) { if (float(k) >= mkCnt.w) break; vec4 A = mkPan[k]; if (A.z * side < 0.0) continue;
+        vec2 b = A.w < 1.5 ? vec2(0.23, 0.345) : vec2(0.27, 0.155), q = h.xy - A.xy;
+        if (abs(q.x) < b.x + 0.025 && abs(q.y) < b.y + 0.025) {
+          if (abs(q.x) > b.x || abs(q.y) > b.y) return mkShade(h, n, A.w < 1.5 ? vec3(0.35) : vec3(0.015));
+          if (A.w < 1.5) { float hh = gH(vec2(A.x * 3.1 + mkSeed, A.y));
+            vec3 pc = 0.5 + 0.45 * cos(6.2831 * (hh + vec3(0.0, 0.33, 0.67)));
+            pc = mix(pc * pc, vec3(0.75), 0.6 * step(0.55, fract(q.y / b.y * 1.3 + hh))); return mkShade(h, n, pc); }
+          float v = q.y / b.y;
+          return vec3(0.01, 0.015, 0.03) + (step(0.6, v) * vec3(0.25, 0.45, 0.9) + step(abs(v + 0.1), 0.05) * vec3(0.9, 0.75, 0.2) * step(abs(q.x), b.x * 0.8)) * mkLv[7] * 0.8;
+        }
+      }
+      vec3 c = MK_WALL;
+      if (h.y < fy + 0.2) c = vec3(0.42);
+      c *= 1.0 - 0.9 * step(abs(h.y - fy - 0.87), 0.012);
+      return mkShade(h, n, c);
+    }
+    // the D cab behind the windscreen / cab windows (mkCabI: back wall x, desk front x, desk top y, 1 = a cab)
+    vec3 mkCabView(vec3 ro, vec3 rd) {
+      float fy = mkFloorY, hw = mkHalfW - 0.12;
+      if (mkCabI.w < 0.5) return mkShade(ro, vec3(sign(-rd.x), 0.0, 0.0), vec3(0.1));
+      float keep = mkLitK; mkLitK = 0.12 * mkLv[9] * (1.0 - 0.85 * mkNight);        // the cab is dim (no ceiling bands on)
+      float tH = 1e9, id = 0.0; vec3 n = vec3(0.0, 1.0, 0.0);
+      if (rd.y < -1e-5) tH = (fy - ro.y) / rd.y;
+      if (rd.y > 1e-5) { float t = (mkCeilY - 0.1 - ro.y) / rd.y; if (t < tH) { tH = t; id = 2.0; n = vec3(0.0, -1.0, 0.0); } }
+      if (abs(rd.z) > 1e-5) { float t = (sign(rd.z) * hw - ro.z) / rd.z; if (t > 0.0 && t < tH) { tH = t; id = 1.0; n = vec3(0.0, 0.0, -sign(rd.z)); } }
+      if (rd.x < -1e-5) { float t = (mkCabI.x - ro.x) / rd.x; if (t > 0.0 && t < tH) { tH = t; id = 9.0; n = vec3(1.0, 0.0, 0.0); } }
+      if (rd.y < -1e-5) { float t = (mkCabI.z - ro.y) / rd.y; vec3 h = ro + rd * t; if (t > 0.0 && t < tH && h.x > mkCabI.y) { tH = t; id = 3.0; n = vec3(0.0, 1.0, 0.0); } }
+      if (rd.x > 1e-5) { float t = (mkCabI.y - ro.x) / rd.x; vec3 h = ro + rd * t; if (t > 0.0 && t < tH && h.y < mkCabI.z) { tH = t; id = 4.0; n = vec3(-1.0, 0.0, 0.0); } }
+      // the operator's seat (a dark box) and the cab back wall's door
+      { vec3 b0 = vec3(mkCabI.x + 0.25, fy + 0.42, 0.44), b1 = vec3(mkCabI.x + 0.7, fy + 1.32, 1.0);
+        vec3 ia = 1.0 / rd, t0 = (b0 - ro) * ia, t1 = (b1 - ro) * ia, tn = min(t0, t1), tf = max(t0, t1);
+        float tN = max(max(tn.x, tn.y), tn.z), tF = min(min(tf.x, tf.y), tf.z);
+        if (tN < tF && tN > 0.0 && tN < tH) { tH = tN; id = 5.0; n = tN == tn.x ? vec3(-sign(rd.x), 0.0, 0.0) : (tN == tn.y ? vec3(0.0, -sign(rd.y), 0.0) : vec3(0.0, 0.0, -sign(rd.z))); } }
+      vec3 h = ro + rd * tH, c;
+      if (id == 3.0) {
+        c = mkShade(h, n, vec3(0.45));
+        vec2 q = vec2(h.x - mkCabI.y - 0.3, h.z - 0.72);
+        if (abs(q.x) < 0.12 && abs(abs(q.y) - 0.2) < 0.14) c = vec3(0.008) + vec3(0.04, 0.12, 0.1) * mkLv[7];
+      } else if (id == 5.0) c = mkShade(h, n, vec3(0.012, 0.016, 0.035));
+      else if (id == 9.0) c = abs(h.z) < 0.3 && h.y > fy + 1.0 && h.y < fy + 1.8 ? mkLitK * vec3(0.2) + keep * vec3(0.18) : mkShade(h, n, vec3(0.3));
+      else if (id == 0.0) c = mkShade(h, n, vec3(0.06));
+      else c = mkShade(h, n, id == 4.0 ? vec3(0.2) : vec3(0.32));
+      mkLitK = keep;
+      return c;
+    }
+    // what a ray from the glass sees inside the car (radiance before the near pane)
+    vec3 mkInterior(vec3 ro, vec3 rd) {
+      float hw = mkHalfW, fy = mkFloorY;
+      if (ro.x > mkCab.y + 0.05) return mkCabView(ro, rd);
+      if (ro.x < mkCab.x - 0.05) return mkShade(ro, vec3(sign(-rd.x), 0.0, 0.0), vec3(0.1));
+      // ---- the shell: floor, side walls, the ceiling facets (a convex section), the end walls
+      float tH = 1e9, id = 1.0; vec3 nrm = vec3(0.0, 1.0, 0.0);
+      if (rd.y < -1e-5) { tH = (fy - ro.y) / rd.y; id = 0.0; }
+      if (abs(rd.z) > 1e-5) { float t = (sign(rd.z) * hw - ro.z) / rd.z; if (t > 0.0 && t < tH) { tH = t; id = 1.0; nrm = vec3(0.0, 0.0, -sign(rd.z)); } }
+      for (int k = 0; k < 8; k++) { vec4 P = mkSec[k]; if (P.w < 0.0) break;
+        float den = P.x * rd.z + P.y * rd.y; if (den < 1e-5) continue;
+        float t = (P.z - P.x * ro.z - P.y * ro.y) / den; if (t > 0.0 && t < tH) { tH = t; id = 2.0; nrm = -vec3(0.0, P.y, P.x); } }
+      if (abs(rd.x) > 1e-5) { float t = ((rd.x > 0.0 ? mkCab.y : mkCab.x) - ro.x) / rd.x; if (t > 0.0 && t < tH) { tH = t; id = 9.0; nrm = vec3(-sign(rd.x), 0.0, 0.0); } }
+      // ---- what stands in front of it (only rows within the ray's x span are tested)
+      float tB = tH; vec3 cB = vec3(0.0), nB = nrm; float metal = 0.0;
+      float xe = ro.x + rd.x * min(tH, 14.0), xlo = min(ro.x, xe) - 0.7, xhi = max(ro.x, xe) + 0.7;
+      float pOcc = clamp(mkLoad * 1.35, 0.0, 0.95), nRows = mkImDet > 0.5 ? mkRowN : 0.0;
+      for (int k = 0; k < 40; k++) {
+        if (float(k) >= nRows) break;
+        vec4 r = mkRows[k]; float code = abs(r.w), fc = sign(r.w);
+        if (code < 2.5) {
+          // transverse pair: back at x = r.x (fabric on its +fc side, grey shell behind), cushion 0.5 deep, two seats
+          if (r.x < xlo || r.x > xhi) continue;
+          vec3 sc = code > 1.5 ? MK_LIME : MK_BLUE;
+          if (abs(rd.x) > 1e-5) { float t = (r.x - ro.x) / rd.x;
+            if (t > 0.0 && t < tB) { vec3 h = ro + rd * t;
+              if (h.z > r.y && h.z < r.z && h.y > fy + 0.1 && h.y < fy + 1.02) { tB = t; nB = vec3(-sign(rd.x), 0.0, 0.0); cB = rd.x * fc < 0.0 ? sc : MK_SHELL; metal = 0.0; } } }
+          if (rd.y < -1e-5) { float t = (fy + 0.46 - ro.y) / rd.y;
+            if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; float dx = (h.x - r.x) * fc;
+              if (dx > 0.0 && dx < 0.5 && h.z > r.y && h.z < r.z) { tB = t; nB = vec3(0.0, 1.0, 0.0); cB = sc; metal = 0.0; } } }
+          for (int s = 0; s < 2; s++) {
+            float zc = mix(r.y, r.z, 0.25 + 0.5 * float(s)), key = gH(vec2(r.x * 7.13 + mkSeed, zc * 3.1));
+            if (key < pOcc) { float t0 = tB; mkPerson(ro, rd, vec3(r.x + fc * 0.24, fy + 0.46, zc), 0.72, vec2(0.13, 0.2), key, 0.0, tB, cB, nB); if (tB < t0) metal = 0.0; }
+          }
+        } else if (code < 4.5) {
+          // longitudinal bench x in [r.x, r.y] on side fc: cushion |z| > 1.0, front, back cushion on the wall
+          if (r.y < xlo || r.x > xhi) continue;
+          vec3 sc = code > 3.5 ? MK_LIME : MK_BLUE;
+          if (rd.y < -1e-5) { float t = (fy + 0.46 - ro.y) / rd.y;
+            if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.x > r.x && h.x < r.y && h.z * fc > mkHalfW - 0.47) { tB = t; nB = vec3(0.0, 1.0, 0.0); cB = sc; metal = 0.0; } } }
+          if (abs(rd.z) > 1e-5) {
+            float t = (fc * (mkHalfW - 0.47) - ro.z) / rd.z;
+            if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.x > r.x && h.x < r.y && h.y > fy + 0.1 && h.y < fy + 0.46) { tB = t; nB = vec3(0.0, 0.0, -fc); cB = MK_SHELL * 0.45; metal = 0.0; } }
+            t = (fc * (mkHalfW - 0.07) - ro.z) / rd.z;
+            if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.x > r.x && h.x < r.y && h.y > fy + 0.5 && h.y < fy + 0.98) { tB = t; nB = vec3(0.0, 0.0, -fc); cB = sc; metal = 0.0; } }
+          }
+          float ns = r.y - r.x > 0.75 ? 2.0 : 1.0;
+          for (int s = 0; s < 2; s++) { if (float(s) >= ns) break;
+            float xc = r.x + (float(s) + 0.5) * (r.y - r.x) / ns, key = gH(vec2(xc * 5.7 + mkSeed, fc * 2.3));
+            if (key < pOcc) { float t0 = tB; mkPerson(ro, rd, vec3(xc, fy + 0.46, fc * (mkHalfW - 0.3)), 0.72, vec2(0.2, 0.13), key, 0.0, tB, cB, nB); if (tB < t0) metal = 0.0; }
+          }
+        } else {
+          // doorway partition at x = r.x spanning z in [r.y, r.z]
+          if (r.x < xlo || r.x > xhi || abs(rd.x) < 1e-5) continue;
+          float t = (r.x - ro.x) / rd.x;
+          if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.z > r.y && h.z < r.z && h.y > fy + 0.08 && h.y < fy + 1.84) { tB = t; nB = vec3(-sign(rd.x), 0.0, 0.0); cB = MK_WALL2; metal = 0.0; } }
+        }
+      }
+      // standing passengers (mkStand: x, z, height, key), more of them the fuller the car
+      float nSt = clamp(floor((mkLoad - 0.18) * 14.0), 0.0, 8.0) * mkImDet;
+      for (int k = 0; k < 8; k++) { if (float(k) >= nSt) break; vec4 s = mkStand[k]; if (s.x < xlo || s.x > xhi) continue;
+        float t0 = tB; mkPerson(ro, rd, vec3(s.x, fy, s.y), s.z - 0.12, fract(s.w * 7.0) < 0.5 ? vec2(0.2, 0.13) : vec2(0.13, 0.2), s.w, 1.0, tB, cB, nB); if (tB < t0) metal = 0.0; }
+      // grab poles (x, z, radius, top) and the two overhead rails (y, |z|, radius)
+      for (int k = 0; k < 16; k++) { if (float(k) >= mkCnt.z * mkImDet) break; vec4 q = mkPole[k]; if (q.x < xlo || q.x > xhi) continue;
+        vec3 n = vec3(0.0); float t = mkCylE(ro, rd, q.xy, vec2(q.z), fy, q.w, n); if (t < tB) { tB = t; nB = n; cB = MK_POLE; metal = 1.0; } }
+      if (mkRail.z > 0.0) for (int s = 0; s < 2; s++) {
+        vec2 o = vec2(ro.y - mkRail.x, ro.z - (s == 0 ? mkRail.y : -mkRail.y)), d = rd.yz; float a = dot(d, d);
+        if (a < 1e-8) continue;
+        float b = dot(o, d), h = b * b - a * (dot(o, o) - mkRail.z * mkRail.z); if (h < 0.0) continue;
+        float t = (-b - sqrt(h)) / a; float x = ro.x + rd.x * t;
+        if (t > 0.0 && t < tB && x > mkCab.x + 0.9 && x < mkCab.y - 0.9) { tB = t; vec2 q = (o + d * t) / mkRail.z; nB = vec3(0.0, q.x, q.y); cB = MK_POLE; metal = 1.0; }
+      }
+      vec3 hp = ro + rd * tB;
+      if (tB < tH) {
+        vec3 c = mkShade(hp, nB, cB);
+        if (metal > 0.5) c += mkLitK * 0.5 * pow(max(dot(reflect(rd, nB), normalize(vec3(0.0, 0.85, -sign(hp.z) * 0.5))), 0.0), 6.0);
+        return c;
+      }
+      // ---- the shell's surfaces
+      if (id == 0.0) return mkShade(hp, nrm, MK_FLOOR * (0.8 + 0.4 * gH(floor(hp.xz * 55.0))));
+      if (id == 2.0) {
+        float az = abs(hp.z);
+        if (az > mkBand.x && az < mkBand.y) return vec3(1.0, 0.99, 0.95) * mkLitK * (3.2 + 0.6 * smoothstep(0.3, 0.0, abs(az - 0.5 * (mkBand.x + mkBand.y)) / (mkBand.y - mkBand.x)));
+        vec3 c = az < mkBand.z || az > mkBand.y ? MK_CEIL : MK_WALL2;
+        c *= 1.0 - 0.92 * step(abs(az - mkBand.z - 0.02), 0.012) * step(0.1, mkBand.z);
+        return mkShade(hp, nrm, c);
+      }
+      if (id == 9.0) {
+        if (mkCab.z > 0.5) return mkShade(hp, nrm, vec3(0.5));
+        float nb = hp.x > 0.0 ? mkEnds.y : mkEnds.x, az = abs(hp.z);
+        if (az < 0.38 && hp.y < fy + 1.95) {
+          if (az < 0.24 && hp.y > fy + 0.95 && hp.y < fy + 1.8) return nb > 0.5 ? mkLitK * vec3(0.2, 0.2, 0.19) * mkTint * 2.0 + mkFarPane(rd) * 0.1 : (nb < -0.5 ? vec3(0.004) : mkFarPane(rd));
+          return mkShade(hp, nrm, az > 0.35 ? vec3(0.03) : vec3(0.45));
+        }
+        // the end walls are lime green (the cab bulkhead of a D car grey), the next-stop sign above the door dark
+        if (az < 0.5 && hp.y > fy + 2.0) return mkShade(hp, nrm, vec3(0.02)) + vec3(0.3, 0.12, 0.02) * mkLv[7] * step(0.9, fract(hp.z * 11.0));
+        return mkShade(hp, nrm, nb < -0.5 ? MK_WALL2 : vec3(0.479, 0.552, 0.041));
+      }
+      return mkWall(hp, nrm, rd);
     }`;
   function glassMaterial(S) {
     const m = new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.035, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.0 });
@@ -749,27 +967,66 @@ const MetroKit = (() => {
       Object.assign(sh.uniforms, S);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>' + MK_VERT_HEAD)
         .replace('#include <skinning_vertex>', MK_VERT_BODY + '\n#include <skinning_vertex>');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>' + GLASS_FRAG_HEAD)
-        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      // the impression is evaluated after the lights (it uses the scene's light uniforms and the Under daylight hook)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <clipping_planes_pars_fragment>', '#include <clipping_planes_pars_fragment>' + GLASS_FRAG_HEAD)
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
           {
+            mkDayK = 1.0; mkDayA = vec3(0.0); mkLitK = mkLv[1];
+            #ifdef BL_UNDER_DEF
+              { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI; }
+            #endif
             vec3 rd = normalize(mkP - mkCamO);
-            float lit = mkLv[1];
-            vec3 ro = mkP + rd * 0.03;
             vec4 sg = mkSigns(mkP, rd);
-            vec3 inside = sg.a > 0.5 ? sg.rgb : mkInterior(ro, rd, lit);
-            // tinted glass (grey-green) and a Fresnel term: at grazing angles the reflection wins
+            vec3 inside = sg.a > 0.5 ? sg.rgb * 0.75 : mkInterior(mkP + rd * 0.03, rd) * mkTint;
+            // the near pane's Fresnel: at grazing angles the reflection wins
             float cosT = abs(dot(normalize(vNormal), normalize(vViewPosition)));
             float F = 0.04 + 0.96 * pow(1.0 - cosT, 5.0);
-            totalEmissiveRadiance = inside * (sg.a > 0.5 ? vec3(0.75) : vec3(0.36, 0.42, 0.42)) * (1.0 - F) * mkIntOn;
+            totalEmissiveRadiance += inside * (1.0 - F) * mkIntOn;
           }`);
     };
-    m.customProgramCacheKey = () => 'mk-glass-1';
+    m.customProgramCacheKey = () => 'mk-glass-2';
     return m;
   }
-  // clear glass (interior built): tinted, reflective, see-through
+  // clear glass (interior built): dst x tint + the glass's own reflections at full strength (not scaled by an opacity)
   function glassClearMaterial() {
-    const m = new THREE.MeshPhysicalMaterial({ color: 0x1d2a2e, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.0 });
+    const m = new THREE.MeshPhysicalMaterial({ color: 0x0b1011, roughness: 0.02, metalness: 0, side: THREE.DoubleSide, transparent: true, depthWrite: false, envMapIntensity: 1.0 });
+    m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation;
+    m.blendSrc = THREE.OneFactor; m.blendDst = THREE.ConstantColorFactor; m.blendColor.copy(GLASS_TINT);
+    m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;
     m.forceSinglePass = true; return m;
+  }
+  // per-car uniforms of the interior impression from the design's d.imap (see 42_metrokit_fotf.js for the fields)
+  const V4 = a => new THREE.Vector4(a[0] || 0, a[1] || 0, a[2] || 0, a[3] || 0);
+  function vecList(list, n, fill) { const out = []; for (let i = 0; i < n; i++) out.push(V4(list && list[i] ? list[i] : fill)); return out; }
+  // the right half of the ceiling section as a polyline [[z, y], ...] from the wall top to the centreline -> outward
+  // planes (nz, ny, d, 2) for both halves (the section must be convex: the slope flattens toward the centre)
+  function sectionPlanes(sec, ceilY) {
+    const P = [];
+    if (sec && sec.length > 1) for (let i = 0; i < sec.length - 1; i++) {
+      const [za, ya] = sec[i], [zb, yb] = sec[i + 1], dz = zb - za, dy = yb - ya, L = Math.hypot(dz, dy), nz = dy / L, ny = -dz / L;
+      const dd = nz * za + ny * ya; P.push([nz, ny, dd, 2], [-nz, ny, dd, 2]);   // (the mirror of (za, ya) is (-za, ya): same d)
+    } else P.push([0, 1, ceilY, 2]);
+    return vecList(P.slice(0, 8), 8, [0, 0, 0, -1]);
+  }
+  function imapUniforms(S, d) {
+    const M = d.imap || {}, rows = (M.rows || []).slice(0, 40);
+    S.mkRows = { value: vecList(rows, 40, [1e4, 0, 0, 0]) }; S.mkRowN = { value: rows.length };
+    S.mkSec = { value: sectionPlanes(M.sec, d.ceilY || 3.1) };
+    S.mkWin = { value: vecList(M.win, 16, [0, 0, 0, 0]) };
+    S.mkDoor = { value: vecList(M.doors, 4, [0, 0, 0, 0]) };
+    S.mkPole = { value: vecList(M.poles, 16, [0, 0, 0, 0]) };
+    S.mkPan = { value: vecList(M.panels, 12, [0, 0, 0, 0]) };
+    S.mkStand = { value: vecList(M.stand, 8, [1e4, 0, 1.7, 0]) };
+    S.mkCnt = { value: V4([Math.min(16, (M.win || []).length), Math.min(4, (M.doors || []).length), Math.min(16, (M.poles || []).length), Math.min(12, (M.panels || []).length)]) };
+    S.mkDoorWin = { value: V4(M.doorWin || [0, 0, 0, 0]) };
+    S.mkRail = { value: V4(M.rail || [0, 0, 0, 0]) };
+    const lz = (S.mkLamp && S.mkLamp.value.x) || 0.6;
+    S.mkBand = { value: V4(M.band || [lz - 0.06, lz + 0.06, 0, 0]) };
+    S.mkCabI = { value: V4(M.cab || [0, 0, 0, 0]) };
+    S.mkEnds = { value: new THREE.Vector4() };
+    S.mkLoad = { value: 0.3 };
+    S.mkTint = { value: GLASS_TINT };
+    S.mkImDet = { value: 1 };
   }
 
   // ------------------------------------------------------------------------------------------ designs
@@ -786,6 +1043,10 @@ const MetroKit = (() => {
 
   // ------------------------------------------------------------------------------------------ runtime: Car
   const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _ax = new V3();
+  const _one = new V3(1, 1, 1), _rpi = new THREE.Matrix4().makeRotationY(Math.PI);
+  // body sway: roll f 0.8 Hz / damping / rad per g of unbalanced lateral acceleration; pitch per g of longitudinal
+  // acceleration; bounce; roll centre height; track excitation amplitudes at 70 mph (rad, rad, m)
+  const SWAY = { fr: 0.8, zr: 0.3, kr: 0.07, fp: 1.1, zp: 0.35, kp: 0.02, fb: 1.3, zb: 0.3, hrc: 0.9, exR: 0.0022, exP: 0.0007, exB: 0.006 };
   class Car {
     constructor(consist, index, d, flip, number) {
       this.consist = consist; this.index = index; this.design = d; this.flip = flip; this.number = number;
@@ -800,8 +1061,14 @@ const MetroKit = (() => {
       S.mkSign.value = consist.signTex; S.mkSignRes.value.set(SIGN.W, SIGN.H);
       S.mkAtlas.value = consist.atlasTex; S.mkLcd.value = consist.lcdTex;
       { const DIG = K.DIG || '0123456789 XYL', txt = (String(number).padStart(4, ' ').slice(-4) + 'XY'); for (let i = 0; i < 6; i++) { const k = DIG.indexOf(txt[i]); S.mkNum.value[i] = k < 0 ? 99 : k; } }
-      S.mkCamO = { value: new V3() }; S.mkIntOn = { value: 1 }; const rows = (d.rows || []).slice(0, 24); while (rows.length < 24) rows.push(new THREE.Vector4(1e4, 0, 0, 0));
-      S.mkRows = { value: rows }; S.mkRowN = { value: d.rows ? Math.min(24, d.rows.length) : 0 };
+      S.mkCamO = { value: new V3() }; S.mkIntOn = { value: 1 };
+      if (d.lamp) S.mkLamp.value.set(d.lamp[0], d.lamp[1], d.lamp[2], 0);
+      imapUniforms(S, d);
+      { // this car's standing passengers: 8 of the design's spots, shuffled per car, with heights and a colour key
+        const all = (d.imap && d.imap.standAll) || [], st = S.mkStand.value, h = U.hashStr(number + ':' + index + ':st') % 100003;
+        const idx = all.map((_, i) => i).sort((a, b) => U.hash2(a, h) - U.hash2(b, h));
+        for (let i = 0; i < 8 && i < idx.length; i++) { const p = all[idx[i]]; st[i].set(p[0], p[1], 1.58 + 0.28 * U.hash2(i, h + 1), U.hash2(i + 9, h)); }
+      }
       S.mkCab = { value: new THREE.Vector4(-d.length / 2, d.length / 2, 0, 0) };
       { const A = [], B = []; for (let i = 0; i < 6; i++) { const g = (d.signs || [])[i]; A.push(g ? new THREE.Vector4(...g.a) : new THREE.Vector4()); B.push(g ? new THREE.Vector4(...g.b, 1) : new THREE.Vector4(0, 0, 1, 0)); }
         S.mkSgnA = { value: A }; S.mkSgnB = { value: B }; }
@@ -821,7 +1088,9 @@ const MetroKit = (() => {
       this.glass = mk(d.glass, this.matGlass, 'glass'); this.glass.receiveShadow = false;
       // camera position in car space for the glass (interior mapping), computed just before the glass draws
       const self = this;
-      this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m); };
+      // (and the impression's detail: seats, passengers and poles only within ~90 m, where they cover pixels)
+      this.glass.onBeforeRender = (r, scene, cam) => { _m.copy(self.root.matrixWorld).invert(); const o = S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m);
+        S.mkImDet.value = o.lengthSq() < 8100 ? 1 : 0; };
       // lamp glow billboards (one instanced draw per lamp-carrying car, visible when lit at dusk / night / in tunnels)
       this.glow = null;
       if (d.lamps && d.lamps.length && K.makeGlow) {
@@ -829,9 +1098,15 @@ const MetroKit = (() => {
         gl.mesh.geometry.instanceCount = d.lamps.length; gl.pos.needsUpdate = true; gl.mesh.name = 'glow'; gl.mesh.visible = false; root.add(gl.mesh); this.glow = gl;
       }
       this.lod = 0; this.int = null; this.intVisible = false;
+      // body sway on the secondary suspension (see _sway): roll / pitch / bounce and their rates, the base pose it rides on
+      this.sw = { r: 0, vr: 0, p: 0, vp: 0, b: 0, vb: 0, has: false, bp: new V3(), br: new THREE.Euler(0, 0, 0, 'YZX'), W: new Float64Array(6) };
+      this.swPh = U.hash2(this.index * 7 + 3, (U.hashStr(String(number)) % 9973)) * TAU; this.bogFix = new THREE.Matrix4(); this.swayOn = false;
+      this._kappa = 0; this._bank = 0;
       if (!d.bogieList) d.bogieList = d.boneIdx.bogie.map((bi, k) => ({ bone: bi, pivot: d.bones[bi].pivot, axles: d.boneIdx.axlesOf[k] }));
       this.wheelAng = 0; this.yaw = d.bogieList.map(() => 0); this.doorPos = [0, 0]; this.wiperAng = [0, 0]; this.dirty = true;
       if (d.bodyList) { this.bodySt = d.bodyList.map(() => ({ yaw: 0, dx: 0, dz: 0 })); this.bodyM = d.bodyList.map(() => new THREE.Matrix4()); this.bogOff = d.bogieList.map(() => [0, 0]); }
+      // collector shoes: height offset of each shoe's contact face from its modelled (on-rail) height; 0 = riding the rail
+      this.shoeDy = d.shoes ? new Float32Array(d.shoes.length) : null; this.bogM = d.bogieList.map(() => new THREE.Matrix4());
       this.lv = S.mkLv.value;
       this._pose();
     }
@@ -845,10 +1120,16 @@ const MetroKit = (() => {
       // bogies: yaw about the pivot (plus the offset of an articulated unit's middle bogie), wheelsets spin inside them
       for (let b = 0; b < BL.length; b++) { const g = BL[b], pv = g.pivot, yaw = this.yaw[b], off = this.bogOff ? this.bogOff[b] : null;
         _m.makeTranslation(pv[0] + (off ? off[0] : 0), pv[1], pv[2] + (off ? off[1] : 0)).multiply(_m2.makeRotationY(yaw)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
-        _m.toArray(bm, g.bone * 16);
+        if (this.swayOn) _m.premultiply(this.bogFix);            // the body sways on its springs, the bogies stay on the track
+        _m.toArray(bm, g.bone * 16); this.bogM[b].copy(_m);
         for (const ai of g.axles) { const ap = B[ai].pivot;
           _m2.makeTranslation(ap[0], ap[1], ap[2]).multiply(_m3.makeRotationZ(-this.wheelAng)); _m2.multiply(_m3.makeTranslation(-ap[0], -ap[1], -ap[2]));
           _m3.multiplyMatrices(_m, _m2); _m3.toArray(bm, ai * 16); } }
+      // collector shoes: the arm turns about the longitudinal pin so the paddle drops by shoeDy (a free shoe hangs tilted)
+      if (d.shoes) for (let i = 0; i < d.shoes.length; i++) { const S0 = d.shoes[i], pv = S0.pivot;
+        const a = S0.side * Math.asin(clamp(-this.shoeDy[i] / S0.lever, -0.95, 0.95));
+        _m.makeTranslation(pv[0], pv[1], pv[2]).multiply(_m2.makeRotationX(a)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2]));
+        _m.premultiply(this.bogM[S0.bogie]); _m.toArray(bm, S0.bone * 16); }
       // door leaves: plug out, then slide away from the door centre. doorPos[0] = design-left (-Z), [1] = design-right (+Z)
       for (const L of d.leaves) {
         const t = this.doorPos[L.side > 0 ? 1 : 0];
@@ -866,6 +1147,42 @@ const MetroKit = (() => {
         _m.makeTranslation(pv[0], pv[1], pv[2]).multiply(_m2.makeRotationZ(-(this.handleA || 0) * 0.55)).multiply(_m3.makeTranslation(-pv[0], -pv[1], -pv[2])); _m.toArray(bm, hb * 16); }
       if (this.skeleton.boneTexture) this.skeleton.boneTexture.needsUpdate = true;
       this.dirty = false;
+    }
+    // Body sway: the body rides its air springs. It rolls outward under the unbalanced lateral acceleration
+    // (v^2 k + g sin(bank): leaning into the curve when slow on cant), pitches under braking / traction, and rocks and
+    // bounces on track irregularities tied to the distance run (so their frequency rises with speed). One lightly
+    // damped spring per mode. Applied on top of the group's pose (whoever set it: poseOnTrack or the caller); the
+    // bogies (and wheels, shoes) are counter-transformed so they stay on the track. LOD 0 only, no allocations.
+    _sway(dt, v, aLong, odo, on) {
+      const g = this.group, s = this.sw, W = s.W, P = g.position, Rr = g.rotation;
+      if (!s.has || P.x !== W[0] || P.y !== W[1] || P.z !== W[2] || Rr.x !== W[3] || Rr.y !== W[4] || Rr.z !== W[5]) { s.bp.copy(P); s.br.copy(Rr); s.has = true; }
+      if (!on || this.lod !== 0) {
+        if (this.swayOn) { P.copy(s.bp); Rr.copy(s.br); this.swayOn = false; this.bogFix.identity(); this.dirty = true; s.r = s.vr = s.p = s.vp = s.b = s.vb = 0; }
+        W[0] = P.x; W[1] = P.y; W[2] = P.z; W[3] = Rr.x; W[4] = Rr.y; W[5] = Rr.z; return;
+      }
+      const SW = SWAY, q = Math.min(1, Math.abs(v) / 31), ph = this.swPh;
+      const aLat = v * v * this._kappa + 9.81 * Math.sin(this._bank);
+      if (q === 0 && Math.abs(aLat) < 1e-4 && Math.abs(aLong) < 1e-3 && Math.abs(s.r) + Math.abs(s.p) + Math.abs(s.b) + Math.abs(s.vr) + Math.abs(s.vp) + Math.abs(s.vb) < 1e-5) {
+        if (this.swayOn) { P.copy(s.bp); Rr.copy(s.br); this.swayOn = false; this.bogFix.identity(); this.dirty = true; }
+        s.r = s.vr = s.p = s.vp = s.b = s.vb = 0; W[0] = P.x; W[1] = P.y; W[2] = P.z; W[3] = Rr.x; W[4] = Rr.y; W[5] = Rr.z; return;
+      }
+      const n1 = Math.sin(odo * 0.37 + ph) + 0.6 * Math.sin(odo * 0.93 + 2.1 * ph) + 0.35 * Math.sin(odo * 2.31 + 3.7 * ph);
+      const n2 = Math.sin(odo * 0.51 + 1.3 * ph) + 0.5 * Math.sin(odo * 1.37 + 0.7 * ph);
+      const n3 = Math.sin(odo * 0.83 + 2.9 * ph) + 0.5 * Math.sin(odo * 1.91 + 1.1 * ph);
+      const rT = SW.kr * aLat / 9.81 + SW.exR * q * n1, pT = SW.kp * clamp(aLong, -3, 3) / 9.81 + SW.exP * q * n2, bT = SW.exB * q * n3;
+      // springs (semi-implicit Euler, stable for these rates at dt <= 0.1)
+      let w = TAU * SW.fr; s.vr += (-w * w * (s.r - rT) - 2 * SW.zr * w * s.vr) * dt; s.r += s.vr * dt;
+      w = TAU * SW.fp; s.vp += (-w * w * (s.p - pT) - 2 * SW.zp * w * s.vp) * dt; s.p += s.vp * dt;
+      w = TAU * SW.fb; s.vb += (-w * w * (s.b - bT) - 2 * SW.zb * w * s.vb) * dt; s.b += s.vb * dt;
+      // the swayed pose: roll about the roll centre (hrc above the rails), pitch, bounce; in the base frame
+      const r = s.r, hc = SW.hrc;
+      _m.makeRotationFromEuler(s.br); _ax.set(0, hc * (1 - Math.cos(r)) + s.b, -hc * Math.sin(r)).applyMatrix4(_m);
+      P.set(s.bp.x + _ax.x, s.bp.y + _ax.y, s.bp.z + _ax.z); Rr.set(s.br.x + r, s.br.y, s.br.z + s.p, 'YZX');
+      W[0] = P.x; W[1] = P.y; W[2] = P.z; W[3] = Rr.x; W[4] = Rr.y; W[5] = Rr.z;
+      // bogie fix = G'^-1 G (group space), conjugated into the design frame for a flipped car
+      _q.setFromEuler(s.br); _m2.compose(s.bp, _q, _one); _q.setFromEuler(Rr); _m3.compose(P, _q, _one).invert(); _m3.multiply(_m2);
+      if (this.flip) _m3.premultiply(_rpi).multiply(_rpi);
+      this.bogFix.copy(_m3); this.swayOn = true; this.dirty = true;
     }
     setInteriorVisible(v) {
       v = !!v; if (v === this.intVisible) return; this.intVisible = v;
@@ -920,6 +1237,7 @@ const MetroKit = (() => {
       this.kind = kind; this.name = opts.name || ''; this.seed = (opts.seed >>> 0) || 0; this.speed = 0;
       this.night = 0; this.lights = { head: 1, tail: 1, interior: 1, cab: 1, signs: 1 }; this.lead = 'front';
       this.doorT = [0, 0]; this.doorGoal = [0, 0]; this.dest = null; this.onEvent = null; this._chime = [-1, -1];
+      this.sway = opts.sway !== false; this.odo = 0; this._v0 = 0; this._aL = 0;       // body sway on (c.sway = false: rigid)
       this.signTex = makeSignTexture(); this.atlasTex = K.decalAtlas ? K.decalAtlas() : null; this.lcdTex = null;
       this.glassClear = glassClearMaterial();
       // car list
@@ -929,9 +1247,23 @@ const MetroKit = (() => {
       this.cars = spec.map((c, i) => new Car(this, i, getDesign(kind, c.type), c.flip, c.number || this.numberFor(c.type, i)));
       let off = 0; for (const c of this.cars) { c.offset = off + c.length / 2; off += c.length; }
       this.length = off;
+      // interior impression: which ends have a lit neighbour beyond the end door (design space: .x the -X end, .y the
+      // +X end; -1 marks the D car's cab side), and the passenger load
+      const nc = this.cars.length;
+      this.cars.forEach((c, i) => { const fwd = i > 0, back = i < nc - 1, e = c.S.mkEnds.value;
+        e.set(c.flip ? +fwd : +back, c.flip ? +back : +fwd, 0, 0); if (c.type === 'D') e.y = -1; });
+      this.setLoad(opts.load === undefined ? 0.3 : opts.load);
       this.setDestination(opts.destination || { line: 'yellow', text: 'Bayline Metro' });
       this._applyLights();
     }
+    // without track data (previews): the contact rail along one side of the consist (+1 its +Z side, -1 the other, 0
+    // none) at contact height top; poseOnTrack sets the shoes per truck from MetroTrack when it is in the build
+    setThirdRail(side, top = 0.171) {
+      for (const c of this.cars) { const d = c.design; if (!d.shoes) continue; const ds = side * (c.flip ? -1 : 1);
+        d.shoes.forEach((S0, i) => { c.shoeDy[i] = side && S0.side === ds ? top - S0.top : S0.free; }); c.dirty = true; }
+    }
+    // passengers seen through the windows (0 empty .. 1 crush load); each car varies a little around it
+    setLoad(f) { f = clamp(+f || 0, 0, 1); this.load = f; for (const c of this.cars) c.S.mkLoad.value = clamp(f * (0.75 + 0.5 * U.hash2(this.seed + 7, c.index * 13 + 5)), 0, 1); }
     ageOf(i) { return 0.12 + 0.8 * ((U.hash2(this.seed * 31 + i, 17) + U.hash2(i, this.seed)) / 2); }
     numberFor(type, i) { const h = U.hash2(this.seed + 11, i * 7 + 3); return type === 'D' ? String(3001 + Math.floor(h * 310)) : String(4001 + Math.floor(h * 819)); }
     setLeadEnd(lead) { this.lead = lead === 'rear' ? 'rear' : 'front'; this._applyLights(); }
@@ -1064,9 +1396,11 @@ const MetroKit = (() => {
       }
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
+      if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
         if (moved) { c.doorPos[0] = c.flip ? T[1] : T[0]; c.doorPos[1] = c.flip ? T[0] : T[1]; c.dirty = true; }
         if (spin !== 0) { c.wheelAng = (c.wheelAng + (c.flip ? -spin : spin)) % TAU; c.dirty = true; }
+        if (dt > 0) c._sway(dt, this.speed, this._aL, this.odo, this.sway);
         if (c.dirty && c.lod === 0) c._pose();
       }
     }
@@ -1135,12 +1469,32 @@ const MetroKit = (() => {
       const bank = ((_F.bank || 0) + (_R.bank || 0)) / 2;
       poseCar(car, _F, _R, bank);
       const yawBody = Math.atan2(-(_F.z - _R.z), _F.x - _R.x);
+      car._kappa = U.wrapAngle(Math.atan2(-_F.tz, _F.tx) - Math.atan2(-_R.tz, _R.tx)) / (bf - br); car._bank = bank;
       const yF = Math.atan2(-_F.tz, _F.tx) - yawBody, yR = Math.atan2(-_R.tz, _R.tx) - yawBody;
       // bogie 0 of the design sits at +X; a flipped car's design +X is at its rear
       const a = U.wrapAngle(car.flip ? yR : yF), b = U.wrapAngle(car.flip ? yF : yR), nb = car.yaw.length;
       if (Math.abs(a - car.yaw[0]) > 1e-5 || Math.abs(b - car.yaw[nb - 1]) > 1e-5) { car.yaw[0] = a; car.yaw[nb - 1] = b; car.dirty = true; }
       if (car.design.artic) articulate(car, frame, dc, yawBody);
+      if (car.shoeDy && car.lod === 0 && MT()) { shoesFromRail(car, _F, car.flip ? 1 : 0); shoesFromRail(car, _R, car.flip ? 0 : 1); }
     }
+  }
+  // Collector shoes from infra's contact rail under each truck (MetroTrack.thirdRail, notes/bart/infra.md "Third
+  // rail"): the shoe over the rail rides its contact surface (end ramps included), the other hangs free. Needs frames
+  // from MetroNet (they carry track and s); LOD 0 cars only (~2 us per truck).
+  const MT = () => (typeof MetroTrack !== 'undefined' && MetroTrack.thirdRail) ? MetroTrack : null;
+  function shoesFromRail(car, P, bogie) {
+    const d = car.design; if (!P.track || P.s === undefined) return;
+    const r = MetroTrack.thirdRail(P.track, P.s);
+    let side = 0, top = 0;
+    if (r) {
+      // the rail's side in the car's design frame: the track's right (facing +s; path frames are flipped on reversed
+      // segments) against the car's +Z (the group's, reversed on a flipped car)
+      const sg = P.sign === undefined ? 1 : P.sign, rx = (P.rx || 0) * sg, rz = (P.rz || 0) * sg, yaw = car.group.rotation.y;
+      side = Math.sign(r.side * (rx * Math.sin(yaw) + rz * Math.cos(yaw))) * (car.flip ? -1 : 1); top = r.top;
+    }
+    for (let i = 0; i < d.shoes.length; i++) { const S0 = d.shoes[i]; if (S0.bogie !== bogie) continue;
+      const dy = S0.side === side ? top - S0.top : S0.free;
+      if (Math.abs(dy - car.shoeDy[i]) > 5e-4) { car.shoeDy[i] = dy; car.dirty = true; } }
   }
 
   // Articulated units (the GTW): after the rigid pose from the outer bogies, the end bodies swing about their outer

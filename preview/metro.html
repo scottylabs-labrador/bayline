@@ -82,8 +82,12 @@
     const m4 = new THREE.Matrix4(); for (let i = 0; i < 1100; i++) { m4.makeTranslation(-330 + i * 0.6, -0.27, 0); ties.setMatrixAt(i, m4); } ties.receiveShadow = true; scene.add(ties);
     const railM = mat(0x8a8d90, 0.35, 0.9);
     for (const z of [-0.8745, 0.8745]) { const r = new THREE.Mesh(new THREE.BoxGeometry(700, 0.172, 0.073), railM); r.position.set(0, -0.086, z); r.castShadow = r.receiveShadow = true; scene.add(r); }
-    const tr3 = new THREE.Mesh(new THREE.BoxGeometry(700, 0.14, 0.08), railM); tr3.position.set(0, 0.12, -1.45); scene.add(tr3);
-    const cover = new THREE.Mesh(new THREE.BoxGeometry(700, 0.02, 0.34), mat(0xe8e6de, 0.6)); cover.position.set(0, 0.33, -1.48); cover.castShadow = true; scene.add(cover);
+    // contact rail as infra builds it (notes/bart/infra.md): contact surface +0.171 over lat 1.461-1.537, coverboard
+    // underside +0.239 / top +0.263 from lat 1.339 to 1.630, turned down to +0.181 on the field side
+    const tr3 = new THREE.Mesh(new THREE.BoxGeometry(700, 0.2, 0.076), railM); tr3.position.set(0, 0.171 - 0.1, -1.499); scene.add(tr3);
+    const coverM = mat(0xa9adad, 0.62);
+    const cover = new THREE.Mesh(new THREE.BoxGeometry(700, 0.024, 0.291), coverM); cover.position.set(0, 0.251, -(1.339 + 1.630) / 2); cover.castShadow = true; scene.add(cover);
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(700, 0.082, 0.012), coverM); lip.position.set(0, (0.181 + 0.263) / 2, -1.624); scene.add(lip);
     const platLen = 214, px = -10;
     const plat = new THREE.Mesh(new THREE.BoxGeometry(platLen, 1.4, 6), mat(night ? 0x5b5955 : 0xc2beb4, 0.85)); plat.position.set(px, 0.991 - 0.7, 1.676 + 3); plat.receiveShadow = true; scene.add(plat);
     const tact = new THREE.Mesh(new THREE.BoxGeometry(platLen, 0.006, 0.6), mat(0xe5b21c, 0.6)); tact.position.set(px, 0.994, 1.676 + 0.3 + 0.02); scene.add(tact);
@@ -98,6 +102,8 @@
   c.setDestination({ line: hp.get('line') || 'yellow', text: hp.get('dest') || 'SF Airport' });
   c.setNight(night ? 1 : 0);
   c.setLights({ head: 1, tail: 1, interior: 1, lead: 'front' });
+  if (c.setThirdRail) c.setThirdRail(view === 'curve' ? 0 : -1);          // the preview's contact rail is on the -Z side
+  if (hp.get('load') && c.setLoad) c.setLoad(+hp.get('load'));
   const front = c.length / 2;
   const X = i => front - c.cars[i].offset;
   if (curveView) {

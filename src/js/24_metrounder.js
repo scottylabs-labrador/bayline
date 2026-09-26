@@ -17,7 +17,7 @@
 //   Under.update(camera) (per frame, after the camera is placed)   Under.preRender() / Under.postRender() (around draw)
 const Under = (() => {
   const enabled = (() => { try { return new URLSearchParams(location.hash.slice(1)).get('metro') === '1'; } catch (e) { return false; } })();
-  const state = { cell: null, depth: 0, outsideVisible: true, visible: new Set(), daylight: 1, exposure: 1.0, maxBoost: 4.0 };
+  const state = { cell: null, failsafe: null, depth: 0, outsideVisible: true, visible: new Set(), daylight: 1, exposure: 1.0, maxBoost: 4.0 };
   const stats = { cells: 0, portals: 0, cuts: 0, visCells: 0, mapDraws: 0, mapMs: 0, culled: 0, walk: 0 };
   if (!enabled) {
     const nop = () => {};
@@ -291,6 +291,7 @@ bool blUnderFetch( vec3 w, out vec4 a, out vec4 b, out float refY ) {
 // x: inside an underground volume (0..1), y: daylight (0..1, 1 outdoors), z: ambient (irradiance units), w: terrain cut (0/1)
 vec4 blUnder( vec3 w ) {
   if ( blUMK.x < 0.5 ) return vec4( 0.0, 1.0, 0.0, 0.0 );
+  if ( blUMK.y > 0.5 ) return vec4( 1.0, 0.0, 0.09, 0.0 );                    // fail-safe: underground with no cell
   vec4 a, b; float refY;
   if ( ! blUnderFetch( w, a, b, refY ) ) return vec4( 0.0, 1.0, 0.0, 0.0 );
   float y = w.y - refY;
@@ -440,6 +441,34 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     stats.visCells = state.visible.size;
   }
 
+  // ------------------------------------------------------------------ fail-safe
+  // The camera well underground where no cell claims it (a cell is missing, or the data and a module's geometry
+  // disagree): inside a metro tunnel / subway station envelope per MetroNet, or more than 3 m below the ground near the
+  // metro's underground structures (never inside a registered cut; other modules' tunnels are not Under's business).
+  // It still counts as underground: every lit material sees an unlit interior (map flag), the outdoor world is culled,
+  // the cells around stay drawn, the interior exposure applies, and a warning names the place once, so a mismatch shows
+  // as a dark interior rather than as a street seen from below. Returns a description, or null.
+  const _fsF = {}, fsWarned = new Set(); let fsAt = null, fsHit = null;
+  function failsafeAt(x, y, z) {
+    if (typeof MetroNet === 'undefined' || !MetroNet.ready || !MetroNet.nearAll) return null;
+    if (fsAt && Math.abs(fsAt[0] - x) + Math.abs(fsAt[1] - y) + Math.abs(fsAt[2] - z) < 0.5) return fsHit;       // (unchanged camera)
+    let below = -1e9; try { const g = Terrain.h(x, z); if (isFinite(g)) below = g - y; } catch (e) {}
+    let hit = null;
+    if (below > 1 && !cutAt(x, z, y)) {
+      const t = MetroNet.inTunnelAt ? MetroNet.inTunnelAt(x, y, z) : null;
+      if (t) hit = t.kind === 'station' ? 'station ' + (t.station && t.station.id) + ' (track ' + (t.track && t.track.id) + ' s ' + Math.round(t.s) + ')' : 'track ' + (t.track && t.track.id) + ' s ' + Math.round(t.s) + ' (' + t.struct + ')';
+      if (!hit && below > 3) {
+        const st = MetroNet.stationsNear ? MetroNet.stationsNear(x, z, 260).find(q => q.station.type === 'subway') : null;
+        if (st) hit = 'near station ' + st.station.id;
+        else for (const q of MetroNet.nearAll(x, z, 40)) { const F = MetroNet.frame(q.track, q.s, _fsF); if (F && MetroNet.UNDER[F.struct] && Math.abs(F.y - y) < 25) { hit = 'near track ' + q.track.id + ' s ' + Math.round(q.s) + ' (' + F.structName + ')'; break; } }
+      }
+      if (hit) { hit += ', ' + below.toFixed(1) + ' m below the ground';
+        const key = hit.replace(/ s \d+| \(.*$|, .*$/g, ''); if (!fsWarned.has(key)) { fsWarned.add(key);
+          console.warn('Under: the camera is underground at ' + [x, y, z].map(v => v.toFixed(1)).join(', ') + ' (' + hit + ') but no cell claims it; rendering it as underground (fail-safe). The cell for that place is missing, or the data and the geometry disagree.'); } }
+    }
+    fsAt = [x, y, z]; fsHit = hit; return hit;
+  }
+
   // ------------------------------------------------------------------ per frame
   let lastCam = new THREE.Vector3(1e9, 0, 0);
   function update(cam) {
@@ -458,16 +487,23 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     // the camera's cell and how deep inside it is
     state.cell = any ? cellAt(cp.x, cp.y, cp.z) : null;
     const c = state.cell ? cells.get(state.cell) : null;
-    state.daylight = c ? dayAt(c, cp.x, cp.y, cp.z) : 1;
-    const target = c ? 1 - state.daylight : 0;
+    state.failsafe = !c && any ? failsafeAt(cp.x, cp.y, cp.z) : null;
+    uK.value.y = state.failsafe ? 1 : 0;
+    state.daylight = c ? dayAt(c, cp.x, cp.y, cp.z) : state.failsafe ? 0 : 1;
+    const target = c || state.failsafe ? 1 - state.daylight : 0;
     state.depth = target;                                  // (the daylight ramps are already smooth along the cell)
     visibility(cam);
+    if (state.failsafe) {                                  // no cell to walk from: the cells around stay, the outdoors goes
+      state.outsideVisible = false; state.visible.clear();
+      for (const k of cells.values()) if (cp.x > k.bb[0] - 300 && cp.x < k.bb[2] + 300 && cp.z > k.bb[1] - 300 && cp.z < k.bb[3] + 300) state.visible.add(k.id);
+      stats.visCells = state.visible.size;
+    }
     // exposure: blend to the fixed interior exposure (Env.update computed today's outdoor value this frame)
     if (typeof Env !== 'undefined') {
       Env.state.under = state.depth;
       if (state.depth > 0) { Env.state.exposure = U.lerp(Env.state.exposure, INTERIOR_EXPOSURE, state.depth); R.toneMappingExposure = Env.state.exposure * 0.93; }
     }
-    if (typeof Post !== 'undefined' && Post.under) { Post.under.depth = state.depth; Post.under.outside = state.outsideVisible || !state.cell; Post.under.maxBoost = MAX_BOOST; Post.under.on = any; }
+    if (typeof Post !== 'undefined' && Post.under) { Post.under.depth = state.depth; Post.under.outside = state.outsideVisible || !(state.cell || state.failsafe); Post.under.maxBoost = MAX_BOOST; Post.under.on = any; }
     lastCam.copy(cp);
   }
   // around the draw: hide cells nobody can see and, while no opening to the outdoors is in view, the outdoor world
@@ -475,7 +511,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   function preRender() {
     hidden.length = 0;
     if (!cells.size) return;
-    const under = !!state.cell;
+    const under = !!(state.cell || state.failsafe);
     for (const c of cells.values()) if (c.group) { const v = state.visible.has(c.id); if (c.group.visible && !v) { c.group.visible = false; hidden.push(c.group); } }
     if (under && !state.outsideVisible) {
       // never cull a top-level object that holds a registered cell's group (a module's station / tunnel root)
