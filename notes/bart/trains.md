@@ -16,7 +16,7 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 | suggested platform edge from track centreline | 1.676 m (1.600 + 76 mm ADA max gap); the stations team's 1.68 m is fine | ADA 3 in max horizontal gap |
 | platform top above top of rail | 0.991 m (same as the floor: level boarding) | |
 | car length over coupler faces (D and E) | 21.336 m (70 ft); 10-car train 213.36 m (platforms 700 ft = 213.4 m) | BART |
-| door centres along the car (both sides) | x = 0 and ±5.42 m from the car centre (car-local), 3 per side | BART 2014/2015 floor plans (measured, ±3 cm) |
+| door centres along the car (both sides) | x = 0 and ±5.33 m from the car centre (car-local), 3 per side, same on D and E cars | photogrammetry (cross-ratios on a side-on photo of a 10-car train, 5 estimates 5.29–5.37 m) + BART 2014/2015 floor plans |
 | door clear opening | 1.372 m (54 in) wide, ~1.93 m high | BART board presentation 2014 ("54 inch door opening") |
 
 The "42 in (1.07 m)" figure the stations team found does not match any BART source I could find; BART's own
