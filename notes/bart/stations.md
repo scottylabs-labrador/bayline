@@ -140,16 +140,19 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   measured from the lobby's entrance end, at street level), `{ "name", "wait": 25000 }` + `--hash "mst=WOAK"` (the
   page's own camera, e.g. the lead's link).
 
-## Costs (measured, High, 1600x900, GPU shared with other workstreams' Chromes, so indicative)
+## Costs (measured 2026-09-26 05:30, High, 1600x900; draw calls and triangles are exact, the GPU times are not: six
+## workstreams' headless Chromes share the GPU, frames swing 45–270 ms)
 
-| view | +draw calls | +triangles | GPU with / without |
-|---|---|---|---|
-| Montgomery platform (crowd) | +40 | +0.72 M (incl. people) | +21 % |
-| Bay Fair platform | +24 | +0.10 M | +3 % |
-| West Oakland platform | +26 | +0.16 M | +24 % |
-| Bay Fair from 120 m | +24 | +0.06 M | noisy (to re-measure) |
+| view | +draw calls | +triangles (incl. crowd) |
+|---|---|---|
+| Montgomery platform, AM peak crowd | +30 | +0.70 M |
+| 12th St lower level (stacked) | +32 | +0.27 M |
+| West Oakland street, lobby | +27 | +0.20 M |
+| Bay Fair from 120 m | +27 | +0.09 M |
+| West Dublin from the air (footbridge, walkways) | +25 | +0.08 M |
 
-Next: LOD far silhouettes for aerial stations, shadow casters trimmed, per-station budgets checked at every hero.
+Builds: 0.4–1.5 s of time-sliced jobs per station (<= 3 ms a frame); all 51 footprints and ground pads at network
+load: ~230 ms once. Keep-out queries ~0.25 µs. Next: far LOD silhouettes for aerial stations, shadow-caster trims.
 
 ## Requests
 
