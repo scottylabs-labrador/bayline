@@ -302,8 +302,12 @@ const StationTypes = (() => {
   }
   // an entrance's collar lies on the highest paved surface round its opening (sidewalk, plaza) 3 cm proud, following
   // the base ground at that lift (Towns builds on it), never under the drawn ground
-  function headLift(T, pts) { let s = 0; for (const [u, v] of pts) s = Math.max(s, surfLift(T, u, v)); return s > 0 ? s + 0.03 : 0.035; }
-  function surfY(T, u, v, lift) { const [x, z] = T.WUV(u, v); return Math.max(Terrain.hBase(x, z) + lift, Terrain.h(x, z) + 0.035); }
+  // (8 cm proud of the Towns sidewalk: its ribbon interpolates the ground across the band differently from the
+  // collar's grid, and at 3 cm the two surfaces crossed in a sawtooth of bare planting strip)
+  function headLift(T, pts) { let s = 0; for (const [u, v] of pts) s = Math.max(s, surfLift(T, u, v)); return s > 0 ? s + 0.08 : 0.035; }
+  // (on a sidewalk or plaza the collar follows the base ground as Towns does; the detail layer is held at zero under
+  // Towns' surfaces, and following its lidar bumps folded the collar's grid under the sidewalk in a sawtooth)
+  function surfY(T, u, v, lift) { const [x, z] = T.WUV(u, v); const b = Terrain.hBase(x, z) + lift; return lift > 0.06 ? b : Math.max(b, Terrain.h(x, z) + 0.035); }
   // distance from (u, v) to a road segment's centreline
   function segDist(r, u, v) { const du = r.u1 - r.u0, dv = r.v1 - r.v0; const L2 = du * du + dv * dv || 1; const t = U.clamp(((u - r.u0) * du + (v - r.v0) * dv) / L2, 0, 1); return Math.hypot(r.u0 + du * t - u, r.v0 + dv * t - v); }
   const roadAt = (T, u, v, clear) => T.roads.some(r => segDist(r, u, v) < r.hw + clear);
@@ -447,21 +451,24 @@ const StationTypes = (() => {
       const grp = new THREE.Group(); grp.name = 'zone-' + z.name; root.add(grp); const grpN = new THREE.Group(); grpN.name = 'zone-' + z.name + '-near'; grp.add(grpN);
       res.zones[z.name] = { group: grp, near: grpN, under: z.under };
       const mk = (g, m, parent, shadow) => { const geo = g.build(); if (!geo) return null; const mesh = new THREE.Mesh(geo, m); mesh.castShadow = shadow && !z.under; mesh.receiveShadow = true; parent.add(mesh); if (m === mat) z.lights.bind(mesh, root); return mesh; };
-      mk(z.m.sk, mat, grp, true); yield; mk(z.d.sk, mat, grpN, true);
+      st._phase = 'fin:m:' + z.name; mk(z.m.sk, mat, grp, true); yield; st._phase = 'fin:d:' + z.name; mk(z.d.sk, mat, grpN, true);
       const gl1 = mk(z.m.glass, shared.glass, grp, false), gl2 = mk(z.d.glass, shared.glass, grpN, false); for (const g of [gl1, gl2]) if (g) g.renderOrder = 2;
-      mk(z.m.glow, shared.glow, grp, false); mk(z.d.glow, shared.glow, grpN, false);
+      mk(z.m.glow, shared.glow, grp, false); mk(z.d.glow, shared.glow, grpN, false); yield; st._phase = 'fin:signs:' + z.name;
       if (z.signs.length) { const sm = new THREE.MeshStandardMaterial({ map: atlas.tex, emissiveMap: atlas.tex, emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.0 });
         signMats.push({ m: sm, z }); const geo = signGeometry(z.signs, atlas.rect); const m = new THREE.Mesh(geo, sm); m.receiveShadow = true; grpN.add(m); }
       for (const b of z.boards) { const bd = MetroSigns.newBoard(st, b.key); const m = new THREE.Mesh(b.geo, new THREE.MeshBasicMaterial({ map: bd.tex, toneMapped: false })); m.material.color.setScalar(1.6); grpN.add(m); res.boards.push(bd); b.mat = m.material; yield; }
       yield;
     }
+    yield; st._phase = 'fin:steps';
     if (T.esc.length && !(C.q && C.q.detail === 0)) { const m = SP.escSteps(T.esc); if (m) { (T.levels.length > 1 ? near : res.zones.plat.near).add(m); zP.lights.bind(m, root); } }
     res.nears = Object.values(res.zones).map(z => z.near);
     res.entrances = (T.entrances || []).map(e => ({ wx: e.wx, wz: e.wz, name: e.name }));
     // (the street entrances share one zone: their cells get no group, or Under would hide every shaft whenever one of
     // them is out of sight; the shafts are cheap and stay drawn with the station)
     for (const c of T.cells) if (res.zones[c.zone] && c.zone !== 'ent') c.under.group = res.zones[c.zone].group;
+    yield; st._phase = 'fin:walk';
     indexWalk(walk);
+    yield; st._phase = 'fin:crowd';
     // crowd zones (station-local via toLocal/toWorld): platforms with their faces and circulation, the concourse
     res.toWorld = (u, v) => WUV(u, v); res.toLocal = (u, v) => L2(u, v); res.yawAt = (u) => yawAt(u); res.origin = [OX, OZ];
     res.crowd = {
@@ -1082,7 +1089,53 @@ const StationTypes = (() => {
         return side < 0 ? [[v - 0.4, yTB, null, mBar], [v - 0.3, yTB + 1.07, null, mBar], [v + 0.3, yTB + 1.07, null, mBar], [v + 0.4, yTB]].reverse().map((p, k, R) => [p[0], p[1], null, R[k + 1] ? mBar : undefined])
           : [[v - 0.4, yTB, null, mBar], [v - 0.3, yTB + 1.07, null, mBar], [v + 0.3, yTB + 1.07, null, mBar], [v + 0.4, yTB]]; });
     }
-    for (const p of plats) yield* canopy(T, p);
+    // (a platform mostly under a trench's cover gets the covered hall instead of a canopy: its columns rise to the
+    // soffit, with the station's post style, into branching struts, and the soffit carries skylight drums)
+    for (const p of plats) { const cov = T.trench ? coveredShare(T, p) : 0; if (cov > 0.7) yield* coveredHall(T, p); else yield* canopy(T, p); }
+    yield;
+  }
+  function coveredShare(T, p) { let n = 0, c = 0; for (let u = p.u0; u <= p.u1; u += 4) { n++; if (T.trench.lids.some(L => L.kind !== 'bridge' && u >= L.u0 && u <= L.u1)) c++; } return n ? c / n : 0; }
+  function* coveredHall(T, p) {
+    const { zones, M, L2 } = T, z = zones[0], g = z.m.sk, tr = T.trench;
+    const C = T.H.canopy || {}, PS = C.posts || { shape: 'round', col: 0xb9b4a9, size: 0.6, spacing: 12, where: 'back' };
+    const lidAt = (u) => tr.lids.find(L => L.kind !== 'bridge' && u >= L.u0 && u <= L.u1);
+    const back = (u) => p.sideV > 0 ? p.eR(u) : p.eL(u), island = p.kind === 'island';
+    const colV = (u) => island ? (p.eL(u) + p.eR(u)) / 2 : back(u) - (p.sideV > 0 ? 1 : -1) * Math.max(0.9, PS.size);
+    // (the cover's soffit, as trenchBuild draws it)
+    const soff = (u) => Math.max(T.yRail + 4.9, Math.max(Terrain.hBase(...T.WUV(u, tr.vl(u) - 3)), Terrain.hBase(...T.WUV(u, tr.vr(u) + 3))) - 0.08 - 1.2);
+    const spacing = Math.max(8, PS.spacing || 10), mStrut = M([0xcfcac0, K.CONCRETE, 0.2], { sky: 0.3 });
+    for (let u = p.u0 + spacing / 2; u < p.u1 - 2; u += spacing) {
+      if (!lidAt(u) || inGroups(p, u, 1.0)) continue;
+      const v = colV(u), yS = soff(u), H = yS - p.y, hC = Math.max(2.4, H - 1.3);
+      T.place(g, u, v, p.y); g.mat(PS.col || 0xb9b4a9, PS.kind ?? K.CONCRETE, 0.12);
+      if (PS.shape === 'round') g.cyl(0, 0, 0, PS.size / 2, PS.size / 2, hC, 18, false); else g.cbox(0, 0, 0, PS.size, hC, PS.size);
+      g.pop();
+      // branching struts: arms from the column head to the soffit, along the platform and across it (not into the wall)
+      const [x0, z0] = L2(u, v);
+      for (const [du, dv] of [[2.2, 0], [-2.2, 0], [0, 1.6], [0, -1.6]]) {
+        if (!island && dv * p.sideV > 0) continue;
+        const [x1, z1] = L2(u + du, v + dv); const a = [x0, p.y + hC - 0.1, z0], b = [x1, yS - 0.05, z1];
+        const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz) || 1;
+        const ux = dx / L, uy = dy / L, uz = dz / L; let px = -uz, pz = ux; const pl = Math.hypot(px, pz) || 1; px /= pl; pz /= pl; const py = 0;
+        const qx = uy * pz - uz * py, qy = uz * px - ux * pz, qz = ux * py - uy * px, r = 0.14;
+        const corner = (P, s1, s2) => [P[0] + (px * s1 + qx * s2) * r, P[1] + (py * s1 + qy * s2) * r, P[2] + (pz * s1 + qz * s2) * r];
+        g.set(mStrut); const sq = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+        for (let k = 0; k < 4; k++) { const [s1, s2] = sq[k], [t1, t2] = sq[(k + 1) % 4];
+          g.quad(corner(a, s1, s2), corner(b, s1, s2), corner(b, t1, t2), corner(a, t1, t2), [0, 0, 1, 0, 1, 1, 0, 1]); }
+      }
+    }
+    // skylight drums: glowing discs in the soffit over the platform's middle, in a ring of concrete
+    z.m.glow.mat(lin(0xeef3f5).map(c => c * 1.4));
+    for (let u = p.u0 + spacing; u < p.u1 - spacing / 2; u += spacing * 2) {
+      if (!lidAt(u)) continue;
+      const v = (p.eL(u) + p.eR(u)) / 2, [x, zz] = L2(u, v), y = soff(u) - 0.03;
+      z.m.glow.push().at(x, y, zz, 0); z.m.glow.cyl(0, -0.02, 0, 1.6, 1.6, 0.02, 28, true); z.m.glow.pop();
+      g.mat(0x8d8880, K.CONCRETE, 0.1); g.push().at(x, y - 0.35, zz, 0); g.cyl(0, 0, 0, 1.75, 1.75, 0.35, 28, false); g.pop();
+      yield;
+    }
+    // the platform's light line under the soffit, along its middle
+    const um = (p.u0 + p.u1) / 2, f0 = T.frameAt(p.u0 + 4), f1 = T.frameAt(p.u1 - 4), vm = (p.eL(um) + p.eR(um)) / 2, ys = soff(um) - 0.2;
+    z.lights.add({ a: [f0.x - f0.tz * vm, ys, f0.z + f0.tx * vm], b: [f1.x - f1.tz * vm, ys, f1.z + f1.tx * vm], color: T.S.light.map(c => c * 0.9), range: 12, radius: 0.1, dir: [0, -1, 0], focus: 1 });
     yield;
   }
 
@@ -1477,7 +1530,12 @@ const StationTypes = (() => {
       if (canopyEnt) {
         // downtown canopy (2018-27): a thin flat white roof on slender posts over the head of the stair, glass sides, a
         // roll-down gate housing over the mouth, a stainless pylon with the station name and a live-display strip
-        const Lc = Math.min(runE, 7.5), uA = uTop - dir * 0.9, uB = uTop + dir * Lc, hw = W / 2 + 0.55, yR = topY + 3.05;
+        // (the roof stops short of a building it would run into: an entrance against a facade)
+        let Lc = Math.min(runE, 7.5); const hw = W / 2 + 0.55, yR = topY + 3.05;
+        try { if (typeof Towns !== 'undefined' && Towns.buildingsAt) { const [ex, ez] = T.WUV(uTop, ve); const bl = Towns.buildingsAt(ex, ez, 18);
+          const inB = (u, v) => { const [x, z] = T.WUV(u, v); return bl.some(b => { const P = b.pts; let c = false; for (let i = 0, n = P.length / 2, j = n - 1; i < n; j = i++) { const xi = P[i * 2], zi = P[i * 2 + 1], xj = P[j * 2], zj = P[j * 2 + 1]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; }); };
+          while (Lc > 2.5 && [-hw, 0, hw].some(dv => inB(uTop + dir * (Lc + 0.3), ve + dv))) Lc -= 0.5; } } catch (e) {}
+        const uA = uTop - dir * 0.9, uB = uTop + dir * Lc;
         const ua2 = Math.min(uA, uB), ub2 = Math.max(uA, uB);
         { const [x, z] = T.L2((ua2 + ub2) / 2, ve); const gg = zE.m.sk; gg.push().at(x, 0, z, T.yawAt(uTop)); gg.mat(0xf2f1ec, K.PAINT); gg.box(-(ub2 - ua2) / 2, yR, -hw, (ub2 - ua2) / 2, yR + 0.16, hw);
           gg.mat(0xb9bec3, K.STEEL); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, -hw - 0.02, (ub2 - ua2) / 2 + 0.02, yR, -hw + 0.1); gg.box(-(ub2 - ua2) / 2 - 0.02, yR - 0.06, hw - 0.1, (ub2 - ua2) / 2 + 0.02, yR, hw + 0.02);
@@ -1658,6 +1716,59 @@ const StationTypes = (() => {
     zC.lights.add({ a: [f0.x - f0.tz * v, yTop - 0.25, f0.z + f0.tx * v], b: [f1.x - f1.tz * v, yTop - 0.25, f1.z + f1.tx * v], color: LC.map(c => c * 0.8), range: 14, radius: 0.08, dir: [0, -1, 0], focus: 1 });
     yield;
     yield* walkways(T);
+    if (T.H.sharedHall) yield* sharedHall(T);
+  }
+  // Millbrae's shared intermodal hall (lead, M3): a steel barrel vault along the line over the Caltrain island and BART
+  // platform 3, springing over the footbridge mezzanine, carried on two rows of columns in the gap between the BART
+  // platform and the Caltrain northbound track and cantilevered over both platforms, ribbed every 12 m, light lines
+  // under the crown. It replaces the Caltrain-era depot hall, which stood over BART's tracks (Landmarks hides it while
+  // this station is shown); the Caltrain platforms, their canopy, lamps, boards and prompts stay the Peninsula's.
+  function* sharedHall(T) {
+    const H = T.H.sharedHall, { zones, M, L2, WUV, frames, plats } = T, z = zones[0], g = z.m.sk;
+    const p3 = plats[0], edge = (u) => p3.sideV < 0 ? p3.eR(u) : p3.eL(u), back = (u) => p3.sideV < 0 ? p3.eL(u) : p3.eR(u), sv = p3.sideV < 0 ? -1 : 1;
+    // the Caltrain island and its northbound track, from the Peninsula station (station v at the middle), else fallbacks
+    let vWest = H.vWest, vNB = H.vNB;
+    try { const PS = Stations.list.find(s => s.id === H.peninsula), n = PS && Track.nearest(...WUV(T.uc, 0), 90);
+      if (PS && n) { const F = {}; Track.frame(n.s, F); const toV = (lat) => { const [x, zz] = L2(T.uc, 0); const wx = F.x + F.rx * lat - T.OX, wz = F.z + F.rz * lat - T.OZ; const f = T.frameAt(T.uc); return (wx - x) * -f.tz + (wz - zz) * f.tx; };
+        const P = PS.plats.find(q => n.s > q.s0 && n.s < q.s1); if (P) { const lat = Stations.platLat(P, n.s).map(toV); vWest = Math.min(...lat) - 0.6; }
+        const lanes = [Track.lane(n.s, 0), Track.lane(n.s, 1)].map(toV); vNB = sv < 0 ? Math.max(...lanes) : Math.min(...lanes); } } catch (e) { /* fallbacks */ }
+    const yTopM = T.yCF + 3.2, ys = Math.max(yTopM + 0.9, p3.y + 7.5), R = H.rise || 5, um = T.ub0 !== undefined ? (T.ub0 + T.ub1) / 2 : T.uc;
+    const u0 = um - (H.len || 80) / 2, u1 = um + (H.len || 80) / 2;
+    const vA = (u) => Math.min(vWest, edge(u) + sv * 1.2), vB = (u) => Math.max(vWest, edge(u) + sv * 1.2);   // the shell's two edges
+    const N = 18, arch = (u, inner) => { const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, P = [];
+      for (let k = 0; k <= N; k++) { const t = Math.PI * k / N, v = c - hw * Math.cos(t), y = ys + R * Math.sin(t) - (inner ? 0.18 : 0); P.push([v, y]); }
+      return P; };
+    const mOut = M([0xb9c0c6, K.STEEL, 0.3], { sky: 1 }), mIn = M([0xdfe2e3, K.PAINT, 0.2], { sky: 0.7 }), mSteel = M([0x8d949a, K.STEEL, 0.3], { sky: 0.9 });
+    const fr = frames(u0, u1);
+    g.sweep(fr, (i, f) => arch(f.u, false).map(([v, y], k) => [v, y, null, k < N ? mOut : undefined]));                        // outside (up)
+    g.sweep(fr, (i, f) => arch(f.u, true).reverse().map(([v, y], k) => [v, y, null, k < N ? mIn : undefined]));               // soffit (down)
+    for (const u of [u0, u1]) { const A = arch(u, false), I = arch(u, true); g.set(mSteel);                                    // end fascias (both faces)
+      for (let k = 0; k < N; k++) { const P = (v, y) => { const [x, zz] = L2(u, v); return [x, y, zz]; };
+        const q = [P(A[k][0], A[k][1]), P(A[k + 1][0], A[k + 1][1]), P(I[k + 1][0], I[k + 1][1]), P(I[k][0], I[k][1])];
+        g.quad(q[0], q[1], q[2], q[3], [0, 0, 1, 0, 1, 1, 0, 1]); g.quad(q[3], q[2], q[1], q[0], [0, 1, 1, 1, 1, 0, 0, 0]); } }
+    yield;
+    // ribs and columns every 12 m; columns stand in the gap (clear of the BART platform's back and the Caltrain
+    // northbound track's envelope), not where the walkway crosses or a Peninsula lamp stands
+    const lamps = []; try { let dep = null; Env.scene.traverse(o => { if (!dep && o.name === 'depot:millbrae') dep = o; });
+      if (dep) { dep.updateMatrixWorld(true); for (let i = 0; i < 6; i++) { const w = new THREE.Vector3(-30 + i * 12, 0, -16).applyMatrix4(dep.matrixWorld); lamps.push([w.x - T.OX, w.z - T.OZ]); } } } catch (e) {}
+    const cols = [(u) => back(u) + sv * 0.9, (u) => vNB - sv * 2.9];
+    for (let u = u0 + 6; u <= u1 - 5; u += 12) {
+      // (a rib: a steel band 0.3 m wide under the soffit, facing down)
+      const A = arch(u, true); g.set(mSteel);
+      for (let k = 0; k < N; k++) { const P = (uu, v, y) => { const [x, zz] = L2(uu, v); return [x, y - 0.12, zz]; };
+        g.quad(P(u - 0.15, A[k + 1][0], A[k + 1][1]), P(u + 0.15, A[k + 1][0], A[k + 1][1]), P(u + 0.15, A[k][0], A[k][1]), P(u - 0.15, A[k][0], A[k][1]), [0, 0, 1, 0, 1, 1, 0, 1]); }
+      if (Math.abs(u - um) < 4) continue;
+      for (const cv of cols) { const v = cv(u); if ((v - vA(u)) * (vB(u) - v) <= 0) continue; const [x, zz] = L2(u, v);
+        if (lamps.some(([lx, lz]) => Math.hypot(lx - x, lz - zz) < 1.3)) continue;
+        const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, t = U.clamp((v - c) / hw, -1, 1);
+        const gy = Terrain.h(x + T.OX, zz + T.OZ) - 0.2, top = ys + R * Math.sqrt(1 - t * t) - 0.2;
+        g.set(mSteel); g.cyl(x, gy, zz, 0.24, 0.3, top - gy, 14, true); }
+      yield;
+    }
+    // light lines under the crown
+    const f0 = T.frameAt(u0 + 3), f1 = T.frameAt(u1 - 3), vc = (vA(um) + vB(um)) / 2;
+    z.lights.add({ a: [f0.x - f0.tz * vc, ys + R - 0.5, f0.z + f0.tx * vc], b: [f1.x - f1.tz * vc, ys + R - 0.5, f1.z + f1.tx * vc], color: T.S.light.map(c => c * 1.1), range: 26, radius: 0.12, dir: [0, -1, 0], focus: 1 });
+    void WUV;
   }
   const bridgeSupports = (T) => { const vl = T.edgeV(T.uc, -1) - 2, vr = T.edgeV(T.uc, 1) + 2; const out = []; for (const v of [vl + 1, vr - 1]) for (const u of [T.ub0 + 1, T.ub1 - 1]) out.push([u, v]); return out; };
 

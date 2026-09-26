@@ -55,7 +55,10 @@ const StationHeroes = (() => {
     SFIA: { type: 'aerial', access: 'below', floor: TERR(0xb3b0aa, 4.0), ceil: PANEL(0x9a9d9f, 0.6), enclosed: true, canopy: { style: 'shed', len: 216, top: 0xa9adb0, under: 0x8e9194, fascia: 0x6f7377,
       posts: { shape: 'round', col: 0xaaa59c, size: 1.2, spacing: 18, where: 'centre', kind: K.BOARDFORM } }, feature: ['windPortal'], hero: 1 },
     MLBR: { type: 'surface', access: 'bridge', floor: GRAN(0xa3a098, 0.6), canopy: { style: 'flat', len: 150, top: 0xefe8d6, under: 0xf2ecdd, fascia: 0xe4dcc8, posts: { shape: 'round', col: 0xf2f0ea, size: 0.3, spacing: 10, where: 'centre' } },
-      bridgeStyle: 'wings', hero: 1 },
+      bridgeStyle: 'wings', hero: 1,
+      // the shared intermodal hall over the Caltrain island and BART platform 3 (replaces the Caltrain-era depot hall with
+      // the metro on): the Peninsula station it spans, and fallbacks in station v if that is not there
+      sharedHall: { peninsula: 'place_MLBR', vWest: -20.5, vNB: -16.0, len: 84, rise: 5.2 } },
     // ---------------------------------------------------------------- Oakland core
     WOAK: { layout: 'side', type: 'aerial', access: 'below', floor: CONC(0x9a958c), deck: FLUTE(0xb9b3a7, 0.1), canopy: { style: 'hipped', len: 100, top: 0x55807e, under: 0x6d8f8b, fascia: 0x3f6f6d, posts: { shape: 'rect', col: 0x3f6f6d, size: 0.3, spacing: 9, where: 'back' } },
       windscreen: 0x35598c, ends: 'poles', poleCol: 0x3f6f6d, hero: 1 },
