@@ -5,6 +5,9 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 
 ## Status
 
+- 2026-09-26 (session 1, later): the Antioch DMU (GTW 2/6-like, articulated on bones) and the airport people mover
+  (Cable Liner-like) exist; lamp glow billboards; the D-car cab rebuilt after the 2014 mock-up; the body's cant line
+  lowered to 2.9 m after the Lake Merritt photo; interior brighter, teardrop straps, ad frames; standing spots.
 - 2026-09-26 (session 1): MetroKit v1 on `bart-trains`: Fleet of the Future-type D/E cars (exterior, plug doors on
   bones, trucks with yaw + spinning wheelsets, collector shoes, couplers, decals with per-car numbers, LED signs behind
   the glass, interior-mapped windows), interiors (saloon: seats, poles, straps, partitions, screens, signs, end walls;
@@ -77,7 +80,11 @@ unflipped) and `cabYaw`.
 | 10-car train, LOD2 | 10 | 1.0k |
 | far batch (all far trains) | 1 per car design + 1 for all lamps | 72-152 per car |
 
-Build times (M2, first use, then cached): D exterior 95 ms, E 38 ms; interiors 21-36 ms.
+Build times (M2, first use, then cached): D exterior 95 ms, E 38 ms; interiors 21-36 ms; GTW unit 65 ms; APM cars 22 ms.
+
+Render time (preview, 1600 x 900, sun shadows on, `#gpu=1`: render + gl.finish, median of 40, with minus without the
+train): 10-car train exterior 3/4 view 0.3 ms, side view 0.2 ms, inside a car (interior of that car built) 0.6 ms.
+DMU unit: 27k triangles, 2 draws (+1 glow at night); APM car: 4-6k triangles, 2 draws.
 
 ## Preview
 
@@ -138,13 +145,19 @@ Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 m
   Open: nose still reads flatter than the real cab; pods are ovals rather than teardrops; interior lacks the wall ad
   frames and the light-blue trim line; cab displays oversized.
 
+- **it2** (`it2_*.jpg`, `it2_game_woak.jpg`): 3/4 view compared with the El Cerrito 2021 photo, the saloon with the
+  March 2018 D-car interior photo, the cab with the 2014 cab mock-up. Cab now matches the mock-up's layout (L-desk,
+  two displays VATC | status, keypad plate, e-stop, MANUAL CONTROL T-handle, sun blind); the body's white roof now
+  starts right above the windows (cant 2.9 m); straps are teardrops; interior fill brighter (the ceiling reads white);
+  nose ring palette bleeding fixed. In game (WOAK aerial, 10:30) the cars read as silver with the blue ends, passengers
+  visible, window reflections of the street.
+
 ## Known issues / open problems
 
 - The D car's front is close to the reference in the head-on view but still simpler in 3/4 views (corner pillars'
   recessed panels, the chin's curvature).
-- No lamp glow billboards on near trains yet (far batch has them).
-- DMU (GTW 2/6) and the airport people mover not built yet (`createConsist('dmu'|'apm')` throws: the sim falls back to
-  its placeholders).
+- The DMU and APM are first versions (simpler noses, simple interiors, no cabs).
+- Headlight pods are ovals rather than the real teardrops; the corner pillars lack their recessed panels.
 
 ## Requests for other workstreams
 
@@ -153,5 +166,15 @@ Four 3-car trains (113 passengers), cable-hauled on a steel truss guideway, 30 m
 - INFRA: third-rail geometry for the collector shoes. I assume the contact surface at **y = +0.19 m** above top of rail
   and the contact rail centreline at **|z| = 1.45 m** from the track centreline (shoes on both sides of every truck,
   paddles ~0.3 m long). Please tell me your numbers and I'll move the shoes to match.
-- SIM: consists will be `MetroKit.createConsist('bart' | 'dmu' | 'apm', { cars, order, seed })`; car metadata like
-  TrainKit (floorRegions, seats, doors, cabEye, bogieOffsets). A pose helper will take MetroNet-style frames.
+- SIM: MetroKit is ready for all three kinds: `createConsist('bart' | 'dmu' | 'apm', { cars, seed })`. For 'dmu',
+  `cars` = GTW units (each one MetroKit car of 40.89 m with articulated bodies; `c.cars.length === cars`); for 'apm',
+  `cars` = cars (end, mid.., end). Please pose with `MetroKit.poseOnTrack` (it articulates the GTW and yaws bogies).
+  Suggested: `MetroKit.createFarBatch(Env.scene)` for your far trains (real car silhouettes in one draw per design and
+  billboard lamps that draw in this pipeline; GL points don't). Per-car `standSpots` [{x, y, z, yaw}] for standing
+  passengers (feet on the floor), `seats` for seated ones (eye positions, like TrainKit). `consist.onEvent` fires
+  'chime' / 'doors-opening' / 'doors-open' / 'doors-closing' / 'doors-closed' for the door sounds if you use
+  `openDoors` / `closeDoors` (with `setDoors(side, t)` you drive the doors yourself and no chime event fires).
+- LEAD (90_main.js applyTier): please add `if (typeof MetroKit !== 'undefined') MetroKit.setQuality(T.name);` next to
+  `ACModel.setQuality` (low -> coarser sections and seats; applies to designs built afterwards).
+- STATIONS: the GTW's door sills are at 0.635 m above rail (ASSUMED: low-floor GTW), doors at x = ±6.4 m from the
+  unit centre, 1.30 m clear; APM floor 0.36 m (ASSUMED), one 1.6 m door per car side at the car centre.
