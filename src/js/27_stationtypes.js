@@ -1580,8 +1580,8 @@ const StationTypes = (() => {
       zC.m.glow.mat(LC); zC.m.glow.sweep(frames(cu0 + 2, cu1 - 2), (i, f) => [[v - 0.12, yCC - 0.06], [v + 0.12, yCC - 0.06]], true);
     }
     // name panels on the concourse walls, maps
-    for (let u = cu0 + 10; u < cu1 - 8; u += 30) for (const side of [-1, 1]) { const v = edgeV(u, side) - side * 0.03; zC.signs.push({ u, v, y: yCF + 2.2, yaw: T.yawAt(u) + (side < 0 ? Math.PI : 0), w: 4.3, h: 0.8, region: 'name', both: false, T }); }
-    { const u = uc + 3; zC.signs.push({ u, v: vl(u) + 0.03, y: yCF + 1.5, yaw: T.yawAt(u) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T }); }
+    for (let u = cu0 + 10; u < cu1 - 8; u += 30) for (const side of [-1, 1]) { const v = edgeV(u, side) - side * 0.03; zC.signs.push({ u, v, y: yCF + 2.2, yaw: T.yawAt(u) + (side > 0 ? Math.PI : 0), w: 4.3, h: 0.8, region: 'name', both: false, T }); }
+    { const u = uc + 3; zC.signs.push({ u, v: vl(u) + 0.03, y: yCF + 1.5, yaw: T.yawAt(u), w: 2.4, h: 1.0, region: 'map', both: false, T }); }
     // cell: the concourse footprint
     const poly = []; for (const f of fr) { const v = vl(f.u) - 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); } for (let i = fr.length - 1; i >= 0; i--) { const f = fr[i]; const v = vr(f.u) + 0.5; poly.push([f.x - f.tz * v, f.z + f.tx * v]); }
     // (the cell stays half a metre under the lowest ground over it: the terrain drops fragments inside cell volumes)
@@ -2476,18 +2476,19 @@ const StationTypes = (() => {
       }
       let um = (p.u0 + p.u1) / 2 - 8; while (busy(p, um, cv(um), 2) && um > p.u0 + 10) um -= 6;
       p.keys.forEach((key, k) => { const side = island ? (k === 0 ? -1 : 1) : (p.sideV > 0 ? -1 : 1); const v = (island ? cv(um) : backV(um)) + side * 0.12;
-        z.signs.push({ u: um, v, y: p.y + 2.25, yaw: T.yawAt(um) + (side > 0 ? Math.PI : 0), w: 3.2, h: 0.4, region: 'p' + Math.min(4, Number(key) || (k + 1)), both: false, T });
+        z.signs.push({ u: um, v, y: p.y + 2.25, yaw: T.yawAt(um) + (side < 0 ? Math.PI : 0), w: 3.2, h: 0.4, region: 'p' + Math.min(4, Number(key) || (k + 1)), both: false, T });   // (faces out from the totem's side)
       });
       place(gd, um, island ? cv(um) : backV(um), p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 3.3, 2.05, 0.2); gd.pop();
       let u2 = um + 30; while (busy(p, u2, cv(u2), 2) && u2 < p.u1 - 10) u2 += 6; const v2 = island ? cv(u2) : backV(u2);
       place(gd, u2, v2, p.y, 0); gd.mat(0x1c1d1f, K.PAINT); gd.cbox(0, 0, 0, 2.5, 2.2, 0.16); gd.pop();
-      z.signs.push({ u: u2, v: v2 - 0.09, y: p.y + 1.35, yaw: T.yawAt(u2), w: 2.4, h: 1.0, region: 'map', both: false, T });
-      z.signs.push({ u: u2, v: v2 + 0.09, y: p.y + 1.35, yaw: T.yawAt(u2) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T });
+      z.signs.push({ u: u2, v: v2 - 0.09, y: p.y + 1.35, yaw: T.yawAt(u2) + Math.PI, w: 2.4, h: 1.0, region: 'map', both: false, T });
+      z.signs.push({ u: u2, v: v2 + 0.09, y: p.y + 1.35, yaw: T.yawAt(u2), w: 2.4, h: 1.0, region: 'map', both: false, T });
       yield;
     }
     if (under) for (const L of T.levels) for (const side of [-1, 1]) for (let u = T.pu0 + 12; u < T.pu1 - 8; u += 25) {
       const v = (T.levels.length > 1 ? L.edgeV : T.edgeV)(u, side) - side * 0.03;
-      L.zone.signs.push({ u, v, y: L.yT + 1.9, yaw: T.yawAt(u) + (side < 0 ? Math.PI : 0), w: 6.4, h: 1.2, region: 'name', both: false, T });
+      // (a one-sided sign with yaw = yawAt(u) faces +v: one on the +v wall turns to face the platform, yaw + PI)
+      L.zone.signs.push({ u, v, y: L.yT + 1.9, yaw: T.yawAt(u) + (side > 0 ? Math.PI : 0), w: 6.4, h: 1.2, region: 'name', both: false, T });
     }
   }
   // a display face on each side (normals +u and -u), 1.8 x 0.45 m, just proud of the housing

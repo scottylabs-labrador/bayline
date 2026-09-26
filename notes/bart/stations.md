@@ -70,6 +70,13 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   face's body; the audit now flags any island wider than 14 m. MacArthur's lobby is now at street level too (the
   underpass mode, floor 30.4 m from the lidar at its entrance; it was 26.1 m, the terrain sampled before the lidar
   streamed, and stood in a pit graded 4.4 m under the plaza).
+- **Signs that faced their walls** (found in the promo previews): a one-sided sign with yaw = yawAt(u) faces +v, and the
+  trackway walls' big station-name panels, the concourse name signs and the concourse map were turned into their own
+  walls (the backs were culled until the navy backs arrived at 08:44, so the platforms' walls showed nothing, then
+  blank navy slabs); the platform totems' platform-number signs and maps faced into their totems. All now face the
+  room: 'Montgomery Street' with the mark and line bullets on every trackway wall and concourse wall.
+- **MacArthur's roof from above**: its box canopy's top was the fascia's dark brown (read as a black slab from the
+  air, promo P06); now a grey roof, the underside and fascia stay dark.
 - **Opening rims faced outward**: the walls round an opening in a slab (escalator wells through a platform or a
   concourse roof) were wound to look out of the opening, so from inside the well they were culled and whatever stood
   beside it showed through (found at Richmond's new well: the fill's gravel beside the escalators; also the rims of the
