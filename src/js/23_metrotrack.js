@@ -642,9 +642,13 @@ const MetroTrack = (() => {
   let dbgCam = null; const _dc = {};
   function shot(id, s, lat = 0, up = 1.7, tgt = { ds: 30, lat: 0, up: 1.5 }, fov) {
     if (id === null) { dbgCam = null; return; }
-    const R = TRACKS.find(r => r.id === id); if (!R) return 'no track ' + id;
-    const at = (ss, la, uu) => { frameAt(R, ss, _dc); return [_dc.x + _dc.lx * la + _dc.vx * uu, _dc.y + _dc.ly * la + _dc.vy * uu, _dc.z + _dc.lz * la + _dc.vz * uu]; };
-    const pos = at(s, lat, up), look = Array.isArray(tgt) ? tgt : at(s + (tgt.ds || 0), tgt.lat || 0, tgt.up || 0);
+    let pos, look;
+    if (Array.isArray(id)) { pos = id; look = Array.isArray(tgt) ? tgt : [id[0], id[1], id[2] - 10]; }          // world positions
+    else {
+      const R = TRACKS.find(r => r.id === id); if (!R) return 'no track ' + id;
+      const at = (ss, la, uu) => { frameAt(R, ss, _dc); return [_dc.x + _dc.lx * la + _dc.vx * uu, _dc.y + _dc.ly * la + _dc.vy * uu, _dc.z + _dc.lz * la + _dc.vz * uu]; };
+      pos = at(s, lat, up); look = Array.isArray(tgt) ? tgt : at(s + (tgt.ds || 0), tgt.lat || 0, tgt.up || 0);
+    }
     dbgCam = { pos, look, fov: fov || 0 };
     // move the player's fly camera there too, so the terrain and the world stream for this spot (Terrain.update runs
     // before this override every frame)

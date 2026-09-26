@@ -424,6 +424,7 @@ const Terrain = (() => {
     m.customProgramCacheKey = () => cut ? 'bayline-terrain-v5-cut' : 'bayline-terrain-v5';
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, u);
+      if (cut && api.cutUniforms) Object.assign(sh.uniforms, api.cutUniforms);     // (Bayline Metro: the fine cut level)
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', `#include <common>
           uniform sampler2D hTex; uniform vec4 hUV; uniform vec2 hTC; uniform vec3 hInfo; uniform float skirt;
@@ -515,7 +516,7 @@ const Terrain = (() => {
 `)
         .replace('#include <color_fragment>', `#include <color_fragment>
           #ifdef BL_CUT
-          if (blUnder(vW).w > 0.5) discard;
+          if (blUnderCut(vW)) discard;
           #endif
           {
             // ---- normal from the height data (per pixel) ----
@@ -895,6 +896,7 @@ const Terrain = (() => {
   });
   api.covers = (x, z) => (x >= X0 && x < X0 + SIZE && z >= Z0 && z < Z0 + SIZE) || North.contains(x, z);
   api.cutTest = null;           // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
+  api.cutUniforms = null;       // the fine cut level's uniforms (Under), used by the cut variant only
   // (Bayline Metro, world workstream) add a height filter (see heightFilters); loaded height tiles overlapping rect
   // [x0, z0, x1, z1] are dropped so they stream in again, filtered (a brief step down in detail there, once)
   api.addHeightFilter = (fn, rect) => {
