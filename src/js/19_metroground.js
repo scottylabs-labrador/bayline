@@ -185,7 +185,50 @@ const MetroGround = (() => {
   }
   // trees in the way of a BART structure above ground (the new tree tiles keep 6.5 m + half a crown clear at bake time;
   // the older ones near the lines need it at runtime)
-  function dropTree(x, z, r) {
+  // ground that the metro's openings cut away or that lies inside an underground volume (Under: portal approaches, open
+  // cuts, a chamber or box whose volume reaches the surface): no tree, bush or grass stands there. Under.cutAt at the
+  // ground, behind a box test over Under's cuts and cells (their boxes re-read when they change, at most every 0.5 s)
+  // cached on a 100 m grid
+  const cutCache = new Map(); let cutGen = -1, cutT = 0, cutBoxes = [];
+  const underOn = () => typeof Under !== 'undefined' && Under.enabled && !!Under.cutAt && !!Under.stats;
+  function boxes() {
+    const g = Under.stats.cuts * 65536 + Under.stats.cells, now = performance.now();
+    if (g !== cutGen || now - cutT > 500) {
+      const B = [];
+      for (const m of [Under.cuts, Under.cells]) if (m && m.values) for (const c of m.values()) if (c.bb) B.push(c.bb);
+      if (g !== cutGen || B.length !== cutBoxes.length || B.some((b, i) => b !== cutBoxes[i])) cutCache.clear();
+      cutGen = g; cutT = now; cutBoxes = B;
+    }
+    return cutBoxes;
+  }
+  function cutNear(x0, z0, x1, z1) {
+    if (!underOn()) return false;
+    for (const b of boxes()) if (b[0] < x1 && b[2] > x0 && b[1] < z1 && b[3] > z0) return true;
+    return false;
+  }
+  function onCutGround(x, z) {
+    if (!underOn()) return false;
+    boxes();
+    const gx = Math.floor(x / 100), gz = Math.floor(z / 100), k = gx * 4096 + gz;
+    let near = cutCache.get(k);
+    if (near === undefined) { near = cutNear(gx * 100, gz * 100, gx * 100 + 100, gz * 100 + 100); cutCache.set(k, near); }
+    return near && !!Under.cutAt(x, z, Terrain.h(x, z) + 0.3);
+  }
+  // cuts and cells register as the metro builds near the camera, usually after the trees there loaded: every second the
+  // boxes of the new ones are re-filtered (Flora.refreshIn: the drop filters on the loaded trees there, nothing reloads)
+  const seenCuts = new Set();
+  function watchCuts() {
+    if (typeof Under === 'undefined' || !Under.enabled || typeof Flora === 'undefined' || !Flora.refreshIn) return;
+    const R = [];
+    for (const m of [Under.cuts, Under.cells]) if (m && m.entries) for (const [id, c] of m.entries()) {
+      if (seenCuts.has(id)) continue; seenCuts.add(id);
+      if (c.bb) R.push([c.bb[0] - 2, c.bb[1] - 2, c.bb[2] + 2, c.bb[3] + 2]);
+    }
+    if (R.length) Flora.refreshIn(R);
+  }
+  function dropTree(x, z, r, shrub) {
+    if (onCutGround(x, z)) return true;
+    if (shrub) return false;                           // (bushes: only the cut; the clearance below is for trees)
     const n = MetroNet.nearest(x, z, 6.5 + r * 0.5 + 0.5);
     if (!n) return false;
     MetroNet.frame(n.track, n.s, fr);
@@ -204,7 +247,11 @@ const MetroGround = (() => {
     // the terrain re-filters its loaded tiles in place (spread over frames), then the towns rebuild the touched tiles
     Promise.resolve(Terrain.addHeightFilter(filter, bbox)).then(() => {
       try { if (typeof Towns !== 'undefined' && Towns.refresh) { Towns.addDrop(dropBuilding); stats.towns = Towns.refresh(R); } } catch (e) { console.warn('MetroGround towns', e); }
+      // road traffic reads the ground when its lanes stream (Towns.roadsNear): lanes streamed before the carve would float
+      // over a lowered bed, so they stream again now
+      try { if (typeof World !== 'undefined' && World.traffic) World.traffic.cx = 1e9; } catch (e) { /* no traffic */ }
     });
+    watchCuts(); setInterval(() => { try { watchCuts(); } catch (e) { console.warn('MetroGround cuts', e); } }, 1000);
     console.log('MetroGround: carving', stats.segments, 'segments,', stats.platforms, 'platforms,', R.length, 'tiles re-placed');
     return true;
   }
@@ -217,7 +264,9 @@ const MetroGround = (() => {
     }, 400);
   }
   let rects = null;
-  const api = { install, carveAt, carvePoint, stats, get installed() { return installed; }, get rects() { return rects; } };
+  const api = { install, carveAt, carvePoint, onCutGround, cutNear, stats, get installed() { return installed; }, get rects() { return rects; },
+    // (QA handles: the modules this one works with, for headless checks)
+    _dbg: { flora: () => (typeof Flora !== 'undefined' ? Flora : null), terrain: () => Terrain, world: () => (typeof World !== 'undefined' ? World : null), ground: () => (typeof GroundCover !== 'undefined' ? GroundCover : null) } };
   if (typeof window !== 'undefined') (window.__baylineMods ||= {}).MetroGround = api;
   return api;
 })();
