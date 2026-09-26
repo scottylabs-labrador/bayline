@@ -1,25 +1,23 @@
-// P24, night: the Oakland Wye from above, where the line from the Transbay Tube comes down off the West Oakland aerial
-// and splits for Richmond/Concord and for Lake Merritt/Fremont, each pair dropping into its own trench and portal. Almost
-// straight down from 170 m, a slow eased descent; two trains' light strings pass each other through the split.
+// P24, night: the Oakland Wye from above: the line from the Transbay Tube comes down off the West Oakland aerial and
+// splits, one pair of tracks for Richmond/Concord and one for Lake Merritt/Fremont, each dropping into its own trench
+// and portal. A drone 120 m up to the southwest, looking down 30 degrees at the split, 40 degrees; two trains' lit
+// strings pass each other on the approach (the timetable's meeting point there). A slow eased descent toward it.
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
-const LAT = 37.79935, LON = -122.27905, FOV = 40;
+const FOV = 40, H = 120, BACK = 230, AZ = 211;
 export default {
-  hash: '#auto&t=21:50&q=ultra&w=clear', warm: 50, frames: 105,
+  hash: '#auto&t=21:50&q=ultra&w=clear', warm: 50, frames: 120,
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline, C = __cine;
     await M.day('2026-09-29', 21 * 3600 + 50 * 60);
-    const g = C.ll(${LAT}, ${LON}, 0), gy = C.ground(g.x, g.z), T = M.track({ lat: 37.79949, lon: -122.27981 });
-    // the frame's long side along the tracks (they run west-northwest to east-southeast here): 'up' in the frame is
-    // square to them, so the lines cross the wide frame left to right
-    const ux = -T.tz, uz = T.tx;
-    window.__P = { c0: { x: g.x - ux * 12, y: gy + 175, z: g.z - uz * 12 }, c1: { x: g.x - ux * 6, y: gy + 150, z: g.z - uz * 6 }, g: { x: g.x, y: gy, z: g.z }, ux, uz };
-    C.put(window.__P.c0, window.__P.g);
-    window.__dep = M.meet({ lat: 37.79949, lon: -122.27981 }, { heading: 121, tol: 50 }, { heading: 301, tol: 50 }, 21 * 3600 + 52 * 60, 1.8, { gap: 7, mid: true });
-    return window.__dep; }`,
-  prime: `() => { const B = window.__bayline; B.Env.setClock(window.__dep.t); return window.__dep.a.line + ' / ' + window.__dep.b.line + ' gap ' + window.__dep.gap; }`,
+    let X = M.crossings('M2', 35100, 35430, 21 * 3600 + 52 * 60, 23 * 3600, { step: 30, gap: 6 })[0];
+    if (!X) X = M.crossings('M2', 35100, 35430, 19 * 3600 + 40 * 60, 21 * 3600, { step: 30, gap: 5 })[0]; if (!X) return 'no crossing';
+    const sp = C.ll(37.79949, -122.27981, 0), g = C.ground(sp.x, sp.z), a = ${AZ} * Math.PI / 180;
+    // the look point: between the meeting point and the split; the drone back along the south-southwest, looking down 30 degrees
+    const N = B.MetroSim.net, F = {}; N.frame(N.byId['M2'], X.s, F); const q = { x: (sp.x + F.x) / 2 + 40 * Math.sin(121 * Math.PI / 180), y: g + 6, z: (sp.z + F.z) / 2 - 40 * Math.cos(121 * Math.PI / 180) };
+    const c0 = { x: q.x + Math.sin(a) * ${BACK}, y: g + ${H}, z: q.z - Math.cos(a) * ${BACK} }, c1 = { x: q.x + Math.sin(a) * (${BACK} - 25), y: g + ${H} - 14, z: q.z - Math.cos(a) * (${BACK} - 25) };
+    window.__P = { c0, c1, q }; C.put(c0, q); window.__X = X; window.__dep = { t: X.t - 2.4 };
+    return JSON.stringify(X); }`,
+  prime: `() => { window.__bayline.Env.setClock(window.__dep.t); __cine.put(window.__P.c0, window.__P.q); return window.__X.a.line + ' / ' + window.__X.b.line + ' at s ' + window.__X.s; }`,
   before: `(t) => { window.__bayline.Env.camera.fov = ${FOV}; }`,
-  cam: `(t, cam) => { const C = __cine, P = window.__P, k = C.ease(t / 3.5), p = C.mix(P.c0, P.c1, k);
-    // nearly straight down (the look point a few metres ahead along the tracks keeps 'up' defined), no roll
-    const q = { x: P.g.x + P.ux * 3, y: P.g.y, z: P.g.z + P.uz * 3 }; C.put(p, q);
-    cam.position.set(p.x, p.y, p.z); cam.up.set(P.ux, 0, P.uz); cam.lookAt(q.x, q.y, q.z); if (Math.abs(cam.fov - ${FOV}) > 1e-3) { cam.fov = ${FOV}; cam.updateProjectionMatrix(); } }`,
+  cam: `(t, cam) => { const C = __cine, P = window.__P, k = C.ease(t / 4), p = C.mix(P.c0, P.c1, k); C.put(p, P.q); C.aim(cam, p, P.q, ${FOV}, 0); }`,
 };
