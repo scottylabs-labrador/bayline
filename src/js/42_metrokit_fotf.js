@@ -6,8 +6,8 @@
 
   // ------------------------------------------------------------------------------------------ dimensions
   const F = {
-    L: 21.336, HL: 10.668, BODY: 10.47, W: 1.6, FLOOR: 0.991, ROOF: 3.864, SKIRT: 0.62, CANT: 3.02, YC: 2.95, NSE: 3.0,
-    DOORS: [-5.33, 0, 5.33], PORTAL: 0.68, PORTAL_TOP: 2.93, LEAF: 0.83, LEAF_Y0: 0.975, LEAF_Y1: 2.945, LEAF_T: 0.035,
+    L: 21.336, HL: 10.668, BODY: 10.47, W: 1.6, FLOOR: 0.991, ROOF: 3.864, SKIRT: 0.62, CANT: 2.905, YC: 2.93, NSE: 3.0,
+    DOORS: [-5.33, 0, 5.33], PORTAL: 0.68, PORTAL_TOP: 2.86, LEAF: 0.83, LEAF_Y0: 0.975, LEAF_Y1: 2.895, LEAF_T: 0.035,
     LWIN: 0.58, LWIN_M: 0.045, LWIN_Y0: 1.93, LWIN_Y1: 2.84,
     WIN_W: 0.97, WIN_Y0: 1.89, WIN_Y1: 2.84, WIN_R: 0.13, GASKET: 0.05,
     END_R: 0.10, NOSE_XC: 10.10, NOSE_R: 0.30,
@@ -786,11 +786,15 @@
     else floorRegions.push({ name: 'cabDoor', x0: F.CAB_BACK, x1: xCabDoor, z0: -0.45, z1: 0.45, y: F.FLOOR }, { name: 'cab', x0: xCabDoor, x1: 9.45, z0: -1.25, z1: 1.25, y: F.FLOOR });
     const gangways = { rear: { x: -F.HL, z0: -0.38, z1: 0.38, y: F.FLOOR, emergency: true }, front: isD ? null : { x: F.HL, z0: -0.38, z1: 0.38, y: F.FLOOR, emergency: true } };
     const cabEye = isD ? [8.98, F.FLOOR + 1.27, 0.72] : null;
+    // standing spots (feet on the floor) for crowds: door vestibules first, then the aisle; yaw faces across the car
+    const standSpots = [];
+    for (const dc of F.DOORS) for (const [dx, z] of [[-0.35, 0.55], [0.35, -0.55], [0, 0.95], [0, -0.95], [-0.45, -0.1], [0.45, 0.1], [0.2, 0.75], [-0.2, -0.75]]) standSpots.push({ x: dc + dx, y: F.FLOOR, z, yaw: z > 0 ? -Math.PI / 2 : Math.PI / 2 });
+    for (let x = -8.6; x <= (isD ? 7.6 : 8.6); x += 0.75) { if (F.DOORS.some(dc => Math.abs(x - dc) < 1.0)) continue; standSpots.push({ x, y: F.FLOOR, z: ((Math.round(x / 0.75) % 2) ? 0.16 : -0.16), yaw: Math.round(x) % 2 ? 0 : Math.PI }); }
     return {
       ext: b.ext, glass: b.glass, tris: b.tris, length: F.L, width: 2 * F.W, height: F.ROOF, profile: b.P,
       sphere: new THREE.Sphere(new THREE.Vector3(0, 1.9, 0), 11.3),
       bones, boneIdx: { bogie: [1, 2], axlesOf: [[3, 4], [5, 6]], handle: isD ? BONE.handle : undefined }, leaves, wipers,
-      meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye },
+      meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye, standSpots },
       units, rows, halfW: 1.47, floorY: F.FLOOR, ceilY: 3.12, signs: SIGNS(isD),
       lamps: isD ? [[1.175, 1.96, 'head'], [1.08, 1.7, 'head'], [1.17, 0.99, 'tail'], [1.02, 0.97, 'marker']].flatMap(([z, y, k]) => [1, -1].map(s => ({ p: [faceX(y, s * z) + 0.03, y, s * z], kind: k })))
         .concat([{ p: [10.3, 3.7, 0], kind: 'bar' }]) : [],

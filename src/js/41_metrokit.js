@@ -237,7 +237,7 @@ const MetroKit = (() => {
         float along = smoothstep(mkLamp.z + 0.8, mkLamp.z - 0.8, abs(p.x));
         e += max(dot(n, L), 0.0) * along * 0.42 / d;
       }
-      float fill = 0.34 + 0.1 * n.y + 0.2 * max(-n.y, 0.0);
+      float fill = 0.36 + 0.1 * n.y + 0.42 * max(-n.y, 0.0);
       return e + fill;
     }
     // height field of a pattern (metres) for bump normals
@@ -245,6 +245,12 @@ const MetroKit = (() => {
       if (pat == 1.0 || pat == 2.0 || pat == 3.0) {
         float h = -0.0012 * mkLine(p.y, 1.675, 0.028, 0.004);                               // belt groove
         h += 0.00035 * (mkV(vec2(p.x * 0.9, p.y * 2.2)) - 0.5);                              // oil-canning
+        if (pat < 2.5) {
+          // extrusion joints (floor line, cant rail), the end-frame seams, and a line of huck bolts along the cant rail
+          h -= 0.0009 * (mkLine(p.y, 1.04, 0.006, 0.002) + mkLine(p.y, 2.955, 0.006, 0.002) + mkLine(abs(p.x), 9.58, 0.005, 0.002));
+          vec2 hb = vec2(fract(p.x / 0.075) - 0.5, (p.y - 2.935) / 0.075);
+          h += 0.0011 * (1.0 - smoothstep(0.1, 0.16, length(hb))) * step(abs(p.y - 2.935), 0.02);
+        }
         return h;
       }
       if (pat == 5.0) return -0.0018 * mkRep(mkUv.y, 0.105, 0.012, 0.004);                   // roof ribs (arc length)
@@ -283,6 +289,7 @@ const MetroKit = (() => {
           mkMetal = 0.0; mkRough = 0.3; mkCC = 1.0; mkAniso = 0.0;
         }
         col = mix(col, vec3(0.03, 0.035, 0.04), mkBelt * 0.92);
+        if (mkPat < 2.5) col *= 1.0 - 0.25 * fade * (mkLine(p.y, 1.04, 0.005, fw) + mkLine(p.y, 2.955, 0.005, fw) + mkLine(abs(p.x), 9.58, 0.004, fw));
         mkRough = mix(mkRough, 0.6, mkBelt); mkMetal = mix(mkMetal, 0.2, mkBelt); mkAniso *= 1.0 - mkBelt;
       } else if (mkPat == 4.0 || mkPat == 25.0 || mkPat == 28.0) {    // paint / gloss black: orange peel
         col *= 0.985 + 0.03 * mkV(p.xy * 31.0 + p.z * 23.0);
@@ -898,6 +905,7 @@ const MetroKit = (() => {
     o.seats = m.seats.map(s => ({ ...s, x: -s.x, z: -s.z, yaw: U.wrapAngle(s.yaw + Math.PI) }));
     o.doors = m.doors.map(d => ({ ...d, x: -d.x, side: -d.side }));
     o.cabEye = m.cabEye ? [-m.cabEye[0], m.cabEye[1], -m.cabEye[2]] : null;
+    if (m.standSpots) o.standSpots = m.standSpots.map(p => ({ ...p, x: -p.x, z: -p.z, yaw: U.wrapAngle(p.yaw + Math.PI) }));
     o.cabYaw = m.cabEye ? Math.PI : 0;
     void L; return o;
   }
@@ -942,7 +950,7 @@ const MetroKit = (() => {
         // or trails. (A cab car's lamps are at its +X end; the DMU carries lamps at both ends, the B lamps at -X.)
         const endState = e => { const side = e * (c.flip ? -1 : 1); if ((side > 0 && c !== first) || (side < 0 && c !== last)) return 0; return side === leadSide ? 1 : -1; };
         const A = endState(1), B = endState(-1);
-        lv[G.interior] = L.interior * (0.55 + 0.45 * n);
+        lv[G.interior] = L.interior * (0.8 + 0.2 * n);
         lv[G.head] = A > 0 ? L.head * (6 + 16 * n) : 0; lv[G.headB] = B > 0 ? L.head * (6 + 16 * n) : 0;
         lv[G.marker] = A > 0 ? L.head * (1.5 + 3 * n) : 0;
         lv[G.tail] = A < 0 ? L.tail * (3 + 7 * n) : 0; lv[G.tailB] = B < 0 ? L.tail * (3 + 7 * n) : 0;

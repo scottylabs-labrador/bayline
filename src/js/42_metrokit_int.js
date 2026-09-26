@@ -98,8 +98,9 @@
       for (let x = rx0 + 0.3; x < rx1; x += 1.62) E.cyl([x, railY, s * railZ], [x, 3.115, s * railZ], 0.011, 0.011, 8, false);
     }
     // hanging straps: dense at the doorways, a few along the aisle
-    const strapAt = (x, s) => { E.pal('strap'); E.box(x - 0.016, railY - 0.3, s * railZ - 0.004, x + 0.016, railY - 0.01, s * railZ + 0.004);
-      E.tube(Array.from({ length: 11 }, (_, i) => { const a = i / 10 * TAU; return [x + Math.sin(a) * 0.075, railY - 0.3 - 0.075 + Math.cos(a) * 0.075, s * railZ]; }), 0.009, 6, false); };
+    // a strap: a flat black band from the rail and a teardrop loop (0.1 m wide, 0.16 m tall)
+    const strapAt = (x, s) => { E.pal('strap'); E.box(x - 0.014, railY - 0.26, s * railZ - 0.003, x + 0.014, railY - 0.01, s * railZ + 0.003);
+      E.tube(Array.from({ length: 13 }, (_, i) => { const a = i / 12 * TAU, yy = Math.cos(a); return [x + Math.sin(a) * (0.05 - 0.018 * Math.max(0, yy)), railY - 0.26 - 0.08 + yy * 0.08, s * railZ]; }), 0.0065, 6, false); };
     for (const dc of F.DOORS) for (const s of [1, -1]) for (const dx of (dc === 0 ? [-0.9, -0.62, -0.34, 0.34, 0.62, 0.9] : [-0.75, -0.45, 0.45, 0.75])) strapAt(dc + dx, s);
     // ---------------- doorway partitions, grab poles, lamps, intercoms, screens
     for (let di = 0; di < 3; di++) {
@@ -117,6 +118,12 @@
       }
       // red door lamps over the portal (inside), per side
       for (const s of [1, -1]) { E.pal(s > 0 ? 'lampIntR' : 'lampIntL'); E.box(dc - 0.06, FY + 1.955, s * 1.38 - 0.02, dc + 0.06, FY + 1.985, s * 1.38 + 0.02); }
+      // an advertising frame on the wall panel on the other side of the doorway (a different ad per doorway)
+      for (const s of [1, -1]) {
+        const xs = dc - s * 1.18, name = 'ad' + ((di * 2 + (s > 0 ? 0 : 1)) % 4), r = K.ATL[name], w = 0.46, h = 0.69, yc = FY + 1.62, zw = s * 1.458;
+        E.pal('seatFrame'); E.at(mul(tr(xs, yc, zw), rotY(s > 0 ? Math.PI : 0)), m => { m.box(-w / 2 - 0.025, -h / 2 - 0.025, -0.012, w / 2 + 0.025, h / 2 + 0.025, 0.0);
+          m.pal('decalInt'); const a = m.v(-w / 2, -h / 2, 0.001, 0, 0, 1, r[0], r[1]), b = m.v(w / 2, -h / 2, 0.001, 0, 0, 1, r[2], r[1]), c = m.v(w / 2, h / 2, 0.001, 0, 0, 1, r[2], r[3]), e = m.v(-w / 2, h / 2, 0.001, 0, 0, 1, r[0], r[3]); m.quadA(a, b, c, e); });
+      }
       // passenger screen: one per doorway on the wall panel beside the portal, high up, tilted down; LCD via uv1
       for (const s of [1, -1]) {
         const xs = dc + s * 1.18, yc = 2.62, zc = s * 1.43, w = 0.54, h = 0.31, tilt = 0.18;
