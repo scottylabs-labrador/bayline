@@ -6,6 +6,17 @@ Loader: `src/js/21_metronet.js` (`MetroNet`). Preview: `preview/metronet.html`.
 
 ## Status
 
+**Now (02:40): M2 in progress. What is live in `data/pub/v2/metro/` right now:** the 02:34 bake (M2 work in progress,
+schema-compatible with v0: same fields plus additions). It already has the joint profile (island platforms level
+across both tracks, grades <= 4 %, no junction steps), OSM platform extents on both faces, platform top 0.991 m,
+berths, the curated station types (medians etc.). It is safe to publish, but not final. From now on my work-in-progress
+bakes go to `data/pub/v2/metro-next/` (preview with `#metrodir=metro-next/`), and I will write here when M2 is ready.
+
+**Content-addressed binary (lead request):** from the next bake, `network.json.tracksBin.path` names
+`metro/tracks.<sha256[:10]>.bin`, and MetroNet loads exactly that name (21_metronet.js, commit after 02:40); `tracks.bin`
+is still written too so the current integration keeps working until it merges this MetroNet. Old hashed files are
+deleted after 48 h.
+
 **M1 v0: READY (2026-09-26 00:50).** Everyone can build on it now:
 
 - `data/pub/v2/metro/network.json` (0.3 MB) + `tracks.bin` (1.1 MB zlib): 374 physical tracks (57 main, 102

@@ -13,7 +13,7 @@ import numpy as np
 from scipy import ndimage
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from metro.common import (PUB, RAW, ll2w, w2ll, log, gtfs, write_json, write_bin, cumlen, resample, smooth_fixed_ends,
+from metro.common import (PUB, PUB_DIR, write_hashed, RAW, ll2w, w2ll, log, gtfs, write_json, write_bin, cumlen, resample, smooth_fixed_ends,
                           curvature, MPH, poly_project)
 from metro import osmgraph as OG
 from metro import elev
@@ -784,7 +784,8 @@ def write_tracks(tracks, links, junctions, stations, lines, pats):
         blobs.append(blob)
         off += len(blob)
     raw = b''.join(blobs)
-    size_bin = write_bin(os.path.join(PUB, 'tracks.bin'), raw)
+    bin_name = write_hashed(PUB, 'tracks', raw)
+    size_bin = os.path.getsize(os.path.join(PUB, bin_name))
     tr_meta = []
     for ti, h in zip(order, head):
         tr = tracks[ti]
@@ -794,7 +795,7 @@ def write_tracks(tracks, links, junctions, stations, lines, pats):
                             station=tr.get('near_station'), structure=segs, prev=links[ti].get('prev'), next=links[ti].get('next')))
     net = dict(version=0, format='bayline-metro-network', frame='Bay frame: x=(lon+122.10)*88542.2 east, z=-(lat-37.40)*110985.1 south, y=m above sea level (top of rail)',
                generated=__import__('time').strftime('%Y-%m-%dT%H:%M:%S'), sources=SOURCES,
-               structCodes=PR2.STRUCT_NAMES, tracksBin=dict(path='metro/tracks.bin', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 4 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m)'),
+               structCodes=PR2.STRUCT_NAMES, tracksBin=dict(path=f'{PUB_DIR}/{bin_name}', bytes=len(raw), layout='per track at off: n*(f32 x, f32 y, f32 z) interleaved, then 4 planes of n u8: struct code, speed limit (mph), cant (2 mm units, 128 = 0, + = right rail lower), cover/clearance (m)'),
                tracks=tr_meta, junctions=junctions, stations=stations, lines=lines, patterns=pats)
     size = write_json(os.path.join(PUB, 'network.json'), net)
     log(f'network.json {size/1e6:.2f} MB, tracks.bin {size_bin/1e6:.2f} MB ({len(raw)/1e6:.2f} MB raw), {len(tracks)} tracks')

@@ -47,7 +47,7 @@ SPOTS = {
 
 def load_net():
     net = json.load(open(os.path.join(PUB, 'network.json')))
-    raw = zlib.decompress(open(os.path.join(PUB, 'tracks.bin'), 'rb').read())
+    raw = zlib.decompress(open(os.path.join(PUB, os.path.basename(net.get('tracksBin', {}).get('path', 'tracks.bin'))), 'rb').read())
     for t in net['tracks']:
         n = t['n']
         P = np.frombuffer(raw, '<f4', n * 3, t['off']).reshape(n, 3).astype(np.float64)

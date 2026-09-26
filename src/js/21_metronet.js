@@ -16,7 +16,7 @@ const MetroNet = (() => {
   const MPH = 0.44704, RAIL_CC = 1.75;
   const tracks = [], byId = {}, stations = [], stationById = {}, lines = [], lineById = {}, patterns = {}, junctions = [];
   const GC = 200; const grid = new Map();                  // spatial grid: cell -> [track idx, sample idx, ...]
-  let net = null, tt = null, ready = null, base = null;
+  let net = null, tt = null, ready = null, base = null, dir = 'metro/';
   const gkey = (cx, cz) => cx * 65536 + cz;               // cx, cz in [-32768, 32767] cells
 
   // ---------------------------------------------------------------- loading
@@ -39,12 +39,19 @@ const MetroNet = (() => {
     const u8 = new Uint8Array(await r.arrayBuffer());
     return (u8.length > 2 && (u8[0] & 0x0f) === 8 && ((u8[0] << 8) | u8[1]) % 31 === 0) ? inflate(u8) : u8;
   }
+  // opts: { base (data root, default: the game's), dir ('metro/' or e.g. 'metro-next/' for a staged bake), prio }
   function load(opts = {}) {
     if (ready) return ready;
     base = root(opts);
+    dir = opts.dir || (typeof location !== 'undefined' && new URLSearchParams(location.hash.slice(1)).get('metrodir')) || 'metro/';
+    if (!dir.endsWith('/')) dir += '/';
     ready = (async () => {
       const prio = opts.prio ?? 2;
-      const [j, bin] = await Promise.all([getJSON('metro/network.json', prio), getBin('metro/tracks.bin', prio)]);
+      const j = await getJSON(dir + 'network.json', prio);
+      // the binary is content-addressed (tracks.<sha>.bin, named by network.json) so an edge cache can never pair a new
+      // network.json with an old binary
+      const binPath = (j.tracksBin && j.tracksBin.path) || (dir + 'tracks.bin');
+      const bin = await getBin(binPath, prio);
       net = j; build(bin); return api;
     })();
     return ready;
@@ -195,7 +202,7 @@ const MetroNet = (() => {
 
   // ---------------------------------------------------------------- timetable
   function loadTimetable(prio = 4) {
-    if (!tt) tt = getJSON('metro/timetable.json', prio).then((j) => { const byTrip = {}; for (const t of j.trips) byTrip[t.id] = t; j.byTrip = byTrip; return j; });
+    if (!tt) tt = getJSON(dir + 'timetable.json', prio).then((j) => { const byTrip = {}; for (const t of j.trips) byTrip[t.id] = t; j.byTrip = byTrip; return j; });
     return tt;
   }
   let ttJ = null;
