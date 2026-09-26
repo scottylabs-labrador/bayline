@@ -440,3 +440,4 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     dayAt: (x, y, z) => { const id = cellAt(x, y, z); return id ? dayAt(cells.get(id), x, y, z) : 1; },
     INTERIOR_EXPOSURE, MAX_BOOST, get dirty() { return dirty; }, invalidate() { dirty = true; } };
 })();
+if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).Under = Under;   // debug handle (window.__bayline.Under)

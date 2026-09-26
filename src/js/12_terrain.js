@@ -856,7 +856,7 @@ const Terrain = (() => {
     groundDetail: groundDetailTexture, GROUND_TILE: GTILE, waveTexture, WATER_GLSL,
     get mesh() { return group; }, get info() { return { N, S, X0: FX0, Z0: FZ0 }; }, get tiled() { return !!index; }, tileSize, TILE: { X0, Z0, SIZE, LMAX, LH },
     get HMAX() { return HMAX; }, get materials() { return mat ? { tiles: mat.size, loaded: [...matRec.values()].filter(r => r.state === 2).length } : null; }, get lidar() { return h9 ? { tiles8: h9[8].size, tiles9: h9[9].size, attribution: h9.attribution } : null; },
-    get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; },
-    cutTest: null };            // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
+    get fallbackField() { return heights ? { heights, N, S, X0: FX0, Z0: FZ0 } : null; } };
+  api.cutTest = null;           // (x0, z0, x1, z1) -> bool, set by Under (24_metrounder.js) with #metro=1
   return api;
 })();
