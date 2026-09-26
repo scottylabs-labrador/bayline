@@ -246,7 +246,7 @@ const UI = (() => {
       // cab panel
       const D = Sim.drive; const metroFocus = !!(tr && tr.metro) || metroDrive();   // (metro trains: MetroUI's own panels)
       const showCab = (!!D || Player.mode === 'onboard') && !metroFocus;   // riding in the cab: the desk displays say it all
-      el.cab.hidden = !showCab; el.drivebar.hidden = !D && !metroDrive(); el.strip.hidden = !!D || (typeof Globe !== 'undefined' && !Globe.frame.bay) || stripOff || (metroFocus && (Player.mode === 'onboard' || Player.mode === 'cab' || metroDrive()));
+      el.cab.hidden = !showCab; el.drivebar.hidden = !D && !metroDrive(); el.strip.hidden = !!D || (typeof Globe !== 'undefined' && !Globe.frame.bay) || stripOff || (metroFocus && Player.mode !== 'walk' && Player.mode !== 'fly' && Player.mode !== 'orbit') || metroDrive() || (typeof MetroUI !== 'undefined' && MetroUI.atMetro(Env.camera.position));
       if (showCab) {
         const trr = D ? Sim.trainByKey(D.plan.key) : tr; const v = D ? D.v : trr ? trr.v : 0; const s = D ? D.s : trr ? trr.s : 0;
         el.cspeed.textContent = Math.round(v / Sim.MPH); el.climit.textContent = 'limit ' + Math.round(Track.limit(s) / Sim.MPH);

@@ -119,7 +119,7 @@ const MetroSound = (() => {
   function departure(tr, k) { if (!tr) return; const S = tr.leg.stops, ns = S[k]; if (!ns) return;
     say(tr.key + ':dep:' + k, `This is a ${lineWord(tr)} Line train to ${MetroSim.termName(tr)}. The next station is ${MetroSim.stName(ns.st)}.`, true); }
   function approaching(tr, k) { if (!tr) return; const S = tr.leg.stops, s = S[k]; if (!s) return; const last = k === S.length - 1 && !tr.leg.next;
-    const side = s.side ? ((s.side > 0) === (tr.lead === 0) ? 'right' : 'left') : '';
+    const side = s.side ? (s.side > 0 ? 'right' : 'left') : '';                      // (as the passengers face)
     say(tr.key + ':app:' + k, last ? `Now arriving at ${MetroSim.stName(s.st)}. This is the last stop. Please take all your belongings.`
       : `Now arriving at ${MetroSim.stName(s.st)}.${side ? ' Doors will open on the ' + side + '.' : ''} ${XFER_TEXT[s.st] || ''}`.trim(), true); }
   function arrival(tr, k) { /* (the approach announcement covers it) */ }

@@ -118,8 +118,9 @@ const MetroLive = (() => {
       if (!Env.time.live) { error = 'Live mode follows the real clock: press 0 for live time'; notify(); return; }
       let n = -1;
       if (source !== 'etd') {
-        try { const r = await fetch(PROXY, { cache: 'no-store' });
-          if (r.ok && !(r.headers.get('content-type') || '').startsWith('text/html')) { const list = decodeFeed(await r.arrayBuffer()); n = applyTripUpdates(list); source = 'gtfs-rt'; }
+        // (the upstream labels its protobuf text/html, so sniff the bytes: a FeedMessage starts with its header, field 1)
+        try { const r = await fetch(PROXY, { cache: 'no-store' }), buf = r.ok ? await r.arrayBuffer() : null, u8 = buf ? new Uint8Array(buf) : null;
+          if (u8 && u8.length > 8 && u8[0] === 0x0a) { const list = decodeFeed(buf); n = applyTripUpdates(list); source = 'gtfs-rt'; }
           else source = 'etd'; } catch (e) { source = 'etd'; }
       }
       if (source === 'etd') { const r = await fetch(ETD, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); n = applyEtd(await r.json()); }
