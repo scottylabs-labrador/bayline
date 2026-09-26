@@ -115,26 +115,49 @@
     scene.add(glow.mesh);
     // (on a quality change the batch drops its instanced meshes, rebuilt lazily from the new designs, and takes the
     // new atlas, so nothing of the old quality stays alive)
+    // per design with a baked atlas: its own material (the atlas) sharing the batch's other uniforms (lamps, night)
+    const bakedMats = new Map();
+    const matFor = (d, bake) => { let m = bakedMats.get(d); if (!m) { m = K.palMaterial('lod', Object.assign({}, S, { mkBake: { value: bake.tex } })); bakedMats.set(d, m); } return m; };
     const reg = { atlas: S.mkAtlas.value, designs: new Set(), reset() {
       for (const m of meshes.values()) { scene.remove(m); m.dispose(); } meshes.clear(); reg.designs.clear();
+      for (const m of bakedMats.values()) m.dispose(); bakedMats.clear();
       S.mkAtlas.value = reg.atlas = K.decalAtlas ? K.decalAtlas(K.atlasRes()) : null; } };
     if (K.farBatches) K.farBatches.add(reg);
     const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YZX'), _p = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1);
+    // the design's baked LOD 2 when its atlas exists (asked for here, upgraded in begin() once it arrives), else the
+    // plain one; flipped cars use a turned copy of the geometry (kept on the design)
     function meshFor(kind, type, flip) {
       const key = kind + ':' + type + (flip ? ':f' : '');
       let m = meshes.get(key); if (m) return m;
       const d = K.getDesign(kind, type), b = K.builders[kind]; reg.designs.add(d);
-      if (!d.lod2) d.lod2 = b.lod(d, 2);
-      const geo = flip ? d.lod2.clone().applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI)) : d.lod2;
-      m = new THREE.InstancedMesh(geo, mat, maxCars); m.count = 0; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = false;
-      m.userData.n = 0; scene.add(m); meshes.set(key, m); return m;
+      const bake = b.lodBaked && K.requestBake ? K.requestBake(d, null) : null;
+      let geo, mt = mat;
+      if (bake) { if (!d.lodb2) d.lodb2 = b.lodBaked(d, 2, bake); geo = d.lodb2; mt = matFor(d, bake); }
+      else { if (!d.lod2) d.lod2 = b.lod(d, 2); geo = d.lod2; }
+      if (flip) { const fk = bake ? 'lodb2f' : 'lod2f'; if (!d[fk]) d[fk] = geo.clone().applyMatrix4(new THREE.Matrix4().makeRotationY(Math.PI)); geo = d[fk]; }
+      m = new THREE.InstancedMesh(geo, mt, maxCars); m.count = 0; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = false;
+      m.userData.n = 0; m.userData.d = d; m.userData.baked = !!bake; scene.add(m); meshes.set(key, m); return m;
     }
+    const SIGN_AT = { bart: { D: [10.27, 3.13, -0.83] } }, _c = new THREE.Color(), AMBER = new THREE.Color(1.0, 0.62, 0.12), _sp = new THREE.Vector3();
     const api = {
-      begin() { for (const m of meshes.values()) m.userData.n = 0; glow.n = 0; },
-      addCar(kind, type, pose, flip = false) {
+      begin() {
+        for (const [key, m] of meshes) {
+          if (!m.userData.baked && m.userData.d.bake) { scene.remove(m); m.dispose(); meshes.delete(key); continue; }     // (its bake arrived)
+          m.userData.n = 0;
+        }
+        glow.n = 0;
+      },
+      // color (optional, the line's): the car's front LED sign glows in it (a line-colour hint on distant trains)
+      addCar(kind, type, pose, flip = false, color) {
         const m = meshFor(kind, type, flip); if (m.userData.n >= maxCars) return;
         if (pose.isMatrix4) _m.copy(pose); else { _e.set(pose.roll || 0, pose.yaw || 0, pose.pitch || 0, 'YZX'); _q.setFromEuler(_e); _m.compose(_p.set(pose.x, pose.y, pose.z), _q, _s); }
         _m.toArray(m.instanceMatrix.array, m.userData.n * 16); m.userData.n++;
+        const sa = color && SIGN_AT[kind] && SIGN_AT[kind][type];
+        if (sa && glow.n < glow.max) {
+          _sp.set(flip ? -sa[0] : sa[0], sa[1], flip ? -sa[2] : sa[2]).applyMatrix4(_m); _c.set(color).lerp(AMBER, 0.35);
+          const i = glow.n++, P = glow.pos.array, C = glow.col.array;
+          P[i * 4] = _sp.x; P[i * 4 + 1] = _sp.y; P[i * 4 + 2] = _sp.z; P[i * 4 + 3] = 0.9; C[i * 4] = _c.r * 1.6; C[i * 4 + 1] = _c.g * 1.6; C[i * 4 + 2] = _c.b * 1.6;
+        }
       },
       addLamp(x, y, z, kind = 'head', size) {
         if (glow.n >= glow.max) return; const i = glow.n++, P = glow.pos.array, C = glow.col.array;
@@ -147,7 +170,7 @@
         glow.mesh.geometry.instanceCount = glow.n; glow.pos.needsUpdate = true; glow.col.needsUpdate = true; glow.mesh.visible = glow.n > 0;
         if (res) glow.mesh.material.uniforms.uRes.value.copy(res);
       },
-      dispose() { for (const m of meshes.values()) { scene.remove(m); m.dispose(); } scene.remove(glow.mesh); glow.mesh.geometry.dispose(); glow.mesh.material.dispose(); mat.dispose(); if (K.farBatches) K.farBatches.delete(reg); },
+      dispose() { for (const m of meshes.values()) { scene.remove(m); m.dispose(); } for (const m of bakedMats.values()) m.dispose(); scene.remove(glow.mesh); glow.mesh.geometry.dispose(); glow.mesh.material.dispose(); mat.dispose(); if (K.farBatches) K.farBatches.delete(reg); },
       meshes, glow,
     };
     return api;
