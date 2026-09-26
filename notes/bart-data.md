@@ -1,6 +1,7 @@
 # Bayline Metro data: format spec (the contract)
 
-Owner: data workstream (`bart-data`). Version: **M2** (2026-09-26; v0 was M1). Changes since v0 are marked **(M2)**. This file is authoritative for everything
+Owner: data workstream (`bart-data`). Version: **M2b** (2026-09-26; v0 was M1). Changes since v0 are marked **(M2)**,
+additions since the first M2 promotion **(M2b)** (all additive: an M1-era or M2 loader reads M2b files unchanged). This file is authoritative for everything
 under `data/pub/v2/metro/` and for the runtime loader `src/js/21_metronet.js` (`MetroNet`). Consumers should use
 `MetroNet` rather than parse the files; the files may change shape between versions, the API will not (additions only).
 
@@ -8,7 +9,7 @@ under `data/pub/v2/metro/` and for the runtime loader `src/js/21_metronet.js` (`
 
 | path (under `DATA` = `data/pub/v2/`) | what | size (v0) |
 |---|---|---|
-| `metro/network.json` | tracks (metadata), junctions, stations, lines, patterns (track paths + stops) | ~0.4 MB |
+| `metro/network.json` | tracks (metadata + crossings), junctions, stations, lines, patterns (track paths + stops), yards, constants | ~0.75 MB |
 | `metro/tracks.<sha256[:10]>.bin` **(M2)** | zlib; per-track sample arrays (positions + attribute planes). Content-addressed: the name comes from `network.json.tracksBin.path`; `tracks.bin` (same bytes) is kept for older loaders; old hashed files are removed after 48 h | ~1.1 MB |
 | `metro/timetable.json` | services (calendars), every trip with per-leg stop times, consist lengths, bus bridges | ~1.35 MB |
 | `metro/validation.json` **(M2)** | the profile validator's summary + findings + researched-height residuals (not loaded by the game) | ~15 kB |
@@ -43,16 +44,26 @@ Built by `tools/metro/` (see "Rebuilding"). Raw inputs are cached under `data/ra
 {
   "version": 0, "format": "bayline-metro-network", "frame": "...", "generated": "...", "sources": ["..."],
   "structCodes": ["grade","aerial","bridge","embankment","trench","median","portal","cutcover","bored","tube"],
-  "tracksBin": { "path": "metro/tracks.bin", "bytes": 1652000, "layout": "..." },
+  "tracksBin": { "path": "metro/tracks.6f6a7a6c04.bin", "bytes": 1748444, "layout": "..." },   // (M2) content-addressed name
+  "constants": {                                           // (M2b) the numbers the geometry was built with (sources in "sources")
+      "gauge": 1.676, "railCentres": 1.7435, "rail": "119 lb (119RE), canted 1:40",
+      "platformEdge": 1.616,                               // track centre -> platform edge
+      "platformHeight": { "bart": 0.991, "ebart": 0.635, "oac": 0.991 },   // platform top above top of rail, per system
+      "platformLength": 213.4,
+      "thirdRail": { "offset": 1.4986, "top": 0.1715, "note": "..." },    // contact rail centre from the track centre / contact surface above top of rail
+      "cars": { "bartDE": 21.336, "gtwUnit": 40.89, "oacCar": null },   // m over couplers; null = not researched
+      "sources": ["..."] },
   "tracks": [ {
       "id": "M1.1",            // BART designation letter + track number where the track has platforms (A1, C2, K3.1, M2 ...);
                                // other tracks: '<letter>-main.N', '<letter>-xoN' (crossover), '-ydN' (yard), '-sdN' (siding), '-spN' (spur)
       "n": 4673, "step": 4.9993, "off": 123456,   // samples, spacing (m), byte offset of this track in tracks.bin (inflated)
+      "planes": 5,                                // (M2) attribute planes in tracks.bin (absent = 4)
       "sys": "bart" | "ebart" | "oac", "cls": "main" | "yard" | "crossover" | "siding" | "spur",
       "length": 23363.1, "gauge": 1.676, "station": "EMBR",   // nearest station (for naming/debug)
       "structure": [[s0, s1, "cutcover"], ...],                 // run-length structure (same as the per-sample codes)
       "prev": { "junction": "J12", "to": [["K-main.9", 111.14], ["K-main.12", 626.5]] } | null,   // what s = 0 connects to
-      "next": { ... } | null                                     // what s = length connects to (null = buffer stop / end)
+      "next": { ... } | null,                                    // what s = length connects to (null = buffer stop / end)
+      "crossings": [[109.4, "road", "tertiary", "over", 17.0, 87, "Webster Street"], ...]   // (M2b) see "Crossings"
   } ],
   "junctions": [ { "id": "J12", "kind": "turnout" | "link" | "diamond", "x": .., "z": .., "osm": 6133371941,
                    "tracks": [["M1.1", 0.0], ["K-main.9", 111.14], ["K-main.12", 626.5]] } ],   // every track touching the point, at its s
@@ -70,9 +81,11 @@ Built by `tools/metro/` (see "Rebuilding"). Raw inputs are cached under `data/ra
           "side": "left" | "right",                          // side of the track (facing +s) the platform edge is on
           "edge": 1.616,                                     // (M2) track centre -> platform edge (m)
           "y": -15.5, "rail": -16.5,                         // platform top / top of rail at the platform centre
+          "height": 0.991,                                   // (M2b) y - rail: 0.991 BART, 0.635 eBART (GTW floor), see constants
           "structure": "cutcover",
           "berth": { "+": 11063.4, "-": 10853.2 },           // (M2) front-of-train stop for travel toward +s / -s
-          "src": "osm" | "station", "sys": "bart" } ],
+          "src": "osm" | "station", "sys": "bart",
+          "unused": true } ],                                // (M2b) only on GTFS platforms no trip in the feed uses (E30-1, Y10-3)
       "entrances": [ { "name": "A1 Market & Drumm Street (NE) Entrance / Exit", "lat": .., "lon": .., "x": .., "z": .., "src": "gtfs" | "osm" } ],
       "note": "why type/layout/levels are what they are", "src": ["A", "STW", ...],   // (M2) keys: tools/metro/stations_curated.py
       "research": { "opened": 1976, "architect": "...", "era": "...", "recognisable": "what a rider recognises",
@@ -82,6 +95,8 @@ Built by `tools/metro/` (see "Rebuilding"). Raw inputs are cached under `data/ra
   } ],
   "lines": [ { "id": "yellow", "name": "Yellow Line", "colour": "#ffff33", "text": "#000000",
                "terminals": ["Antioch", "SFO / Millbrae"], "patterns": ["yellow-S-0", ...] } ],
+  "yards": [ { "id": "concord", "name": "BART Concord Yard", "osm": 31257952, "station": "CONC",   // (M2b) see "Yards"
+               "area": 111157, "x": 6429.9, "z": -61839.6, "polygon": [[x, z], ...], "tracks": ["C-yd4", ...] } ],
   "patterns": [ {
       "id": "yellow-S-0",                    // <line>-<N|S>-<rank by trip count>
       "route": "1", "line": "yellow", "dir": 1, "trips": 241,
@@ -107,9 +122,41 @@ Notes:
   first stop ~ platform length). At a reversal (SFO) the path turns at the berth; the train's other end becomes the
   front. `platforms[].berth` gives the same positions per direction.
 - **(M2) PITT-T**: the eBART transfer platform is a station record (`id: "PITT-T"`, code `C80T`) with two faces:
-  `C80-T` (BART side, track `CT`) and `E10-T` (eBART side). GTFS has neither; the ids are ours.
-- **(M2) Platform extents**: every one of the 105 platforms comes from the OSM platform geometry (areas, lines, edges)
-  projected on its track; both faces of an island share one extent. Sides from the same geometry.
+  `C80-T` (BART side, track `CT`) and `E10-T` (eBART side, track `ET`). GTFS has neither; the ids are ours.
+  **(M2b)** One island, one walking surface: both faces' platform tops are equal (y 35.01), so the eBART rail is
+  0.356 m higher than the BART rail (0.991 − 0.635; the profile solver holds that offset as a hard equality).
+- **(M2) Platform extents**: every platform comes from the OSM platform geometry (areas, lines, edges) projected on its
+  track; both faces of an island share one extent. Sides from the same geometry. 107 platform records: 105 used +
+  **(M2b)** the two GTFS platforms no scheduled trip uses, flagged `unused: true` (Antioch `E30-1` on `E2`, SFO `Y10-3`
+  on `Y-main.5`), so stations can still model both faces.
+- **(M2b) Platform heights per system**: `height` = platform top − top of rail: BART 0.991 m (39 in, BFS), eBART 0.635 m
+  (level boarding with the Stadler GTW floor), airport connector 0.991 (assumed). `levels.platform` = the BART value.
+
+## Crossings (M2b)
+
+`tracks[].crossings` lists every OSM street, footpath, railway and waterway whose centreline crosses the track in plan,
+sorted by `s`: `[s, kind, class, rel, width, angle, name]` (`MetroNet.crossings(track, s0, s1)` returns them as objects).
+
+| field | meaning |
+|---|---|
+| `s` | metres along the track where the centrelines cross |
+| `kind` | `road` (any OSM `highway`, incl. footways, cycleways, steps), `rail` (other railways: Caltrain/UP/Amtrak `rail`, VTA/Muni `light_rail`, `tram`), `water` (`waterway`) |
+| `class` | the OSM value (`motorway`, `primary`, `residential`, `footway`, `rail`, `light_rail`, `stream`, `canal` ...) |
+| `rel` | `under`: the way passes under the track (track aerial/bridge/embankment, or the way is a tunnel/culvert); `over`: it passes over (track underground/trench/portal, or the way is a bridge); `level`: neither (BART has no level crossings: yard/service areas or map gaps) |
+| `width` | metres across the way (OSM `width`, else lanes × 3.5 m + 3 m, else a per-class default: motorway 16, residential 10, footway 3, rail 5, river 30 ...) |
+| `angle` | degrees between the way and the track, 0–90 (90 = square) |
+| `name` | OSM `name` or `ref` (`''` if none) |
+
+Our own tracks are excluded (BART gauge/operator, `subway`, eBART); railways within 12° of the track (parallel or
+merging) are not crossings. The same way crossing twice within 2 m (split OSM ways) is listed once. Use: piers/bents
+must avoid `under` crossings (plus half their `width`), portals and lids line up with `over` ones.
+
+## Yards (M2b)
+
+`yards[]`: the storage/maintenance yards from OSM (`railway=yard` / `landuse=railway` areas operated by BART) with the
+tracks lying (mostly) inside each polygon: Concord (46 tracks), Hayward (55), Daly City (28), Richmond (35) and the
+eBART yard east of Antioch (1). `x, z` = the polygon's vertex centroid, `area` m², `station` = the nearest station,
+`polygon` = the closed outline in the Bay frame. Yard tracks are `cls: "yard"` (`<letter>-ydN`), limited to 15 mph.
 
 ## tracks.<sha>.bin
 
@@ -166,12 +213,16 @@ one quadratic program over every 5 m sample of every track (103k unknowns):
 - anchors: researched station depths/heights (stations_curated.py, with sources), the SF vent structure (tracks at
   −85 ft), the 1965 Transbay Tube general profile (digitized), the Berkeley Hills Tunnel's as-built grades (1.75 % up
   from the west portal to a summit 1,550 m inside the east portal, −0.3 % after);
-- plan fixes: Transbay Tube track centres 8.03 m (OSM draws 5.07 m).
+- plan fixes: Transbay Tube track centres 8.03 m (OSM draws 5.07 m); **(M2b)** inside tunnels ≥ 400 m long the OSM
+  centreline is smoothed (Gaussian, σ 40 m; not within 220 m of a platform or 60 m of a junction, blended over 80 m,
+  45 m in from the portals), which removes digitising kinks that would otherwise set speed limits (16 tracks, largest
+  move 6.1 m).
 The validator (printed on every bake, saved in `validation.json`) checks platform rail equality, grades, vertical
 curves, open track below the lidar ground, aerial clearance, tunnel cover, junction steps, and lists researched heights
 the solution misses by > 1 m (each explained in notes/bart/data.md).
 
-**(M2) Speed limits** (mph plane): curvature (1.4 m/s² with cant on main track, 0.65 m/s² on turnouts/crossovers/yards,
+**(M2) Speed limits** (mph plane): curvature (**(M2b)** from a 15 m-smoothed copy of the centreline, so single-sample
+kinks don't count; 1.4 m/s² with cant on main track, 0.65 m/s² on turnouts/crossovers/yards,
 yards ≤ 15 mph) capped by OSM `maxspeed` (mapped from BART's civil speed codes: 18 mph through the Oakland Wye, 36 at
 Balboa Park and Daly City, 27 on the curve south of Daly City, ...), quantised down to BART's train-control codes
 6/18/27/36/50/70 mph. eBART: 75 mph max, airport connector 30 mph, 5 mph steps. Cant: equilibrium for the limit minus
@@ -233,6 +284,8 @@ Leg: { sys, vehicle, length, stops: [{station, gtfs, track, s, d, reverse?}], se
        locate(d) -> {track, s, sign, seg}, frame(d, out) (tangent/right/cant flipped to the direction of travel), stopD(station) }
 await MetroNet.loadTimetable();  MetroNet.servicesOn('20260928'); MetroNet.tripsOn('20260928'); MetroNet.trip(id)
 MetroNet.stations / stationById / lines / lineById / patterns / junctions / STRUCT / isUnderground(code) / MPH / RAIL_CC
+MetroNet.crossings(track | id, s0, s1)       // (M2b) [{s, kind, cls, rel, width, angle, name}] (tracks[i].crossings raw)
+MetroNet.constants / yards                   // (M2b) network.json constants / yards[] (null / [] with older files)
 ```
 
 ## Preview
@@ -284,6 +337,11 @@ Extra Python packages (installed into `data/raw/metro/pylib`, which the tools ad
   may differ by a few metres.
 - Berkeley Hills bore spacing: OSM ~20 m kept (sources say 15.2 m (Wikipedia) or 30 m narrowing to 17 m (Rogers & Peck)).
 - Third-rail sides are rule-based (away from platforms, field side on double track), not surveyed.
+- Crossings are plan intersections with OSM ways: widths are OSM or defaults, and a road on its own OSM bridge over an
+  aerial track would read `over` (rare; checked none on mains). Footways/sidewalks drawn as separate ways are included.
+- Yard track lists come from OSM polygons; storage tracks outside a yard polygon (tail/pocket tracks) are `cls` siding.
+- eBART platform edge offset is BART's 1.616 m (not researched for the GTW); airport connector platform height 0.991 m
+  and car length unknown (`oacCar: null`).
 - Consist rules approximate "busiest trains" by time of day; weekend lengths assumed.
 - Track naming: helper tracks at junctions are `X-main.N`; names can change between versions (use `pathFor`, not ids).
 
@@ -300,3 +358,7 @@ Extra Python packages (installed into `data/raw/metro/pylib`, which the tools ad
 | A7 | 1965 "MSL" = NGVD29; NAVD88 = +0.8 m in SF | NOAA datum offsets at the SF tide station |
 | A8 | Consists as in the timetable `consist` text | bart.gov 2026 train sizing |
 | A9 | Third rail away from platforms, field side on double track | BART practice (Tube: outer wall, NTSB) |
+| A10 | Third rail: contact rail centre 1.4986 m from the track centre, contact surface 0.1715 m above top of rail | BFS R3.2.3 Table 2 (26 in outside the gauge line; 6 3/4 in) |
+| A11 | eBART platform 0.635 m above top of rail; PITT-T platform tops equal across the island | GTW floor height (stations workstream); level cross-platform transfer |
+| A12 | Crossing widths: OSM `width`, else lanes × 3.5 m + 3 m, else class defaults | OSM rarely maps carriageway width |
+| A13 | Tunnel centrelines smoothed (σ 40 m) inside long tunnels only | OSM tunnel ways are hand-traced from portal to portal; the real alignments are designed curves |

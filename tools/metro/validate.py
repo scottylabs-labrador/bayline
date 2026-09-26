@@ -6,6 +6,7 @@ where fine enough, else a USGS NAIP chip), profile plots per line, and unit-sani
     python3 tools/metro/validate.py profiles               # notes/bart/shots/data/profile_<pattern>.png
     python3 tools/metro/validate.py checks                 # gauge/grade/continuity/junction sanity report
     python3 tools/metro/validate.py timetable              # trips vs pattern paths: order, dwell, implied hop speeds
+    python3 tools/metro/validate.py runtimes               # minimum run time per hop from the speed limits vs the schedule
 """
 import io, json, math, os, struct, sys, zlib
 import numpy as np
@@ -313,6 +314,74 @@ def check_timetable(net):
     print(f'hops with average < 8 mph: {len(slow)}', sh)
 
 
+def leg_limits(net, L, ds=5.0):
+    """Speed limit (m/s) sampled every ds along a pattern leg's path."""
+    byid = {t['id']: t for t in net['tracks']}
+    out = []
+    for tid, s0, s1 in L['path']:
+        t = byid[tid]
+        n = max(1, int(abs(s1 - s0) / ds))
+        for k in range(n):
+            s = s0 + (s1 - s0) * k / n
+            i = min(t['n'] - 1, int(round(s / t['step'])))
+            out.append(t['VL'][i] * 0.44704)
+    return np.array(out + [out[-1] if out else 0.0])
+
+
+def min_run(lim, d0, d1, train_len, acc=1.0, dec=1.0, ds=5.0):
+    """Time-optimal run between path distances d0 -> d1 (stop to stop) under limits held over the train's length."""
+    i0, i1 = int(d0 / ds), int(d1 / ds)
+    if i1 <= i0:
+        return 0.0
+    v = lim[i0:i1 + 1].astype(float)
+    back = int(train_len / ds)
+    # the whole train must respect a restriction: the front's limit is the min over the next... rear still inside
+    from scipy.ndimage import minimum_filter1d
+    seg = lim[max(0, i0 - back):i1 + 1]
+    w = minimum_filter1d(seg, size=back + 1, origin=(back) // 2, mode='nearest')[-len(v):] if back > 0 else v
+    v = np.minimum(v, w)
+    v[0] = 0.0; v[-1] = 0.0
+    for j in range(1, len(v)):
+        v[j] = min(v[j], np.sqrt(v[j - 1] ** 2 + 2 * acc * ds))
+    for j in range(len(v) - 2, -1, -1):
+        v[j] = min(v[j], np.sqrt(v[j + 1] ** 2 + 2 * dec * ds))
+    vm = 0.5 * (v[1:] + v[:-1])
+    return float(np.sum(ds / np.maximum(vm, 0.3)))
+
+
+def check_runtimes(net):
+    tt = json.load(open(os.path.join(PUB, 'timetable.json')))
+    P = {p['id']: p for p in net['patterns']}
+    worst = {}
+    lims = {}
+    for t in tt['trips']:
+        if not t['svc'].endswith('Weekday-015') and 'DX1' not in t['svc'] and 'DX2' not in t['svc']:
+            continue
+        p = P[t['pat']]
+        for li, (L, lt) in enumerate(zip(p['legs'], t['legs'])):
+            if L['sys'] == 'oac':
+                continue
+            if (p['id'], li) not in lims:
+                lims[(p['id'], li)] = leg_limits(net, L)
+            lim = lims[(p['id'], li)]
+            cars = (t['cars'] or [8])[li] if t.get('cars') else 8
+            tl = cars * (40.9 if L['vehicle'] == 'dmu' else 21.3)
+            for k in range(len(L['stops']) - 1):
+                a, b = L['stops'][k], L['stops'][k + 1]
+                sched = lt[2 * k + 2] - lt[2 * k + 1]
+                if sched <= 0 or b['d'] <= a['d']:
+                    continue
+                key = (a['station'], b['station'])
+                if key in worst:
+                    continue
+                mr = min_run(lim, a['d'], b['d'], tl)
+                worst[key] = (round(mr), sched, round(b['d'] - a['d']))
+    bad = sorted([(v[0] - v[1], k, v) for k, v in worst.items() if v[0] > v[1] + 5], reverse=True)
+    print(f'hops checked {len(worst)}; minimum run (1.0 m/s2 accel/brake, limits over the train length) > schedule + 5 s: {len(bad)}')
+    for d, k, v in bad[:25]:
+        print('  ', k, 'min', v[0], 's vs scheduled', v[1], 's over', v[2], 'm')
+
+
 if __name__ == '__main__':
     net = load_net()
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'overlay'
@@ -323,6 +392,8 @@ if __name__ == '__main__':
     elif cmd == 'profiles':
         for o in profiles(net):
             log(o)
+    elif cmd == 'runtimes':
+        check_runtimes(net)
     elif cmd == 'timetable':
         check_timetable(net)
     elif cmd == 'checks':

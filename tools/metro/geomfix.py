@@ -82,3 +82,79 @@ def fix_tube_spacing(tracks):
         tr['fine']['x'] = nx; tr['fine']['z'] = nz
     log(f'tube spacing: tracks moved up to {max(moved.values()):.2f} m to {TUBE_SPACING} m centres over {OAK_VENT_ALONG / 1000:.2f} km')
     return {'sfVent': za[0], 'oakVent': za[1]}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Island platforms where OSM draws the two tracks too close for any island (Ashby 4.8 m, San Bruno 4.3-5.1 m, North /
+# Downtown Berkeley 6.7 / 7.7 m, Glen Park 7.7 m: islands of 1-4.5 m). Mappers trace subway tracks schematically and
+# San Bruno's under the station roof. The two tracks are moved apart symmetrically to BART's usual island spacing
+# (11.1 m track centres, as measured at Fremont, Bay Fair, Orinda, Castro Valley, West Dublin ...) along the platform
+# (+-20 m) with cosine tapers of up to 150 m that stop short of any junction.
+ISLAND_MIN = 8.2           # m track centres below which the island would be < 5 m wide (2 x 1.616 m edges)
+ISLAND_SPACING = 11.1
+TAPER = 150.0
+JUNCTION_CLEAR = 25.0
+
+
+def spread_islands(tracks, pairs, junction_s):
+    """pairs: [(station, track A, s_A (fine s at the platform centre), s0_A, s1_A, track B)] for island stations;
+    junction_s: {id(track): [fine s of every junction vertex on it]}. Moves tr['fine'] x/z in place."""
+    done = []
+    for (st, ta, sa, a0, a1, tb) in pairs:
+        fa, fb = ta['fine'], tb['fine']
+        PB = np.stack([fb['x'], fb['z']], 1)
+        i = int(np.clip(np.searchsorted(fa['s'], sa), 1, len(fa['s']) - 2))
+        d0 = float(np.hypot(PB[:, 0] - fa['x'][i], PB[:, 1] - fa['z'][i]).min())
+        if d0 >= ISLAND_MIN:
+            continue
+        shift = 0.5 * (ISLAND_SPACING - d0)
+        moved = []
+        ok = True
+        plan = []
+        for tr, other in ((ta, tb), (tb, ta)):
+            f = tr['fine']; of = other['fine']
+            PO = np.stack([of['x'], of['z']], 1)
+            # platform zone on this track: nearest points to the ends of A's platform
+            if tr is ta:
+                p0, p1 = min(a0, a1), max(a0, a1)
+            else:
+                ends = []
+                for sv in (a0, a1):
+                    k = int(np.clip(np.searchsorted(fa['s'], sv), 0, len(fa['s']) - 1))
+                    ends.append(float(f['s'][int(np.argmin(np.hypot(f['x'] - fa['x'][k], f['z'] - fa['z'][k])))]))
+                p0, p1 = min(ends), max(ends)
+            p0 -= 20.0; p1 += 20.0
+            js = [j for j in junction_s.get(id(tr), [])]
+            if any(p0 - 5 <= j <= p1 + 5 for j in js):
+                ok = False
+                break
+            lo_room = min([p0 - j for j in js if j < p0] + [TAPER + JUNCTION_CLEAR]) - JUNCTION_CLEAR
+            hi_room = min([j - p1 for j in js if j > p1] + [TAPER + JUNCTION_CLEAR]) - JUNCTION_CLEAR
+            t0, t1 = min(TAPER, lo_room), min(TAPER, hi_room)
+            if min(t0, t1) < 60.0 or p0 - t0 < 0 or p1 + t1 > f['s'][-1]:
+                ok = False
+                break
+            s = f['s']
+            w = np.zeros(len(s))
+            w[(s >= p0) & (s <= p1)] = 1.0
+            m = (s > p0 - t0) & (s < p0)
+            w[m] = 0.5 - 0.5 * np.cos(np.pi * (s[m] - (p0 - t0)) / t0)
+            m = (s > p1) & (s < p1 + t1)
+            w[m] = 0.5 - 0.5 * np.cos(np.pi * ((p1 + t1) - s[m]) / t1)
+            idx = np.where(w > 0)[0]
+            gx = np.gradient(f['x']); gz = np.gradient(f['z']); L = np.hypot(gx, gz) + 1e-12
+            nx_, nz_ = -gz / L, gx / L                       # right-hand normal
+            from scipy.spatial import cKDTree
+            kd = cKDTree(PO)
+            _, kk = kd.query(np.stack([f['x'][idx], f['z'][idx]], 1))
+            side = np.sign((PO[kk, 0] - f['x'][idx]) * nx_[idx] + (PO[kk, 1] - f['z'][idx]) * nz_[idx])   # other track: +1 right
+            plan.append((tr, idx, -side * w[idx] * shift, nx_[idx], nz_[idx]))
+        if not ok:
+            log(f'  island spacing at {st}: {d0:.1f} m, junction too close to spread; left as mapped')
+            continue
+        for (tr, idx, off, nx_, nz_) in plan:
+            tr['fine']['x'] = tr['fine']['x'].copy(); tr['fine']['z'] = tr['fine']['z'].copy()
+            tr['fine']['x'][idx] += off * nx_; tr['fine']['z'][idx] += off * nz_
+        done.append(f'{st} {d0:.1f}->{ISLAND_SPACING}')
+    log('island spacing (OSM tracks too close for the island platform): ' + (', '.join(done) if done else 'none'))
+    return done
