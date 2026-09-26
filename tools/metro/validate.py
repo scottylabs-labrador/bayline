@@ -48,6 +48,8 @@ SPOTS = {
     'wdub': (37.6997, -121.9290, 420, 'West Dublin/Pleasanton: median, the OSM "tunnel" is a road bridge (M2b)'),
     'mlpt': (37.4103, -121.8912, 420, 'Milpitas: roofed U-trench, lidar floor through the openings (M2b)'),
     'antc': (37.9954, -121.7804, 300, 'Antioch: eBART island (M2b)'),
+    'sbrn': (37.6385, -122.4167, 520, 'San Bruno: island spread with the pocket track, switches out of the platform (M2b)'),
+    'conc': (37.9733, -122.0293, 420, 'Concord: elevated station on the viaduct the lidar kept (M2b)'),
 }
 
 

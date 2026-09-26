@@ -1222,6 +1222,7 @@ def validate(tracks, stations, junctions, platform_groups):
         d_und = _run_dist(und, st)
         req = np.minimum(6.0, FACE_COVER + d_und * RAMP) - 0.5
         gsm = ndimage.gaussian_filter1d(g, max(1.0, 10.0 / st), mode='nearest')
+        gsm = ndimage.maximum_filter1d(gsm, size=max(1, int(round(45.0 / st))), mode='nearest')   # light wells in a lid
         cv = np.where(und, gsm - y, 1e9)
         badm = cv < req
         badm &= np.convolve(badm.astype(int), np.ones(2, int), 'same') >= 2 if len(badm) > 2 else badm   # >= 2 samples in a row
@@ -1295,3 +1296,61 @@ def third_rail(tracks, junctions, platforms):
         if tr['sys'] != 'bart':
             side[:] = 0                                         # eBART diesel, cable-hauled connector: no contact rail
         p['third'] = side
+
+
+# ====================================================================== retained cuts with lids
+LID_MAX = 300.0          # m: a covered block this short and shallow between two open cuts is a lid, not a tunnel
+LID_DEPTH = 9.0          # m: median ground above the rail over a lid (a road deck over a 5-8 m cut)
+OPENING_MIN = 25.0       # m: openings shorter than this between two lids are closed (one longer lid)
+
+
+def lid_cuts(tracks, groups=None):
+    """Retained cuts with roads and decks over them (Milpitas: a 1.8 km U-trench under the rail spur, Piper Dr, Montague
+    Expwy, the station concourse and Capitol Ave, the lidar seeing the floor between them) came out as short
+    cutcover / portal / trench pieces every ~50 m. Per track: a covered block (contiguous portal + cutcover) that lies
+    between two open cuts, is < 300 m long and has < 9 m of ground over the rail is a LID: one `cutcover` piece, no portal
+    ends (portals are for tunnels); openings < 25 m between lids close; the lidar decides the rest (it sees the floor in
+    the openings and the deck over the lids, and the lids match the streets in crossings.json). Returns a log summary."""
+    cov = {S['cutcover'], S['portal']}
+    out = []
+    for tr in tracks:
+        p = tr['pub']; c = p['struct']; st = p['step']; ss = p['s']
+        before = len(rle(c))
+        changed = False
+        for _ in range(2):
+            runs = rle(c)
+            for k, (a, b, cc) in enumerate(runs):
+                if cc not in cov:
+                    continue
+                # extend to the whole covered block
+                if k > 0 and runs[k - 1][2] in cov:
+                    continue
+                j = k
+                while j < len(runs) and runs[j][2] in cov:
+                    j += 1
+                a_, b_ = runs[k][0], runs[j - 1][1]
+                prev_open = k > 0 and runs[k - 1][2] == S['trench']
+                next_open = j < len(runs) and runs[j][2] == S['trench']
+                if not (prev_open and next_open) or (b_ - a_) * st >= LID_MAX:
+                    continue
+                if float(np.median(p['g'][a_:b_] - p['y'][a_:b_])) > LID_DEPTH:
+                    continue
+                if (c[a_:b_] != S['cutcover']).any():
+                    c[a_:b_] = S['cutcover']; changed = True
+            # close short openings between two lids
+            runs = rle(c)
+            for k in range(1, len(runs) - 1):
+                a, b, cc = runs[k]
+                if cc == S['trench'] and (b - a) * st < OPENING_MIN and runs[k - 1][2] == S['cutcover'] and runs[k + 1][2] == S['cutcover'] \
+                        and (runs[k - 1][1] - runs[k - 1][0]) * st < LID_MAX and (runs[k + 1][1] - runs[k + 1][0]) * st < LID_MAX:
+                    c[a:b] = S['cutcover']; changed = True
+        if changed:
+            g = p['g']; y = p['y']
+            p['depth'] = np.clip(np.where(np.isin(c, list(UNDER)), g - y, np.where(np.isin(c, list(AER)), y - g, 0.0)), 0, 255)
+            segs = []
+            for a_, b_, cc in rle(c):
+                segs.append([round(float(ss[a_]), 1), round(float(ss[min(b_, len(ss) - 1)]), 1), STRUCT_NAMES[cc]])
+            p['segments'] = segs
+            out.append(f"{tr['id']} {before}->{len(rle(c))} pieces")
+    log('retained cuts: lids without portal ends, short openings closed: ' + (', '.join(out) if out else 'none'))
+    return out

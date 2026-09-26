@@ -902,6 +902,7 @@ def main():
     PR2.finish(out_tracks)
     PR2.third_rail(out_tracks, junctions, platforms)
     CX.build(out_tracks, PR2.STRUCT_NAMES)
+    PR2.lid_cuts(out_tracks, groups)
 
     # ---------------- stations
     tn = byid.get(('node', 5319797505))
