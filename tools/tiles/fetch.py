@@ -73,8 +73,15 @@ def naip(bbox, px, bands='rgb', quality=92, timeout=180):
     # metres, not in degrees), which misregisters every tile by up to ~50 m. Cache dir 'naip_aar0' so old fetches are never reused.
     key = f'{w:.7f}_{s:.7f}_{e:.7f}_{n:.7f}_{px}_{bands}'
     dest = os.path.join(RAW, 'naip_aar0', bands, str(px), key.replace('-', 'm') + '.jpg')
-    return get_cached(url, dest, min_bytes=500, timeout=timeout, validate=lambda r: r.headers.get('content-type', '').startswith('image/') and
-                      (bands != 'rgb' or _rgb_ok(r.content)))
+    val = lambda r: r.headers.get('content-type', '').startswith('image/') and (bands != 'rgb' or _rgb_ok(r.content))
+    if bands != 'rgb':
+        return get_cached(url, dest, min_bytes=500, timeout=timeout, validate=val)
+    try:
+        return get_cached(url, dest, min_bytes=500, timeout=timeout, validate=val, tries=2)
+    except IOError:
+        # the server caches its render per exact URL, a band dropout included: the same request with the bands named
+        # explicitly (identical pixels) is rendered afresh
+        return get_cached(url + '&bandIds=0,1,2', dest, min_bytes=500, timeout=timeout, validate=val, tries=4)
 
 
 def _rgb_ok(b):
