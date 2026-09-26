@@ -251,19 +251,27 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   measured from the lobby's entrance end, at street level), `{ "name", "wait": 25000 }` + `--hash "mst=WOAK"` (the
   page's own camera, e.g. the lead's link).
 
-## Costs (measured 2026-09-26 05:30, High, 1600x900; draw calls and triangles are exact, the GPU times are not: six
-## workstreams' headless Chromes share the GPU, frames swing 45–270 ms)
+## Costs (M3, 2026-09-26 07:30, M2b, 1600x900; draw calls and triangles exact, GPU times not: shared GPU)
 
-| view | +draw calls | +triangles (incl. crowd) |
+Whole metro in a hero view on High (stations + guideway + trains; `tools/metro_calls.js`, every metro scene group
+hidden vs shown): +23 to +81 draw calls, +0.6 to +1.2 M triangles (crowds included).
+
+| view (17:30) | +draw calls | +triangles |
 |---|---|---|
-| Montgomery platform, AM peak crowd | +30 | +0.70 M |
-| 12th St lower level (stacked) | +32 | +0.27 M |
-| West Oakland street, lobby | +27 | +0.20 M |
-| Bay Fair from 120 m | +27 | +0.09 M |
-| West Dublin from the air (footbridge, walkways) | +25 | +0.08 M |
+| Embarcadero platform | +50 | +1.19 M |
+| Montgomery platform / street entrance | +40 / +23 | +0.97 / +0.67 M |
+| Powell platform | +44 | +0.80 M |
+| 12th St lower level | +55 | +1.04 M |
+| MacArthur platform / from the air | +56 / +81 | +0.97 / +0.98 M |
+| West Oakland lobby | +42 | +0.78 M |
+| SFO platform | +74 | +1.21 M |
+| Balboa Park platform | +43 | +0.70 M |
+| Millbrae from the air | +67 | +0.58 M |
 
-Builds: 0.4–1.5 s of time-sliced jobs per station (<= 3 ms a frame); all 51 footprints and ground pads at network
-load: ~230 ms once. Keep-out queries ~0.25 µs. Next: far LOD silhouettes for aerial stations, shadow-caster trims.
+Stations alone: 13-80 k triangles each (Low 33-76 k with a quarter of the crowd). Builds: every step < 12 ms
+(stepped build + stepped attach + one material's shaders per step); footprints for all 52 records ~45 ms in the
+background at network load (< 11 ms per step). Phones (`--mobile`, Low): platform views 46-206 draw calls for the
+whole page.
 
 ## Requests
 
