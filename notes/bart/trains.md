@@ -5,6 +5,15 @@ Owner files: `src/js/41_metrokit.js`, `src/js/42_*.js`, `preview/metro.html`, `n
 
 ## Status
 
+- 2026-09-26 (promo, lead's brief "Aquarius"): **P17 p_rain_glass** (approved), the **P16 cab look** for SIM's
+  p_tube_cab (`_metrolook.mjs` cabLook) and a **climax hero, p_nose_hero**; MetroKit's shot look (`MetroKit.look`),
+  its cinema glass, per-car clear glazing that mirrors the car's interior, and fixes found on the way (below, "Promo").
+- 2026-09-26 (M3.2, lead's promo item): **per-car LOD by apparent distance**. The 110 m LOD 0 radius now uses the
+  distance x tan(fov / 2) / tan(27.5 deg) of the camera that last drew the cars (never more than the real distance, so
+  game views are unchanged; the same rule as MetroSim's). In **capture mode** (`__bayline.capture.on`) every car within
+  an apparent 600 m draws LOD 0, including cars in consists the sim put at LOD 1 (LOD 2 stays). Checked on a 10-car
+  train (preview, `c._applyLod` with a test camera): 300 m at 55 deg: all LOD 1; 300 m at 11.4 deg (120 mm): all
+  LOD 0; 700 m at 11.4 deg: LOD 1; capture at 500 m: LOD 0, at 700 m: LOD 1; a LOD 2 request stays LOD 2.
 - 2026-09-26 (M3 polish round): **baked LODs** for all three vehicles: each design's full-detail exterior and its
   window impression are rendered once into an atlas and mapped onto new LOD 1 / LOD 2 meshes (~1.1k triangles, one
   draw per car): on Low (where LOD 1 is drawn at every distance) and for every car beyond 110 m the car now looks like
@@ -133,6 +142,46 @@ unflipped) and `cabYaw`.
 4. **See-through open doors** (lead's RICH 17:40 check): fixed. At RICH the car nearest the player draws its
    interior (blue seats, far windows showing the outdoors), the cars further along with open doors draw the doorway
    impression; the player beside car 4 of 6 gets cars 3-5's interiors and doorway impressions on 1-2 and 6.
+
+## Promo (lead's brief, 2026-09-26)
+
+Shot modules (tools/trailer/shots/), contact sheets in `notes/bart/shots/promo/`. All three follow the same train, the
+Yellow Line to Antioch through the Tube after 21:40 on 2026-09-29 (`__m.day` pins the date; SIM's `_metro.mjs`).
+- **P17 `p_rain_glass`** (72.9-77.0 s): night rain, car 4, the left window, 0.28 m from the glass, 24 deg, a slow
+  push; starts 2.8 s after our car clears the Oakland portal (M2 s 32010; trench, then the aerial at 32230), 180 frames
+  at 30 fps, `w=rain`, fixed exposure. The glass is MetroKit's cinema glass (below). Road traffic is not deterministic
+  between runs: tail-light bokeh showed in 3 of 5 previews (the lead: fine).
+- **P16 `p_tube_cab`** is SIM's module; TRAINS' part is `_metrolook.mjs` `cabLook(key, o)`, awaited at the end of its
+  prime: exposure 1.5 (no eye adaptation), screens 1.9, cab light 0.03, windscreen reflections at physical strength,
+  and a pre-roll in capture mode (below). BART-like screens face the driver, so a near-vertical windscreen cannot show
+  them: it mirrors the cab behind the driver (the door window onto the lit saloon, the desk lit by its screens).
+- **Climax hero `p_nose_hero`**: West Oakland, platform 2, the same train pulling out: 90 mm, 13 m ahead of the stopped
+  nose, 2.55 m right of the track, 1.5 m above the rail, aimed 1.5 deg above the nose (the lit top bar inside the 2.39
+  band), panning with the nose (eased, capped at ~26 deg), 780 frames at
+  120 fps; the cab dark, lamps at 0.7 and their glow billboards at 0.45 so the pods keep their shape in the bloom.
+
+MetroKit for shots (`src/js/42_metrokit_cine.js`):
+- `MetroKit.look({ lcd, refl, cab, lamps, glow, cinema })`, `look(null)` resets: screen gain, interior reflections,
+  the cab light, lamp levels, glow billboards, and the cinema glass settings (bokeh radius, highlight gain/threshold,
+  drop lens field, beads, fresh rain, focus, cabin reflection, tint).
+- **Cinema glass** (only with `look({ cinema })`): the glazing of the car the camera is in draws last, from the frame
+  grabbed just before it (colour + depth blitted from the post pipeline's MSAA target with three's own framebuffer
+  handles, mipmapped): the outside through a 96-tap disc gather whose taps count by their own thin-lens blur circle
+  (focused on the glass), bright taps weighted (bokeh), the spiral turned per pixel; rain on the glass in focus (beads,
+  fresh drops popping in with the rain, a few big drops, runners going down and back in stick-slip steps with trails
+  that are thin cylindrical lenses); each drop a lens with a sharp inverted image of the outside, a dark rim, a highlight;
+  the glass's own defocus away from the focus; the cabin mirrored in the inner surface, soft. Writes depth. 4K cost is
+  high (offline only).
+- `MetroKit.viewHint(p, fov)`: the camera for the next frame, from a shot's `before` hook (MetroKit chooses interiors,
+  levels of detail and the cinema glass by the camera the cars were last drawn with; capture places its camera after
+  the runtime updates). Shots also pre-roll a few frames in capture mode at the end of `prime` and leave capture mode
+  on, so the game's own loop never draws the free camera (clamped above trenches and water) before the first frame.
+- Game-side (all views): per-car clear glazing (interior built) mirrors the car's own interior seen from inside (the
+  saloon's shell; in the D cab the console, desk, seat, the back wall and door window); the cab's display panel
+  reclines 0.52 rad (`K.CAB_PANEL`, shared by the model, the screens' light and the reflections); the cab follows its own
+  light level and is lit by its screens; the cab ceiling light has its own group; the cab door has its cab-side face;
+  underground, the tunnel's ambient reaches a car's inside only through its windows (x `mkIndoor.x`, like the sky's);
+  per-car LOD by apparent distance under a long lens, LOD 0 within an apparent 600 m in capture mode (M3.2).
 
 ## M3 polish round (lead's items, 2026-09-26)
 
