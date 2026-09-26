@@ -294,6 +294,9 @@ const MetroKit = (() => {
       } else if (mkPat == 4.0 || mkPat == 25.0 || mkPat == 28.0) {    // paint / gloss black: orange peel
         col *= 0.985 + 0.03 * mkV(p.xy * 31.0 + p.z * 23.0);
         mkCCR = 0.03 + 0.03 * mkV(p.zy * 13.0);
+        // the GTW's cab front: white, the side's blue wrapping round the lower corners (its edge sweeps out as it rises)
+        if (mkPat == 28.0) { float az = abs(p.z), eb = 0.7 + 0.38 * smoothstep(0.55, 1.95, p.y);
+          float bl = smoothstep(-fw, fw, az - eb) * step(p.y, 2.0); col = mix(col, vec3(0.008, 0.33, 0.72), bl); }
       } else if (mkPat == 5.0) {                                 // roof: white paint with ribs and dirt
         col *= 0.9 + 0.1 * mkF(p.xz * 0.7 + 3.0);
         col *= 1.0 - 0.25 * mkRep(mkUv.y, 0.105, 0.012, fw) * fade;
@@ -689,7 +692,7 @@ const MetroKit = (() => {
     uniform vec3 mkCamO, mkTint; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY, mkLoad; uniform float mkLv[16];
     uniform vec4 mkIndoor, mkLamp, mkCab, mkCabI, mkRail, mkDoorWin, mkBand, mkEnds, mkCnt;
     uniform vec4 mkRows[40]; uniform float mkRowN;
-    uniform vec4 mkSec[8]; uniform vec4 mkWin[10]; uniform vec4 mkDoor[4]; uniform vec4 mkPole[16]; uniform vec4 mkStand[8]; uniform vec4 mkPan[12];
+    uniform vec4 mkSec[8]; uniform vec4 mkWin[16]; uniform vec4 mkDoor[4]; uniform vec4 mkPole[16]; uniform vec4 mkStand[8]; uniform vec4 mkPan[12];
     uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
     const vec3 MK_WALL = vec3(0.776, 0.768, 0.730), MK_WALL2 = vec3(0.651, 0.651, 0.624), MK_CEIL = vec3(0.807, 0.807, 0.776);
@@ -799,7 +802,7 @@ const MetroKit = (() => {
         if (ax < D.y + 0.035 && h.y < D.z + 0.035) return mkShade(h, n, vec3(0.03));
       }
       if (mkCnt.x > 0.5) {
-        for (int k = 0; k < 10; k++) { if (float(k) >= mkCnt.x) break; vec4 W = mkWin[k];
+        for (int k = 0; k < 16; k++) { if (float(k) >= mkCnt.x) break; vec4 W = mkWin[k];
           float d = mkRB(h.xy - vec2(0.5 * (W.x + W.y), 0.5 * (W.z + W.w)), vec2(0.5 * (W.y - W.x), 0.5 * (W.w - W.z)), 0.09);
           if (d < 0.0) return mkFarPane(rd);
           if (d < 0.014) return mkShade(h, n, vec3(0.025));                  // gasket
@@ -893,17 +896,17 @@ const MetroKit = (() => {
           if (r.y < xlo || r.x > xhi) continue;
           vec3 sc = code > 3.5 ? MK_LIME : MK_BLUE;
           if (rd.y < -1e-5) { float t = (fy + 0.46 - ro.y) / rd.y;
-            if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.x > r.x && h.x < r.y && h.z * fc > 1.0) { tB = t; nB = vec3(0.0, 1.0, 0.0); cB = sc; metal = 0.0; } } }
+            if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.x > r.x && h.x < r.y && h.z * fc > mkHalfW - 0.47) { tB = t; nB = vec3(0.0, 1.0, 0.0); cB = sc; metal = 0.0; } } }
           if (abs(rd.z) > 1e-5) {
-            float t = (fc - ro.z) / rd.z;
+            float t = (fc * (mkHalfW - 0.47) - ro.z) / rd.z;
             if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.x > r.x && h.x < r.y && h.y > fy + 0.1 && h.y < fy + 0.46) { tB = t; nB = vec3(0.0, 0.0, -fc); cB = MK_SHELL * 0.45; metal = 0.0; } }
-            t = (fc * 1.4 - ro.z) / rd.z;
+            t = (fc * (mkHalfW - 0.07) - ro.z) / rd.z;
             if (t > 0.0 && t < tB) { vec3 h = ro + rd * t; if (h.x > r.x && h.x < r.y && h.y > fy + 0.5 && h.y < fy + 0.98) { tB = t; nB = vec3(0.0, 0.0, -fc); cB = sc; metal = 0.0; } }
           }
           float ns = r.y - r.x > 0.75 ? 2.0 : 1.0;
           for (int s = 0; s < 2; s++) { if (float(s) >= ns) break;
             float xc = r.x + (float(s) + 0.5) * (r.y - r.x) / ns, key = gH(vec2(xc * 5.7 + mkSeed, fc * 2.3));
-            if (key < pOcc) { float t0 = tB; mkPerson(ro, rd, vec3(xc, fy + 0.46, fc * 1.17), 0.72, vec2(0.2, 0.13), key, 0.0, tB, cB, nB); if (tB < t0) metal = 0.0; }
+            if (key < pOcc) { float t0 = tB; mkPerson(ro, rd, vec3(xc, fy + 0.46, fc * (mkHalfW - 0.3)), 0.72, vec2(0.2, 0.13), key, 0.0, tB, cB, nB); if (tB < t0) metal = 0.0; }
           }
         } else {
           // doorway partition at x = r.x spanning z in [r.y, r.z]
@@ -1006,12 +1009,12 @@ const MetroKit = (() => {
     const M = d.imap || {}, rows = (M.rows || []).slice(0, 40);
     S.mkRows = { value: vecList(rows, 40, [1e4, 0, 0, 0]) }; S.mkRowN = { value: rows.length };
     S.mkSec = { value: sectionPlanes(M.sec, d.ceilY || 3.1) };
-    S.mkWin = { value: vecList(M.win, 10, [0, 0, 0, 0]) };
+    S.mkWin = { value: vecList(M.win, 16, [0, 0, 0, 0]) };
     S.mkDoor = { value: vecList(M.doors, 4, [0, 0, 0, 0]) };
     S.mkPole = { value: vecList(M.poles, 16, [0, 0, 0, 0]) };
     S.mkPan = { value: vecList(M.panels, 12, [0, 0, 0, 0]) };
     S.mkStand = { value: vecList(M.stand, 8, [1e4, 0, 1.7, 0]) };
-    S.mkCnt = { value: V4([Math.min(10, (M.win || []).length), Math.min(4, (M.doors || []).length), Math.min(16, (M.poles || []).length), Math.min(12, (M.panels || []).length)]) };
+    S.mkCnt = { value: V4([Math.min(16, (M.win || []).length), Math.min(4, (M.doors || []).length), Math.min(16, (M.poles || []).length), Math.min(12, (M.panels || []).length)]) };
     S.mkDoorWin = { value: V4(M.doorWin || [0, 0, 0, 0]) };
     S.mkRail = { value: V4(M.rail || [0, 0, 0, 0]) };
     const lz = (S.mkLamp && S.mkLamp.value.x) || 0.6;

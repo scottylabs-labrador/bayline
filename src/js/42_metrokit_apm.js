@@ -137,7 +137,11 @@
       bones, boneIdx: { bogie: [BONE.bog[0], BONE.bog[1]], axlesOf: [[BONE.axle[0], BONE.axle[1]], [BONE.axle[2], BONE.axle[3]]] },
       leaves, wipers: [], plugOut: 0.0, slide: 0.78,
       meta: { bogieOffsets: [3.1, -3.1], doors, floorRegions: [{ name: 'car', x0: -A.LEN / 2 + 0.3, x1: A.LEN / 2 - 0.3, z0: -1.1, z1: 1.1, y: A.FLOOR }], ramps: [], gangways: { front: null, rear: null }, seats, cabEye: null },
-      rows: [], halfW: 1.2, floorY: A.FLOOR, ceilY: 2.85, cabBox: new THREE.Vector4(-A.LEN / 2, A.LEN / 2 + 0.2, 1, 0), signs: [],
+      imap: { rows: [[-A.LEN / 2 + 0.4, -1.1, 0, 3], [-A.LEN / 2 + 0.4, -1.1, 0, -3], [1.1, A.LEN / 2 - 0.5, 0, 3], [1.1, A.LEN / 2 - 0.5, 0, -3]], band: [0.55, 0.65, 0, 0],
+        win: [[-A.LEN / 2 + 0.35, -0.95, A.BAND0 + 0.05, A.BAND1 - 0.08], [0.95, A.LEN / 2 - 0.35, A.BAND0 + 0.05, A.BAND1 - 0.08]], doors: [[0, 0.8, 2.3, 0]], doorWin: [0.05, 0.72, 1.2, 2.2],
+        poles: [[-0.95, -0.5, 0.018, 2.85], [-0.95, 0.5, 0.018, 2.85], [0.95, -0.5, 0.018, 2.85], [0.95, 0.5, 0.018, 2.85]], rail: [2.3, 0.7, 0.016, 0], panels: [],
+        standAll: [[-0.4, 0.3], [0.5, -0.25], [-2.2, 0.1], [2.4, -0.1], [0.1, 0.55], [-3.1, -0.2], [3.2, 0.25], [1.6, 0.4]], cab: null },
+      lamp: [0.6, 2.845, 4.4], halfW: 1.2, floorY: A.FLOOR, ceilY: 2.85, cabBox: new THREE.Vector4(-A.LEN / 2, A.LEN / 2 + 0.2, 1, 0), signs: [],
       lamps: type === 'end' ? [1, -1].map(s => ({ p: [A.LEN / 2 + 0.25 + A.NOSE_R * 1.4 + 0.03, 0.72, s * 0.62], kind: 'head' })) : [],
     };
   };
