@@ -1268,7 +1268,7 @@ const StationTypes = (() => {
     const zC = new Zone('conc', { under: T.under, amb: T.under ? S.amb : [0.03, 0.03, 0.03] }); zones.push(zC); T.zC = zC;
     // escalator + stair groups on each platform (in its level's zone; a stacked station's lower banks climb to the
     // platform over them)
-    T.st._phase = 'circ:banks';
+    T.st._phase = 'circ:banks'; const xferDone = new Set();
     for (const p of plats) for (const g of p.groups || []) {
       const zP = p.zone || zones[0];
       const B = zP.d; const up = !g.down;
@@ -1305,8 +1305,10 @@ const StationTypes = (() => {
       { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, 'glass'); }
       for (const vv of [hv0, hv1]) { const a = T.WUV(Math.min(uOpen, uClosed), vv), b = T.WUV(Math.max(uOpen, uClosed), vv); addWall(T.walk, a, b, yUp - 0.5, yUp + 2.5); }
       addWall(T.walk, T.WUV(uClosed, hv0), T.WUV(uClosed, hv1), yUp - 0.5, yUp + 2.5);
-      // direction signs over the group's foot
+      // direction signs over the group's foot (and, where the station has transfers, the transfer panel beyond it)
       zP.signs.push({ u: g.uFoot - (up ? g.dir : 0) * 1.5, v: g.vc, y: p.y + 2.9, yaw: T.yawAt(g.uFoot) + (g.dir > 0 ? Math.PI / 2 + Math.PI / 2 : 0), w: 2.4, h: 0.6, region: 'exit', both: false, T });
+      if ((T.st.data.transfers || []).length && !xferDone.has(p)) { xferDone.add(p);
+        zP.signs.push({ u: g.uFoot - (up ? g.dir : 1) * 6, v: g.vc, y: p.y + 2.75, yaw: T.yawAt(g.uFoot) + Math.PI / 2, w: 3.4, h: 0.64, region: 'info', both: true, T }); }
       T.occupied.push({ p, u0: u0 - 1.5, u1: u1 + 1.5, v0: g.vc - g.gw / 2 - 0.6, v1: g.vc + g.gw / 2 + 0.6 });
       yield;
     }
