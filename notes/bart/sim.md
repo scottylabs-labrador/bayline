@@ -19,14 +19,15 @@ collide, live mode verified against the real feed. Earlier notes below still hol
   on a weekday in ~0.3 s at boot; per frame ~0.4 ms for ~60 trains at 8 AM.
   - Schedule: the published minute-rounded times are smoothed per leg by a weighted isotonic regression (PAVA)
     against minimum run times + dwells: trains never leave an origin early, never run faster than they can.
-    Measured over every leg of a weekday: 0 discontinuities, 0 samples over the (effective) limit, mean |deviation
-    from the published times| 7.8 s, worst 73 s.
+    Measured over every leg (M2 data, after the envelope fix): weekday 0 discontinuities, 0 samples over the
+    (effective) limit, mean |deviation from the published times| 8.9 s, worst 130 s; Saturday 5.5 s, worst 121 s.
   - Kinematics: minimum-time profile per run (FOTF: 3.0 mph/s to ~25 mph then constant power, 70 mph max, ATO
     braking 2.5 mph/s), the tail rule (speed up only once the last car clears a restriction), capped (performance
     level) to fill the scheduled time; tabulated once per distinct run (LRU), evaluated by binary search.
-  - Timetable-consistent limits: v0 curvature limits have spurious dips (e.g. 20–30 mph blips in the straight Mission
-    St subway); where a run's minimum time exceeds the published time + 30 s, the dips on that run are lifted to the
-    lowest floor that fits (2,037 runs on a weekday with v0 data). ATC uses the same floors.
+  - Timetable-consistent limits: where a run's minimum time with MetroNet's codes exceeds the published time + 30 s,
+    the restrictions on that run are lifted to the lowest floor that fits (M2: 1,493 of ~16,000 runs on a weekday,
+    mostly GLEN↔24TH, the Oakland Wye and the Daly City–San Bruno runs). ATC uses the same floors, rounded up to the
+    next code.
   - Dwell by station (20 s standard, 30–35 s downtown/transfers, ×1.2 at the peaks), doors open 2.5 s after the stop,
     close 3.5 s before departure; door side from the stations' built platform (else the platform data), travel-relative.
   - Berths: the head stops on MetroNet's berth mark for its direction (`platforms[].berth['+' | '-']`, 2 m inside the
@@ -141,6 +142,13 @@ ATC civil code is MetroNet's code per segment (6/18/27/36/50/70; no more 5 mph f
   ("You have the Red Line to Millbrae", through the SFO reversal), Commute at Embarcadero, the Cable Train (3-car
   Airport Connector) and the Antioch Shuttle ("1-unit") rides. (Airport Reversal found no train on the first try: the
   SBRN → SFO → MLBR trip is two legs; the search now follows the train through the reversal.)
+- **Frame cost** (`tools/qa_metro_perf.sh` views, 1440×900, real GPU, metro on/off interleaved three times so the other
+  workstreams' Chromes hit both sides; medians): Embarcadero 08:00 from the air on 47.9 ms / off 69.9 ms (no measurable
+  metro cost in the noise; +24 draw calls, +0.15 M triangles); MacArthur 17:30 on 83.7 / off 63.2 ms (ranges overlap:
+  on 71–627, off 53–93; +117 draw calls and +0.95 M triangles, mostly the station and guideway geometry plus the near
+  MetroKit consists); system map open 66.9 ms (46–75). The runtime's own CPU (`MetroSim.update`, ~40 trains, near
+  consists + far batch + dots) is 0.5–1.0 ms a frame. Absolute frame times on this shared machine are not meaningful;
+  please re-measure on an idle GPU before shipping (`PORT=… sh tools/qa_metro_perf.sh`).
 - **Peninsula regression, metro OFF**: `qa_ptc.js` WARN at 80.9 → ENFORCE at 83.8 mph → stop → release; `qa_signal.js`
   stopped 1,454 m short of the red (0 passed); `qa_all.sh` views render, drive (74 mph, guidance, doors), ride boards;
   `qa_flight.js` every type takes off, cruises and autolands (same numbers as before). Frame times in this run are not
