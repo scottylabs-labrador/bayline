@@ -7,6 +7,9 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **09:40 Daly City chamber (lead's follow-up)**: it predates the thin-cover change: `bart` 4dfaca7 and 1126cde give
+  identical captures inside it (M3 s 1640, M2b) and identical x-rays. Not a simple end-wall fix, so it is a **post-M3
+  item** (below, Open problems).
 - **09:10 thin cover (STATIONS' Milpitas report)**: a cut-and-cover box never pokes through the ground now. Per row,
   the lowest drawn ground over the box (terrain or base surface with its roads, on the centreline and 0.35 m outside
   both walls, the lowest within 10 m inside the box's own run) sets the ceiling: the normal 4.78 m above the rail where
@@ -390,6 +393,15 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
 
 ## Open problems
 
+- **Post-M3: Daly City junction chamber jc279 (M2b)**. Owned by M1.2 (s 1590-1752), it spans M1.2, M3, M2 and the
+  crossovers M-xo4 / M-xo7, and runs on over the portal runs where the three tracks leave the ground at different
+  points (M3's mouth at about M1.2 s 1695, M1.2's at 1750), so a single wide box covers part of M3's open trench.
+  Portals are exempt from the thin-cover clamp, so there the chamber keeps its full 4.78 m height and stands above the
+  lower ground on the M2 / M3 side. The terrain inside its volume is cut away, and the flora placed on that terrain
+  floats inside the chamber, dark because it is lit as interior. The bright far end is M1.2's real portal mouth.
+  Plan: end a chamber at the first mouth of any member track (each track then keeps its own portal box and
+  headwall), or build a stepped portal face per track; WORLD's flora and ground cover should skip points where
+  `Under.cutAt(x, z, y)` is true (offered earlier). Riders to Colma / Millbrae pass through it.
 - The data's accuracy limits the builders (aerial heights from clearance rules, the Wye's solved levels, portal
   profiles); builders adapt, but accuracy follows the data.
 - Milpitas (M2b): the data alternates cut-and-cover and trench every ~50 m around the station (the roofed trench), so
