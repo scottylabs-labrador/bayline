@@ -128,11 +128,18 @@ const MetroGuide = (() => {
   // ------------------------------------------------------------------ trench (retained cut, U-section)
   function buildTrench(ctx, a, b) {
     for (const [s0, s1] of ownedRanges(ctx, a, b)) {
+      // (a 'trench' whose ground is carved down to the track on both sides, as the world does in places, is just a bed:
+      // no retaining walls standing in a flat field)
+      { let deep = 0, n = 0; for (let s = s0; ; s = Math.min(s1, s + 10)) { MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s);
+          const g = Math.max(gRel(F, ln.lo - 7, -5, 14), gRel(F, ln.hi + 7, -5, 14)); n++; if (g > 1.0) deep++; if (s >= s1) break; }
+        if (deep < n * 0.3) { buildBed(ctx, s0, s1, 'grade'); continue; } }
       const ss = ctx.sampleS(ctx.R, s0, s1, 5, 2); const rows = []; const cutL = [], cutR = []; let below = 1e9;
       for (const s of ss) {
         MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s);
         const wl = ln.lo - 3.05, wr = ln.hi + 3.05, t = 0.6, fl = -0.72;             // inner wall faces (MetroGround steps at 3.0-3.9 m), thickness, floor (DF slab)
-        const gl = gRel(F, wl - t - 0.5, -5, 14), gr = gRel(F, wr + t + 0.5, -5, 14);
+        // (the ground just behind the wall, and 3 and 6 m further out: the wall retains up to the natural ground even where
+        // the carve slopes down toward it, so the slopes never show over the coping from the track)
+        const gl = Math.max(gRel(F, wl - t - 0.5, -5, 14), gRel(F, wl - t - 3, -5, 14), gRel(F, wl - t - 6, -5, 14)), gr = Math.max(gRel(F, wr + t + 0.5, -5, 14), gRel(F, wr + t + 3, -5, 14), gRel(F, wr + t + 6, -5, 14));
         const tl = Math.max(gl + 0.35, 1.1), tr = Math.max(gr + 0.35, 1.1);                     // wall tops: coping just above the ground
         rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], gnd: F.y + fl, top: F.y + Math.min(tl, tr),
           prof: [[wl - t - 0.35, Math.min(gl, tl - 0.3) - 0.2], [wl - t - 0.15, tl - 0.05], [wl - t, tl], [wl + 0.12, tl], [wl + 0.05, tl - 0.12], [wl, tl - 0.3], [wl, fl + 0.25], [wl + 0.4, fl], [wr - 0.4, fl], [wr, fl + 0.25], [wr, tr - 0.3], [wr - 0.05, tr - 0.12], [wr - 0.12, tr], [wr + t, tr], [wr + t + 0.15, tr - 0.05], [wr + t + 0.35, Math.min(gr, tr - 0.3) - 0.2]],
@@ -364,6 +371,9 @@ const MetroGuide = (() => {
 
   // ------------------------------------------------------------------ body dispatch
   function body(ctx, run, a, b) {
+    // (a crossover lies inside its mains' bed, trench or median: it brings no structure of its own there; on aerials and
+    // bridges it keeps its girder)
+    if (ctx.R.cls === 'crossover' && run.type !== 'aerial' && run.type !== 'bridge') return;
     switch (run.type) {
       case 'aerial': return buildAerial(ctx, run, a, b, 'aerial');
       case 'bridge': return buildBridge(ctx, run, a, b);

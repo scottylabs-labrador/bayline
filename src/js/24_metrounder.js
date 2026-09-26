@@ -466,6 +466,9 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     if (fsAt && Math.abs(fsAt[0] - x) + Math.abs(fsAt[1] - y) + Math.abs(fsAt[2] - z) < 0.5) return fsHit;       // (unchanged camera)
     let below = -1e9; try { const g = Terrain.h(x, z); if (isFinite(g)) below = g - y; } catch (e) {}
     let hit = null;
+    // (open-trench, surface and aerial stations are outdoor places even where the data's track is cut-and-cover under
+    // uncarved ground (San Bruno, Milpitas): near one, never)
+    if (MetroNet.stationsNear) { const ns = MetroNet.stationsNear(x, z, 320)[0]; if (ns && ns.station.type !== 'subway') { fsAt = [x, y, z]; fsHit = null; return null; } }
     if (below > 1 && !cutAt(x, z, y)) {
       const t = MetroNet.inTunnelAt ? MetroNet.inTunnelAt(x, y, z) : null;
       if (t) hit = t.kind === 'station' ? 'station ' + (t.station && t.station.id) + ' (track ' + (t.track && t.track.id) + ' s ' + Math.round(t.s) + ')' : 'track ' + (t.track && t.track.id) + ' s ' + Math.round(t.s) + ' (' + t.struct + ')';
@@ -480,7 +483,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   }
   function failsafeNote(hit, x, y, z) {
     const now = performance.now();
-    if (!hit) { fsPos = null; return; }
+    if (!hit) { fsPos = null; stats.failsafe = null; return; }
     if (!fsPos || Math.hypot(fsPos[0] - x, fsPos[2] - z) > 20) { fsPos = [x, y, z]; fsSince = now; return; }
     stats.failsafe = hit;
     if (!DEBUG || now - fsSince < 3000) return;
