@@ -16,7 +16,7 @@
 // QA fault injection: #metrofail=net|tracks|tt|build|stations|kit|sim|ground|under (comma-separated) breaks that part on
 // purpose: net / tracks / tt a real 404 or a corrupt binary, the others an exception a moment after they start working.
 const Metro = (() => {
-  const DEFAULT_ON = false;                                    // M3 (ship): true, and Bayline Metro is on for everyone
+  const DEFAULT_ON = true;                                     // M3 (ship): true, and Bayline Metro is on for everyone
   const hash = (() => { try { return new URLSearchParams(location.hash.slice(1)); } catch (e) { return new URLSearchParams(); } })();
   const forced = hash.get('metro');
   let on = forced === null ? DEFAULT_ON : forced !== '0';

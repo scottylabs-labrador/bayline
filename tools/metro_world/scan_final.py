@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Final scan of every imagery tile made since the pre-Metro snapshot (the publish set): NAIP band-dropout squares
 (tools/tiles/fetch.py rule), saturated-green 16 px blocks (a two-band dropout / encoder glitch), unreadable files and
-pixel sizes per level. -> data/raw/tiles/scan_final.json"""
+pixel sizes per level. -> data/raw/tiles/scan_final.json
+  python3 tools/metro_world/scan_final.py --published   the published (pre-Metro) files instead -> scan_published.json"""
 import os, sys, json, collections
 import numpy as np
 from PIL import Image
@@ -24,17 +25,19 @@ def one(t):
     drop = rgb_dropout_array(small)
     n = a.shape[0] // 16
     g = ((a[..., 1] - a[..., 0] > 100) & (a[..., 1] - a[..., 2] > 100))[:n * 16, :n * 16].reshape(n, 16, n, 16).mean((1, 3))
-    return ('ok', bool(drop), int((g > 0.9).sum()), px)
+    return ('ok', bool(drop), int((g > 0.9).sum()) + (1000 if C.jpeg_truncated(a.astype(np.uint8)) else 0), px)
 
 
 def main():
+    pub = '--published' in sys.argv
     files = []
     for L in range(0, 10):
         d = os.path.join(C.PUB, 'img', str(L))
         if os.path.isdir(d):
-            files += [(L, os.path.join(d, f)) for f in os.listdir(d) if f.endswith('.jpg') and os.path.getmtime(os.path.join(d, f)) >= REF]
+            files += [(L, os.path.join(d, f)) for f in os.listdir(d) if f.endswith('.jpg') and '_test' not in f
+                      and (os.path.getmtime(os.path.join(d, f)) < REF if pub else os.path.getmtime(os.path.join(d, f)) >= REF)]
     # the files written since the previous full scan (data/raw/tiles/new_img_dropouts.json) first, then the rest
-    prev = os.path.join(C.WORK, 'new_img_dropouts.json'); t_prev = os.path.getmtime(prev) if os.path.exists(prev) else 0
+    prev = os.path.join(C.WORK, 'new_img_dropouts.json'); t_prev = os.path.getmtime(prev) if os.path.exists(prev) and not pub else 0
     files.sort(key=lambda t: (os.path.getmtime(t[1]) < t_prev, t[0], t[1]))
     n_recent = sum(os.path.getmtime(t[1]) >= t_prev for t in files)
     print(f'{len(files)} new imagery files, {n_recent} written since the previous full scan (first)', flush=True)
@@ -52,7 +55,7 @@ def main():
             if r[2]:
                 green.append([name, r[2]])
     out = {'scanned': len(files), 'dropout': bad, 'green_blocks': green, 'unreadable': unread, 'sizes': dict(sorted(sizes.items()))}
-    json.dump(out, open(os.path.join(C.WORK, 'scan_final.json'), 'w'), indent=1)
+    json.dump(out, open(os.path.join(C.WORK, 'scan_published.json' if pub else 'scan_final.json'), 'w'), indent=1)
     print(json.dumps(out)[:3000], flush=True)
 
 

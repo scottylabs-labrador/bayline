@@ -26,7 +26,8 @@ const ALLCON = args.includes('--allconsole');            // print every console 
 const MOBILE = args.includes('--mobile');                // phone profile: DPR 2, touch, mobile UA (Low tier by default)
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const prof = mkdtempSync(join(tmpdir(), 'mshots-'));
-const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check',
+// (--gc: expose window.gc() for exact heap measurements)
+const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check', ...(args.includes('--gc') ? ['--js-flags=--expose-gc'] : []),
   '--ignore-gpu-blocklist', '--hide-scrollbars', '--mute-audio', `--window-size=${W},${H}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 let cleaned = false;
 function cleanup() { if (cleaned) return; cleaned = true; try { chrome.kill('SIGKILL'); } catch {} try { rmSync(prof, { recursive: true, force: true }); } catch {} }
@@ -74,7 +75,7 @@ for (const v of views) {
   // { name, evalFile: "tools/x.js", args: {...} }: the file holds one async arrow function (B, args) => value
   if (v.evalFile) v.eval = `(${readFileSync(resolve(v.evalFile), 'utf8')})(B, ${JSON.stringify(v.args || {})})`;
   // (a value that is a PNG data URL is written to <out>/<name>.png instead)
-  if (v.eval) { let val = await ev(`(async () => { const B = window.__bayline; return await (${v.eval}); })()`, 240000);
+  if (v.eval) { let val = await ev(`(async () => { const B = window.__bayline; return await (${v.eval}); })()`, 900000);
     if (typeof val === 'string' && val.startsWith('data:image/png;base64,')) { const f = join(out, `${v.name}.png`); writeFileSync(f, Buffer.from(val.slice(22), 'base64')); val = f; }
     else if (val && typeof val === 'object' && typeof val.png === 'string') { const f = join(out, `${v.name}.png`); writeFileSync(f, Buffer.from(val.png.slice(22), 'base64')); val.png = f; }
     console.log(JSON.stringify({ name: v.name, ms: Date.now() - t1, value: val })); results.push({ name: v.name, value: val }); continue; }
@@ -84,7 +85,7 @@ for (const v of views) {
     const shot = await send('Page.captureScreenshot', { format: 'jpeg', quality: QUAL }); const file = join(out, `${v.name}.jpg`); writeFileSync(file, Buffer.from(shot.result.data, 'base64'));
     console.log(JSON.stringify({ name: v.name, ms: Date.now() - t1, cam: pos })); results.push({ name: v.name, file }); continue; }
   const clock = v.t ? `{ const [h, m] = '${v.t}'.split(':').map(Number); window.__bayline.Env.setClock(h * 3600 + m * 60); }` : '';
-  const res = await ev(`(async () => { ${clock} return await window.__bayline.MetroStations.shot(${JSON.stringify(v.id)}, ${JSON.stringify(v.opts || {})}); })()`, 240000);
+  const res = await ev(`(async () => { ${clock} return await window.__bayline.MetroStations.shot(${JSON.stringify(v.id)}, ${JSON.stringify(v.opts || {})}); })()`, 900000);
   const shot = await send('Page.captureScreenshot', FMT === 'png' ? { format: 'png' } : { format: 'jpeg', quality: QUAL });
   const file = join(out, `${v.name}.${FMT === 'png' ? 'png' : 'jpg'}`);
   writeFileSync(file, Buffer.from(shot.result.data, 'base64'));

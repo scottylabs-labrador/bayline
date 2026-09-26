@@ -304,7 +304,8 @@ const StationTypes = (() => {
   // the base ground at that lift (Towns builds on it), never under the drawn ground
   // (8 cm proud of the Towns sidewalk: its ribbon interpolates the ground across the band differently from the
   // collar's grid, and at 3 cm the two surfaces crossed in a sawtooth of bare planting strip)
-  function headLift(T, pts) { let s = 0; for (const [u, v] of pts) s = Math.max(s, surfLift(T, u, v)); return s > 0 ? s + 0.08 : 0.035; }
+  // (the median of the ring: an entrance in a bare plaza beside a sidewalk sits on the plaza, not raised to the curb)
+  function headLift(T, pts) { const ls = pts.map(([u, v]) => surfLift(T, u, v)).sort((a, b) => a - b); const s = ls[Math.floor((ls.length - 1) / 2)]; return s > 0 ? s + 0.08 : 0.035; }
   // (on a sidewalk or plaza the collar follows the base ground as Towns does; the detail layer is held at zero under
   // Towns' surfaces, and following its lidar bumps folded the collar's grid under the sidewalk in a sawtooth)
   function surfY(T, u, v, lift) { const [x, z] = T.WUV(u, v); const b = Terrain.hBase(x, z) + lift; return lift > 0.06 ? b : Math.max(b, Terrain.h(x, z) + 0.035); }
@@ -429,6 +430,7 @@ const StationTypes = (() => {
     // ---------------------------------------------------------------- platform furniture, signs, boards
     st._phase = 'furnish';
     yield* furnish(T);
+    if (under && T.H.bigCircles) yield* bigCircles(T, T.levels[0]);
 
     // ---------------------------------------------------------------- finalise: meshes per zone
     st._phase = 'fin:env';
@@ -480,6 +482,7 @@ const StationTypes = (() => {
     const underOn = typeof Under !== 'undefined' && Under.enabled;
     // with Under: the cell ambient (bounce light) is Under's, for every material in the volume; mine would add it twice
     if (underOn) for (const { mat, z } of matsToTick) if (z.under) z.lights.amb = [0, 0, 0];
+    const ents = (T.entrances || []).map(e => ({ wx: e.wx, wz: e.wz }));          // (so the update does not keep T alive)
     res.update = (dt, camPos, night) => {
       const expo = (typeof Env !== 'undefined' && Env.state.exposure) || 1;
       const underK = underOn ? 1 : 1.0 / expo;           // Under fixes the exposure underground (1.0, day and night)
@@ -488,11 +491,14 @@ const StationTypes = (() => {
       shared.glow.userData.k.value = under ? 5 * underK : 2.5 + 3 * night;
       // without the Under module: hide the underground levels while the camera is up in the street, away from entrances
       if (under && !underOn && !MetroStations.debug.showAll) {
-        const upTop = camPos.y > street - 0.8; let nearEnt = false; for (const e of T.entrances || []) if (Math.hypot(camPos.x - e.wx, camPos.z - e.wz) < 30) { nearEnt = true; break; }
+        const upTop = camPos.y > street - 0.8; let nearEnt = false; for (const e of ents) if (Math.hypot(camPos.x - e.wx, camPos.z - e.wz) < 30) { nearEnt = true; break; }
         const vis = !upTop || nearEnt;
         for (const k in res.zones) if (res.zones[k].under) { res.zones[k].group.visible = vis; res.zones[k].near.visible = vis; }
       }
     };
+    // the geometry builders' working arrays (capacity-doubled typed arrays, several MB a zone) are not needed once the
+    // meshes exist; the per-frame update keeps the zones (lights, flags) alive, so drop the builders from them
+    for (const z of zones) { z.m = z.d = null; z.signs = null; z.boards = null; }
     return res;
   }
 
@@ -806,6 +812,62 @@ const StationTypes = (() => {
   // ------------------------------------------------------------------------------------------------ subway box
   // one box per level (stacked stations: the lower level's ceiling is the slab under the upper level's trackbed)
   function* subwayBox(T) { for (const L of T.levels) yield* subwayLevel(T, L); }
+  // Lake Merritt: "huge black tile circles and red tile arrows" on the trackway walls (research), in chunky tile
+  function* bigCircles(T, L) {
+    const g = L.zone.d.sk, edgeV = T.levels.length > 1 ? L.edgeV : T.edgeV, yC = L.yT + 1.9, N = 28;
+    const toward = (u) => (u < T.uc ? 1 : -1);
+    // (between the wall signs: circles and arrows keep 3.5 m clear of every sign on that level)
+    const signU = L.zone.signs.map(sg => [sg.u, (sg.w || 2) / 2]), clear = (u, r) => !signU.some(([su, hw]) => Math.abs(su - u) < r + hw + 1.0);
+    for (const side of [-1, 1]) {
+      const into = -side;                                                             // (the wall faces into the box)
+      const W = (u, y) => { const f = T.frameAt(u), v = edgeV(u, side) + into * 0.015; return [f.x - f.tz * v, y, f.z + f.tx * v]; };
+      const face = (p0, p1, p2, p3, uv) => { const f = T.frameAt((p0[3] ?? 0)); void f;
+        const ax = p1[0] - p0[0], ay = p1[1] - p0[1], az = p1[2] - p0[2], bx = p3[0] - p0[0], by = p3[1] - p0[1], bz = p3[2] - p0[2];
+        const nx = ay * bz - az * by, nz = ax * by - ay * bx; const fr = T.frameAt(T.uc), rx = -fr.tz * into, rz = fr.tx * into;
+        if (nx * rx + nz * rz >= 0) g.quad(p0, p1, p2, p3, uv); else g.quad(p3, p2, p1, p0, uv); };
+      for (let u = T.boxU0 + 14; u < T.boxU1 - 10; u += 18) {
+        if (!clear(u, 1.2)) { const ua0 = u + 9; if (!clear(ua0, 0.8)) continue; }
+        if (clear(u, 1.2)) { g.mat(0x121212, K.PLAIN, 0.95);
+        for (let k = 0; k < N; k++) { const a0 = 2 * Math.PI * k / N, a1 = 2 * Math.PI * (k + 1) / N, r0 = 0.05, r1 = 1.2;
+          face(W(u + Math.cos(a0) * r0, yC + Math.sin(a0) * r0), W(u + Math.cos(a0) * r1, yC + Math.sin(a0) * r1), W(u + Math.cos(a1) * r1, yC + Math.sin(a1) * r1), W(u + Math.cos(a1) * r0, yC + Math.sin(a1) * r0), [0, 0, 1, 0, 1, 1, 0, 1]); } }
+        // the red arrow halfway to the next circle, pointing toward the middle of the station (the way out)
+        const ua = u + 9; if (ua > T.boxU1 - 10 || !clear(ua, 0.8)) continue; const d = toward(ua); g.mat(0xb3342b, K.PLAIN, 0.9);
+        face(W(ua - d * 0.8, yC - 0.14), W(ua + d * 0.2, yC - 0.14), W(ua + d * 0.2, yC + 0.14), W(ua - d * 0.8, yC + 0.14), [0, 0, 1, 0, 1, 1, 0, 1]);
+        face(W(ua + d * 0.2, yC - 0.42), W(ua + d * 0.8, yC), W(ua + d * 0.8, yC), W(ua + d * 0.2, yC + 0.42), [0, 0, 1, 0, 1, 1, 0, 1]);
+      }
+      yield;
+    }
+  }
+  // the box end farther south-west (world x east, z south)
+  function canyonEnd(T) { const a = T.WUV(T.boxU0, 0), b = T.WUV(T.boxU1, 0); return (-a[0] + a[1]) > (-b[0] + b[1]) ? T.boxU0 : T.boxU1; }
+  function* wallCanyon(T, g, ue, dir, holes, yT, ceilY, P) {
+    // the solid part of the end wall over the island: between the two innermost tunnel openings
+    let va = -1e9, vb = 1e9; for (const [a, b] of holes) { if (b <= 0 && b > va) va = b; if (a >= 0 && a < vb) vb = a; }
+    if (!(vb - va > 2)) { const c = (holes[0][1] + (holes[1] || holes[0])[0]) / 2; va = c - 3; vb = c + 3; }
+    va += 0.3; vb -= 0.3;
+    const y0 = yT + 0.25, y1 = ceilY - 0.15, cell = 0.42, R = U.rng(1972);
+    const PAL = [0x8c3b24, 0xa8522c, 0xc27a3e, 0xd9a35c, 0xb0643a, 0x6e3222, 0xe0c08a, 0x7d5a3c, 0x4e5a52, 0x9aa38a];
+    const inward = dir > 0 ? -1 : 1;                                             // (the wall faces into the box)
+    for (let y = y0; y < y1 - 0.05; y += cell) {
+      const t = (y - y0) / (y1 - y0);
+      for (let v = va; v < vb - 0.05; v += cell) {
+        // strata: the colour follows height with a wavering band, the depth a canyon profile deeper toward the middle
+        const wob = Math.sin(v * 0.9 + t * 7) * 0.08 + (R() - 0.5) * 0.06, k = U.clamp(Math.floor((t + wob) * PAL.length), 0, PAL.length - 1);
+        const mid = 1 - Math.abs((v - (va + vb) / 2) / ((vb - va) / 2)), dep = 0.04 + 0.32 * Math.pow(Math.max(0, Math.sin(t * 9 + v * 0.7) * 0.5 + 0.5), 2) * (0.35 + 0.65 * mid) + R() * 0.05;
+        const w = Math.min(cell, vb - v), h = Math.min(cell, y1 - y), uu = ue + inward * 0.01;
+        const q = (dv, dy, dd) => { const f = T.frameAt(uu + inward * dd); return [f.x - f.tz * (v + dv), y + dy, f.z + f.tx * (v + dv)]; };
+        g.mat(PAL[k], K.TILE, -0.06);
+        // front face and the four sides of the block (toward the platform)
+        const a0 = q(0, 0, dep), a1 = q(w, 0, dep), a2 = q(w, h, dep), a3 = q(0, h, dep);
+        if (dir < 0) g.quad(a1, a0, a3, a2, [0, 0, 1, 0, 1, 1, 0, 1]); else g.quad(a0, a1, a2, a3, [0, 0, 1, 0, 1, 1, 0, 1]);
+        const b0 = q(0, 0, 0), b1 = q(w, 0, 0), b2 = q(w, h, 0), b3 = q(0, h, 0);
+        const side = (p0, p1, p2, p3) => { g.quad(p0, p1, p2, p3, [0, 0, 1, 0, 1, 1, 0, 1]); g.quad(p3, p2, p1, p0, [0, 0, 1, 0, 1, 1, 0, 1]); };
+        side(b3, a3, a2, b2); side(b0, b1, a1, a0); side(b0, a0, a3, b3); side(b1, b2, a2, a1);
+      }
+      yield;
+    }
+    void P;
+  }
   function* subwayLevel(T, L) {
     const { S, boxU0, boxU1, frames, frameAt, M, pu0, pu1, walk, W2, tv } = T;
     const top = L.k === 0, z = L.zone, g = z.m.sk, plats = L.plats, edgeV = T.levels.length > 1 ? L.edgeV : T.edgeV;
@@ -828,7 +890,8 @@ const StationTypes = (() => {
     // ceiling (with the escalator wells), its slab edge faces, and (without a concourse above) the roof slab
     slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1), (u) => edgeV(u, 1), ceilY, ceilHoles, mCeil, false);
     yield;
-    for (const h of ceilHoles) { inclinedWell(T, g, h, M(S.wall), M(S.ceil), top ? undefined : { ceilY, yTop: T.levels[L.k - 1].yT - 0.3, zone: z }); yield; }
+    // (the wells take the station's relief finish where research gives one: William Mitchell's cast concrete at 16th/24th)
+    for (const h of ceilHoles) { inclinedWell(T, g, h, M(T.H.wellWall || S.wall), M(S.ceil), top ? undefined : { ceilY, yTop: T.levels[L.k - 1].yT - 0.3, zone: z }); yield; }
     if (top && T.mode === 'ends') slab(T, g, boxU0, boxU1, (u) => edgeV(u, -1) - wallT, (u) => edgeV(u, 1) + wallT, ceilY + 0.8, T.ceilHoles, M([0x77746e, K.CONCRETE]), true);
     // end walls with tunnel openings around each track (the tunnels themselves are INFRA's)
     for (const [ue, dir] of [[boxU0, -1], [boxU1, 1]]) {
@@ -837,9 +900,12 @@ const StationTypes = (() => {
       const P = (v, y) => [f.x - f.tz * v, y, f.z + f.tx * v];
       g.mat(S.wallUp[0], K.CONCRETE, 0);
       const band = (va, vb, ya, yb) => { if (vb - va < 0.01 || yb - ya < 0.01) return; const q = [P(va, ya), P(vb, ya), P(vb, yb), P(va, yb)];
-        if (dir > 0) g.quad(q[1], q[0], q[3], q[2], [vb, ya, va, ya, va, yb, vb, yb]); else g.quad(q[0], q[1], q[2], q[3], [va, ya, vb, ya, vb, yb, va, yb]); };
+        if (dir < 0) g.quad(q[1], q[0], q[3], q[2], [vb, ya, va, ya, va, yb, vb, yb]); else g.quad(q[0], q[1], q[2], q[3], [va, ya, vb, ya, vb, yb, va, yb]); };   // (into the box)
       let v = vl; for (const [a, b] of holes) { band(v, a, yTB, ceilY); band(a, b, yRail + 4.3, ceilY); v = b; } band(v, vr, yTB, ceilY);
       const pl = P(vl, 0), pr = P(vr, 0); addWall(walk, W2(pl[0], pl[2]), W2(pr[0], pr[2]), yTB, ceilY);
+      // Embarcadero: Stephen De Staebler's 'Wall Canyon', a coloured ceramic relief filling the south-west end wall
+      // from the platform up (research): canyon strata of glazed blocks standing out from the wall between the tunnels
+      if (top && T.H.canyon && ue === canyonEnd(T)) yield* wallCanyon(T, g, ue, dir, holes, yT, ceilY, P);
     }
     for (let i = 0; i + 1 < fr.length; i++) for (const side of [-1, 1]) {
       const f0 = fr[i], f1 = fr[i + 1]; const v0 = edgeV(f0.u, side), v1 = edgeV(f1.u, side);
@@ -1102,7 +1168,7 @@ const StationTypes = (() => {
     const back = (u) => p.sideV > 0 ? p.eR(u) : p.eL(u), island = p.kind === 'island';
     const colV = (u) => island ? (p.eL(u) + p.eR(u)) / 2 : back(u) - (p.sideV > 0 ? 1 : -1) * Math.max(0.9, PS.size);
     // (the cover's soffit, as trenchBuild draws it)
-    const soff = (u) => Math.max(T.yRail + 4.9, Math.max(Terrain.hBase(...T.WUV(u, tr.vl(u) - 3)), Terrain.hBase(...T.WUV(u, tr.vr(u) + 3))) - 0.08 - 1.2);
+    const soff = (u) => Math.max(T.yRail + 4.3, Math.max(Terrain.hBase(...T.WUV(u, tr.vl(u) - 3)), Terrain.hBase(...T.WUV(u, tr.vr(u) + 3))) - 0.08 - 1.2);
     const spacing = Math.max(8, PS.spacing || 10), mStrut = M([0xcfcac0, K.CONCRETE, 0.2], { sky: 0.3 });
     for (let u = p.u0 + spacing / 2; u < p.u1 - 2; u += spacing) {
       if (!lidAt(u) || inGroups(p, u, 1.0)) continue;
@@ -1141,13 +1207,15 @@ const StationTypes = (() => {
 
   function* trenchBuild(T, fr, mBal) {
     const { zones, M, frames, WUV, L2 } = T, tr = T.trench, z = zones[0], g = z.m.sk, { vl, vr, yTB } = tr;
-    const mRW = M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 }), mLid = M([0x9c978e, K.CONCRETE, 0.1], { sky: 1 }), mSoff = M([0x8f8a82, K.BOARDFORM, 0.1], { sky: 0.4 });
+    // (the retaining walls take the station's own wall finish where research gives one: Balboa Park's precast panels)
+    const mRW = T.H.wall ? Object.assign(M(T.H.wall), { sky: 0.8 }) : M([0xa29d93, K.BOARDFORM, 0.15], { sky: 0.8 }), mLid = M([0x9c978e, K.CONCRETE, 0.1], { sky: 1 }), mSoff = M([0x8f8a82, K.BOARDFORM, 0.1], { sky: 0.4 });
     const lidAt = (u) => tr.lids.find(L => L.kind !== 'bridge' && u >= L.u0 - 1e-3 && u <= L.u1 + 1e-3);
     const base = (u, v) => { const [x, zz] = WUV(u, v); return Terrain.hBase(x, zz); };
-    // the ground over a cover (outside the walls: MetroGround may have carved the middle), its soffit >= 4.9 m over the
-    // rails (a train and its clearance) and <= 1.2 m under the ground
-    const lidTop = (u) => Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08;
-    const soffit = (u) => Math.max(T.yRail + 4.9, lidTop(u) - 1.2);
+    // the ground over a cover (outside the walls: MetroGround may have carved the middle), its soffit >= 4.3 m over the
+    // rails (a train and its clearance) and <= 1.2 m under the ground; a shallow cover (Milpitas: 4.7 m of ground over
+    // the rail) is a thin slab, never a soffit above its own top
+    const soffit = (u) => Math.max(T.yRail + 4.3, Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08 - 1.2);
+    const lidTop = (u) => Math.max(Math.max(base(u, vl(u) - 3), base(u, vr(u) + 3)) - 0.08, soffit(u) + 0.3);
     // the floor, wall to wall, under the trackbeds and platforms
     g.sweep(fr, (i, f) => [[vl(f.u), yTB - 0.03, null, mBal], [vr(f.u), yTB - 0.03]]);
     // retaining walls 0.5 m thick with a coping 1.1 m over the ground outside (under a lid: up to its soffit)
@@ -1196,6 +1264,17 @@ const StationTypes = (() => {
       const [c0, c1] = dir > 0 ? [a, b] : [b, a], [s0, s1] = dir > 0 ? [m0, m1] : [m1, m0];
       g.quad(P(u2, c0, top), P(u2, c1, top), P(u, c1, top), P(u, c0, top), [c0, 0, c1, 0, c1, 0.6, c0, 0.6]);
       g.set(mSoff); g.quad(P(u, s0, yM), P(u, s1, yM), P(u2, s1, yM), P(u2, s0, yM), [s0, 0, s1, 0, s1, 0.6, s0, 0.6]);
+    }
+    // Balboa Park: "a single overhead conduit over the platform edge carries power, lighting, sign and communications
+    // lines" (research): a steel trunk along each platform edge on hangers, lamps under it
+    if (T.H.conduit) for (const p of T.plats) for (const side of p.kind === 'island' ? [-1, 1] : [p.sideV > 0 ? -1 : 1]) {
+      const fr2 = frames(p.u0 + 2, p.u1 - 2), ev = (u) => (side < 0 ? p.eL(u) + 0.9 : p.eR(u) - 0.9), yC = p.y + 3.1, mC = M([0x6f7275, K.STEEL, 0.3], { sky: 0.6 });
+      g.sweep(fr2, (i, f) => { const v = ev(f.u); return [[v - 0.16, yC - 0.2, null, mC], [v - 0.16, yC + 0.1, null, mC], [v + 0.16, yC + 0.1, null, mC], [v + 0.16, yC - 0.2, null, mC], [v - 0.16, yC - 0.2]]; });
+      for (let u = p.u0 + 4; u < p.u1 - 2; u += 6) { const [x, zz] = L2(u, ev(u)); g.set(mC); g.push().at(x, yC + 0.1, zz, 0); g.cbox(0, 0, 0, 0.06, Math.max(0.2, (tr.lids.some(L => L.kind !== 'bridge' && u >= L.u0 && u <= L.u1) ? 1.2 : 0.6)), 0.06); g.pop(); }
+      z.m.glow.mat(T.S.light); z.m.glow.sweep(fr2, (i, f) => { const v = ev(f.u); return [[v + 0.1, yC - 0.21], [v - 0.1, yC - 0.21]]; });
+      const a = T.frameAt(p.u0 + 4), b = T.frameAt(p.u1 - 4), va = ev(p.u0 + 4), vb = ev(p.u1 - 4);
+      z.lights.add({ a: [a.x - a.tz * va, yC - 0.3, a.z + a.tx * va], b: [b.x - b.tz * vb, yC - 0.3, b.z + b.tx * vb], color: T.S.light.map(c => c * 0.8), range: 7, radius: 0.08, dir: [0, -1, 0], focus: 1 });
+      yield;
     }
     // the open stretches: Under cuts over the walls' middle lines (the ground and Towns' ground above the floor go; the
     // raster edge is ragged by ~1 m either way: the coping hides a slot outside, a sliver inside is ground over the wall)
@@ -1256,7 +1335,7 @@ const StationTypes = (() => {
     const zC = new Zone('conc', { under: T.under, amb: T.under ? S.amb : [0.03, 0.03, 0.03] }); zones.push(zC); T.zC = zC;
     // escalator + stair groups on each platform (in its level's zone; a stacked station's lower banks climb to the
     // platform over them)
-    T.st._phase = 'circ:banks';
+    T.st._phase = 'circ:banks'; const xferDone = new Set();
     for (const p of plats) for (const g of p.groups || []) {
       const zP = p.zone || zones[0];
       const B = zP.d; const up = !g.down;
@@ -1293,8 +1372,10 @@ const StationTypes = (() => {
       { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, 'glass'); }
       for (const vv of [hv0, hv1]) { const a = T.WUV(Math.min(uOpen, uClosed), vv), b = T.WUV(Math.max(uOpen, uClosed), vv); addWall(T.walk, a, b, yUp - 0.5, yUp + 2.5); }
       addWall(T.walk, T.WUV(uClosed, hv0), T.WUV(uClosed, hv1), yUp - 0.5, yUp + 2.5);
-      // direction signs over the group's foot
+      // direction signs over the group's foot (and, where the station has transfers, the transfer panel beyond it)
       zP.signs.push({ u: g.uFoot - (up ? g.dir : 0) * 1.5, v: g.vc, y: p.y + 2.9, yaw: T.yawAt(g.uFoot) + (g.dir > 0 ? Math.PI / 2 + Math.PI / 2 : 0), w: 2.4, h: 0.6, region: 'exit', both: false, T });
+      if ((T.st.data.transfers || []).length && !xferDone.has(p)) { xferDone.add(p);
+        zP.signs.push({ u: g.uFoot - (up ? g.dir : 1) * 6, v: g.vc, y: p.y + 2.75, yaw: T.yawAt(g.uFoot) + Math.PI / 2, w: 3.4, h: 0.64, region: 'info', both: true, T }); }
       T.occupied.push({ p, u0: u0 - 1.5, u1: u1 + 1.5, v0: g.vc - g.gw / 2 - 0.6, v1: g.vc + g.gw / 2 + 0.6 });
       yield;
     }
@@ -1338,7 +1419,7 @@ const StationTypes = (() => {
     g.sweep(fr, (i, f) => { const v = vr(f.u); return [[v, yCF, yCF, mL], [v, yCF + 0.15, yCF + 0.15, mW], [v, yCC, yCC]]; });
     for (const [ue, dir] of [[cu0, -1], [cu1, 1]]) {
       const f = frameAt(ue); const a = vl(ue), b = vr(ue); const P = (v, y) => [f.x - f.tz * v, y, f.z + f.tx * v]; g.set(mW);
-      if (dir > 0) g.quad(P(b, yCF), P(a, yCF), P(a, yCC), P(b, yCC), [b, yCF, a, yCF, a, yCC, b, yCC]); else g.quad(P(a, yCF), P(b, yCF), P(b, yCC), P(a, yCC), [a, yCF, b, yCF, b, yCC, a, yCC]);
+      if (dir < 0) g.quad(P(b, yCF), P(a, yCF), P(a, yCC), P(b, yCC), [b, yCF, a, yCF, a, yCC, b, yCC]); else g.quad(P(a, yCF), P(b, yCF), P(b, yCC), P(a, yCC), [a, yCF, b, yCF, b, yCC, a, yCC]);   // (into the concourse)
       addWall(walk, W2(...[P(a, 0)[0], P(a, 0)[2]]), W2(...[P(b, 0)[0], P(b, 0)[2]]), yCF - 1, yCC);
     }
     for (let i = 0; i + 1 < fr.length; i++) {
@@ -1352,6 +1433,9 @@ const StationTypes = (() => {
     // fare gate arrays between the paid middle (over the platform wells) and the unpaid ends, agent booths, TVMs
     const wells = T.ceilHoles.map(h => [h.u0, h.u1]);
     const paid0 = wells.length ? Math.min(...wells.map(w => w[0])) - 6 : uc - 20, paid1 = wells.length ? Math.max(...wells.map(w => w[1])) + 6 : uc + 20;
+    // (the transfer panel, hung inside each gate line where the station has transfers)
+    if ((T.st.data.transfers || []).length) for (const [ug, face] of [[Math.max(cu0 + 6, paid0), -1], [Math.min(cu1 - 6, paid1), 1]])
+      zC.signs.push({ u: ug - face * 4, v: (vl(ug) + vr(ug)) / 2, y: yCF + 2.7, yaw: T.yawAt(ug) + Math.PI / 2, w: 3.4, h: 0.64, region: 'info', both: true, T });
     for (const [ug, face] of [[Math.max(cu0 + 6, paid0), -1], [Math.min(cu1 - 6, paid1), 1]]) {
       const a = vl(ug), b = vr(ug); const width = b - a; const nG = U.clamp(Math.floor((width - 6) / 0.86), 4, 12);
       const arrW = nG * 0.86 + 0.6; const v0 = (a + b) / 2 - arrW / 2;
@@ -1624,7 +1708,8 @@ const StationTypes = (() => {
   }
   function dedupeEntrances(list) {
     const out = [];
-    for (const e of list) { if (!isFinite(e.x) || !isFinite(e.z)) continue; const dup = out.find(o => Math.hypot(o.x - e.x, o.z - e.z) < 14); if (dup) { if (e.src === 'gtfs' && dup.src !== 'gtfs') Object.assign(dup, e); continue; } out.push(Object.assign({}, e)); }
+    // (20 m: the data carries some corners twice, e.g. Montgomery's NW corner 16.6 m apart; opposite corners are wider)
+    for (const e of list) { if (!isFinite(e.x) || !isFinite(e.z)) continue; const dup = out.find(o => Math.hypot(o.x - e.x, o.z - e.z) < 20); if (dup) { if (e.src === 'gtfs' && dup.src !== 'gtfs') Object.assign(dup, e); continue; } out.push(Object.assign({}, e)); }
     return out;
   }
   // station-local (x, z) -> (u, v) by projection onto the spine
@@ -2013,13 +2098,16 @@ const StationTypes = (() => {
     const pos = [], nor = [], uv = [], idx = []; let n = 0;
     for (const s of list) {
       const [x, z] = s.T.L2(s.u, s.v); const r = rect[s.region] || rect.nameS;
-      const faces = s.both ? [s.yaw, s.yaw + Math.PI] : [s.yaw];
+      // (a one-sided sign gets a plain navy back: seen from behind it was an invisible plane)
+      const faces = s.both ? [s.yaw, s.yaw + Math.PI] : [s.yaw, s.yaw + Math.PI];
       for (const yaw of faces) {
+        const back = !s.both && yaw !== s.yaw;
         const c = Math.cos(yaw), sn = Math.sin(yaw); const ax = c, az = -sn; const nx = sn, nz = c;
-        const hw = s.w / 2, hh = s.h / 2; const off = s.both ? 0.02 : 0.004;
+        const hw = s.w / 2, hh = s.h / 2; const off = s.both ? 0.02 : back ? -0.002 : 0.004;
         const cx = x + nx * off, cz = z + nz * off;
         const P = [[cx - ax * hw, s.y - hh, cz - az * hw], [cx + ax * hw, s.y - hh, cz + az * hw], [cx + ax * hw, s.y + hh, cz + az * hw], [cx - ax * hw, s.y + hh, cz - az * hw]];
-        const UVs = [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
+        const q = rect.exit, nv = [q[0] + 0.001, q[3] - 0.004, q[0] + 0.004, q[3] - 0.001];            // (a navy corner of the atlas)
+        const UVs = back ? [[nv[0], nv[1]], [nv[2], nv[1]], [nv[2], nv[3]], [nv[0], nv[3]]] : [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
         for (let k = 0; k < 4; k++) { pos.push(...P[k]); nor.push(nx, 0, nz); uv.push(...UVs[k]); }
         idx.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4;
       }
