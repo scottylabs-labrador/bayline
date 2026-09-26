@@ -455,7 +455,7 @@ const MetroUI = (() => {
     const flying = typeof Flight !== 'undefined' && Flight.active;
     el.dmi.hidden = !dm || flying;
     el.ride.hidden = !(metro && !dm && (Player.mode === 'onboard' || Player.mode === 'cab')) || flying;
-    el.strip.hidden = !(metro && (Player.mode === 'onboard' || Player.mode === 'cab' || dm)) || flying || document.body.classList.contains('photo');
+    el.strip.hidden = !(metro && (dm || !['walk', 'fly', 'orbit'].includes(Player.mode))) || flying || document.body.classList.contains('photo');
     document.body.classList.toggle('mdriving', !!dm);
     if (dm) renderDmi(dm, tr); else if (!el.ride.hidden) renderRide(tr);
     if (!el.strip.hidden) drawStrip(tr);
@@ -529,7 +529,7 @@ const MetroUI = (() => {
   function whereText(p) {
     if (!ready()) return null;
     const tr = typeof Player !== 'undefined' ? Player.focusTrain() : null;
-    if (tr && tr.metro && (Player.onboard() || Player.inCab() || tr.driven)) { const S = tr.leg.stops;
+    if (tr && tr.metro && !['walk', 'fly', 'orbit'].includes(Player.mode)) { const S = tr.leg.stops;
       if (tr.phase !== 'run' && tr.stopK >= 0) return MetroSim.stName(S[tr.stopK].st) + ' · Bayline Metro';
       const a = S[Math.max(0, tr.nextK - 1)], b = S[tr.nextK]; return b ? `Between ${MetroSim.stName(a.st)} and ${MetroSim.stName(b.st)}` : null; }
     const ms = MetroSim.nearestStation(p, 450); if (!ms) return null;
@@ -537,9 +537,14 @@ const MetroUI = (() => {
     if (pen && Math.hypot(pen.x - p.x, pen.z - p.z) < Math.hypot(ms.x - p.x, ms.z - p.z)) return null;
     return ms.name + ' · Bayline Metro';
   }
+  // is the camera at a metro station rather than a Peninsula one (the Peninsula line strip steps aside)
+  let atT = 0, atV = false;
+  function atMetro(p) { const now = performance.now(); if (now - atT < 500) return atV; atT = now;
+    if (!ready()) return (atV = false); const ms = MetroSim.nearestStation(p, 700); if (!ms) return (atV = false);
+    const pen = typeof Stations !== 'undefined' ? Stations.nearest(p, 700) : null; return (atV = !pen || Math.hypot(ms.x - p.x, ms.z - p.z) < Math.hypot(pen.x - p.x, pen.z - p.z)); }
   function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK]; return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)} · ${tr.cars} cars · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
 
-  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
+  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
   return api;
 })();

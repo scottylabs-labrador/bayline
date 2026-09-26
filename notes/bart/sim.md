@@ -90,10 +90,30 @@ Working on the real MetroNet v0 + timetable (merged from `bart`), with placehold
 
 ## QA results
 
-(first runs 2026-09-26 01:30, placeholder consists, MetroNet v0)
-- ATO WOAK→EMBR through the Tube: no ATC interventions, on time; programmed stop fixed to ±0.1 m (was 2.6 m over).
-- MANUAL driver WOAK→EMBR→MONT→POWL: stops 0.72 / 0.76 m from the berth, on time; 3 ATC brakes before the driver
-  used the "next code" target (fixed in the script: it now brakes to `vAllow`). Re-run pending.
+2026-09-26 ~02:40, on the M1 integration build (`bart` merged: infra guideway + Under, stations for all 50, world
+north strip; placeholder consists until MetroKit is on `bart`):
+
+- **Metro ride** (`qa_metro_ride.js`, Balboa Park board → Daly City): clicked a train on the arrivals board → on the
+  platform → walked to an open door, E → aboard the 10-car Red Line to Millbrae (car 6) → rode → at Daly City the doors
+  opened on the left → E at the door → on the stations workstream's platform floor (y 88.04). Announcements heard:
+  "Ten car Millbrae train now approaching platform 1." · "This is a Red Line train to Millbrae. The next station is
+  Daly City." · "Now arriving at Daly City. Doors will open on the left." · "The next Dublin / Pleasanton train, an eight
+  car Blue Line train, arrives in two minutes on platform 2." No page errors.
+- **Metro ATO** (WOAK → EMBR, through the Tube): no ATC intervention, on time, programmed stop on the berth.
+- **Metro manual** (`qa_metro_drive.js`, earlier build): Embarcadero 0.54 m from the berth ("Good stop", "On time"),
+  Montgomery 0.76 m; one ATC brake before the driver used the "next code" target (script fixed). M1 re-run: see below.
+- **Metro reckless** (`qa_metro_atc.js`): ATC WARN → BRAKE → OK cycles at every code (50/55/60/70 mph), never a stop
+  code passed (0 penalties); traction now cut while the ATC brake is applied (was 267 samples before the fix).
+- **Kinematics** (every leg of a weekday, 1 s steps): 0 position jumps, 0 samples over the effective limit, mean
+  7.8 s / worst 73 s from the published times, no early departures.
+- **Peninsula regression, metro OFF** (`qa_all.sh` on this build): all views render (pa_orbit 26.3 ms, pa_platform
+  32.7, sf_golden 32.5, sfo_flyover 35.5 with other agents on the GPU); ride flow boards; `qa_ptc.js`: WARN →
+  ENFORCE at 83.9 mph → stop → release; `qa_signal.js`: stopped before the red (0 passed); `qa_drive.js`: drives
+  (73 mph max, guidance, doors) — and with metro ON the same drive made a perfect, on-time Sunnyvale stop.
+  `node tools/qa_flight.js`: every type takes off, cruises and autolands (unchanged files).
+- With metro OFF every metro path is guarded (`MetroSim.enabled`): no per-frame work, no DOM, no network; the shared
+  files behave as before (reviewed line by line: Player focus/drive/heading/walk, UI panels, Game missions, Sound kinds,
+  Net modes).
 
 ## Server change needed (lead deploys)
 
