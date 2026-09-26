@@ -857,7 +857,35 @@ const MetroKit = (() => {
       #endif
     }
     // a far pane: the outside through it (tinted again) and a faint reflection of the lit cabin
-    vec3 mkFarPane(vec3 rd) { return mkOut(rd) * mkTint + mkLitK * vec3(0.05, 0.052, 0.055); }
+    // the cabin as a pane at h (normal n, facing in) reflects it: the shell only (floor, walls with their window band
+    // showing the outside, the ceiling with its lit bands), no furniture
+    vec3 mkShellRefl(vec3 ro, vec3 rd) {
+      float hw = mkHalfW, fy = mkFloorY, tH = 1e9, id = 1.0; vec3 nrm = vec3(0.0, 1.0, 0.0);
+      if (rd.y < -1e-5) { tH = (fy - ro.y) / rd.y; id = 0.0; }
+      if (abs(rd.z) > 1e-5) { float t = (sign(rd.z) * hw - ro.z) / rd.z; if (t > 0.0 && t < tH) { tH = t; id = 1.0; nrm = vec3(0.0, 0.0, -sign(rd.z)); } }
+      for (int k = 0; k < 8; k++) { vec4 P = mkSec[k]; if (P.w < 0.0) break;
+        float den = P.x * rd.z + P.y * rd.y; if (den < 1e-5) continue;
+        float t = (P.z - P.x * ro.z - P.y * ro.y) / den; if (t > 0.0 && t < tH) { tH = t; id = 2.0; nrm = -vec3(0.0, P.y, P.x); } }
+      if (abs(rd.x) > 1e-5) { float t = ((rd.x > 0.0 ? mkCab.y : mkCab.x) - ro.x) / rd.x; if (t > 0.0 && t < tH) { tH = t; id = 9.0; nrm = vec3(-sign(rd.x), 0.0, 0.0); } }
+      vec3 h = ro + rd * tH;
+      if (id == 2.0) { float az = abs(h.z); if (az > mkBand.x && az < mkBand.y) return vec3(1.0, 0.99, 0.95) * mkLitK * 3.2; return mkShade(h, nrm, MK_CEIL); }
+      if (id == 1.0) { float y0 = mkCnt.x > 0.5 ? mkWin[0].z : fy + 0.85, y1 = mkCnt.x > 0.5 ? mkWin[0].w : fy + 1.85;
+        if (h.y > y0 && h.y < y1) return mkOut(rd) * mkTint; return mkShade(h, nrm, MK_WALL); }
+      return mkShade(h, nrm, id == 0.0 ? MK_FLOOR * 1.3 : MK_WALL2);
+    }
+    // a far pane at h: the outside through it (tinted again) and the lit cabin reflected in it (~14 %: it is what
+    // lights these panes at night, when the outside is dark)
+    vec3 mkFarPane(vec3 h, vec3 rd) {
+      vec3 o = mkOut(rd) * mkTint;
+      #ifdef MK_BAKE
+        float far = mkHitFar;
+      #endif
+      vec3 rr = vec3(rd.x, rd.y, -rd.z), r = mkShellRefl(h + rr * 0.02, rr);
+      #ifdef MK_BAKE
+        mkHitFar = far > 0.5 ? far : mkHitFar;
+      #endif
+      return o + r * 0.14;
+    }
     vec3 mkCloth(float h) {
       vec3 c = vec3(0.016, 0.017, 0.02);
       c = mix(c, vec3(0.02, 0.03, 0.08), step(0.3, h)); c = mix(c, vec3(0.1, 0.1, 0.1), step(0.48, h));
@@ -899,7 +927,7 @@ const MetroKit = (() => {
       for (int k = 0; k < 4; k++) { if (float(k) >= mkCnt.y) break; vec4 D = mkDoor[k]; float ax = abs(h.x - D.x);
         if (ax < D.y && h.y < D.z) {
           if (ax < 0.012) return mkShade(h, n, vec3(0.02));
-          if (ax > mkDoorWin.x && ax < mkDoorWin.y && h.y > mkDoorWin.z && h.y < mkDoorWin.w) return mkFarPane(rd);
+          if (ax > mkDoorWin.x && ax < mkDoorWin.y && h.y > mkDoorWin.z && h.y < mkDoorWin.w) return mkFarPane(h, rd);
           return mkShade(h, n, MK_DOORI * (h.y < fy + 0.12 ? 0.5 : 1.0));
         }
         if (ax < D.y + 0.035 && h.y < D.z + 0.035) return mkShade(h, n, vec3(0.03));
@@ -907,13 +935,13 @@ const MetroKit = (() => {
       if (mkCnt.x > 0.5) {
         for (int k = 0; k < 16; k++) { if (float(k) >= mkCnt.x) break; vec4 W = mkWin[k];
           float d = mkRB(h.xy - vec2(0.5 * (W.x + W.y), 0.5 * (W.z + W.w)), vec2(0.5 * (W.y - W.x), 0.5 * (W.w - W.z)), 0.09);
-          if (d < 0.0) return mkFarPane(rd);
+          if (d < 0.0) return mkFarPane(h, rd);
           if (d < 0.014) return mkShade(h, n, vec3(0.025));                  // gasket
           if (d < 0.065) return mkShade(h, n, MK_WALL2 * 0.82);             // the window reveal
         }
       } else {
         // no window list: a generic band of windows
-        if (h.y > fy + 0.85 && h.y < fy + 1.85 && fract(h.x / 1.4 + 0.37) > 0.1) return mkFarPane(rd);
+        if (h.y > fy + 0.85 && h.y < fy + 1.85 && fract(h.x / 1.4 + 0.37) > 0.1) return mkFarPane(h, rd);
       }
       for (int k = 0; k < 12; k++) { if (float(k) >= mkCnt.w) break; vec4 A = mkPan[k]; if (A.z * side < 0.0) continue;
         vec2 b = A.w < 1.5 ? vec2(0.23, 0.345) : vec2(0.27, 0.155), q = h.xy - A.xy;
@@ -1051,7 +1079,7 @@ const MetroKit = (() => {
         if (mkCab.z > 0.5) return mkShade(hp, nrm, vec3(0.5));
         float nb = hp.x > 0.0 ? mkEnds.y : mkEnds.x, az = abs(hp.z);
         if (az < 0.38 && hp.y < fy + 1.95) {
-          if (az < 0.24 && hp.y > fy + 0.95 && hp.y < fy + 1.8) return nb > 0.5 ? mkLitK * vec3(0.2, 0.2, 0.19) * mkTint * 2.0 + mkFarPane(rd) * 0.1 : (nb < -0.5 ? vec3(0.004) : mkFarPane(rd));
+          if (az < 0.24 && hp.y > fy + 0.95 && hp.y < fy + 1.8) return nb > 0.5 ? mkLitK * vec3(0.2, 0.2, 0.19) * mkTint * 2.0 : (nb < -0.5 ? vec3(0.004) : mkOut(rd) * mkTint);
           return mkShade(hp, nrm, az > 0.35 ? vec3(0.03) : vec3(0.45));
         }
         // the end walls are lime green (the cab bulkhead of a D car grey), the next-stop sign above the door dark
