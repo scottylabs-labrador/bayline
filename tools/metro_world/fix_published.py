@@ -21,6 +21,7 @@ import importlib.util   # noqa: E402
 _spec = importlib.util.spec_from_file_location('sr', os.path.join(ROOT, 'tools', 'sr_tiles.py')); SR = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(SR)
 
 OUT = os.path.join(C.WORK, 'fix_dropouts', 'tiles', 'img')
+REF = os.path.getmtime(os.path.join(C.WORK, 'coverage_pre_bart.json'))      # files older than this are the published ones
 
 
 def outp(L, x, y):
@@ -47,8 +48,14 @@ def clean_raw2048(tx, ty):
     fetch.naip(bb, 2048, 'rgb', timeout=45)
 
 
+def sha(p):
+    import hashlib
+    return hashlib.sha256(open(p, 'rb').read()).hexdigest()
+
+
 def main():
     import torch
+    mode = json.load(open(os.path.join(C.WORK, 'img_mode_pre_bart.json')))
     bad = [tuple(t) for t in json.load(open(os.path.join(C.WORK, 'published_dropouts.json')))]
     bad = [(int(L), *map(int, f[:-4].split('_'))) for (L, f) in bad]
     device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
@@ -65,6 +72,16 @@ def main():
                 SR.bake_L7(model, dtype, device, tx, ty, want, 84, cache, force=True)
             finally:
                 C.path = tmp
+        elif L == 8 and all(os.path.exists(C.path('img', 9, x * 2 + dx, y * 2 + dy, 'jpg')) and os.path.getmtime(C.path('img', 9, x * 2 + dx, y * 2 + dy, 'jpg')) < REF
+                            for dy in (0, 1) for dx in (0, 1)):
+            # (made from its four L9 children, like tools/sr_l8.py: the fixed ones where they were bad)
+            can = np.zeros((2048, 2048, 3), np.float32)
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    kx, ky = x * 2 + dx, y * 2 + dy
+                    src = outp(9, kx, ky) if os.path.exists(outp(9, kx, ky)) else C.path('img', 9, kx, ky, 'jpg')
+                    can[dy * 1024:(dy + 1) * 1024, dx * 1024:(dx + 1) * 1024] = np.asarray(Image.open(src).convert('RGB')).astype(np.float32) / 255.0
+            save(outp(8, x, y), cv2.resize(can, (1024, 1024), interpolation=cv2.INTER_AREA), 86)
         elif L == 8:
             tx, ty = x >> 1, y >> 1; clean_raw2048(tx, ty)
             M = 96; can = SR.padded_input(tx, ty, M, cache)
@@ -81,7 +98,7 @@ def main():
             q = outp(7, x, y); C.ensure_dir(q); I._save_jpg(q, I._down(d['rgb'], C.IMG))
         else:
             kids = C.children(L, x, y)
-            if all(os.path.exists(C.path('img', *c, 'jpg')) for c in kids):
+            if mode.get(f'{L}/{x}_{y}', 'mosaic') == 'mosaic' and all(os.path.exists(C.path('img', *c, 'jpg')) for c in kids):
                 big = np.zeros((C.IMG * 2, C.IMG * 2, 3), np.float32)
                 for (cl, cx, cy) in kids:
                     src = outp(cl, cx, cy) if os.path.exists(outp(cl, cx, cy)) else C.path('img', cl, cx, cy, 'jpg')
@@ -94,6 +111,17 @@ def main():
         done[f'{L}/{x}_{y}'] = bool(os.path.exists(p) and ok(p))
         print(L, x, y, 'fixed' if done[f'{L}/{x}_{y}'] else 'STILL BAD', flush=True)
     json.dump(done, open(os.path.join(C.WORK, 'fix_dropouts', 'published_fixed.json'), 'w'), indent=1)
+    man = []
+    for k, good in sorted(done.items()):
+        L, xy = k.split('/'); x, y = map(int, xy.split('_'))
+        new = outp(int(L), x, y); old = C.path('img', int(L), x, y, 'jpg')
+        if good and os.path.exists(new):
+            man.append({'path': f'tiles/img/{L}/{x}_{y}.jpg', 'old_sha256': sha(old), 'new_sha256': sha(new), 'bytes': os.path.getsize(new),
+                        'px': Image.open(new).size[0], 'old_px': Image.open(old).size[0]})
+    json.dump({'what': 'replacements for published imagery tiles with NAIP band-dropout squares (magenta / yellow / cyan)',
+               'staged_root': os.path.relpath(os.path.join(C.WORK, 'fix_dropouts'), C.ROOT), 'files': man},
+              open(os.path.join(C.WORK, 'fix_dropouts', 'manifest.json'), 'w'), indent=1)
+    print('manifest:', len(man), 'files')
     # before / after sheet
     items = sorted(done)[:16]
     sheet = Image.new('RGB', (len(items) * 256, 512))
