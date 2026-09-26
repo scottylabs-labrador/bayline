@@ -119,7 +119,7 @@ const MetroGuide = (() => {
         gb.v(o[0] + r[0] * A[0] + u[0] * A[1], o[1] + r[1] * A[0] + u[1] * A[1], o[2] + r[2] * A[0] + u[2] * A[1], nx, ny, nz, C);
         gb.v(o[0] + r[0] * B[0] + u[0] * B[1], o[1] + r[1] * B[0] + u[1] * B[1], o[2] + r[2] * B[0] + u[2] * B[1], nx, ny, nz, C);
       }
-      if (prev >= 0) for (let k = 0; k < np - 1; k++) { const a0 = prev + 2 * k, a1 = base + 2 * k; gb.i.push(a0, a0 + 1, a1, a0 + 1, a1 + 1, a1); }
+      if (prev >= 0) for (let k = 0; k < np - 1; k++) { const a0 = prev + 2 * k, a1 = base + 2 * k; gb.i6(a0, a0 + 1, a1, a0 + 1, a1 + 1, a1); }
       prev = base;
     }
     gb.gnd = -1e4;
@@ -376,6 +376,14 @@ const MetroGuide = (() => {
         for (const [s0, s1, deep] of cutRanges(ctx, a, b)) { if (deep) buildTrench(ctx, s0, s1); else buildBed(ctx, s0, s1, run.type === 'embankment' ? 'embankment' : 'grade'); }
       }
     }
+  }
+  // simple rails for the body layer (kinds 11 / 12: the shader shows them only beyond the rail switch, where the detail
+  // layer's rails give way): three faces per rail, rows every ~10 m; lats = the tracks' laterals in R's frame (a
+  // paired tunnel cell carries both)
+  const MIDRAIL = [[-0.036, -0.16], [-0.036, 0], [0.036, 0], [0.036, -0.16]];
+  function midRails(ctx, gb, R, a, b, lats = [0]) {
+    if (b - a < 1) return; const ss = ctx.sampleS(R, a, b, 10, 3);
+    for (const L of lats) for (const side of [-1, 1]) gb.sweep(ctx.rowsAt(ctx, ss, L + side * R.railC, 0, true), MIDRAIL, [PAL.railMid, PAL.railMidTop, PAL.railMid]);
   }
   // a body range in pieces of ~150 m, a job step each (aerials cut mid-span, like a chunk edge)
   function bodySplit(run, a, b) {
@@ -687,7 +695,8 @@ const MetroGuide = (() => {
   const isStd = (R) => R.gauge < 1.6;
   function ensureInst() {
     if (inst) return inst;
-    const mk = (geo, max, shadow) => { const m = new THREE.InstancedMesh(geo, MATS.infra, max); m.count = 0; m.frustumCulled = false; m.castShadow = shadow; m.receiveShadow = true; m.visible = false; MT.group.add(m); return m; };
+    // (small parts never cast shadows: none in the shadow map)
+    const mk = (geo, max, shadow) => { const m = new THREE.InstancedMesh(geo, MATS.infra, max); m.count = 0; m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true; m.visible = false; MT.group.add(m); return m; };
     inst = { fastFull: mk(fastenerGeo(true, DIM.railC), 2400, true), fast: mk(fastenerGeo(false, DIM.railC), 6000, false), tie: mk(tieGeo(DIM.railC, DIM.tieLen), 2400, true), tieFar: mk(tieFarGeo(DIM.tieLen), 9000, false),
       ins: mk(insulGeo(false), 900, true), insDF: mk(insulGeo(true), 900, true),
       sFastFull: mk(fastenerGeo(true, STD.railC), 1200, true), sFast: mk(fastenerGeo(false, STD.railC), 2400, false), sTie: mk(tieGeo(STD.railC, STD.tieLen), 2400, true), sTieFar: mk(tieFarGeo(STD.tieLen), 6000, false) };
@@ -700,7 +709,7 @@ const MetroGuide = (() => {
   }
   // Placed nearest-first so the budgets go to what is close: full fasteners and ties within 70 m (fasteners with clips
   // within 45 m), baseplates and flat ties to ~320 m, insulators within 150 m.
-  const NEAR = 70, MID = 320, cand = [];
+  const NEAR = 70, MID = 150, cand = [];          // (full ties / fasteners to 70 / 45 m, simple ones to 150 m, insulators to 120 m)
   // (Low tier, or away from BART: none)
   let low = false;
   function setLow(v) { low = !!v; lastC.set(1e9, 0, 0); }
@@ -711,9 +720,9 @@ const MetroGuide = (() => {
     if (clear || low) { pend = null; if (inst) for (const m of Object.values(inst)) { m.count = 0; m.visible = false; } MT.stats.inst = 0; lastC.set(1e9, 0, 0); return; }
     if (pend) { placeSlice(); return; }
     if (cam.distanceToSquared(lastC) < 144) return; lastC.copy(cam);
-    const I = ensureInst(); let nI = 0, nD = 0;
+    const t0 = performance.now(), I = ensureInst(); let nI = 0, nD = 0, tIns = 0;
     cand.length = 0;
-    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, MID) : [];
+    const near = MT.net ? MT.net.nearAll(cam.x, cam.z, MID) : []; const t1 = performance.now();
     for (const q of near) {
       const R = MT.trackOf(q.track); if (!R) continue;
       MT.frameAt(R, q.s, F); if (Math.abs(F.y - cam.y) > 60) continue;
@@ -723,7 +732,7 @@ const MetroGuide = (() => {
         for (let s = Math.ceil(Math.max(a, run.s0) / sp) * sp; s < Math.min(b, run.s1); s += sp) { const d = Math.hypot(s - q.s, q.dist); cand.push(d, s, R.k, df ? 1 : 0); }
       }
       // insulators every T3.insulator m along the third rail's pieces (lowered with the rail on its end ramps), within 150 m
-      const ia = Math.max(a, q.s - 150), ib = Math.min(b, q.s + 150);
+      const ia = Math.max(a, q.s - 120), ib = Math.min(b, q.s + 120); const ti = performance.now();
       if (ib > ia) for (const pc of thirdPieces(R, ia, ib)) {
         for (let s = Math.ceil((pc.a + 0.3) / T3.insulator) * T3.insulator; s < pc.b - 0.3; s += T3.insulator) {
           const run = R.runs.find(r => s >= r.s0 && s < r.s1), df = !!run && DF.has(run.type), mesh = df ? I.insDF : I.ins;
@@ -733,7 +742,9 @@ const MetroGuide = (() => {
           _m4.elements[13] -= thirdDrop(pc, s); mesh.setMatrixAt(k, _m4);
         }
       }
+      tIns += performance.now() - ti;
     }
+    MT.stats.instParts = [+(t1 - t0).toFixed(1), +(performance.now() - t1 - tIns).toFixed(1), +tIns.toFixed(1), near.length];
     I.ins.count = nI; I.insDF.count = nD; for (const m of [I.ins, I.insDF]) { m.instanceMatrix.needsUpdate = m.count > 0; m.visible = m.count > 0; }
     // nearest first (a bucket sort by the metre)
     const bk = []; for (let i = 0; i < cand.length; i += 4) { const k = Math.min(MID, cand[i] | 0); (bk[k] || (bk[k] = [])).push(i); }
@@ -760,6 +771,6 @@ const MetroGuide = (() => {
   }
 
   function init(o) { MATS = o.MATS; }
-  return { init, body, bodySplit, detail, far, updateInstances, setLow, lanes, owns, ownedRanges, sweepVar, fenceRun, tube, eraAt, spanJoints, RAIL, bedProfile, zonesOf, zoneAt, thirdAt, thirdRuns, thirdPieces };
+  return { init, body, bodySplit, midRails, detail, far, updateInstances, setLow, lanes, owns, ownedRanges, sweepVar, fenceRun, tube, eraAt, spanJoints, RAIL, bedProfile, zonesOf, zoneAt, thirdAt, thirdRuns, thirdPieces };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroGuide = MetroGuide;   // debug handle (window.__bayline.MetroGuide)
