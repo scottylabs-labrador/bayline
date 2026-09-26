@@ -6,7 +6,7 @@ Files owned: `src/js/46_metrosim.js`, `src/js/47_metro*.js` (`metroatc`, `metrop
 (`55_player.js`, `66_ui.js`, `70_sound.js`, `80_net.js`, `90_main.js`, `tools/devserver.py`). Everything is behind `#metro=1`
 (`MetroSim.enabled`; the lead flips `DEFAULT_ON` in `46_metrosim.js` to ship it by default; `#metro=0` forces it off).
 
-## Status (2026-09-26 07:30: M3 gate work, see "M3 gate items owned by SIM")
+## Status (2026-09-26 12:30: M3 shipped (metro on by default); M3.1 done, see "M3.1" below)
 
 On `bart` 1f54fd2 (M1 integration: MetroNet v0 + timetable, infra guideway + Under, stations for all 50, MetroKit v0)
 plus the lead's QA list done (platform spawns, metro HUD at stations); MetroKit v1 (bart-trains) verified in a scratch
@@ -283,6 +283,48 @@ location = /bartrt/tripupdate {
 (The existing `resolver` line already covers `$bart_host`.) Without it, live mode falls back to the public departures
 API (`api.bart.gov/api/etd.aspx`, CORS `*`, public key), polled every 20 s by each client that turns Live on.
 The data is © BART under its developer license (free, as-is; no BART marks in the game).
+
+## M3.1 (2026-09-26, after M3 shipped with the metro on by default; bart-sim + bart b97272a, metro/ = promoted M2b)
+
+- **The new checks in a real browser** (item 1):
+  - The keyboard drive (97d457e): `PASS keyboard drive: 73 mph max, the run completed (2 stops, 0 missed), score 390 (A)`
+    (summary `{"maxMph":73,"done":true,"stops":2,"missed":0,"ontime":2,"errM":2.1,"score":390,"grade":"A",...}`).
+  - The whole `qa_metro_peninsula.sh` with the page default (metro on): 0 failed.
+  - The front door, `qa_metro_front.sh`: 67/67 over four runs (metro on at 1366×768, `#metro=0`, no flag, phone
+    390×844 touch). Its first run found a tool bug (the eyebrow is upper-cased by CSS: now read from the DOM) and a real
+    gap: the map's "Unofficial. Not affiliated with the San Francisco Bay Area Rapid Transit District ..." line was only
+    in the side panel's default view, and the map selects the nearest station whenever it opens near one, so the line
+    was often hidden. It is now in the map's footer, always shown (`notes/bart/shots/sim/m31_map_footer.jpg`).
+  - The Millbrae depot hall (STATIONS' split): hidden 1 s after reaching the MLBR metro platform; after an injected
+    metro failure it is visible and in the scene again, the metro off, frames advancing.
+- **One count everywhere** (item 2): "5 lines + airport connector" on the title strip ("50 stations · 5 lines + airport
+  connector · live"; phones drop the redundant "· live" so the line fits) and in the map's side-panel header (was
+  "6 lines": it counted the connector); the Antioch shuttle stays part of the Yellow Line's service
+  (`m31_title_desktop.jpg`, `m31_title_phone.jpg`).
+- **Per-frame cost far from the lines** (item 3). `tools/qa_metro_cpu.mjs` loads a view with the metro off/on and
+  reports frame time, script time per frame (Performance metrics) and a CDP CPU profile's self time per source file
+  (the build's `// ===== NN_name.js =====` markers) and per metro function; `--ab N` interleaves the same page with the
+  under-map shader path off and with `MetroSim.update` skipped. Results (load average 90-210 from other workstreams, so
+  frame times are noise; self times are the measure):
+  - Palo Alto platform (15 km from any metro track): metro JS **0.22 → 0.055 ms/frame** with the quiet mode below;
+    what is left: STATIONS' and INFRA's per-frame checks (~0.005 ms each), the HUD's cached station lookup.
+  - sf_golden (1.3 km from Powell St): metro JS 0.2-0.37 ms/frame (MetroSim.update ~0.06, Under cellAt/visibility
+    ~0.06, MetroNet.frame ~0.04, MetroTrack.gather ~0.03): the view's +17.7% was not JS; INFRA found it (Under's map
+    read in every material while cells were within 4 km, 7cf4fbc).
+  - **Quiet mode** (`46_metrosim.js`, `MetroSim.quiet`): with no metro track within the far-train range of the
+    camera (4.5 km on the ground; a set of 1 km track cells, answer kept until the camera moves 250 m), the air dots
+    off (below 350 m), no metro train driven and the system map closed, the runtime refreshes the trains' state twice a
+    second (positions and distances: the HUD, Tab, sounds and missions read them) and poses, batches and uploads
+    nothing (consists, far batch, lamps and dots hidden once on entering). Also: the service day (`Env.serviceDay`
+    builds an Intl formatter, ~0.1 ms) checked twice a second and on each new hour, not every frame; line colours
+    parsed once (a CSS string was parsed per train per frame, and per far car inside MetroKit's batch); dots filled only
+    when they can show; no tail lookup for underground trains beyond range; platform announcements checked 4 times a
+    second and never when quiet; the HUD pill's class written only on change.
+  - `tools/qa_metro_quiet.js`: quiet far away (nothing posed or batched, the train list still moving), not quiet on the
+    Millbrae metro platform with a consist posed, quiet again back at Palo Alto with everything hidden. Its first run
+    found a real bug: a platform spawn still settling (the station's floors not streamed in yet, up to 15 s) pulled a
+    player who had meanwhile gone elsewhere (a Peninsula station) back to the platform. Fixed in `47_metroplay.js`: a
+    new spawn clears one still settling, and settling stops once the walker is 150 m from where they started.
 
 ## M3 gate items owned by SIM (status)
 
