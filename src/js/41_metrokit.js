@@ -25,7 +25,9 @@ const MetroKit = (() => {
   // atlases no live consist uses any more (consists built before keep theirs until they are disposed).
   function setQuality(level) {
     const q = typeof level === 'number' ? level : (level in QN ? QN[level] : (level ? 4 : 2)), nq = clamp(Math.round(q), 0, 4);
-    if (nq === Q) return; Q = nq; releaseUnused(true);
+    if (nq === Q) return; Q = nq;
+    for (const c of live) c._requalify();
+    releaseUnused(true);
   }
 
   // ------------------------------------------------------------------------------------------ palette
@@ -713,7 +715,7 @@ const MetroKit = (() => {
   const GLASS_FRAG_HEAD = `
     uniform vec3 mkCamO, mkTint; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY, mkLoad, mkWet, mkTimeG, mkSpd; uniform float mkLv[16];
     uniform vec4 mkIndoor, mkLamp, mkCab, mkCabI, mkRail, mkDoorWin, mkBand, mkEnds, mkCnt;
-    uniform vec4 mkRows[40]; uniform float mkRowN, mkImDet;
+    uniform vec4 mkRows[40]; uniform float mkRowN, mkImDet; uniform vec2 mkDoorO;
     uniform vec4 mkSec[8]; uniform vec4 mkWin[16]; uniform vec4 mkDoor[4]; uniform vec4 mkPole[16]; uniform vec4 mkStand[8]; uniform vec4 mkPan[12];
     uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
@@ -1007,8 +1009,10 @@ const MetroKit = (() => {
       }
       return mkWall(hp, nrm, rd);
     }`;
-  function glassMaterial(S) {
-    const m = new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.035, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.0 });
+  function glassMaterial(S, opening = false) {
+    const m = opening ? new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 1, metalness: 0, specularIntensity: 0, envMapIntensity: 0 })
+      : new THREE.MeshPhysicalMaterial({ color: 0x000000, roughness: 0.035, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.0 });
+    if (opening) m.defines = { MK_OPENING: 1 };
     m.userData.S = S;
     m.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, S);
@@ -1020,7 +1024,11 @@ const MetroKit = (() => {
           {
             // raindrops: each bead tilts the pane's normal (its reflection) and bends the view through it
             float front = step(0.5, abs(mkN.x));
-            mkDrop = mkDrops(front > 0.5 ? vec2(mkP.z, mkP.y) : vec2(mkP.x, mkP.y), mkSpd, front);
+            #ifdef MK_OPENING
+              mkDrop = vec3(0.0);
+            #else
+              mkDrop = mkDrops(front > 0.5 ? vec2(mkP.z, mkP.y) : vec2(mkP.x, mkP.y), mkSpd, front);
+            #endif
             vec3 T = front > 0.5 ? mkAz : mkAx;
             normal = normalize(normal + (T * mkDrop.x + mkAy * mkDrop.y) * 0.7);
           }`)
@@ -1031,6 +1039,11 @@ const MetroKit = (() => {
               { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI; }
             #endif
             vec3 rd = normalize(mkP - mkCamO);
+            #ifdef MK_OPENING
+              // an open doorway (no glass): the cabin as it is, only where that side's doors are open
+              if ((mkP.z > 0.0 ? mkDoorO.y : mkDoorO.x) < 0.02) discard;
+              totalEmissiveRadiance += mkInterior(mkP + rd * 0.01, rd) * mkIntOn;
+            #else
             vec4 sg = mkSigns(mkP, rd);
             { float front = step(0.5, abs(mkN.x)); vec3 Tc = front > 0.5 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
               rd = normalize(rd - (Tc * mkDrop.x + vec3(0.0, mkDrop.y, 0.0)) * 0.16); }
@@ -1040,9 +1053,10 @@ const MetroKit = (() => {
             float cosT = abs(dot(normalize(vNormal), normalize(vViewPosition)));
             float F = 0.04 + 0.96 * pow(1.0 - cosT, 5.0);
             totalEmissiveRadiance += inside * (1.0 - F) * mkIntOn;
+            #endif
           }`);
     };
-    m.customProgramCacheKey = () => 'mk-glass-3';
+    m.customProgramCacheKey = () => opening ? 'mk-glass-3-open' : 'mk-glass-3';
     return m;
   }
   // clear glass (interior built): dst x tint + the glass's own reflections at full strength (not scaled by an opacity)
@@ -1085,6 +1099,17 @@ const MetroKit = (() => {
     S.mkLoad = { value: 0.3 };
     S.mkTint = { value: GLASS_TINT };
     S.mkImDet = { value: 1 };
+    S.mkDoorO = { value: new THREE.Vector2() };            // doors open (design -Z side, +Z side), for the doorway impression
+  }
+  // the doorway impression's quads (d.openings: [{ x, hw, y0, y1, z, side, bone }]), in the door portals behind the leaves
+  function openingsGeometry(d) {
+    if (d.openGeo !== undefined) return d.openGeo;
+    if (!d.openings || !d.openings.length) return (d.openGeo = null);
+    const E = new MB(); E.pal('glowDummy');
+    for (const o of d.openings) { E.bone = o.bone || 0; const z = o.side * o.z;
+      const A = [o.x - o.hw, o.y0, z], B = [o.x + o.hw, o.y0, z], C = [o.x + o.hw, o.y1, z], D = [o.x - o.hw, o.y1, z];
+      if (o.side > 0) E.q4(A, B, C, D); else E.q4(B, A, D, C); }
+    return (d.openGeo = E.geometry());
   }
 
   // ------------------------------------------------------------------------------------------ designs
@@ -1243,6 +1268,31 @@ const MetroKit = (() => {
       if (this.flip) _m3.premultiply(_rpi).multiply(_rpi);
       this.bogFix.copy(_m3); this.swayOn = true; this.dirty = true;
     }
+    // after a quality change: the same car on the new quality's design (same bones, metadata and layout; different
+    // tessellation and resolutions), so the old design's buffers can be freed
+    _requalify(atlas) {
+      const d = getDesign(this.kind, this.type); if (d === this.design) return;
+      this.design = d; this.ext.geometry = d.ext; this.glass.geometry = d.glass;
+      for (const k of ['lodMesh1', 'lodMesh2']) if (this[k]) { this.root.remove(this[k]); this[k] = null; }
+      if (this.int) { this.root.remove(this.int); this.int = null; }
+      if (this.openMesh) { this.root.remove(this.openMesh); this.openMesh.material.dispose(); this.openMesh = null; }
+      if (atlas) this.S.mkAtlas.value = atlas;
+      const req = this.lodReq === undefined ? this.lod : this.lodReq, iv = this.intVisible; this.lod = -1; this.intVisible = false;
+      this.setLOD(req); if (iv) this.setInteriorVisible(true);
+    }
+    // the doorway impression: drawn while doors are open on a LOD 0 car whose real interior is not shown
+    _openings() {
+      const open = this.doorPos[0] > 0.02 || this.doorPos[1] > 0.02, want = open && this.lod === 0 && !(this.int && this.int.visible);
+      if (want && !this.openMesh) {
+        const geo = openingsGeometry(this.design); if (!geo) { this.openMesh = false; return; }
+        const me = this.openMesh = new THREE.SkinnedMesh(geo, glassMaterial(this.S, true)); me.bind(this.skeleton, new THREE.Matrix4()); me.bindMode = 'detached';
+        me.boundingSphere = this.design.sphere.clone(); me.name = 'doorways'; me.castShadow = false; me.receiveShadow = false;
+        const S = this.S, self = this;
+        me.onBeforeRender = (r, sc, cam) => { _m.copy(self.root.matrixWorld).invert(); S.mkCamO.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(_m); K.noteCamera(cam); };
+        this.root.add(me);
+      }
+      if (this.openMesh) { this.openMesh.visible = want; this.S.mkDoorO.value.set(this.doorPos[0], this.doorPos[1]); }
+    }
     setInteriorVisible(v) {
       v = !!v; if (v === this.intVisible) return; this.intVisible = v;
       if (v && !this.int && this.consist._buildInterior) this.consist._buildInterior(this);
@@ -1251,7 +1301,7 @@ const MetroKit = (() => {
       this.glass.renderOrder = v ? 2 : 0;
     }
     setLOD(level) {
-      level = clamp(level | 0, 0, 2); if (Q === 0 && level === 0) level = 1;      // (low tier: simple LOD geometry only)
+      level = clamp(level | 0, 0, 2); this.lodReq = level; if (Q === 0 && level === 0) level = 1;      // (low tier: simple LOD geometry only)
       if (level === this.lod) return; this.lod = level;
       if (level > 0 && !this['lodMesh' + level]) {
         const d = this.design, b = builders[d.kind], k = 'lod' + level;
@@ -1301,7 +1351,7 @@ const MetroKit = (() => {
       this.doorT = [0, 0]; this.doorGoal = [0, 0]; this.dest = null; this.onEvent = null; this._chime = [-1, -1];
       this.sway = opts.sway !== false; this.odo = 0; this._v0 = 0; this._aL = 0;       // body sway on (c.sway = false: rigid)
       this.signTex = makeSignTexture(); this.atlasTex = K.decalAtlas ? K.decalAtlas(K.atlasRes()) : null; this.lcdTex = null;
-      this.intAllowed = false; live.add(this);
+      this.intAllowed = false; this.intAuto = opts.intAuto !== false; live.add(this);
       this.glassClear = glassClearMaterial();
       // car list
       let order = opts.order || null;
@@ -1327,6 +1377,11 @@ const MetroKit = (() => {
     }
     // passengers seen through the windows (0 empty .. 1 crush load); each car varies a little around it
     setLoad(f) { f = clamp(+f || 0, 0, 1); this.load = f; for (const c of this.cars) c.S.mkLoad.value = clamp(f * (0.75 + 0.5 * U.hash2(this.seed + 7, c.index * 13 + 5)), 0, 1); }
+    _requalify() {
+      const atlas = K.decalAtlas ? K.decalAtlas(K.atlasRes()) : null; this.atlasTex = atlas;
+      if (this.lcdTex) { this.lcdTex.dispose(); this.lcdTex = null; this._lcd(); }
+      for (const c of this.cars) c._requalify(atlas);
+    }
     ageOf(i) { return 0.12 + 0.8 * ((U.hash2(this.seed * 31 + i, 17) + U.hash2(i, this.seed)) / 2); }
     numberFor(type, i) { const h = U.hash2(this.seed + 11, i * 7 + 3); return type === 'D' ? String(3001 + Math.floor(h * 310)) : String(4001 + Math.floor(h * 819)); }
     setLeadEnd(lead) { this.lead = lead === 'rear' ? 'rear' : 'front'; this._applyLights(); }
@@ -1394,18 +1449,21 @@ const MetroKit = (() => {
     openDoors(side) { this.setDoors(side, 1); this._chime = [-1, -1]; }
     closeDoors(side = 'both') { for (const k of side === 'both' ? [0, 1] : [side === 'left' ? 0 : 1]) if (this.doorGoal[k] > 0 && this._chime[k] < 0) { this._chime[k] = 1.6; this._emit('chime', k ? 'right' : 'left'); } }
     _emit(type, info) { if (this.onEvent) try { this.onEvent(type, info, this); } catch (e) { console.error(e); } }
-    // interiors are allowed for this consist; they are drawn only for the car nearest the camera and its neighbours
-    // (when that car is within 45 m), decided every update, so a ride along the train carries them with the player
+    // Interiors: drawn for the car nearest the camera and its neighbours when that car is within 45 m, decided every
+    // update (a walk along the train carries them with the player). That holds whatever the caller asks
+    // (intAuto, the default); setInteriorVisible(true) keeps it on beyond 45 m for the car nearest the camera (a
+    // focus train). With c.intAuto = false only setInteriorVisible(true) shows interiors. Other cars with open doors
+    // show the doorway impression, so no car is ever see-through.
     setInteriorVisible(v) { this.intAllowed = !!v; this._applyInt(); }
     _applyInt() {
-      let best = -1, bd = 45 * 45; const p = this.intAllowed ? camPos() : null;
+      let best = -1, bd = this.intAllowed ? 1e12 : 45 * 45; const p = (this.intAllowed || this.intAuto) ? camPos() : null;
       if (p) for (const c of this.cars) { const g = c.group.position, d = (g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2; if (d < bd) { bd = d; best = c.index; } }
       for (const c of this.cars) c.setInteriorVisible(best >= 0 && Math.abs(c.index - best) <= 1);
     }
     setLOD(level) { for (const c of this.cars) c.setLOD(level); }
     // free the per-consist GPU resources (shared design geometry stays cached)
     dispose() {
-      for (const c of this.cars) { for (const m of [c.mat, c.matGlass, c.matInt, c.matLod]) if (m) m.dispose(); if (c.skeleton) c.skeleton.dispose(); if (c.group.parent) c.group.parent.remove(c.group); }
+      for (const c of this.cars) { for (const m of [c.mat, c.matGlass, c.matInt, c.matLod, c.openMesh && c.openMesh.material]) if (m) m.dispose(); if (c.skeleton) c.skeleton.dispose(); if (c.group.parent) c.group.parent.remove(c.group); }
       this.signTex.dispose(); if (this.lcdTex) this.lcdTex.dispose(); this.glassClear.dispose();
       live.delete(this); releaseUnused();
     }
@@ -1468,13 +1526,14 @@ const MetroKit = (() => {
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
       MKG.mkWet.value = wetNow();
-      if (this.intAllowed) this._applyInt();
+      if (this.intAllowed || this.intAuto) this._applyInt();
       if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
         if (moved) { c.doorPos[0] = c.flip ? T[1] : T[0]; c.doorPos[1] = c.flip ? T[0] : T[1]; c.dirty = true; }
         if (spin !== 0) { c.wheelAng = (c.wheelAng + (c.flip ? -spin : spin)) % TAU; c.dirty = true; }
         if (dt > 0) c._sway(dt, this.speed, this._aL, this.odo, this.sway);
         c.S.mkSpd.value = c.flip ? -this.speed : this.speed;
+        if (c.openMesh !== false) c._openings();
         if (c.dirty && c.lod === 0) c._pose();
       }
     }
