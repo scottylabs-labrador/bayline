@@ -28,7 +28,7 @@
 <script src="../src/js/42_metrokit_int.js"></script>
 <script>
 (() => {
-  const VIEWS = ['exterior', 'nose', 'side', 'doors', 'bogie', 'roof', 'ends', 'rear', 'interior', 'seated', 'cab', 'night-exterior', 'night-interior', 'night-nose',
+  const VIEWS = ['exterior', 'nose', 'front', 'cabside', 'side', 'doors', 'bogie', 'roof', 'ends', 'rear', 'interior', 'seated', 'cab', 'night-exterior', 'night-interior', 'night-nose',
     'lod', 'curve', 'dmu', 'apm'];
   const hp = new URLSearchParams(location.hash.slice(1));
   const view = hp.get('view') || 'exterior', showMeta = hp.get('meta') === '1';
@@ -141,6 +141,8 @@
   const x0 = X(0), L0 = c.cars[0].length / 2;
   switch (view) {
     case 'nose': set(x0 + L0 + 4.2, 2.1, 3.4, x0 + L0 - 0.3, 1.9, 0); break;
+    case 'front': set(x0 + L0 + 8.5, 1.75, 1.0, x0 + L0 - 0.5, 2.05, 0.1); camera.fov = 36; break;
+    case 'cabside': set(x0 + L0 + 3.5, 1.9, 6.5, x0 + L0 - 3.5, 1.8, 0.8); camera.fov = 44; break;
     case 'night-nose': set(x0 + L0 + 7, 1.9, 5.5, x0 + L0 - 1.2, 1.9, 0); break;
     case 'side': set(X(1) - 1, 1.75, -17, X(1) - 1, 1.95, 0); camera.fov = 44; break;
     case 'doors': set(X(1) - 3.2, 2.1, 6.3, X(1) - 5.8, 1.7, 1.0); break;
@@ -183,6 +185,22 @@
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
+  // #measure=1: draw calls / triangles of the consist alone (no scenery) per LOD and with interiors, logged as MEASURE
+  if (hp.get('measure') === '1') setTimeout(() => {
+    const keep = new Set(); for (const car of c.cars) keep.add(car.group);
+    const hidden = []; scene.children.forEach(o => { if (!keep.has(o) && o.visible && !o.isLight) { o.visible = false; hidden.push(o); } });
+    renderer.shadowMap.enabled = false;
+    const cam2 = camera.clone(); cam2.position.set(0, 60, 260); cam2.lookAt(0, 0, 0); cam2.far = 2000; cam2.updateProjectionMatrix();
+    const meas = (label) => { renderer.info.reset(); renderer.info.autoReset = false; renderer.render(scene, cam2); const r = { label, calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; renderer.info.autoReset = true; return r; };
+    const out = [];
+    c.setInteriorVisible(false); c.setLOD(0); out.push(meas('LOD0 exterior, ' + c.cars.length + ' cars'));
+    c.cars[1].setInteriorVisible(true); out.push(meas('LOD0 + interior of car 1')); c.cars[0].setInteriorVisible(true); out.push(meas('LOD0 + interiors of cars 0 and 1')); c.setInteriorVisible(false);
+    c.setLOD(1); out.push(meas('LOD1')); c.setLOD(2); out.push(meas('LOD2')); c.setLOD(0);
+    const ds = Object.values(MetroKit.designs).map(d => ({ key: d.key, ext: d.tris, build: Math.round(d.buildMs), int: d.int ? d.int.tris : null, intBuild: d.int ? Math.round(d.int.buildMs) : null,
+      lod1: d.lod1 ? d.lod1.index.count / 3 : null, lod2: d.lod2 ? d.lod2.index.count / 3 : null }));
+    console.log('MEASURE ' + JSON.stringify({ out, designs: ds }));
+    for (const o of hidden) o.visible = true; renderer.shadowMap.enabled = true;
+  }, 1500);
   window.__scene = scene; window.__renderer = renderer; window.__camera = camera;
 })();
 </script>

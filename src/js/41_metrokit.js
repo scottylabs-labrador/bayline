@@ -40,16 +40,16 @@ const MetroKit = (() => {
       an: o.an || 0, gr: o.gr === undefined ? 0.5 : o.gr, sec: o.sec || null, inside: !!o.inside });
   }
   // --- exterior
-  pal('aluE', '#c5c9cc', 0.30, 1, { pat: PAT.aluE, an: 0.75, gr: 0.8 });          // brushed aluminium body, E-car scheme
-  pal('aluD', '#c5c9cc', 0.30, 1, { pat: PAT.aluD, an: 0.75, gr: 0.8 });          // D-car scheme (cab swoosh)
-  pal('aluDoor', '#c7cbce', 0.28, 1, { pat: PAT.aluDoor, an: 0.75, gr: 0.7 });
+  pal('aluE', '#dde0e3', 0.34, 0.88, { pat: PAT.aluE, an: 0.7, gr: 0.8 });          // brushed aluminium body, E-car scheme
+  pal('aluD', '#dde0e3', 0.34, 0.88, { pat: PAT.aluD, an: 0.7, gr: 0.8 });          // D-car scheme (cab swoosh)
+  pal('aluDoor', '#dfe2e5', 0.32, 0.88, { pat: PAT.aluDoor, an: 0.7, gr: 0.7 });
   pal('aluDull', '#a7abaf', 0.42, 0.9, { an: 0.4, gr: 1 });
   pal('cap', '#eceeec', 0.26, 0, { cc: 1, pat: PAT.paint, gr: 0.55 });             // white fibreglass cab cap
   pal('capSide', '#eceeec', 0.26, 0, { cc: 1, pat: PAT.paint, gr: 0.6 });
-  pal('blue', '#1b86c8', 0.3, 0, { cc: 1, pat: PAT.paint, gr: 0.5 });              // Bayline Metro blue
+  pal('blue', '#1a9ade', 0.3, 0, { cc: 1, pat: PAT.paint, gr: 0.5 });              // Bayline Metro blue
   pal('blueDk', '#15659e', 0.34, 0, { cc: 0.8, pat: PAT.paint, gr: 0.8 });
   pal('roof', '#e2e4e1', 0.46, 0.05, { cc: 0.3, pat: PAT.roof, gr: 1 });
-  pal('mask', '#07090b', 0.08, 0.1, { cc: 1, pat: PAT.mask, gr: 0.25 });           // black glazed mask of the cab front
+  pal('mask', '#050607', 0.05, 0.1, { cc: 1, pat: PAT.mask, gr: 0.2 });           // black glazed mask of the cab front
   pal('rubber', '#15171a', 0.82, 0, { pat: PAT.rubber, gr: 0.4 });
   pal('seam', '#1a1c1f', 0.6, 0.2, { gr: 0.3 });
   pal('frame', '#2a2d31', 0.62, 0.35, { pat: PAT.cast, gr: 1 });                  // underframe, bogie frames
@@ -210,16 +210,15 @@ const MetroKit = (() => {
       float x = p.x, y = p.y, ax = abs(x);
       mkBelt = mkLine(y, 1.675, 0.028, fw);
       float r = 0.0;
-      // end bands (E both ends; D only at -X): blue from |x| = 9.62 out, the inner edge bows out a little toward the bottom
-      float bandEdge = 9.62 - 0.06 * smoothstep(3.0, 0.8, y);
+      // end bands (E both ends; D only at -X): blue from |x| ~ 9.6 out, the inner edge bowing in a little at mid-height
+      float bandEdge = 9.6 - 0.05 * sin(3.14159 * clamp((y - 0.62) / 2.4, 0.0, 1.0));
       if ((isD < 0.5 || x < 0.0) && ax > bandEdge) r = 1.0;
       if (isD > 0.5 && x > 0.0) {
-        // swoosh: blue ahead of a line leaning forward toward the bottom: x = 8.50 at y = 3.0, 9.52 at y = 0.62 (slight curve)
+        // the cab swoosh: blue from the cab back to a curve that sweeps forward toward the bottom (8.83 at the eaves,
+        // 9.70 at the skirt), a white band behind it that tapers from 0.58 m at the top to 0.08 m at the bottom
         float t = clamp((3.0 - y) / 2.38, 0.0, 1.0);
-        float edge = mix(8.50, 9.52, t) - 0.10 * sin(t * 3.14159);
-        float d = x - edge;
-        float blueA = smoothstep(-fw, fw, d);
-        float whiteA = smoothstep(-fw, fw, d + 0.30) * (1.0 - blueA);
+        float xb = 8.83 + 0.87 * pow(t, 2.4), wb = 0.08 + 0.5 * pow(1.0 - t, 1.6);
+        float blueA = smoothstep(-fw, fw, x - xb), whiteA = smoothstep(-fw, fw, x - (xb - wb)) * (1.0 - blueA);
         r = blueA > 0.5 ? 1.0 : (whiteA > 0.5 ? 2.0 : r);
       }
       return r;
@@ -277,7 +276,7 @@ const MetroKit = (() => {
         col *= 0.96 + 0.07 * mkV(vec2(p.x * 0.23, p.y * 0.9) + mkSeed);          // sheet-to-sheet tone
         mkRough += (st - 0.5) * 0.12 * fade;
         if (sch > 0.5) {                                        // painted: non-metallic, clearcoated
-          col = sch < 1.5 ? vec3(0.009, 0.235, 0.58) : vec3(0.83, 0.85, 0.85);
+          col = sch < 1.5 ? vec3(0.008, 0.33, 0.72) : vec3(0.86, 0.87, 0.87);
           mkMetal = 0.0; mkRough = 0.3; mkCC = 1.0; mkAniso = 0.0;
         }
         col = mix(col, vec3(0.03, 0.035, 0.04), mkBelt * 0.92);
@@ -432,7 +431,9 @@ const MetroKit = (() => {
         f = f.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
           material.clearcoat = clamp(mkCC, 0.0, 1.0); material.clearcoatRoughness = max(mkCCR + mkGrime * 0.4, 0.03);
           #ifdef USE_ANISOTROPY
-            { vec3 ta = normalize(mkAx - dot(mkAx, normal) * normal); vec3 tb = cross(normal, ta);
+            { vec3 ta = mkAx - dot(mkAx, normal) * normal; float la = length(ta);
+              if (la < 1e-3) { ta = mkAy - dot(mkAy, normal) * normal; la = max(length(ta), 1e-6); }   // (a face normal to the car's axis)
+              ta /= la; vec3 tb = cross(normal, ta);
               material.anisotropy = clamp(mkAniso, 0.0, 0.95);
               material.alphaT = mix(pow2(material.roughness), 1.0, pow2(material.anisotropy));
               material.anisotropyT = ta; material.anisotropyB = tb; }
@@ -633,6 +634,25 @@ const MetroKit = (() => {
   const GLASS_FRAG_HEAD = `
     uniform vec3 mkCamO; uniform float mkNight, mkIntOn, mkSeed, mkHalfW, mkFloorY, mkCeilY; uniform float mkLv[12];
     uniform vec4 mkRows[24]; uniform float mkRowN; uniform vec4 mkCab;
+    uniform vec4 mkSgnA[6]; uniform vec4 mkSgnB[6]; uniform sampler2D mkSign; uniform vec2 mkSignRes;
+    // LED signs behind the glass: plane (axis 0: x = c, 1: z = c), extent a0..a1 along the other horizontal axis,
+    // y0..y1, u direction; returns the LED emission (rgb) and whether the ray hit a sign (a)
+    vec4 mkSigns(vec3 ro, vec3 rd) {
+      for (int k = 0; k < 6; k++) {
+        vec4 A = mkSgnA[k], B = mkSgnB[k]; if (B.w < 0.5) continue;
+        float den = A.x < 0.5 ? rd.x : rd.z; if (abs(den) < 1e-4) continue;
+        float t = (A.y - (A.x < 0.5 ? ro.x : ro.z)) / den; if (t <= 0.0) continue;
+        vec3 h = ro + rd * t; float al = A.x < 0.5 ? h.z : h.x;
+        if (al < A.z || al > A.w || h.y < B.x || h.y > B.y) continue;
+        float u = (al - A.z) / (A.w - A.z); if (B.z < 0.0) u = 1.0 - u;
+        float v = (h.y - B.x) / (B.y - B.x);
+        vec2 cellUv = vec2(u, 32.0 / 48.0 + v * 16.0 / 48.0) * mkSignRes; vec2 cid = floor(cellUv) + 0.5; vec2 f = fract(cellUv) - 0.5;
+        vec3 led = texture2D(mkSign, cid / mkSignRes).rgb;
+        float cell = fwidth(cellUv.x), dotm = 1.0 - smoothstep(0.26, 0.38 + cell, length(f)), near = 1.0 - smoothstep(0.35, 0.9, cell);
+        return vec4(led * mix(0.62, dotm * 1.5, near) * 3.0 + vec3(0.004), 1.0);
+      }
+      return vec4(0.0);
+    }
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
     float gH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     // cast a ray from the glass into the cabin box; returns radiance of what it hits
@@ -704,11 +724,12 @@ const MetroKit = (() => {
             vec3 rd = normalize(mkP - mkCamO);
             float lit = mkLv[1];
             vec3 ro = mkP + rd * 0.03;
-            vec3 inside = mkInterior(ro, rd, lit);
+            vec4 sg = mkSigns(mkP, rd);
+            vec3 inside = sg.a > 0.5 ? sg.rgb : mkInterior(ro, rd, lit);
             // tinted glass (grey-green) and a Fresnel term: at grazing angles the reflection wins
             float cosT = abs(dot(normalize(vNormal), normalize(vViewPosition)));
             float F = 0.04 + 0.96 * pow(1.0 - cosT, 5.0);
-            totalEmissiveRadiance = inside * vec3(0.36, 0.42, 0.42) * (1.0 - F) * mkIntOn;
+            totalEmissiveRadiance = inside * (sg.a > 0.5 ? vec3(0.75) : vec3(0.36, 0.42, 0.42)) * (1.0 - F) * mkIntOn;
           }`);
     };
     m.customProgramCacheKey = () => 'mk-glass-1';
@@ -716,7 +737,8 @@ const MetroKit = (() => {
   }
   // clear glass (interior built): tinted, reflective, see-through
   function glassClearMaterial() {
-    return new THREE.MeshPhysicalMaterial({ color: 0x1d2a2e, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.0 });
+    const m = new THREE.MeshPhysicalMaterial({ color: 0x1d2a2e, roughness: 0.02, metalness: 0, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.0 });
+    m.forceSinglePass = true; return m;
   }
 
   // ------------------------------------------------------------------------------------------ designs
@@ -750,6 +772,8 @@ const MetroKit = (() => {
       S.mkCamO = { value: new V3() }; S.mkIntOn = { value: 1 }; const rows = (d.rows || []).slice(0, 24); while (rows.length < 24) rows.push(new THREE.Vector4(1e4, 0, 0, 0));
       S.mkRows = { value: rows }; S.mkRowN = { value: d.rows ? Math.min(24, d.rows.length) : 0 };
       S.mkCab = { value: new THREE.Vector4(-d.length / 2, d.length / 2, 0, 0) };
+      { const A = [], B = []; for (let i = 0; i < 6; i++) { const g = (d.signs || [])[i]; A.push(g ? new THREE.Vector4(...g.a) : new THREE.Vector4()); B.push(g ? new THREE.Vector4(...g.b, 1) : new THREE.Vector4(0, 0, 1, 0)); }
+        S.mkSgnA = { value: A }; S.mkSgnB = { value: B }; }
       if (d.cabBox) S.mkCab.value.copy(d.cabBox);
       S.mkHalfW.value = d.halfW || 1.47; S.mkFloorY.value = d.floorY || 0.991; S.mkCeilY.value = d.ceilY || 3.1;
       this.mat = palMaterial('ext', S);

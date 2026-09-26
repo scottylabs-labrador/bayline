@@ -373,7 +373,7 @@
   }
   // Dellner-type coupler: draft gear under the end, shank, head (face at +-HL), electrical head, DC warning plate (fronts)
   function coupler(E, e, front) {
-    E.bone = 0; const y = 0.6, xf = e * F.HL;
+    E.bone = 0; const y = front ? 0.8 : 0.78, xf = e * F.HL;
     E.pal('frame'); E.box(e * (F.BODY - 0.9), y - 0.14, -0.22, e * (F.BODY - 0.15), y + 0.14, 0.22);
     E.pal('coupler'); E.cyl([e * (F.BODY - 0.2), y, 0], [xf - e * 0.12, y, 0], 0.07, 0.07, 10);
     E.box(xf - e * 0.13, y - 0.19, -0.17, xf, y + 0.19, 0.17);
@@ -387,12 +387,15 @@
   // ------------------------------------------------------------------------------------------ the D-car nose
   // The body section closed by a rounded edge of radius NOSE_R into a gently convex, raked front face.
   // D(y, z): x offset of the face (bulge in plan, rake back toward the top), blended into the fillet.
-  const noseD = (y, z) => 0.07 * (1 - (z / 1.35) ** 2) - 0.05 * Math.max(0, y - 1.0);
+  // the face bulges forward in plan (0.11 m at the centre) and rakes back progressively toward the top (0.19 m at 3.5 m)
+  const noseD = (y, z) => 0.11 * (1 - (z / 1.4) ** 2) - 0.03 * Math.max(0, y - 1.0) ** 2;
+  // the fillet into the face is elliptical: a constant 0.30 m along the car, 0.30 m in the section (0.52 m at the top)
+  const RYZ = y => 0.3 + 0.22 * clamp((y - 3.15) / 0.6, 0, 1) ** 2;
   const faceX = (y, z) => F.NOSE_XC + F.NOSE_R + noseD(y, z);
   function faceN(y, z) { const e = 1e-3; const dy = (faceX(y + e, z) - faceX(y - e, z)) / (2 * e), dz = (faceX(y, z + e) - faceX(y, z - e)) / (2 * e); const l = Math.hypot(1, dy, dz); return [1 / l, -dy / l, -dz / l]; }
   const faceAt = (z, y, off = 0) => { const n = faceN(y, z); return { p: [faceX(y, z) + n[0] * off, y + n[1] * off, z + n[2] * off], n }; };
   // mask bottom edge (the black glazed band starts here), rising toward the sides
-  const MASK_Y0 = 2.05, maskY0 = z => MASK_Y0;
+  const MASK_Y0 = 2.08, maskY0 = z => MASK_Y0;
 
   function nose(E, G, P) {
     E.bone = 0; G.bone = 0;
@@ -400,9 +403,9 @@
     // fillet ring (blending the face deformation in with w = 1 - cos a)
     const base = E.count, ringPts = [];
     for (let i = 0; i < n; i++) for (let j = 0; j <= A; j++) {
-      const a = (j / A) * Math.PI / 2, off = R * (1 - Math.cos(a)), p = L[i], w = 1 - Math.cos(a);
+      const a = (j / A) * Math.PI / 2, p = L[i], off = RYZ(p.y) * (1 - Math.cos(a)), w = 1 - Math.cos(a);
       const y = p.y - p.ny * off, z = p.z - p.nz * off;
-      E.pal('cap');
+      E.pal(p.y < 0.86 && j > 2 ? 'frame' : 'cap');
       E.v(xs + R * Math.sin(a) + w * noseD(y, z), y, z, Math.sin(a), p.ny * Math.cos(a), p.nz * Math.cos(a), 0, 0, 0);
     }
     // normals of the ring from finite differences of its own grid (the deformation tilts them)
@@ -416,30 +419,35 @@
     }
     for (let i = 0; i < n - 1; i++) for (let j = 0; j < A; j++) { const a = idx(i, j), b = idx(i + 1, j); E.quadA(a, b, b + 1, a + 1); }
     // the face: the inner offset loop, closed at the bottom
-    const face = L.map(p => [p.z - p.nz * R, p.y - p.ny * R]);
+    const face = L.map(p => [p.z - p.nz * RYZ(p.y), p.y - p.ny * RYZ(p.y)]);
     const yBot = face[0][1];
     makeFaceTop(face);
     const outline = densify(face, 0.12);           // (z, y), goes right side up, over, left side down: counter-clockwise seen from +X? check below
     // regions: mask (black) with holes for the windscreens and door window; white cap with holes for the mask, the
     // headlight pods and the dark recess under the bumper (the coupler pocket)
     const mask = maskOutline();
-    const wsR = windscreen(1), wsL = windscreen(-1), dwin = rrect(-0.225, 2.09, 0.225, 3.24, 0.07, 5);
+    const wsR = windscreen(1), wsL = windscreen(-1), dwin = rrect(-0.19, 2.13, 0.19, 3.27, 0.06, 5);
     const podR = podOutline(1), podL = podOutline(-1);
     const pocket = [[-0.86, yBot - 0.01], [0.86, yBot - 0.01], [0.86, 1.07], [-0.86, 1.07]];
     const ccw = poly => { let a = 0; for (let i = 0; i < poly.length; i++) { const p = poly[i], q = poly[(i + 1) % poly.length]; a += p[0] * q[1] - q[0] * p[1]; } return a > 0 ? poly : poly.slice().reverse(); };
     const cw = poly => ccw(poly).slice().reverse();
-    // the face outline with the pocket cut into its bottom edge (a notch), so the white face ends at the pocket
-    const dz = densify(face, 0.12), inPocket = q => Math.abs(q[0]) < 0.86 && q[1] < 1.07, out2 = [];
-    for (let i = 0; i < dz.length; i++) {
-      const q = dz[i], nx = dz[(i + 1) % dz.length];
-      if (!inPocket(q)) out2.push(q);
-      if (!inPocket(q) && inPocket(nx)) { const dir = Math.sign(nx[0] - q[0]) || 1; const zA = -dir * 0.86, zB = dir * 0.86;
-        out2.push([zA, q[1]], [zA, 1.07], [zB, 1.07], [zB, q[1]]); }
-    }
+    // the white face ends at y = FACE_Y0 (0.87): below it the lower front is dark (the underframe and equipment show),
+    // and the coupler pocket is notched into its bottom edge under the bumper
+    const FACE_Y0 = 0.87, clipY = (poly, c, keepAbove) => {           // Sutherland-Hodgman against y = c
+      const out = []; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length], ia = keepAbove ? a[1] >= c : a[1] <= c, ib = keepAbove ? b[1] >= c : b[1] <= c;
+        if (ia) out.push(a); if (ia !== ib) { const t = (c - a[1]) / (b[1] - a[1]); out.push([a[0] + (b[0] - a[0]) * t, c]); } } return out; };
+    const faceD = densify(face, 0.12), upper = clipY(faceD, FACE_Y0, true), lower = clipY(faceD, FACE_Y0, false);
+    // notch: replace the bottom edge's middle (|z| < 0.86) with a step up to 1.07
+    const out2 = []; for (const q of upper) { if (Math.abs(q[1] - FACE_Y0) < 1e-6 && Math.abs(q[0]) < 0.86) continue; out2.push(q); }
+    { let k = -1; for (let i = 0; i < out2.length; i++) { const a = out2[i], b = out2[(i + 1) % out2.length]; if (Math.abs(a[1] - FACE_Y0) < 1e-6 && Math.abs(b[1] - FACE_Y0) < 1e-6 && Math.sign(a[0]) !== Math.sign(b[0])) { k = i; break; } }
+      if (k >= 0) { const dir = Math.sign(out2[(k + 1) % out2.length][0] - out2[k][0]); out2.splice(k + 1, 0, [-dir * 0.86, FACE_Y0], [-dir * 0.86, 1.07], [dir * 0.86, 1.07], [dir * 0.86, FACE_Y0]); } }
     E.pal('cap');
     E.shape(ccw(out2), [cw(mask), cw(podR), cw(podL)], (z, y) => faceAt(z, y));
+    const maskD = mask;
+    if (lower.length > 2) { E.pal('frame'); E.shape(ccw(lower), [], (z, y) => faceAt(z, y, -0.01)); }
+    void pocket;
     E.pal('mask');
-    E.shape(ccw(densify(mask, 0.15)), [cw(wsR), cw(wsL), cw(dwin)], (z, y) => faceAt(z, y, 0.0005));
+    E.shape(ccw(maskD), [cw(wsR), cw(wsL), cw(dwin)], (z, y) => faceAt(z, y, 0.0015));
     // windscreens and door window glass, set 1.2 cm in; thin rubber edges
     for (const ws of [wsR, wsL, dwin]) {
       G.pal('lensClear'); G.shape(ccw(ws), [], (z, y) => faceAt(z, y, -0.012));
@@ -453,18 +461,18 @@
       E.box(x0, 1.05, -0.86, faceX(1.07, 0), 1.07, 0.86);
       for (const zs of [-1, 1]) { const x1 = faceX(1.0, zs * 0.86); E.box(x0, y0, zs * 0.86 - 0.01, x1, 1.07, zs * 0.86 + 0.01); } }
     // headlight pods: recessed black bowls with two LED lamps each
-    for (const s of [1, -1]) headPod(E, s);
+    for (const s of [1, -1]) { headPod(E, s); const po = podOutline(s); G.pal('lensClear'); G.shape(ccw(po), [], (z, y) => faceAt(z, y, -0.002)); }
     // centre door (white lower part) seams, the small hatch left of it
     E.pal('seam');
     const seamLine = (pts, w) => { for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1], dz = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dz, dy) || 1, oz = -dy / l * w / 2, oy = dz / l * w / 2;
       const c = [[a[0] + oz, a[1] + oy], [b[0] + oz, b[1] + oy], [b[0] - oz, b[1] - oy], [a[0] - oz, a[1] - oy]].map(([z, y]) => faceAt(z, y, 0.0015));
       const ids = c.map(f => E.v(f.p[0], f.p[1], f.p[2], f.n[0], f.n[1], f.n[2])); E.quad(ids[0], ids[3], ids[2], ids[1]); E.quad(ids[0], ids[1], ids[2], ids[3]); } };
-    for (const zs of [-1, 1]) seamLine([[zs * 0.495, 1.265], [zs * 0.495, MASK_Y0 + 0.01]], 0.013);
+    for (const zs of [-1, 1]) seamLine([[zs * 0.45, 1.265], [zs * 0.45, MASK_Y0 + 0.01]], 0.013);
     seamLine([[0.6, 1.79], [0.73, 1.79], [0.73, 1.93], [0.6, 1.93], [0.6, 1.79]], 0.008);
     // bumper: a dark grey bar across the pocket's top, with a ridge
     { const bx = faceX(1.16, 0);
-      E.pal('bumper'); E.box(bx - 0.2, 1.065, -0.87, bx + 0.07, 1.265, 0.87);
-      E.pal('frame'); E.box(bx + 0.07, 1.15, -0.85, bx + 0.078, 1.19, 0.85); }
+      E.pal('bumper'); K.rbox(E, bx - 0.2, 1.065, -0.87, bx + 0.035, 1.265, 0.87, 0.03, 3);
+      E.pal('frame'); E.box(bx + 0.02, 1.15, -0.84, bx + 0.038, 1.18, 0.84); }
     // lower lamp pods (tail + marker) at the bottom corners: glossy black angled pods, flush with the face
     for (const s of [1, -1]) {
       const zc = s * 1.1, yc = 0.99, x = faceX(yc, zc);
@@ -474,13 +482,12 @@
       E.pal('markerLamp'); E.cyl([x + 0.01, yc - 0.02, zc - s * 0.08], [x + 0.018, yc - 0.02, zc - s * 0.08], 0.033, 0.031, 14);
     }
     // top light bar on the brow, camera dome
-    const barY = 3.72, ca = Math.acos(clamp(1 - (F.ROOF - barY) / F.NOSE_R, -1, 1)), barX = F.NOSE_XC + F.NOSE_R * Math.sin(ca) + (1 - Math.cos(ca)) * noseD(barY, 0);
+    const barY = 3.7, rt = RYZ(F.ROOF), ca = Math.acos(clamp(1 - (F.ROOF - barY) / rt, -1, 1)), barX = F.NOSE_XC + F.NOSE_R * Math.sin(ca) + (1 - Math.cos(ca)) * noseD(barY, 0);
     E.at(mul(tr(barX, barY, 0), rotZ(-(Math.PI / 2 - ca) * 0.8)), m => {
-      m.pal('frame'); m.box(-0.045, -0.06, -0.49, 0.012, 0.06, 0.49);
-      m.pal('topBar'); m.box(0.0, -0.045, -0.47, 0.016, 0.045, 0.47); });
-    E.pal('camDome'); { const f = faceAt(0.66, 3.44, 0.0); E.cyl([f.p[0] - 0.01, 3.44, 0.66], [f.p[0] + 0.025, 3.44, 0.66], 0.05, 0.042, 14); }
+      m.pal('frame'); m.box(-0.045, -0.06, -0.43, 0.012, 0.06, 0.43);
+      m.pal('topBar'); m.box(0.0, -0.042, -0.41, 0.016, 0.042, 0.41); });
+    E.pal('camDome'); { const cy = Math.min(3.58, maskTop(0.56) - 0.03), f = faceAt(0.56, cy, 0.0); E.cyl([f.p[0] - 0.01, cy, 0.56], [f.p[0] + 0.03, cy, 0.56], 0.05, 0.044, 14); }
     for (const s of [1, -1]) wiper(E, s);
-    signFront(E);
     // corner strip panels (two tall recessed covers on each front corner): outlined as seams on the fillet
     E.pal('seam');
     for (const s of [1, -1]) for (const [y0, y1] of [[1.08, 2.0], [2.12, 3.18]]) {
@@ -501,18 +508,19 @@
       let lo = 0, hi = up.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (up[m][0] <= z) lo = m; else hi = m; }
       const f = (z - up[lo][0]) / ((up[hi][0] - up[lo][0]) || 1); return up[lo][1] + (up[hi][1] - up[lo][1]) * f; };
   }
-  const maskTop = z => Math.min(3.5, faceTopFn(z) - 0.045);
+  const maskTop = z => Math.min(3.62, faceTopFn(z) - 0.11);
   function maskOutline() {
-    const pts = [], ZM = 1.27;
+    const pts = [], ZM = 1.3;
     for (let i = 0; i <= 24; i++) { const z = ZM - 2 * ZM * i / 24; pts.push([z, maskY0(z)]); }                 // bottom, right to left
-    for (let i = 0; i <= 40; i++) { const z = -ZM + 2 * ZM * i / 40; pts.push([z, Math.max(maskY0(z) + 0.05, maskTop(z))]); }   // top, left to right
+    for (let i = 0; i <= 64; i++) { const z = -ZM + 2 * ZM * i / 64; pts.push([z, Math.max(maskY0(z) + 0.05, maskTop(z))]); }   // top, left to right
+    // round the two bottom corners (r 0.1)
     return pts;
   }
   function windscreen(s) {
-    // between the door frame (z = 0.535) and z = 1.2, above the mask bottom (+0.07), under the mask top (-0.08)
-    const zi = 0.535, zo = 1.2, pts = [];
-    const bot = z => maskY0(z) + 0.03, top = z => maskTop(z) - 0.08;
-    const rb = 0.14;
+    // between the door frame (z = 0.475) and the corner pillar (z = 1.265), above the mask bottom, under the mask top
+    const zi = 0.475, zo = 1.265, pts = [];
+    const bot = z => maskY0(z) + 0.03, top = z => maskTop(z) - 0.07;
+    const rb = 0.13;
     for (let i = 0; i <= 12; i++) { const z = zi + 0.04 + (zo - rb - zi - 0.04) * i / 12; pts.push([z, bot(z)]); }
     const cz = zo - rb, cy = bot(zo - rb) + rb;
     for (let i = 1; i <= 6; i++) { const a = -Math.PI / 2 + (i / 6) * Math.PI / 2; pts.push([cz + rb * Math.cos(a), cy + rb * Math.sin(a)]); }
@@ -528,7 +536,7 @@
     return s > 0 ? pts : pts.map(([z, y]) => [-z, y]).reverse();
   }
   function headPod(E, s) {
-    const out = podOutline(s), cz = s * 1.12, cy = 1.82, depth = 0.07;
+    const out = podOutline(s), cz = s * 1.12, cy = 1.82, depth = 0.045;
     // bowl walls: from the outline on the face inward (shrinking), then the back plate
     E.pal('podBlack');
     const inner = out.map(([z, y]) => [cz + (z - cz) * 0.9, cy + (y - cy) * 0.93]);
@@ -543,7 +551,6 @@
       E.pal('chrome'); E.cyl([x, ly, lz], [x + 0.03, ly, lz], r * 1.12, r * 1.0, 18);
       E.pal('headLamp'); E.cyl([x + 0.03, ly, lz], [x + 0.042, ly, lz], r * 0.92, r * 0.9, 18);
     }
-    // clear outer cover over the pod (flush with the face) goes into the glass mesh: omitted (the bowl reads better)
   }
   function wiper(E, s) {
     // parked along the bottom of the windscreen, pivot near the outer lower corner; bone 19 (right) / 20 (left)
@@ -552,11 +559,11 @@
     E.pal('wiper');
     E.cyl([f.p[0] - 0.02, py, pz], [f.p[0] + 0.015, py, pz], 0.022, 0.018, 10);
     // arm and blade toward the centre, rising slightly
-    const tip = [-s * 0.16, 0.6];
+    const tip = [-s * 0.12, 0.52];
     const g = faceAt(pz + tip[0], py + tip[1], 0.025);
-    E.cyl([f.p[0] + 0.01, py, pz], g.p, 0.009, 0.007, 6, false);
-    const h0 = faceAt(pz + tip[0] * 0.25, py + tip[1] * 0.25 - 0.02, 0.018).p, h1 = faceAt(pz + tip[0] * 1.35, py + tip[1] * 1.35 + 0.02, 0.018).p;
-    E.cyl(h0, h1, 0.008, 0.008, 6);
+    E.cyl([f.p[0] + 0.01, py, pz], g.p, 0.007, 0.006, 6, false);
+    const h0 = faceAt(pz + tip[0] * 0.2, py + tip[1] * 0.2, 0.016).p, h1 = faceAt(pz + tip[0] * 1.15, py + tip[1] * 1.15, 0.016).p;
+    E.cyl(h0, h1, 0.0065, 0.0065, 6);
     E.bone = 0;
   }
   // front destination sign (behind the left windscreen, top): LED module; uv1 maps into the sign canvas' front region
@@ -726,6 +733,19 @@
   }
   K.fotfLayout = seatLayout; K.fotfSeats = seatsFrom;
 
+  // LED destination signs behind the glass (drawn by the glass shader from outside, real quads in the interior):
+  // side signs at the top of the window next to doors 1 and 3 (toward the car centre), the front sign at the top of the
+  // left windscreen. a = [axis (0: plane x = c, 1: plane z = c), c, a0, a1], b = [y0, y1, u direction]
+  const SIDE_SIGN = { y0: 2.655, y1: 2.775, hw: 0.36, zin: 1.53 };
+  function SIGNS(isD) {
+    const out = [];
+    for (const xc of [-3.149, 3.149]) for (const s of [1, -1]) out.push({ a: [1, s * SIDE_SIGN.zin, xc - SIDE_SIGN.hw, xc + SIDE_SIGN.hw], b: [SIDE_SIGN.y0, SIDE_SIGN.y1, s] });
+    if (isD) out.push({ a: [0, FRONT_SIGN.x, FRONT_SIGN.z0, FRONT_SIGN.z1], b: [FRONT_SIGN.y0, FRONT_SIGN.y1, -1] });
+    return out;
+  }
+  const FRONT_SIGN = { z0: -1.1, z1: -0.56, y0: 3.07, y1: 3.19, x: 10.27 };
+  K.SIDE_SIGN = SIDE_SIGN; K.FRONT_SIGN = FRONT_SIGN;
+
   // ------------------------------------------------------------------------------------------ registration
   K.builders.bart = function (type, q) {
     const isD = type === 'D', b = buildFotf(type, q);
@@ -759,7 +779,7 @@
       sphere: new THREE.Sphere(new THREE.Vector3(0, 1.9, 0), 11.3),
       bones, boneIdx: { bogie: [1, 2], axlesOf: [[3, 4], [5, 6]], handle: isD ? BONE.handle : undefined }, leaves, wipers,
       meta: { bogieOffsets: [F.TRUCK, -F.TRUCK], doors, floorRegions, ramps: [], gangways, seats, cabEye },
-      units, rows, halfW: 1.47, floorY: F.FLOOR, ceilY: 3.12,
+      units, rows, halfW: 1.47, floorY: F.FLOOR, ceilY: 3.12, signs: SIGNS(isD),
       cabBox: new THREE.Vector4(-(F.BODY - 1.0), isD ? F.CAB_BACK : F.BODY - 1.0, 0, 0),
     };
   };

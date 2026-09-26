@@ -172,6 +172,18 @@
       const a = E.v(x - 0.26, FY + 0.002, s * 1.22, 0, 1, 0, r[0], r[1]), b = E.v(x + 0.26, FY + 0.002, s * 1.22, 0, 1, 0, r[2], r[1]), c = E.v(x + 0.26, FY + 0.002, s * 0.7, 0, 1, 0, r[2], r[3]), e = E.v(x - 0.26, FY + 0.002, s * 0.7, 0, 1, 0, r[0], r[3]);
       E.quadA(a, b, c, e);
     }
+    // ---------------- exterior LED destination signs behind the glass (seen from outside through clear glass)
+    { const SS = K.SIDE_SIGN, SG = K.SIGN.front;
+      for (const xc of [-3.149, 3.149]) for (const s of [1, -1]) {
+        const z = s * SS.zin, x0 = xc - SS.hw, x1 = xc + SS.hw;
+        E.pal('bezel'); E.box(x0 - 0.02, SS.y0 - 0.02, Math.min(z, z - s * 0.05), x1 + 0.02, SS.y1 + 0.02, Math.max(z - s * 0.001, z - s * 0.05));
+        E.pal('ledSign'); const ua = s > 0 ? 0 : 1, ub = 1 - ua;
+        const a = E.v(x0, SS.y0, z, 0, 0, s, ua, SG[1]), b = E.v(x1, SS.y0, z, 0, 0, s, ub, SG[1]), c = E.v(x1, SS.y1, z, 0, 0, s, ub, SG[3]), dd = E.v(x0, SS.y1, z, 0, 0, s, ua, SG[3]); E.quadA(a, b, c, dd);
+      }
+      if (isD) { const FS = K.FRONT_SIGN;
+        E.pal('bezel'); E.box(FS.x - 0.06, FS.y0 - 0.02, FS.z0 - 0.02, FS.x - 0.001, FS.y1 + 0.02, FS.z1 + 0.02);
+        E.pal('ledSign'); const a = E.v(FS.x, FS.y0, FS.z1, 1, 0, 0, 0, SG[1]), b = E.v(FS.x, FS.y0, FS.z0, 1, 0, 0, 1, SG[1]), c = E.v(FS.x, FS.y1, FS.z0, 1, 0, 0, 1, SG[3]), dd = E.v(FS.x, FS.y1, FS.z1, 1, 0, 0, 0, SG[3]); E.quadA(a, b, c, dd); }
+    }
     // ---------------- end walls: rear (and front for E): lime panels, end door, LED sign, posters
     endWall(E, G, -1, xR, FY);
     if (!isD) endWall(E, G, 1, xF, FY); else cabWall(E, G, FY);
