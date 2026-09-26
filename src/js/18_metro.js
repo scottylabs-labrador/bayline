@@ -141,11 +141,16 @@ const Metro = (() => {
     q(() => { if (typeof MetroStations === 'undefined') return;
       if (MetroStations.group && MetroStations.group.parent) MetroStations.group.parent.remove(MetroStations.group);
       MetroStations.keepOut = () => false; MetroStations.keepOutAny = () => false; });
-    // the terrain tiles the metro's height filters touched load again, natural (a no-op filter over the same rectangle
-    // drops them: Terrain.addHeightFilter's contract); towns, trees and ground cover rebuild without drops and keep-outs
-    q(() => { if (origAddFilter) for (const r of filterRects) origAddFilter.call(Terrain, noopFilter, r); });
-    q(() => { if (typeof Towns !== 'undefined' && Towns.dispose) Towns.dispose(); });
-    q(() => { if (typeof Flora !== 'undefined' && Flora.dispose) Flora.dispose(); });
+    // the places the metro reshaped (MetroGround's and the stations' rectangles, and every rectangle a metro height
+    // filter was added with) come back natural: their height tiles re-stream through the now-inert filters
+    // (Terrain.reloadHeights), and only their towns and tree tiles rebuild (Towns.refresh / Flora.reloadIn: the drop
+    // filters and keep-outs are inert now), so there is no whole-city rebuild; older builds without those APIs fall back
+    // to a no-op filter over each rectangle and full rebuilds
+    const R = [].concat((typeof MetroGround !== 'undefined' && MetroGround.rects) || [], (typeof MetroStations !== 'undefined' && MetroStations.rects) || [], filterRects);
+    q(() => { if (typeof Terrain === 'undefined') return;
+      if (Terrain.reloadHeights) for (const r of R) q(() => Terrain.reloadHeights(r)); else if (origAddFilter) for (const r of filterRects) q(() => origAddFilter.call(Terrain, noopFilter, r)); });
+    q(() => { if (typeof Towns === 'undefined') return; if (Towns.refresh) Towns.refresh(R); else if (Towns.dispose) Towns.dispose(); });
+    q(() => { if (typeof Flora === 'undefined') return; if (Flora.reloadIn) Flora.reloadIn(R); else if (Flora.dispose) Flora.dispose(); });
     q(() => { if (typeof GroundCover !== 'undefined' && GroundCover.dispose) GroundCover.dispose(); });
   }
 

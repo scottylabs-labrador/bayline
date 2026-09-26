@@ -466,6 +466,9 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     if (fsAt && Math.abs(fsAt[0] - x) + Math.abs(fsAt[1] - y) + Math.abs(fsAt[2] - z) < 0.5) return fsHit;       // (unchanged camera)
     let below = -1e9; try { const g = Terrain.h(x, z); if (isFinite(g)) below = g - y; } catch (e) {}
     let hit = null;
+    // (open-trench, surface and aerial stations are outdoor places even where the data's track is cut-and-cover under
+    // uncarved ground (San Bruno, Milpitas): near one, never)
+    if (MetroNet.stationsNear) { const ns = MetroNet.stationsNear(x, z, 320)[0]; if (ns && ns.station.type !== 'subway') { fsAt = [x, y, z]; fsHit = null; return null; } }
     if (below > 1 && !cutAt(x, z, y)) {
       const t = MetroNet.inTunnelAt ? MetroNet.inTunnelAt(x, y, z) : null;
       if (t) hit = t.kind === 'station' ? 'station ' + (t.station && t.station.id) + ' (track ' + (t.track && t.track.id) + ' s ' + Math.round(t.s) + ')' : 'track ' + (t.track && t.track.id) + ' s ' + Math.round(t.s) + ' (' + t.struct + ')';
@@ -480,7 +483,7 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   }
   function failsafeNote(hit, x, y, z) {
     const now = performance.now();
-    if (!hit) { fsPos = null; return; }
+    if (!hit) { fsPos = null; stats.failsafe = null; return; }
     if (!fsPos || Math.hypot(fsPos[0] - x, fsPos[2] - z) > 20) { fsPos = [x, y, z]; fsSince = now; return; }
     stats.failsafe = hit;
     if (!DEBUG || now - fsSince < 3000) return;
@@ -489,14 +492,16 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
   }
 
   // ------------------------------------------------------------------ per frame
-  let lastCam = new THREE.Vector3(1e9, 0, 0), wasNear = false;
-  // (failure isolation: an exception anywhere in Under resets it to "outdoors, nothing hidden, no map", logs one
-  // warning, and after three Under stays off; the main loop never sees it)
-  let broken = false, errN = 0;
+  let lastCam = new THREE.Vector3(1e9, 0, 0), wasNear = false, mapWait = 0, recentred = false;
+  // (failure isolation: an exception anywhere in Under first resets it to "outdoors, nothing hidden, no map"; then the
+  // metro switch (18_metro.js) is told, which turns the whole metro off for the session with its one warning; without
+  // the switch Under just stays off)
+  let broken = false;
+  const hasSwitch = () => typeof Metro !== 'undefined' && !!Metro.fail;
   function fail(where, e) {
-    errN++; try { resetState(); } catch (e2) {}
-    if (errN === 1) console.warn('Under: ' + where + ' failed; underground rendering off for this frame' + (errN >= 3 ? '' : ''), e);
-    if (errN >= 3) broken = true;
+    broken = true; try { resetState(); } catch (e2) {}
+    if (hasSwitch()) { try { Metro.fail('the underground engine (' + where + ')', e); } catch (e3) {} }
+    else console.warn('Under: ' + where + ' failed; underground rendering off', e);
   }
   function resetState() {
     state.cell = null; state.failsafe = null; state.depth = 0; state.daylight = 1; state.outsideVisible = true; state.visible.clear();
@@ -509,12 +514,16 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     // clipmap levels follow the camera (snapped to 8 texels so the map doesn't swim)
     for (const q of [...LV, FL]) {
       if (Math.abs(cp.x - q.cx) > q.re || Math.abs(cp.z - q.cz) > q.re || Math.abs(cp.y - q.refY) > 160) {
-        const snap = q.texel * 8; q.cx = Math.round(cp.x / snap) * snap; q.cz = Math.round(cp.z / snap) * snap; q.refY = Math.round(cp.y / 32) * 32; dirty = true;
+        const snap = q.texel * 8; q.cx = Math.round(cp.x / snap) * snap; q.cz = Math.round(cp.z / snap) * snap; q.refY = Math.round(cp.y / 32) * 32; dirty = true; recentred = true;
       }
     }
     const any = cells.size + cuts.size > 0 && anyNear(cp.x, cp.z);
     if (any && !wasNear) dirty = true; wasNear = any;
-    if (dirty && any) { drawMaps(cam); dirty = false; if (!aliased) aliased = aliasMap(); if (!aliasedF) aliasedF = aliasFine(); }
+    // (registrations mark the map dirty many times while streaming: it is redrawn at most every 6th frame then, at
+    // once when the clipmap moves or the camera comes near)
+    const T0 = performance.now(); mapWait = Math.max(0, mapWait - 1);
+    if (dirty && any && (mapWait === 0 || recentred)) { drawMaps(cam); dirty = false; recentred = false; mapWait = 6; if (!aliased) aliased = aliasMap(); if (!aliasedF) aliasedF = aliasFine(); }
+    const T1 = performance.now();
     uXf0.value.set(LV[0].cx, LV[0].cz, 1 / LV[0].half, LV[0].refY); uXf1.value.set(LV[1].cx, LV[1].cz, 1 / LV[1].half, LV[1].refY);
     uXfF.value.set(FL.cx, FL.cz, 1 / FL.half, FL.refY);
     uK.value.x = any && aliased ? 1 : 0;
@@ -526,7 +535,9 @@ reflectedLight.directSpecular = blDS0 + ( reflectedLight.directSpecular - blDS0 
     state.daylight = c ? dayAt(c, cp.x, cp.y, cp.z) : state.failsafe ? 0 : 1;
     const target = c || state.failsafe ? 1 - state.daylight : 0;
     state.depth = target;                                  // (the daylight ramps are already smooth along the cell)
+    const T2 = performance.now();
     visibility(cam);
+    const T3 = performance.now(); const tu = stats.tu || (stats.tu = [0, 0, 0]); tu[0] = T1 - T0; tu[1] = T2 - T1; tu[2] = T3 - T2;   // (QA: map / cell / visibility ms)
     if (state.failsafe) {                                  // no cell to walk from: the cells around stay, the outdoors goes
       state.outsideVisible = false; state.visible.clear();
       for (const k of cells.values()) if (cp.x > k.bb[0] - 300 && cp.x < k.bb[2] + 300 && cp.z > k.bb[1] - 300 && cp.z < k.bb[3] + 300) state.visible.add(k.id);

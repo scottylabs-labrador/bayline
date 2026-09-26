@@ -330,8 +330,9 @@ Hash options: `pat=yellow-S-0|1`, `c=struct|line|speed|grade|cls`, `ll=lat,lon,p
 ```bash
 python3 tools/metro/fetch.py            # GTFS + Overpass BART extract (cached)
 python3 tools/metro/osm_pbf.py          # roads/waterways/rails within 60 m of the tracks from the NorCal PBF (needs pyosmium)
-python3 tools/metro/bake_network.py     # -> network.json, tracks.<sha>.bin, crossings.json, validation.json   (METRO_PUB=<dir> to stage)
-python3 tools/metro/bake_timetable.py   # -> timetable.json (reads network.json)
+python3 tools/metro/bake_network.py     # -> STAGING metro-next/: network.json, tracks.<sha>.bin, crossings.json, validation.json (METRO_PUB=<dir> overrides)
+python3 tools/metro/bake_timetable.py   # -> metro-next/timetable.json (reads the staged network.json)
+python3 tools/metro/promote.py --yes    # metro-next -> the live metro/ (production is published from it): only when the lead asks
 python3 tools/metro/validate.py overlay|profiles       # NAIP overlays / profile plots -> notes/bart/shots/data/
 python3 tools/metro/whatmoved.py [new_dir] [old_dir]   # station level / structure changes between two bakes
 python3 tools/metro/debugprof.py TRACK s0 s1 [step]    # inspect the last solve (bounds, targets, separations)

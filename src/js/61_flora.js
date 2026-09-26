@@ -1153,6 +1153,7 @@ const Flora = (() => {
         const rB = u8[o + 4], hB = u8[o + 5]; let kind = u8[o + 6]; const tint = u8[o + 7] / 255;
         if (kind >= NK) kind = 7;
         if (ko && ko(x, z, 'tree')) continue;
+        if (dropFilters.length && dropFilters.some(f => f(x, z, rB * 0.1))) continue;             // (Bayline Metro: MetroGround)
         if (mask && mask[Math.min(NG - 1, (uz * NG) >> 16) * NG + Math.min(NG - 1, (ux * NG) >> 16)]) {
           const tr = Track.nearest(x, z, 50);
           if (tr) {
@@ -1351,6 +1352,47 @@ const Flora = (() => {
     for (const m of nearMesh) m.castShadow = false;
     dirty = true;
   }
+  // Bayline Metro (world workstream): drop filters fn(x, z, crown radius m) -> true drops a tree when its tile loads (and in
+  // adjust); adjust(rects, dy) re-places the trees of the loaded tiles overlapping rects [x0, z0, x1, z1] in place: each
+  // moves by dy(x, z) metres (the ground change under it, e.g. MetroGround's carve) and the drop filters apply, with no
+  // reload, so nothing else pops. dy null: only the drop filters.
+  const dropFilters = [];
+  function addDrop(fn) { dropFilters.push(fn); }
+  function adjust(rects, dy) {
+    let moved = 0, dropped = 0;
+    for (const t of tiles.values()) {
+      if (t.state !== 'ready' || !t.n) continue;
+      const x0 = X0 + t.tx * T7, z0 = Z0 + t.ty * T7;
+      if (!rects.some(r => r[0] < x0 + T7 && r[2] > x0 && r[1] < z0 + T7 && r[3] > z0)) continue;
+      const D = t.D, K = t.K; let m = 0, ysum = 0, changed = false;
+      for (let i = 0; i < t.n; i++) {
+        const b = i * NF, x = D[b], z = D[b + 2];
+        if (K[i] !== SHRUB && dropFilters.length) {
+          const dm = DIM[KINDS[K[i]]], rad = Math.hypot(D[b + 3], D[b + 4]) * (dm ? dm[1] : 4);
+          if (dropFilters.some(f => f(x, z, rad))) { changed = true; dropped++; continue; }
+        }
+        if (m !== i) { D.copyWithin(m * NF, b, b + NF); K[m] = K[i]; }
+        const d = dy ? dy(x, z) : 0;
+        if (d) { D[m * NF + 1] += d; changed = true; moved++; }
+        ysum += D[m * NF + 1]; m++;
+      }
+      if (!changed) continue;
+      stats.trees -= t.n - m; t.n = m; t.ym = m ? ysum / m : 0;
+      killFar(tkey(t.tx, t.ty)); if (m) pendingFar.push(t);
+    }
+    dirty = true; stats.adjusted = (stats.adjusted || 0) + moved; stats.dropped = (stats.dropped || 0) + dropped;
+    return { moved, dropped };
+  }
+  // the loaded tiles overlapping rects load again from their data (e.g. after drop filters went inert): only there
+  function reloadIn(rects) {
+    let n = 0;
+    for (const [k, t] of [...tiles]) {
+      const x0 = X0 + t.tx * T7, z0 = Z0 + t.ty * T7;
+      if (!rects.some(r => r[0] < x0 + T7 && r[2] > x0 && r[1] < z0 + T7 && r[3] > z0)) continue;
+      t.dead = true; if (t.state === 'ready') { stats.trees -= t.n; killFar(k); } tiles.delete(k); n++;
+    }
+    dirty = true; lastTileCheck = -1e9; return n;
+  }
   function dispose() {
     for (const t of tiles.values()) t.dead = true; tiles.clear(); stats.trees = 0;
     for (const m of [...nearMesh, ...midMesh, ...proxyMesh]) { m.count = 0; m.visible = false; }
@@ -1372,6 +1414,7 @@ const Flora = (() => {
     return out;
   }
   return {
+    addDrop, adjust, refreshIn: (rects) => adjust(rects, null), reloadIn,
     init, update, hasData, covers: hasData, setQuality, dispose, group, stats, KINDS, DIM, treesNear,
     get ready() { return ready; }, get quality() { return qName; }, get radii() { return { near: q.near, mid: q.mid, far: q.far, load: q.load }; },
     _geo: { near: geoNear, mid: geoMid }, _atlas: () => atlasTex, _nrm: () => nrmTex, _imp: () => impTex, _tiles: tiles, addTestTile,

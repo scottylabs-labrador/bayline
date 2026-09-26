@@ -4,7 +4,7 @@ then crossings.json and timetable.json, then network.json (its tracksBin.path re
 each via an atomic rename, so a client never sees a network.json that names a missing binary. Old hashed binaries are
 kept (48 h rule in common.write_hashed), and the legacy tracks.bin is never overwritten once it exists.
 
-    python3 tools/metro/promote.py [--from data/pub/v2/metro-next] [--to data/pub/v2/metro]
+    python3 tools/metro/promote.py --yes [--from data/pub/v2/metro-next] [--to data/pub/v2/metro]   (only when the lead asks)
 """
 import json, os, shutil, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +27,9 @@ def put(name, data=None):
 
 
 os.makedirs(dst, exist_ok=True)
+if '--yes' not in a:
+    sys.exit('promote.py publishes to the live dir that production is synced from: only when the lead asks for it '
+             '(then pass --yes). Stage with bake_network.py / bake_timetable.py (they write metro-next) and review first.')
 put(bin_name)
 # the legacy metro/tracks.bin (read only by loaders whose network.json has no tracksBin.path) is never overwritten: a cached
 # old network.json must never meet new bytes; new binaries only ever arrive under new content-addressed names

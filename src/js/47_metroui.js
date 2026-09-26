@@ -72,11 +72,27 @@ const MetroUI = (() => {
   #mstrip{position:absolute;right:16px;top:70px;bottom:90px;width:200px;padding:10px 12px;overflow:hidden;pointer-events:auto}
   body.mdriving #mstrip{right:136px}
   #mstrip canvas{width:100%;height:100%;display:block}
-  #title .metro{display:flex;align-items:center;gap:14px;width:100%;text-align:left;margin:-4px 0 14px;padding:14px 16px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(100deg,rgba(0,153,204,.16),rgba(255,153,51,.10) 45%,rgba(255,255,51,.08));transition:all .15s}
-  #title .metro:hover{border-color:rgba(255,255,255,.34);transform:translateY(-1px)}
-  #title .metro b{font-size:18px;display:block} #title .metro small{color:var(--ink-dim);font-size:13px;line-height:1.4}
-  #title .metro .dots{display:flex;gap:4px;flex:none} #title .metro .dots i{width:9px;height:26px;border-radius:3px;display:block}
-  @media (max-width:760px){#msys .wrap{grid-template-columns:1fr} #msys .side{height:auto;max-height:30vh} #msys canvas{height:52vh} #mride,#mdmi{width:auto;right:12px;left:12px;bottom:112px} #mstrip{display:none}}`;
+  #title{display:flex;overflow-y:auto;overscroll-behavior:contain} #title .card{margin:auto}   /* (a tall title card scrolls instead of being cut off) */
+  #title .mfront{margin:-4px 0 14px;padding:13px 14px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:linear-gradient(100deg,rgba(0,153,204,.13),rgba(255,153,51,.07) 48%,rgba(255,255,51,.05))}
+  #title .mfront .top{display:flex;align-items:center;gap:14px}
+  #title .mfront .ico{flex:none;display:block}
+  #title p.lede .short{display:none}
+  #title .foot details{display:inline} #title .foot summary{display:inline;cursor:pointer;color:var(--ink-dim);list-style:none;white-space:nowrap} #title .foot summary::-webkit-details-marker{display:none}
+  #title .foot summary::after{content:' ▸'} #title .foot details[open] summary::after{content:' ▾'} #title .foot details[open] div{margin-top:4px}
+  #title .mfront .t{flex:1;min-width:0;line-height:1.3} #title .mfront .t b{font-size:18px;display:block} #title .mfront .t small{color:var(--ink-dim);font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #title .mfront .acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+  #title .mfront .acts .btn{padding:9px 14px;font-size:14px;white-space:nowrap} #title .mfront .acts .btn.go{border-color:rgba(0,153,204,.75);background:rgba(0,153,204,.22)} #title .mfront .acts .btn.go:hover{background:rgba(0,153,204,.34)}
+  #title .mfront .pick{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+  #title .mfront .pick .row{display:flex;gap:8px;align-items:center}
+  #title .mfront .pick input{flex:1;min-width:0;background:rgba(0,0,0,.28);border:1px solid var(--line);border-radius:10px;color:var(--ink);font:inherit;font-size:15px;padding:9px 12px;outline:none}
+  #title .mfront .pick input:focus{border-color:rgba(255,255,255,.34)}
+  #title .mfront .pick .opts{display:flex;flex-wrap:wrap;gap:6px}
+  #title .mfront .pick .opts .chip{color:var(--ink);display:inline-flex;align-items:center;gap:6px} #title .mfront .pick .opts .chip:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.3)}
+  #title .mfront .pick .opts .chip i{width:7px;height:7px;border-radius:50%;display:inline-block}
+  #title .mfront .pick .hint{color:var(--ink-faint);font-size:12.5px}
+  #hmetro{display:inline-flex;align-items:center;gap:7px} #hmetro .ico{display:block}
+  #hmetro.on{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.32)}
+  @media (max-width:760px){#title p.lede .full{display:none} #title p.lede .short{display:inline} #title .mfront .top{flex-wrap:wrap} #title .mfront .acts{width:100%;justify-content:stretch} #title .mfront .acts .btn{flex:1 1 auto} #msys .wrap{grid-template-columns:1fr} #msys .side{height:auto;max-height:30vh} #msys canvas{height:52vh} #mride,#mdmi{width:auto;right:12px;left:12px;bottom:112px} #mstrip{display:none}}`;
   function build() {
     if (built || !on()) return; built = true;
     const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
@@ -93,7 +109,8 @@ const MetroUI = (() => {
     el.board = add(`<div class="overlay" id="mboard" hidden><div class="card panel"><button class="close" data-mclose>×</button>
       <div class="kicker" id="mbk">Arrivals</div><h2 id="mbt">Station</h2><div id="mbsub" style="color:var(--ink-dim);margin:-6px 0 8px;font-size:14px"></div>
       <div class="plats" id="mbp"></div><div class="conn" id="mbc"></div><div class="acts" id="mba"></div>
-      <p style="color:var(--ink-faint);font-size:13px;margin:12px 0 0">Click a train to ride it (you'll be on its platform a minute before it arrives), <kbd>Shift</kbd>+click to drive it.</p></div></div>`);
+      <p style="color:var(--ink-faint);font-size:13px;margin:12px 0 0" id="mbhint">Click a train to ride it (you'll be on its platform a minute before it arrives), <kbd>Shift</kbd>+click to drive it.</p></div></div>`);
+    if (matchMedia('(pointer: coarse)').matches) document.getElementById('mbhint').textContent = 'Tap a train to ride it: you\'ll be on its platform a minute before it arrives. To drive one, tap it on the system map, then Drive.';
     const hud = $('hud') || document.body;
     const addH = (html) => { const d = document.createElement('div'); d.innerHTML = html.trim(); const n = d.firstChild; hud.appendChild(n); return n; };
     el.ride = addH(`<div id="mride" class="panel" hidden><div class="hd"><i id="mrc"></i><div><b id="mrl">—</b><small id="mrd"></small></div></div>
@@ -117,7 +134,7 @@ const MetroUI = (() => {
       el.mlivet.textContent = !st.on ? 'Live positions' : st.error ? 'Live: ' + st.error : st.matched >= 0 ? `Live: ${st.matched} trains from ${st.source === 'gtfs-rt' ? 'real-time trip updates' : 'real-time departures'}` : 'Live: connecting…';
       if (st.on && st.error && typeof UI !== 'undefined') UI.toast(st.error, 5); });
     if (typeof UI !== 'undefined' && UI.addOverlay) { UI.addOverlay(el.sys); UI.addOverlay(el.board); }
-    titleCard();
+    titleCard(); hudButton();
   }
   function closeAll() { if (el.sys) el.sys.hidden = true; if (el.board) el.board.hidden = true; }
   // the metro failed (Metro.fail): every metro panel, button and overlay goes away; the page is as without the metro
@@ -125,16 +142,123 @@ const MetroUI = (() => {
     closeAll(); document.body.classList.remove('mdriving');
     for (const k of ['ride', 'dmi', 'strip']) if (el[k]) el[k].hidden = true;
     for (const n of document.querySelectorAll('[data-metro-ui]')) n.remove();
+    restoreCard();
+    const bar = document.getElementById('drivebar');
+    if (bar) for (const b of bar.querySelectorAll('button')) { if (b.dataset.pen) b.textContent = b.dataset.pen; if (b.dataset.k === 'KeyG') b.hidden = false; }
   }
   if (typeof Metro !== 'undefined') Metro.onTeardown(shutdown);
   const anyOpen = () => !!(el.sys && (!el.sys.hidden || !el.board.hidden));
 
-  // the title screen: one wide card under the four modes
+  // ---------------------------------------------------------------- the front door (title card, HUD button, search)
+  // The title card gets a Bayline Metro section under the four modes: ride from a station, drive a train, the system
+  // map. Ride and Drive open a small chooser in place (station search with the stations' aliases, or the drive runs);
+  // the choice starts the game (__bayline.start('metro', { action, station | mission })) and MetroUI.front() carries it
+  // out as soon as the metro has loaded.
+  const LINE_BARS = ['#ffff33', '#ff0000', '#ff9933', '#339933', '#0099cc'];
+  // five thin strokes in the line colours, fanning in from the left like the lines meeting at the Oakland Wye
+  function bars(w = 30, h = 22, sw = 2) {
+    const n = LINE_BARS.length, y0 = (i) => sw + i * (h - 2 * sw) / (n - 1), y1 = (i) => h / 2 + (i - (n - 1) / 2) * sw * 1.15;
+    return `<svg class="ico" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">${LINE_BARS.map((c, i) =>
+      `<path d="M1 ${y0(i).toFixed(2)} C ${(w * 0.45).toFixed(1)} ${y0(i).toFixed(2)} ${(w * 0.5).toFixed(1)} ${y1(i).toFixed(2)} ${w - 1} ${y1(i).toFixed(2)}" stroke="${c}" stroke-width="${sw}" fill="none" stroke-linecap="round"/>`).join('')}</svg>`;
+  }
+  const RIDE_PICKS = ['EMBR', 'POWL', '16TH', '12TH', 'MCAR', 'DBRK', 'SFIA', 'MLBR'];
+  let fr = null;                                                // the title section's elements
   function titleCard() {
-    const modes = document.querySelector('#title .modes'); if (!modes) return;
-    const b = document.createElement('button'); b.className = 'metro'; b.dataset.go = 'metro'; b.dataset.metroUi = '';
-    b.innerHTML = `<span class="dots">${['#ffff33', '#ff0000', '#ff9933', '#339933', '#0099cc'].map(c => `<i style="background:${c}"></i>`).join('')}</span><span><b>Bayline Metro: the whole Bay Area rapid transit system</b><small>Five lines, 50 stations, the Transbay Tube, the real timetable. Ride, drive under ATC, or watch it all run on the live system map.</small></span>`;
-    modes.after(b);
+    const modes = document.querySelector('#title .modes'); if (!modes || fr) return;
+    const d = document.createElement('div'); d.className = 'mfront'; d.dataset.metroUi = '';
+    d.innerHTML = `<div class="top">${bars()}<div class="t"><b>Bayline Metro</b><small>50 stations · 5 lines · live</small></div>
+      <div class="acts"><button class="btn go" data-mf="ride" title="Start on a platform of any station as the next train pulls in">Ride</button><button class="btn" data-mf="drive" title="Drive a metro train under automatic train control">Drive</button><button class="btn" data-mf="map" title="Every train running now">System map</button></div></div>
+      <div class="pick" hidden><div class="row"><input autocomplete="off" spellcheck="false"><button class="chip" data-mf="back">Back</button></div><div class="opts"></div><div class="hint"></div></div>`;
+    modes.after(d);
+    fr = { root: d, pick: d.querySelector('.pick'), input: d.querySelector('.pick input'), opts: d.querySelector('.pick .opts'), hint: d.querySelector('.pick .hint'), kind: '' };
+    d.addEventListener('click', (e) => { const b = e.target.closest('[data-mf]'); if (!b) return; const a = b.dataset.mf;
+      if (a === 'map') go({ action: 'map' });
+      else if (a === 'ride' || a === 'drive') openPick(a);
+      else if (a === 'back') { fr.pick.hidden = true; fr.kind = ''; }
+      else if (a === 'st') go({ action: 'ride', station: b.dataset.id });
+      else if (a === 'mission') go({ action: 'drive', mission: b.dataset.id }); });
+    fr.input.addEventListener('input', () => renderPick());
+    fr.input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { const b = fr.opts.querySelector('[data-mf="st"]'); if (b) b.click(); } if (e.key === 'Escape') { fr.pick.hidden = true; fr.kind = ''; } });
+    bayWide();
+  }
+  // With the metro on, the card speaks for the whole Bay: the eyebrow, a shorter intro (one sentence on a phone), and
+  // the credits folded into "Data & credits" with the non-affiliation lines always visible. Originals are kept for the
+  // teardown (Metro.fail) and #metro=0 never gets here.
+  const ORIG = [];
+  function swap(el, html) { if (!el) return; ORIG.push([el, el.innerHTML]); el.innerHTML = html; }
+  function bayWide() {
+    swap(document.querySelector('#title .krow .kicker'), 'An unofficial Bay Area rail &amp; flight simulator');
+    swap(document.querySelector('#title p.lede'), `<span class="full">A photoreal replica of the Bay Area's railways, running live on the real timetables: the Peninsula line from 4th&nbsp;&amp;&nbsp;King to Gilroy and all five metro lines, from Antioch to SFO. Ride, drive, explore, or fly real aircraft from 28,000&nbsp;airports.</span><span class="short">The Bay Area's railways, live on the real timetables, and real aircraft from 28,000&nbsp;airports.</span>`);
+    // the four modes are the Peninsula line's and the air's: say so where the metro strip offers its own Ride and Drive
+    swap(document.querySelector('#title .mode[data-go="ride"] small'), 'Catch the next real Peninsula departure, walk the train, grab a window seat.');
+    swap(document.querySelector('#title .mode[data-go="drive"] small'), 'Take the cab of a Peninsula train. Keep time, stop on the mark.');
+    const foot = document.querySelector('#title .foot > span');
+    if (foot) {
+      const t = foot.innerHTML, pen = 'Unofficial. Not affiliated with Caltrain or the Peninsula Corridor Joint Powers Board.', air = 'Aircraft types named for identification only; not affiliated with any manufacturer or airline.';
+      const data = t.replace(pen, '').replace(air, '').trim() + ' Metro: timetable GTFS and GTFS-Realtime; track and stations © OpenStreetMap contributors.';
+      swap(foot, `Unofficial. Not affiliated with Caltrain or the Peninsula Corridor Joint Powers Board, or with the San Francisco Bay Area Rapid Transit District. ${air} <details><summary>Data &amp; credits</summary><div>${data}</div></details>`);
+    }
+  }
+  function restoreCard() { for (const [el, html] of ORIG.splice(0).reverse()) el.innerHTML = html; }
+  function go(opts) { if (window.__bayline && window.__bayline.start) window.__bayline.start('metro', opts); else front(opts); }
+  function openPick(kind) {
+    fr.kind = kind; fr.pick.hidden = false; fr.input.value = '';
+    fr.input.parentNode.hidden = kind !== 'ride'; fr.input.placeholder = 'Find a station: Embarcadero, SFO, 12th St, Berryessa…';
+    renderPick(); if (kind === 'ride') setTimeout(() => fr.input.focus(), 30);
+  }
+  function renderPick() {
+    if (!fr || !fr.kind) return;
+    if (fr.kind === 'drive') {
+      fr.opts.innerHTML = MetroMissions.defs().filter(m => m.drive).map(m => `<button class="chip" data-mf="mission" data-id="${m.id}">${esc(m.title)}</button>`).join('') + `<button class="chip" data-mf="map">Any train, from the map</button><button class="chip" data-mf="back">Back</button>`;
+      fr.hint.textContent = 'Automatic (ATO) by default: W at the departure time. S brakes and switches to manual; ATC keeps you under the speed code.';
+      return;
+    }
+    if (!ready()) { fr.opts.innerHTML = ''; fr.hint.textContent = 'Loading the stations…'; if (on()) MetroSim.init().then(() => renderPick()); return; }
+    const q = fr.input.value.trim(), L = q ? findStations(q, 10) : RIDE_PICKS.map(id => MetroSim.stById.get(id)).filter(Boolean);
+    fr.opts.innerHTML = L.map(st => `<button class="chip" data-mf="st" data-id="${st.id}">${[...st.lines].filter(l => l !== 'ebart').slice(0, 4).map(l => `<i style="background:${MetroSim.lineColor(l)}"></i>`).join('')}${esc(st.name)}</button>`).join('') || '<span class="hint">No station by that name</span>';
+    fr.hint.textContent = q ? '' : 'Or type any of the 50 stations. You start on its platform as the next train pulls in.';
+  }
+  // what the front door's choices do once the game is running (waits for the metro to load if it hasn't yet)
+  function front(o = {}) {
+    if (!on()) return;
+    const run = () => {
+      if (o.action === 'ride' && o.station) {
+        const S = MetroSim.stById.get(o.station);
+        if (!S || !MetroPlay.teleport(o.station)) { openMap(); return; }
+        const now = Env.time.sec, ev = MetroSim.arrivals(o.station, now, 24).find(e => e.dep > now + 3);
+        if (ev) { const inf = MetroSim.eventInfo(ev), m = Math.max(0, Math.round((ev.t - now) / 60));
+          UI.toast(`${S.name}: the ${inf.lineName} to ${inf.dest} ${m <= 0 ? 'is here' : 'arrives in ' + m + ' min'}. Press E at an open door to board · B arrivals · N the system map.`, 8); }
+        else UI.toast(`${S.name}: no more trains today. N opens the system map.`, 6);
+      } else if (o.action === 'drive' && o.mission) {
+        const m = MetroMissions.defs().find(x => x.id === o.mission); if (m) MetroMissions.start(m); else openMap();
+      } else { openMap(); UI.toast('Bayline Metro: click a station to go there, a train to follow it. N reopens this map.', 7); }
+    };
+    if (ready()) run(); else { UI.toast('Bayline Metro is loading…', 3); MetroSim.init().then(ok => { if (ok && ready()) run(); }); }
+  }
+  // station search over the names, short names, codes and aliases (the stations' own, plus a few common ones)
+  const ALIASES = { SFIA: ['SFO', 'San Francisco Airport'], OAKL: ['OAK', 'Oakland Airport'], CIVC: ['UN Plaza', 'Civic Center/UN Plaza'], BERY: ['North San Jose', 'Berryessa/North San José'],
+    '12TH': ['Oakland City Center', 'Downtown Oakland'], '19TH': ['Uptown'], MONT: ['Financial District'], POWL: ['Union Square'], EMBR: ['Ferry Building'], COLS: ['Oakland Coliseum'], DBRK: ['UC Berkeley'] };
+  const norm = (x) => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\bst\b\.?/g, 'street').replace(/[^a-z0-9]+/g, ' ').trim();
+  function findStations(q, n = 8) {
+    const nq = norm(q); if (!nq) return [];
+    const out = [];
+    for (const st of MetroSim.stations) {
+      if (st.id === 'PITT-T') continue;                          // (the shuttle's transfer platform: part of Pittsburg / Bay Point)
+      const names = [st.name, st.short, st.id, ...((st.src && st.src.aliases) || []), ...(ALIASES[st.id] || [])].map(norm);
+      let best = 0;
+      for (const nm of names) best = Math.max(best, nm === nq ? 4 : nm.startsWith(nq) ? 3 : nm.split(' ').some(w => w.startsWith(nq)) ? 2 : nm.includes(nq) ? 1 : 0);
+      if (best) out.push([best, st]);
+    }
+    return out.sort((a, b) => b[0] - a[0] || a[1].name.localeCompare(b[1].name)).slice(0, n).map(x => x[1]);
+  }
+  // the HUD's map button (next to Fly): the system map, N on the keyboard
+  function hudButton() {
+    const tr = document.querySelector('#hud .tr'), fly = document.getElementById('hfly'); if (!tr || document.getElementById('hmetro')) return;
+    const b = document.createElement('button'); b.className = 'pill panel'; b.id = 'hmetro'; b.dataset.metroUi = ''; b.title = 'Bayline Metro system map (N)';
+    b.innerHTML = `${bars(16, 12, 1.5)}Metro`;
+    b.addEventListener('click', () => { const was = api.mapOpen; if (typeof UI !== 'undefined') UI.closeAll(); if (!was) openMap(); });
+    if (fly && fly.parentNode === tr) tr.insertBefore(b, fly); else tr.prepend(b);
+    el.hbtn = b;
   }
 
   // ---------------------------------------------------------------- schematic layout (our own diagram, octilinear)
@@ -175,17 +299,28 @@ const MetroUI = (() => {
   }
   function V() { return map.view === 'geo' ? map.geo : map.sch; }
   function initMap() {
-    const c = el.msysc;
-    c.addEventListener('wheel', (e) => { e.preventDefault(); const v = V(), k = e.deltaY > 0 ? 0.87 : 1.15, r = c.getBoundingClientRect(), dpr = devicePixelRatio;
-      const mx = (e.clientX - r.left) * dpr, my = (e.clientY - r.top) * dpr, wx = v.cx + (mx - c.width / 2) / v.scale, wz = v.cz + (my - c.height / 2) / v.scale;
-      v.scale = U.clamp(v.scale * k, map.view === 'geo' ? 0.0015 : 8, map.view === 'geo' ? 0.6 : 160); v.cx = wx - (mx - c.width / 2) / v.scale; v.cz = wz - (my - c.height / 2) / v.scale; }, { passive: false });
-    c.addEventListener('mousedown', (e) => { map.drag = { x: e.clientX, y: e.clientY, moved: 0 }; c.style.cursor = 'grabbing'; });
-    window.addEventListener('mousemove', (e) => {
+    const c = el.msysc; c.style.touchAction = 'none';
+    // zoom about a screen point (px in canvas pixels) by k
+    const zoomAt = (mx, my, k) => { const v = V(), wx = v.cx + (mx - c.width / 2) / v.scale, wz = v.cz + (my - c.height / 2) / v.scale;
+      v.scale = U.clamp(v.scale * k, map.view === 'geo' ? 0.0015 : 8, map.view === 'geo' ? 0.6 : 160); v.cx = wx - (mx - c.width / 2) / v.scale; v.cz = wz - (my - c.height / 2) / v.scale; };
+    const cpx = (e) => { const r = c.getBoundingClientRect(), dpr = devicePixelRatio; return [(e.clientX - r.left) * dpr, (e.clientY - r.top) * dpr]; };
+    c.addEventListener('wheel', (e) => { e.preventDefault(); const [mx, my] = cpx(e); zoomAt(mx, my, e.deltaY > 0 ? 0.87 : 1.15); }, { passive: false });
+    // pointers: one drags the map (a tap selects), two pinch-zoom (touch screens)
+    const pts = new Map(); let pinch = 0;
+    c.addEventListener('pointerdown', (e) => { try { c.setPointerCapture(e.pointerId); } catch (err) { /* (not an active pointer) */ } pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 1) { map.drag = { x: e.clientX, y: e.clientY, moved: 0 }; c.style.cursor = 'grabbing'; }
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); if (map.drag) map.drag.moved = 99; } });
+    c.addEventListener('pointermove', (e) => {
       if (!el.sys || el.sys.hidden) return;
-      if (map.drag) { const v = V(), dx = e.clientX - map.drag.x, dy = e.clientY - map.drag.y; map.drag.moved += Math.abs(dx) + Math.abs(dy); map.drag.x = e.clientX; map.drag.y = e.clientY; v.cx -= dx * devicePixelRatio / v.scale; v.cz -= dy * devicePixelRatio / v.scale; }
-      else { const r = c.getBoundingClientRect(); if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) map.hover = pick(e); else map.hover = null; c.style.cursor = map.hover ? 'pointer' : 'grab'; }
+      if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2 && pinch) { const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y); const [mx, my] = cpx({ clientX: (a.x + b.x) / 2, clientY: (a.y + b.y) / 2 }); zoomAt(mx, my, d / pinch); pinch = d; return; }
+      if (map.drag && pts.size === 1) { const v = V(), dx = e.clientX - map.drag.x, dy = e.clientY - map.drag.y; map.drag.moved += Math.abs(dx) + Math.abs(dy); map.drag.x = e.clientX; map.drag.y = e.clientY; v.cx -= dx * devicePixelRatio / v.scale; v.cz -= dy * devicePixelRatio / v.scale; }
+      else if (e.pointerType === 'mouse') { map.hover = pick(e); c.style.cursor = map.hover ? 'pointer' : 'grab'; }
     });
-    window.addEventListener('mouseup', (e) => { if (!map.drag) return; const click = map.drag.moved < 5; map.drag = null; c.style.cursor = 'grab'; if (click && el.sys && !el.sys.hidden) { const h = pick(e); if (h) select(h); } });
+    const up = (e) => { const had = pts.delete(e.pointerId); if (pts.size < 2) pinch = 0; if (!had || pts.size) return;
+      if (!map.drag) return; const click = map.drag.moved < (e.pointerType === 'mouse' ? 5 : 12); map.drag = null; c.style.cursor = 'grab'; if (click && el.sys && !el.sys.hidden) { const h = pick(e); if (h) select(h); } };
+    c.addEventListener('pointerup', up); c.addEventListener('pointercancel', (e) => { pts.delete(e.pointerId); pinch = 0; map.drag = null; });
+    c.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !map.drag) map.hover = null; });
   }
   // screen position of a station / a world point in the current view
   function stXY(id, c) {
@@ -213,7 +348,7 @@ const MetroUI = (() => {
   function pick(e) {
     if (map.view === 'graph') return null;
     const c = el.msysc, r = c.getBoundingClientRect(), dpr = devicePixelRatio, mx = (e.clientX - r.left) * dpr, my = (e.clientY - r.top) * dpr;
-    let best = null, bd = 14 * dpr;
+    let best = null, bd = (e.pointerType === 'touch' ? 24 : 14) * dpr;
     for (const tr of MetroSim.running) { if (hidden.has(tr.line)) continue; const p = trainXY(tr, c); if (!p) continue; const d = Math.hypot(p[0] - mx, p[1] - my); if (d < bd) { bd = d; best = { tr }; } }
     for (const s of MetroSim.stations) { const p = stXY(s.id, c); if (!p) continue; const d = Math.hypot(p[0] - mx, p[1] - my); if (d < bd * 0.9) { bd = d; best = { st: s }; } }
     return best;
@@ -416,9 +551,9 @@ const MetroUI = (() => {
   }
   function renderSide() {
     const S = el.mside, h = map.sel;
-    if (!h) { S.innerHTML = `<h3>Bayline Metro</h3><div class="sub">${MetroSim.lines.filter(l => l.id !== 'ebart').length} lines · ${MetroSim.stations.length} stations · ${Math.round(131.4)} route miles</div>
+    if (!h) { S.innerHTML = `<h3>Bayline Metro</h3><div class="sub">${MetroSim.lines.filter(l => l.id !== 'ebart').length} lines · ${MetroSim.stations.filter(x => x.id !== 'PITT-T').length} stations · ${Math.round(131.4)} route miles</div>
       ${MetroSim.lines.filter(l => !['ebart'].includes(l.id)).map(l => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)"><i style="width:8px;height:22px;border-radius:3px;background:${l.color}"></i><span><b>${esc(l.name)}</b><br><small style="color:var(--ink-dim)">${esc(l.terminals.join(' – '))}</small></span></div>`).join('')}
-      <p style="color:var(--ink-faint);font-size:12.5px;margin-top:10px">Unofficial fan project, not affiliated with or endorsed by any transit agency. Timetable and live data: the operator's public feeds.</p>`; return; }
+      <p style="color:var(--ink-faint);font-size:12.5px;margin-top:10px">Unofficial. Not affiliated with the San Francisco Bay Area Rapid Transit District. Timetable: public GTFS feed; live positions: GTFS-Realtime.</p>`; return; }
     if (h.st) {
       const s = h.st; S.innerHTML = `<div class="kicker">${esc(stationType(s))}</div><h3>${esc(s.name)}</h3><div class="sub">${[...s.lines].filter(l => l !== 'ebart').map(l => `<span class="mchip"><i style="background:${MetroSim.lineColor(l)}"></i>${esc(MetroSim.lineById.get(l) ? MetroSim.lineById.get(l).short : l)}</span>`).join(' ')}</div>
         <div style="display:flex;gap:8px;margin:6px 0 10px"><button class="btn primary" id="mgo">Go to the platform</button><button class="btn" id="mbd">Arrivals</button></div>${nextTrainsHtml(s.id, 9)}`;
@@ -439,7 +574,7 @@ const MetroUI = (() => {
   function stationType(s) { return ({ subway: 'Subway station', aerial: 'Aerial station', surface: 'Surface station', median: 'Freeway median station', trench: 'Station in a cutting' })[s.type] || 'Station'; }
   function search(q) {
     q = q.trim().toLowerCase(); if (!q) { el.mres.hidden = true; return; }
-    const L = MetroSim.stations.filter(s => s.name.toLowerCase().includes(q) || s.short.toLowerCase().includes(q) || s.id.toLowerCase() === q).slice(0, 8);
+    const L = findStations(q, 8);
     el.mres.innerHTML = L.map(s => `<button data-id="${s.id}">${esc(s.name)}</button>`).join('') || '<button disabled>No station</button>'; el.mres.hidden = false;
     el.mres.querySelectorAll('button[data-id]').forEach(b => b.addEventListener('click', () => { const s = MetroSim.stById.get(b.dataset.id); el.mres.hidden = true; el.msearch.value = ''; focusStation(s); select({ st: s }); }));
   }
@@ -513,8 +648,10 @@ const MetroUI = (() => {
 
   // ---------------------------------------------------------------- HUD: ride panel, driver's display, line strip
   let slow = 0, boardT = 0;
+  let drivebarMetro = false;
   function update(dt) {
     if (!on()) return; build();
+    if (el.hbtn) el.hbtn.classList.toggle('on', !!(el.sys && !el.sys.hidden));
     if (el.sys && !el.sys.hidden) { const c = el.msysc, r = c.getBoundingClientRect(); if (c.width !== Math.round(r.width * devicePixelRatio)) { c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio; } draw(); }
     slow -= dt; if (slow > 0) return; slow = 0.2;
     if (!ready()) { el.ride.hidden = el.dmi.hidden = el.strip.hidden = true; return; }
@@ -525,6 +662,12 @@ const MetroUI = (() => {
     el.ride.hidden = !(metro && !dm && (Player.mode === 'onboard' || Player.mode === 'cab')) || flying;
     el.strip.hidden = !(metro && (dm || !['walk', 'fly', 'orbit'].includes(Player.mode))) || flying || document.body.classList.contains('photo');
     document.body.classList.toggle('mdriving', !!dm);
+    // the on-screen driving buttons (touch) speak metro while you drive a metro train: ATO, no bell, change ends
+    if (!!dm !== drivebarMetro) { drivebarMetro = !!dm; const bar = document.getElementById('drivebar');
+      if (bar) for (const b of bar.querySelectorAll('button')) {
+        if (b.dataset.k === 'KeyA') { b.dataset.pen = b.dataset.pen || b.textContent; b.textContent = dm ? 'ATO' : b.dataset.pen; }
+        if (b.dataset.k === 'KeyQ') { b.dataset.pen = b.dataset.pen || b.textContent; b.textContent = dm ? 'Ends' : b.dataset.pen; }
+        if (b.dataset.k === 'KeyG') b.hidden = !!dm; } }
     if (dm) renderDmi(dm, tr); else if (!el.ride.hidden) renderRide(tr);
     if (!el.strip.hidden) drawStrip(tr);
     pushBoards();
@@ -626,9 +769,11 @@ const MetroUI = (() => {
   function carsAdj(n, kind) { return kind === 'dmu' ? `${n}-unit` : `${n}-car`; }
   function subText(tr) { const S = tr.leg.stops, ns = S[tr.nextK], ch = MetroSim.changeFor(tr); return `${MetroSim.lineName(tr.line)} to ${MetroSim.termName(tr)}${ch ? ' (change for ' + ch + ')' : ''} · ${carsText(tr.cars, tr.kind)} · ${Math.round(tr.v / MPH)} mph${ns && tr.phase === 'run' ? ' · next ' + MetroSim.stName(ns.st) : tr.stationId ? ' · at ' + MetroSim.stName(tr.stationId) : ''}`; }
 
-  if (typeof Metro !== 'undefined') { const g = Metro.guardAll({ whereText, subText, stationSub, atMetro, openMap, openBoard, ride, drive }, 'the metro interface');
-    ({ whereText, subText, stationSub, atMetro, openMap, openBoard, ride, drive } = g); }
-  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
+  if (typeof Metro !== 'undefined') { const g = Metro.guardAll({ whereText, subText, stationSub, atMetro, openMap, openBoard, ride, drive, front }, 'the metro interface');
+    ({ whereText, subText, stationSub, atMetro, openMap, openBoard, ride, drive, front } = g); }
+  // (QA) where a station is on screen in the open map, in CSS pixels
+  function stationXY(id) { const c = el.msysc; if (!c || el.sys.hidden) return null; const p = stXY(id, c), r = c.getBoundingClientRect(); return p ? { x: r.left + p[0] / devicePixelRatio, y: r.top + p[1] / devicePixelRatio } : null; }
+  const api = { build, openMap, openBoard, closeAll, anyOpen, update, whereText, subText, stationSub, atMetro, ride, drive, front, findStations, stationXY, get mapOpen() { return !!(el.sys && !el.sys.hidden); }, get boardOpen() { return !!(el.board && !el.board.hidden); } };
   if (typeof window !== 'undefined') { const m = (window.__baylineMods = window.__baylineMods || {}); m.MetroUI = api; window.__MUI = api; }
   return api;
 })();
@@ -647,8 +792,8 @@ const MetroMissions = (() => {
       for (let x = ev.leg.next; x; x = x.next) if (x.stops.some(s => s.st === to)) return ev; }   // (through a reversal: SFO)
     return null;
   }
-  function list() {
-    if (!on()) return [];
+  function list() { return on() ? defs() : []; }
+  function defs() {
     return [
       { id: 'm-tube', kind: 'metro', tag: 'METRO DRIVE', title: 'Under the Bay', sub: 'West Oakland to Embarcadero through the Transbay Tube, 135 ft under the water. Then Market Street.', drive: ['WOAK', 'EMBR'] },
       { id: 'm-market', kind: 'metro', tag: 'METRO DRIVE', title: 'Market Street', sub: 'Embarcadero to Civic Center in manual: four stations, four berths, 90 seconds apart.', drive: ['EMBR', 'CIVC'], manual: true },
@@ -692,5 +837,7 @@ const MetroMissions = (() => {
         UI.showResult({ kicker: 'Ride', title: 'You made it', score: 300, grade: 'A', lines: [`${m.title}: ${Math.round(mins)} minutes from the platform to ${MetroSim.stName(m.ride[1])}.`] }); }
     }
   }
-  return { list, start, done, update, get active() { return active; } };
+  const api = { list, defs, start, done, update, get active() { return active; } };
+  if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroMissions = api;   // (debug handle)
+  return api;
 })();
