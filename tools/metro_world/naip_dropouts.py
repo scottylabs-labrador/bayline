@@ -71,6 +71,8 @@ def main():
             p = os.path.join(RAW, 'nir', px, f)
             if os.path.getmtime(p) >= since:
                 jobs.append(('nir', p))
+    if '--rgb' in sys.argv:
+        jobs = [j for j in jobs if j[0] == 'rgb']
     print(len(jobs), 'files to scan', flush=True)
 
     def one(j):
@@ -88,7 +90,8 @@ def main():
             if r:
                 bad.append(j[1])
     print(len(bad), 'with dropouts:', sum('/rgb/' in p for p in bad), 'rgb,', sum('/nir/' in p for p in bad), 'nir', flush=True)
-    json.dump(bad, open(os.path.join(ROOT, 'data', 'raw', 'tiles', 'naip_dropouts.json'), 'w'))
+    out = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else os.path.join(ROOT, 'data', 'raw', 'tiles', 'naip_dropouts.json')
+    json.dump(bad, open(out, 'w'))
     if '--delete' in sys.argv:
         for p in bad:
             os.remove(p)
