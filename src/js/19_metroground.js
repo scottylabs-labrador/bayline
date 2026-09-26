@@ -184,7 +184,7 @@ const MetroGround = (() => {
   function install() {
     if (installed || typeof MetroNet === 'undefined' || !MetroNet.tracks || !MetroNet.tracks.length || typeof Terrain === 'undefined' || !Terrain.addHeightFilter) return false;
     installed = true; build();
-    const R = affected(); stats.rects = R.length;
+    const R = rects = affected(); stats.rects = R.length;
     // what already stands near the lines is re-placed there only (no dispose: nothing elsewhere reloads or goes black):
     // trees first, by the carve's height change under each (computed on the ground before the carve), and the drop filter
     try { if (typeof Flora !== 'undefined' && Flora.adjust) { Flora.addDrop(dropTree); stats.flora = Flora.adjust(R, (x, z) => { const hn = Terrain.h(x, z); return carvePoint(x, z, hn) - hn; }); } } catch (e) { console.warn('MetroGround flora', e); }
@@ -203,7 +203,8 @@ const MetroGround = (() => {
       if (install()) clearInterval(t);
     }, 400);
   }
-  const api = { install, carveAt, carvePoint, stats, get installed() { return installed; } };
+  let rects = null;
+  const api = { install, carveAt, carvePoint, stats, get installed() { return installed; }, get rects() { return rects; } };
   if (typeof window !== 'undefined') (window.__baylineMods ||= {}).MetroGround = api;
   return api;
 })();
