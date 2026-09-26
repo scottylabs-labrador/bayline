@@ -374,7 +374,9 @@ const MetroKit = (() => {
       } else if (mkPat == 31.0) {                                // far-LOD window: lit cabin impression (ceiling glow, seat backs)
         float yy = fract((p.y - 1.89) / 0.95), sb = step(yy, 0.35) * step(0.1, fract(p.x / 0.755 + 0.3));
         mkEmW *= (0.35 + 0.65 * smoothstep(0.55, 1.0, yy)) * (1.0 - 0.6 * sb);
-        mkEmW *= 0.25 + 0.75 * mkNight;
+        mkEmW *= 0.45 + 0.55 * mkNight;
+        // the lit cabin's colour (not the dark glass albedo), about the LOD0 impression's average through the tint
+        mkEm += vec3(0.46, 0.45, 0.41) * mkLv[1] * mkEmW; eg = 0.0;
       } else if (mkPat == 27.0) {                                // DMU body: satin silver, the cab swoosh at both ends
         col *= 0.95 + 0.07 * mkV(vec2(p.x * 1.3, p.y * 60.0)) * fade;
         float ax = abs(p.x), t = clamp((3.0 - p.y) / 2.6, 0.0, 1.0);
