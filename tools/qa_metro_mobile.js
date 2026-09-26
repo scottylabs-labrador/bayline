@@ -24,9 +24,10 @@ new Promise(r => { const f = () => window.__bayline && __bayline.MetroSim && __b
   step('Go to the platform: on the platform', B.Player.mode === 'walk' && B.Player.onMetroFloor(), { y: +B.Player.walk.y.toFixed(1) });
   // 2. board by tapping the prompt when a train's doors are open next to the walker
   let boarded = false;
-  for (let i = 0; i < 90 && !boarded; i++) {
-    const tr = B.Player.focusTrain();
-    if (tr && tr.metro && tr.doorsOpen && tr.entry) {
+  B.Env.time.scale = 3;                                          // (the next train in a minute or two, not five)
+  for (let i = 0; i < 150 && !boarded; i++) {
+    const tr = B.MetroSim.running.filter(t => t.entry && t.doorsOpen && t.stationId === 'EMBR' && t.dist < 400).sort((a, b) => a.dist - b.dist)[0];
+    if (tr) { B.Env.time.scale = 1;
       const cars = tr.entry.consist.cars, car = cars[Math.floor(cars.length / 2)], side = tr.doorSide === 'right' ? 1 : -1, d = car.doors.find(x => x.side === side) || car.doors[0];
       const v = new THREE.Vector3(d.x, 1, d.side * (car.width / 2 + 0.6)); car.group.localToWorld(v); B.Player.walk.x = v.x; B.Player.walk.z = v.z;
       await sleep(600); const pr = document.getElementById('prompt');
@@ -34,6 +35,7 @@ new Promise(r => { const f = () => window.__bayline && __bayline.MetroSim && __b
     }
     if (!boarded) await sleep(1000);
   }
+  B.Env.time.scale = 1;
   step('tapping the prompt boards the train', boarded, { prompt: res.prompt });
   await sleep(4000);
   step('ride panel shows', !document.getElementById('mride').hidden);
