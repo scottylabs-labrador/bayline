@@ -128,8 +128,8 @@ const MetroPlay = (() => {
       if (o === null) { if (l === 0) return 0; continue; }       // (off the floor beside the corridor: the platform edge)
       if (o > yP + 0.35) return 0;                              // an escalator or a stair overhead / ahead
     }
-    const B = MetroStations.blocked;
-    if (B && B(x, z, x + ux * 16, z + uz * 16, yP)) return 1;
+    const B = MetroStations.blocked;                            // (columns and walls across the 2 m corridor, not just the axis)
+    if (B) for (const l of [0, -1, 1]) { const x0 = x - uz * l, z0 = z + ux * l; if (B(x0, z0, x0 + ux * 16, z0 + uz * 16, yP)) return 1; }
     return 2;
   }
   // across the platform at (track t, s): the stretch of station floor at height yP on the given side -> {a, b} (m from the track)
