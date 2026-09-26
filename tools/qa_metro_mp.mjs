@@ -32,13 +32,19 @@ for (let i = 0; i < 50; i++) { const ok = await new Promise(r => { const s = net
 // ---- one Chrome, two pages
 prof = mkdtempSync(join(tmpdir(), 'mp-'));
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${prof}`, '--no-first-run', '--no-default-browser-check',
-  '--ignore-gpu-blocklist', '--hide-scrollbars', '--mute-audio', '--window-size=1280,800', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+  '--ignore-gpu-blocklist', '--hide-scrollbars', '--mute-audio', '--window-size=1280,800', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
+  'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
 procs.push(chrome);
 let port = 0; for (let i = 0; i < 100 && !port; i++) { const f = join(prof, 'DevToolsActivePort'); if (existsSync(f)) port = +readFileSync(f, 'utf8').split('\n')[0]; if (!port) await sleep(100); }
 if (!port) { console.error('chrome did not start'); process.exit(2); }
 const jget = async (p, method = 'GET') => (await fetch(`http://127.0.0.1:${port}${p}`, { method })).json();
+// each client gets its own window (a background tab would have no animation frames, so the game would never start)
+const bws = new WebSocket((await jget('/json/version')).webSocketDebuggerUrl); await new Promise(r => bws.onopen = r);
+let bid = 0; const bpend = new Map(); bws.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id && bpend.has(m.id)) { bpend.get(m.id)(m); bpend.delete(m.id); } };
+const bsend = (method, params = {}) => new Promise(r => { const i = ++bid; bpend.set(i, r); bws.send(JSON.stringify({ id: i, method, params })); });
 async function page() {
-  const t = await jget('/json/new?about:blank', 'PUT');
+  const { result } = await bsend('Target.createTarget', { url: 'about:blank', newWindow: true });
+  let t = null; for (let i = 0; i < 50 && !t; i++) { t = (await jget('/json/list')).find(x => x.id === result.targetId); if (!t) await sleep(100); }
   const ws = new WebSocket(t.webSocketDebuggerUrl); await new Promise(r => ws.onopen = r);
   let id = 0; const pend = new Map(), logs = [];
   ws.onmessage = ev => { const m = JSON.parse(ev.data); if (m.id && pend.has(m.id)) { pend.get(m.id)(m); pend.delete(m.id); return; }
@@ -52,17 +58,22 @@ async function page() {
   return { ws, send, ev, shot, logs };
 }
 const A = await page(), B = await page();
+console.log('== two windows; relay on', MP_PORT);
 const url = (h) => `${PAGE}#auto&metro=1&t=${T}&${h}`;
 await A.send('Page.navigate', { url: url('mst=MLBR') });
 await B.send('Page.navigate', { url: url('at=place_MLBR') });
 const READY = `new Promise(r=>{const f=()=>window.__bayline&&__bayline.MetroSim&&__bayline.MetroSim.ready&&__bayline.Net?r(1):setTimeout(f,250);f();})`;
-await A.ev(READY); await B.ev(READY);
+await A.ev(READY); await B.ev(READY); console.log('== both pages running the metro');
 const RELAY = `ws://127.0.0.1:${MP_PORT}`;
 const CONNECT = `(()=>{const N=__bayline.Net;N.disconnect();N.connect('${RELAY}');return new Promise(r=>{const f=(n)=>N.status.online||n>80?r(N.status.state):setTimeout(()=>f(n+1),250);f(0);});})()`;
 const result = { steps: [], ok: true };
 const step = (s, ok, extra) => { result.steps.push({ s, ok, ...(extra || {}) }); if (!ok) result.ok = false; console.log((ok ? 'PASS ' : 'FAIL ') + s + (extra ? ' ' + JSON.stringify(extra) : '')); };
 step('A connected', (await A.ev(CONNECT)) === 'online'); step('B connected', (await B.ev(CONNECT)) === 'online');
-await sleep(9000);                                                      // (streaming, the next train at the metro platform)
+// both clocks to 25 s after the next train pulls in at the metro platform (doors open), so A can board and B has the
+// same train running
+const tArr = await A.ev(`(()=>{const M=__bayline.MetroSim,now=__bayline.Env.time.sec;const e=M.arrivals('MLBR',now+60,40,{withLast:true}).find(e=>e.leg.kind==='bart');return e?e.arr:now;})()`);
+for (const P of [A, B]) await P.ev(`(()=>{__bayline.Env.setClock(${tArr + 25});__bayline.Env.time.scale=1;return 1;})()`);
+await sleep(9000);                                                      // (streaming, the train at the metro platform)
 
 // A: board the train at the metro platform (wait for one with its doors open, sit it in car 3)
 const BOARD = `new Promise(r=>{const B=__bayline,M=B.MetroSim,P=B.Player;let n=0;const f=()=>{n++;
@@ -87,6 +98,7 @@ await A.shot('A_riding.png'); await B.shot('B_platform.png');
 // A takes the train over and drives it (ATO): B's copy of the train follows A
 const DRIVE = `(()=>{const B=__bayline,M=B.MetroSim,now=B.Env.time.sec;const ev=M.arrivals('MLBR',now,20).find(e=>e.dep>now+3&&e.leg.kind==='bart'&&e.k<e.leg.stops.length-1);if(!ev)return 'no train';const r=B.MetroATC.start(ev.plan,{station:'MLBR'});return r?'driving':'no run';})()`;
 step('A starts driving', (await A.ev(DRIVE)) === 'driving');
+const tA = await A.ev('__bayline.Env.time.sec'); await B.ev(`(()=>{__bayline.Env.setClock(${tA});return 1;})()`);   // (B on A's clock: the same trips run)
 await A.ev(`(()=>{window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',key:'w',bubbles:true}));return 1;})()`);
 await sleep(8000);
 a = JSON.parse(await A.ev(SEE('A'))); b = JSON.parse(await B.ev(SEE('B')));

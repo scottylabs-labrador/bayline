@@ -6,7 +6,7 @@ Files owned: `src/js/46_metrosim.js`, `src/js/47_metro*.js` (`metroatc`, `metrop
 (`55_player.js`, `66_ui.js`, `70_sound.js`, `80_net.js`, `90_main.js`, `tools/devserver.py`). Everything is behind `#metro=1`
 (`MetroSim.enabled`; the lead flips `DEFAULT_ON` in `46_metrosim.js` to ship it by default; `#metro=0` forces it off).
 
-## Status (2026-09-26 04:00)
+## Status (2026-09-26 07:30: M3 gate work, see "M3 gate items owned by SIM")
 
 On `bart` 1f54fd2 (M1 integration: MetroNet v0 + timetable, infra guideway + Under, stations for all 50, MetroKit v0)
 plus the lead's QA list done (platform spawns, metro HUD at stations); MetroKit v1 (bart-trains) verified in a scratch
@@ -283,6 +283,34 @@ location = /bartrt/tripupdate {
 (The existing `resolver` line already covers `$bart_host`.) Without it, live mode falls back to the public departures
 API (`api.bart.gov/api/etd.aspx`, CORS `*`, public key), polled every 20 s by each client that turns Live on.
 The data is © BART under its developer license (free, as-is; no BART marks in the game).
+
+## M3 gate items owned by SIM (status)
+
+- **Item 2, the Peninsula with the metro on**: `PORT=<port> METRO=1 sh tools/qa_metro_peninsula.sh sim.html <out>` runs,
+  in one command, `qa_all.sh` (views, keyboard drive, ride; `METRO=1|0` now appends `#metro=1|0` to every view), PTC,
+  signal, the Caltrain stations next to the metro (`tools/qa_peninsula_spots.js`: at 4th & King, South SF, San Bruno,
+  Millbrae, Hillsdale and Diridon: the HUD place is the Caltrain station, the sub-line a Peninsula train, the Peninsula
+  strip shown, the Peninsula walk prompt (+ "transfer to the metro" at Millbrae), B opens the Peninsula board) and the
+  flight FDM. Result: **0 failed with METRO=1 and 0 failed with METRO=0** (2026-09-26 06:00, bart-sim a1cc675+).
+- **Item 4, boot and failure isolation**: see the next section. `tools/qa_metro_isolation.sh`: 11/11.
+- **Item 5, phones**: touch features: the walk prompt is tappable on touch screens and worded for them ("Tap to board:
+  …", "Tap for Embarcadero trains", "Tap to transfer to the metro"); the system map pans with one finger, pinch-zooms
+  with two, picks with a bigger radius; the drive bar (on-screen driving buttons, already there for the Peninsula)
+  reads ATO / Ends and hides the bell while driving a metro train; boards explain ride/drive by touch.
+  `tools/qa_metro_mobile.sh`: shot.mjs `--mobile` (DPR 2, touch) 390×844, Low and Medium, GPU: map from the HUD pill,
+  tap a station, "Go to the platform", tap the prompt to board, ride panel, drive bar Power (ATO).
+- **Item 6, the front door** (approved v2): title card Bay-wide with the metro on (eyebrow, 3-line intro, one sentence on
+  phones, Peninsula Ride/Drive cards name their line, credits folded behind "Data & credits" with the non-affiliation
+  lines visible), a Bayline Metro strip (route-bundle icon, Ride / Drive / System map with inline station search over
+  names, codes and aliases, and the drive runs); a HUD "Metro" pill; help keys; the map's "Unofficial. Not affiliated
+  with the San Francisco Bay Area Rapid Transit District" line. Shots: `notes/bart/shots/sim/front_v2_*.jpg`.
+- **Item 7, multiplayer**: `node tools/qa_metro_mp.mjs [page] [out]` (under tools/wd.py): a local relay (server/mp.py,
+  modes 0..9, hello v2), one headless Chrome with two pages at Millbrae: A boards a metro train (mode 8), B walks the
+  Peninsula platform (mode 1); each sees the other (B draws A in its own copy of the car); A drives (mode 9) and B's copy
+  of the train follows A.
+- **Item 8, clean console**: `sh tools/qa_metro_tour.sh [page] [out]`: a player's tour of every station (50 + the
+  connector's COLS/OAKL platforms + the shuttle's PITT-T faces + ANTC), then 10 minutes of `#auto` with the metro on
+  following trains through the camera views; fails on any page error, console error or metro failure.
 
 ## Metro switch and failure isolation (M3 gate item 4, `src/js/18_metro.js`)
 
