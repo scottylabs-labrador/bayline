@@ -7,9 +7,12 @@ sheet. Only paths from pending_512.json can be in it; a path whose staged file i
   python3 tools/metro_world/sr_manifest.py
 """
 import hashlib, json, os, sys
+import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
+from tiles.common import jpeg_truncated   # noqa: E402
 STAGE = os.path.join(ROOT, 'data', 'raw', 'tiles', 'sr_l8_stage')
 PUB = os.path.join(ROOT, 'data', 'pub', 'v2')
 
@@ -20,7 +23,7 @@ def sha(p):
 
 def main():
     pend = json.load(open(os.path.join(STAGE, 'pending_512.json')))['files']
-    man, missing, changed = [], [], []
+    man, missing, changed, truncated = [], [], [], []
     for r in pend:
         new, old = os.path.join(STAGE, r['path']), os.path.join(PUB, r['path'])
         if sha(old) != r['sha256']:
@@ -29,9 +32,11 @@ def main():
         if not os.path.exists(new):
             missing.append(r['path']); continue
         with Image.open(new) as im:
-            im.load(); px = im.size[0]
-        if px != 1024 or im.mode != 'RGB':
+            im.load(); px = im.size[0]; mode = im.mode; arr = np.asarray(im.convert('RGB'))
+        if px != 1024 or mode != 'RGB':
             missing.append(r['path']); continue
+        if jpeg_truncated(arr):                               # (truncated encode: removed, tools/sr_l8.py re-makes it)
+            os.remove(new); truncated.append(r['path']); continue
         man.append({'path': r['path'], 'old_sha256': r['sha256'], 'new_sha256': sha(new), 'bytes': os.path.getsize(new), 'px': px, 'old_px': r['px']})
     json.dump({'what': 'L8 imagery tiles published at 512 px on the Bayline Metro world publish, replaced by their 1024 px '
                        'Real-ESRGAN versions (tools/sr_l8.py); same paths, nothing else changes',
@@ -43,7 +48,8 @@ def main():
         sheet.paste(Image.open(os.path.join(STAGE, m['path'])).convert('RGB').resize((200, 200)), (i * 200, 200))
     sheet.save(os.path.join(STAGE, 'before_after.jpg'), quality=82)
     print(f'{len(man)} of {len(pend)} staged ({sum(m["bytes"] for m in man) / 1e6:.1f} MB); missing {len(missing)}; '
-          f'local 512 px file changed {len(changed)}', missing[:10], changed[:10], flush=True)
+          f'local 512 px file changed {len(changed)}; truncated (removed, re-run tools/sr_l8.py) {len(truncated)}',
+          missing[:10], changed[:10], truncated[:10], flush=True)
 
 
 if __name__ == '__main__':

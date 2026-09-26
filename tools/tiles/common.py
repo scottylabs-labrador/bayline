@@ -81,6 +81,13 @@ def jpeg_block_err(a, b, G=16):
     return float(d.max()), int(((ga >= 0.9) & (gb < 0.5)).sum())
 
 
+def jpeg_truncated(a, G=16):
+    """does a decoded JPEG (HxWx3 uint8) show the signature of a truncated scan: its last MCU (bottom-right G x G block,
+    the last one in scan order, always among the missing ones) decoded pure green (green >= 80 above red and blue)"""
+    b = a[-G:, -G:].astype(np.int16)
+    return bool(((b[..., 1] - np.maximum(b[..., 0], b[..., 2])) >= 80).mean() >= 0.9)
+
+
 def jpeg_bytes(u8, q, subsampling=2, tries=6):
     """Checked JPEG encode of an HxWx3 uint8 array. Pillow 10.1 / libjpeg-turbo 3.0.0 sometimes (deterministically, for
     some inputs, optimize=True or not) writes a scan that ends early: the file still ends with EOI, macOS ImageIO shows it
