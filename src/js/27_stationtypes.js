@@ -364,10 +364,12 @@ const StationTypes = (() => {
       p.zone.m.sk.sweep(fr, (i, f) => {
         const a = p.eL(f.u), b = p.eR(f.u); const sky = covered(f.u); const skyO = under ? 0 : Math.min(1, sky + 0.3);
         const P = [];
-        const leftEdge = p.kind === 'island' || p.sideV < 0, rightEdge = p.kind === 'island' || p.sideV > 0;
+        // (the track edge: a side platform with sideV > 0 extends +v from its track, so its track is on the left; the
+        // coping, tactile strip and recess were drawn at the back of every side platform, a plain face at the track)
+        const leftEdge = p.kind === 'island' || p.sideV > 0, rightEdge = p.kind === 'island' || p.sideV < 0;
         const fl = Object.assign({}, mFloor, { sky });
         if (leftEdge) P.push([a + REC, yTB, yTB, Object.assign({}, mRec, { sky: skyO * 0.5 })], [a + REC, yLip, yLip, Object.assign({}, mRec, { sky: skyO * 0.3 })], [a, yLip, yLip, Object.assign({}, mEdge, { sky: skyO })], [a, yP, null, Object.assign({}, mCop, { sky })], [a + COP, yP, null, Object.assign({}, mTac, { sky })], [a + TAC, yP, null, fl]);
-        else P.push([a, yP - 1.2, null, Object.assign({}, mEdge, { sky })], [a, yP, null, fl]);
+        else P.push([a, Math.min(yP - 1.2, yTB), null, Object.assign({}, mEdge, { sky })], [a, yP, null, fl]);
         // openings: edge points of every hole on this platform (the faces between them are skipped inside the hole's u-range)
         const inside = holeAt(f.u);
         { const vs = []; for (const h of hv) vs.push(h.v0, h.v1); vs.sort((x, z) => x - z);
@@ -378,7 +380,7 @@ const StationTypes = (() => {
           P[P.length - 1].holeTail = true; }
         const tailI = P.length - 1;
         if (rightEdge) P.push([b - TAC, yP, null, Object.assign({}, mTac, { sky })], [b - COP, yP, null, Object.assign({}, mCop, { sky })], [b, yP, yP, Object.assign({}, mEdge, { sky: skyO })], [b, yLip, yLip, Object.assign({}, mRec, { sky: skyO * 0.3 })], [b - REC, yLip, yLip, Object.assign({}, mRec, { sky: skyO * 0.5 })], [b - REC, yTB, yTB]);
-        else P.push([b, yP, null, Object.assign({}, mEdge, { sky })], [b, yP - 1.2]);
+        else P.push([b, yP, null, Object.assign({}, mEdge, { sky })], [b, Math.min(yP - 1.2, yTB)]);
         if (P[tailI].holeTail) { const m = (P[tailI][0] + P[tailI + 1][0]) / 2; P[tailI][3] = inside.some(h => m > h.v0 && m < h.v1) ? 'skip' : fl; }
         return P;
       });
