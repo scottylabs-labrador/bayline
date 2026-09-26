@@ -20,21 +20,23 @@ const MetroTrack = (() => {
 
   // ---------------------------------------------------------------- dimensions (metres; research: notes/bart/infra.md)
   const DIM = {
-    gauge: 1.676,                 // between the rails' inner faces (5 ft 6 in)
-    railH: 0.1715, railHead: 0.0690, railBase: 0.1397, railWeb: 0.0175,   // 119 lb/yd class section (ASSUMPTION: 115RE-like)
-    get railC() { return this.gauge / 2 + this.railHead / 2; },         // rail head centre from the track centre
-    fastSpacing: 0.762,           // direct-fixation fasteners, 30 in
-    plinthW: 0.56, plinthH: 0.20, // concrete plinth under each rail (aerial, tunnel), top ~0.23 m below top of rail
-    tieSpacing: 0.61, tieLen: 2.90, tieW: 0.28, tieH: 0.23,             // concrete ties at grade (ASSUMPTION)
-    ballastDepth: 0.30, ballastShoulder: 0.35,
-    // third rail (1,000 V DC, top contact under a coverboard): lateral of its centre from the track centre, top above
-    // top of running rail; the coverboard above. Side: away from the platform (else the outside of paired tracks)
-    third: { lat: 1.22, top: 0.035, w: 0.075, h: 0.13, coverH: 0.19, coverW: 0.30, insulator: 3.05 },
-    // aerial guideway, 1970s standard: one precast box girder per track on single columns with a hammerhead cap
-    aerial: { girderTopW: 4.05, girderBotW: 2.1, girderD: 1.83, deckT: 0.23, spanTyp: 24.4, colD: 1.52, capD: 1.25,
-              parapetH: 0.9, parapetT: 0.2, walkW: 0.75, deckBelowTOR: 0.46 },
-    tunnel: { boreR: 2.75, walkH: 1.07, walkW: 0.76, lampSpacing: 12.2, lampH: 2.35 },
-    fenceH: 2.13,
+    gauge: 1.676,                 // 66 in between the rails' gauge lines (838 mm from the centreline) [BFS 34 05 17]
+    railH: 0.1730, railHead: 0.0675, railBase: 0.1397, railWeb: 0.0143, railHeadD: 0.0476,   // 119RE [BFS 34 11 25]
+    get railC() { return this.gauge / 2 + this.railHead / 2 - 0.016; },  // rail head centre (gauge measured 16 mm below the top)
+    railCant: 1 / 40,             // rails canted inward 1:40
+    fastSpacing: 0.914,           // Landis DF fasteners at 36 in on the original aerials and subways [CLEMONS]
+    plinthW: 0.787, plinthH: 0.09, // continuous plinth under each rail, 31 in wide [CLEMONS]
+    tieSpacing: 0.762, tieLen: 3.05, tieW: 0.28, tieH: 0.23,             // concrete ties at 30 in, ~10 ft long [BFS 34 11 31]
+    ballastDepth: 0.305, ballastShoulder: 0.305, ballastSlope: 2.0,     // [BFS 34 05 17]
+    // third rail: centre 1.499 m from the track centre, contact surface 171 mm above top of rail, light-grey porcelain
+    // insulators (229 mm) every 3.05 m, light-grey fibreglass coverboard above [BFS 34 05 17, 34 24 13]
+    third: { lat: 1.499, top: 0.171, w: 0.076, h: 0.13, coverH: 0.255, coverW: 0.29, insulator: 3.05, insH: 0.229 },
+    // aerial guideway, original (1968-72): one trapezoidal precast box girder per track, 1.22 m deep, 3.556 m deck, 14 ft
+    // centres (0.71 m gap with a sunken walkway), 1.52 m hexagonal columns with hammerhead caps, ~22 m spans [CLEMONS]
+    aerial: { girderTopW: 3.556, girderBotW: 1.7, girderD: 1.22, flangeT: 0.2, spanTyp: 22.5, colD: 1.52, capD: 1.5, capL: 1.8,
+              deckBelowTOR: 0.29, walkDrop: 0.25 },
+    tunnel: { boreR: 2.59, walkH: 0.71, walkW: 0.76, lampSpacing: 15.24, lampH: 2.3 },
+    fenceH: 2.13, barbed: 0.31,   // chain link + 3 barbed strands = 2.44 m [BFS 32 31 13]
   };
 
   // ---------------------------------------------------------------- palette: [r, g, b (linear), roughness, metalness, kind]
@@ -46,7 +48,7 @@ const MetroTrack = (() => {
     concrete: P(0xb5b0a6, 0.9, 0, 1), concreteLight: P(0xc3beb3, 0.88, 0, 1), concreteDark: P(0x8f8a82, 0.92, 0, 1), concreteWarm: P(0xb8ad9c, 0.9, 0, 1),
     precast: P(0xbdb8ae, 0.82, 0, 1), deckTop: P(0x9d9990, 0.93, 0, 1), plinth: P(0x9e9a92, 0.9, 0, 1), lining: P(0x9a968e, 0.93, 0, 10), liningDark: P(0x77736c, 0.95, 0, 10),
     railRust: P(0x5a4030, 0.78, 0.35, 2), railSide: P(0x6f6259, 0.55, 0.6, 2), railTop: P(0xd2d6db, 0.14, 1.0, 3),
-    thirdRail: P(0x6e6a66, 0.5, 0.7, 2), thirdTop: P(0x9c9a97, 0.32, 0.9, 3), cover: P(0xc9b27a, 0.55, 0, 8), insul: P(0x6b5438, 0.35, 0, 9),
+    thirdRail: P(0x8d8e8f, 0.45, 0.8, 2), thirdTop: P(0xb4b6b8, 0.28, 0.95, 3), cover: P(0xa9adad, 0.62, 0, 8), insul: P(0xc4c6c4, 0.25, 0, 9),
     fastener: P(0x34373a, 0.6, 0.55, 0), pad: P(0x151515, 0.92, 0, 9), clip: P(0x2b2d2f, 0.5, 0.7, 0),
     galv: P(0xa2a7ab, 0.42, 0.85, 7), galvDark: P(0x7d8286, 0.5, 0.8, 7), steelPaint: P(0x5d6166, 0.55, 0.3, 0), railing: P(0x8a9096, 0.45, 0.7, 7),
     grate: P(0x4f5357, 0.55, 0.7, 7), cable: P(0x1c1d1f, 0.6, 0.0, 9), conduit: P(0x8b8f93, 0.45, 0.6, 7),
@@ -55,6 +57,7 @@ const MetroTrack = (() => {
     signBlue: P(0x1d4e89, 0.4, 0.1, 0), signWhite: P(0xe8e8e2, 0.45, 0, 0), yellow: P(0xd9ad22, 0.5, 0.05, 0), black: P(0x151617, 0.6, 0.1, 0),
     fence: P(0x8b9094, 0.45, 0.6, 7), bearing: P(0x202020, 0.8, 0, 9), steel: P(0x4a4d50, 0.55, 0.55, 0),
     steelRing: P(0x55595c, 0.62, 0.55, 11), exitSign: P(0x2fb35a, 0.4, 0, 5), blueLamp: P(0x3a6cff, 0.3, 0, 5),
+    doorYellow: P(0xe0b21e, 0.5, 0.2, 0), jacket: P(0x9a9d9e, 0.5, 0.55, 7), blueSign: P(0x1f4f8f, 0.4, 0.1, 0),
   };
 
   // ---------------------------------------------------------------- geometry builder
@@ -204,7 +207,7 @@ const MetroTrack = (() => {
     { const a = C[0]; vnoise(a, 32, 0.05); grain(a, 0.06); for (let i = 0; i < 9000; i++) disc(a, Math.floor(r() * N), Math.floor(r() * N), 0.3 + r() * 0.9, r() < 0.55 ? 0.28 : 0.68);
       for (let i = 0; i < 900; i++) disc(a, Math.floor(r() * N), Math.floor(r() * N), 0.6 + r() * 1.2, 0.12); }        // bug holes
     { const a = C[1]; vnoise(a, 3, 0.12); vnoise(a, 9, 0.07); vnoise(a, 27, 0.04); }
-    { const a = C[2]; vnoise(a, 5, 0.1); vnoise(a, 14, 0.06); for (let i = 0; i < 60; i++) disc(a, Math.floor(r() * N), Math.floor(r() * N), 6 + r() * 22, 0.25 + r() * 0.5); }
+    { const a = C[2]; vnoise(a, 5, 0.1); vnoise(a, 14, 0.07); vnoise(a, 40, 0.03); }                                      // patchiness (no discs: they read as circles)
     { const a = C[3]; for (let x = 0; x < N; x++) { const v = (r() - 0.5) * 0.3, w = (r() - 0.5) * 0.12; for (let y = 0; y < N; y++) a[y * N + x] += v + w * Math.sin(y / N * 6.283 * 3 + x); } vnoise(a, 16, 0.04); }
     return (concTex = pack([0.09, 0.1, 0.1, 0.06]));
   }
@@ -243,6 +246,7 @@ const MetroTrack = (() => {
   function infraMaterial(kind) {
     const tunnel = kind === 'tunnel', far = kind === 'far';
     const u = { uConc: { value: concreteTexture() }, uBall: { value: ballastTexture() }, uBallMean: { value: ballastTexture().userData.mean }, uWet, uNight: U.uNight, uTime: U.uTime, uLampK };
+    if (far) u.uHide = { value: 0 };
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: 0.9 });
     m.userData.u = u;
     m.customProgramCacheKey = () => 'bl-metro-' + kind;
@@ -252,6 +256,9 @@ const MetroTrack = (() => {
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', `#include <common>
           attribute vec4 aM; attribute vec4 aT; varying vec4 vM; varying vec4 vT; varying vec3 vWp; varying vec3 vWn;
+          #ifdef BL_FAR
+          uniform float uHide;
+          #endif
           #ifdef BL_TUNNEL
           attribute vec3 aTan; attribute vec4 aLH; attribute vec4 aFix; varying vec3 vTan; varying vec4 vLH; varying vec4 vFix;
           #endif`)
@@ -259,6 +266,10 @@ const MetroTrack = (() => {
           vM = aM; vT = aT;
           #ifdef BL_TUNNEL
           vTan = aTan; vLH = aLH; vFix = aFix;
+          #endif`)
+        .replace('#include <fog_vertex>', `#include <fog_vertex>
+          #ifdef BL_FAR
+          { int m = int(uHide + 0.5), j = int(aT.w + 0.5); if (m > 0 && j >= 0 && j < 16 && ((m >> j) & 1) == 1) gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }
           #endif`)
         .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
           { vec4 wq = vec4(transformed, 1.0);
@@ -291,8 +302,8 @@ const MetroTrack = (() => {
               vec4 dX = texture2D(uConc, pX), dY = texture2D(uConc, pY), dZ = texture2D(uConc, pZ);
               vec4 d = dX * w3.x + dY * w3.y + dZ * w3.z - 0.5;
               vec4 dL = (texture2D(uConc, pX * 0.13 + 0.37) * w3.x + texture2D(uConc, pY * 0.13 + 0.37) * w3.y + texture2D(uConc, pZ * 0.13 + 0.37) * w3.z) - 0.5;
-              float fine = 1.0 - smoothstep(0.03, 0.2, fw);
-              col *= 1.0 + d.r * 0.55 * fine + dL.g * 0.55 + d.g * 0.25 + dL.b * 0.3;
+              float fine = (1.0 - smoothstep(0.03, 0.2, fw)) * (kind == 10.0 ? 0.45 : 1.0);
+              col *= 1.0 + d.r * 0.5 * fine + dL.g * 0.5 + d.g * 0.22 + dL.b * 0.28;
               // rain streaks and run-off below top edges, on the steep faces (a 1D noise along the face, stretched down)
               float steep = 1.0 - smoothstep(0.35, 0.7, an.y);
               vec2 fd = normalize(vec2(-vWn.z, vWn.x) + vec2(1e-4)); float h = dot(vWp.xz, fd);
@@ -305,7 +316,7 @@ const MetroTrack = (() => {
               float base = exp(-vT.z / 0.55) * (1.0 - an.y * 0.5);
               col *= 1.0 - 0.3 * base; col = mix(col, col * vec3(0.88, 0.94, 0.82), base * 0.4);
               // efflorescence and patches (bright blotches) on some faces
-              col = mix(col, vec3(0.62, 0.6, 0.56), smoothstep(0.62, 0.8, dL.b + 0.5) * 0.25 * steep);
+              col = mix(col, col * vec3(1.1, 1.08, 1.04), smoothstep(0.55, 0.8, dL.b + 0.5) * 0.35 * steep);
               gRough = clamp(vM.x + d.g * 0.2, 0.3, 1.0);
               gBump = d.r * fine;
               if (kind == 10.0) col *= 0.92;                        // tunnel lining: soot
@@ -335,7 +346,7 @@ const MetroTrack = (() => {
               float n = mn3(vWp * vec3(2.0, 8.0, 2.0)); col *= 0.85 + 0.25 * n; col *= 1.0 - 0.25 * exp(-vT.y / 0.08) * 0.0;
             }
             #endif
-            if (kind == 5.0) { gEmis = col * 9.0 * uLampK; col *= 0.3; }                                    // tunnel / fixture lamps (always lit)
+            if (kind == 5.0) { float lum = dot(col, vec3(0.2126, 0.7152, 0.0722)); gEmis = col * (lum > 0.5 ? 22.0 : 3.5) * uLampK; col *= 0.3; }   // lamps (always lit; coloured ones dimmer)
             else if (kind == 6.0) { gEmis = col * 7.0 * uNight; col *= mix(1.0, 0.3, uNight); }                // lit at night
             // wet: rain darkens and glosses what faces the sky
             float wetK = uWet * smoothstep(0.5, 0.9, an.y) * (kind == 1.0 || kind == 4.0 || kind == 8.0 ? 1.0 : 0.6);
@@ -368,7 +379,7 @@ const MetroTrack = (() => {
               vec3 Lv = normalize((viewMatrix * vec4(dW / max(d, 1e-3), 0.0)).xyz);
               IncidentLight fl; fl.direction = Lv; fl.visible = true;
               float att = 1.0 / max(d * d, 0.35) * pow(clamp(1.0 - pow(d / 26.0, 4.0), 0.0, 1.0), 2.0);
-              fl.color = vec3(1.0, 0.94, 0.84) * (13.0 * att * uLampK);
+              fl.color = vec3(1.0, 0.95, 0.86) * (2.6 * att * uLampK);      // ~7500 lm (LED retrofit): ~150 lux at 2 m
               RE_Direct(fl, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
             }
           }
@@ -458,11 +469,32 @@ const MetroTrack = (() => {
   function nbrAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.nbrL.length - 1); return R.nbrL[b]; }
   function pairAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1); const p = R.pairT[b]; return p < 0 ? null : { R2: TRACKS[p], s2: R.pairS[b], lat: R.pairL[b], dy: R.pairDy[b], primary: !!R.primary[b] }; }
   // station ranges on a track (STATIONS builds the box / deck / trackway there; I build rails and third rail through)
+  // (MetroStations.limits when STATIONS provides it; else the platform ranges, normalised like STATIONS does: v0 puts the
+  // two faces of an island up to ~200 m apart, so every track of a station takes the first platform's range, projected)
   function stationRanges(R) {
     const out = [];
     if (typeof MetroStations !== 'undefined' && MetroStations.limits) { try { for (const st of net.stations) for (const l of MetroStations.limits(st.id) || []) if (l.track === R.id) out.push({ s0: l.s0, s1: l.s1, st, side: null }); } catch (e) {} }
-    if (!out.length) for (const st of net.stations) for (const p of st.platforms || []) if (p.track === R.id) out.push({ s0: Math.min(p.s0, p.s1) - 12, s1: Math.max(p.s0, p.s1) + 12, st, side: p.side, type: st.type });
+    if (out.length) return out;
+    for (const st of net.stations) {
+      const pl = (st.platforms || []).filter(p => TRACKS.some(T => T.id === p.track)); if (!pl.length) continue;
+      const ref = pl[0], Rr = TRACKS.find(T => T.id === ref.track), a0 = Math.min(ref.s0, ref.s1), a1 = Math.max(ref.s0, ref.s1);
+      for (const p of pl) {
+        if (p.track !== R.id) continue;
+        let s0 = Math.min(p.s0, p.s1), s1 = Math.max(p.s0, p.s1);
+        if (p !== ref && Rr) { frameAt(Rr, a0, F0); const q0 = projectS(R, F0.x, F0.z, p.s); frameAt(Rr, a1, F0); const q1 = projectS(R, F0.x, F0.z, p.s);
+          if (q0 !== null && q1 !== null) { s0 = Math.min(q0, q1); s1 = Math.max(q0, q1); } }
+        out.push({ s0: s0 - 12, s1: s1 + 12, st, side: p.side, type: st.type });
+      }
+    }
     return out;
+  }
+  // s on track R nearest to world (x, z), within ±600 m of sHint and 25 m of the track, or null
+  function projectS(R, x, z, sHint) {
+    const t = R.t, n = t.X.length, st = t.step; let bd = 625, bs = null;
+    for (let i = Math.max(0, Math.floor((sHint - 600) / st)); i <= Math.min(n - 2, Math.ceil((sHint + 600) / st)); i++) {
+      const ax = t.X[i], az = t.Z[i], dx = t.X[i + 1] - ax, dz = t.Z[i + 1] - az, L2 = dx * dx + dz * dz || 1e-9, u = U.clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
+      const d = (ax + dx * u - x) ** 2 + (az + dz * u - z) ** 2; if (d < bd) { bd = d; bs = (i + u) * st; } }
+    return bs;
   }
   function inStation(R, s, pad = 0) { for (const r of R.stations) if (s > r.s0 - pad && s < r.s1 + pad) return r; return null; }
   // third rail side (+1 right, -1 left) at s: away from the platform in stations, else the outside of a pair (the field
@@ -474,20 +506,29 @@ const MetroTrack = (() => {
   }
 
   // ---------------------------------------------------------------- chunks, layers, jobs
-  const CH = 400, R_DETAIL = 480, R_BODY = 3000, R_FAR = 11000, BUDGET = 3.2;
-  const chunkGrid = new Map(), CG = 1000;
+  // Each layer cuts every track into its own chunk length: DETAIL 400 m (≤ 480 m away), BODY 800 m (≤ 2.7 km), FAR 2 km
+  // (≤ 11 km; five 400 m sub-pieces that hide themselves, per mesh, where a BODY chunk is already drawn).
+  const LAYERS = { detail: { CH: 400, R: 480, keep: 1.35 }, body: { CH: 800, R: 2700, keep: 1.25 }, far: { CH: 2000, R: 11000, keep: 1.12, SUB: 400 } };
+  const R_DETAIL = LAYERS.detail.R, R_BODY = LAYERS.body.R, R_FAR = LAYERS.far.R, CH = LAYERS.detail.CH, BUDGET = 3.2;
+  const grids = { detail: new Map(), body: new Map(), far: new Map() }, CG = 1000;
+  const built = { detail: new Set(), body: new Set(), far: new Set() };          // chunks with a group or a job
   function planChunks() {
     for (const R of TRACKS) {
-      const t = R.t, nch = Math.max(1, Math.ceil(t.length / CH)); R.chunks = [];
-      for (let k = 0; k < nch; k++) {
-        const s0 = k * CH, s1 = Math.min(t.length, (k + 1) * CH);
-        let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9, y0 = 1e9, y1 = -1e9;
-        for (let s = s0; s <= s1 + 0.1; s += Math.min(25, s1 - s0 || 1)) { frameAt(R, Math.min(s, s1), F0); x0 = Math.min(x0, F0.x); x1 = Math.max(x1, F0.x); z0 = Math.min(z0, F0.z); z1 = Math.max(z1, F0.z); y0 = Math.min(y0, F0.y); y1 = Math.max(y1, F0.y); if (s1 - s0 < 1) break; }
-        frameAt(R, (s0 + s1) / 2, F0);
-        const ch = { R, k, s0, s1, ox: Math.round(F0.x), oz: Math.round(F0.z), bb: [x0 - 30, y0 - 40, z0 - 30, x1 + 30, y1 + 15, z1 + 30], far: null, body: null, detail: null, jobs: {}, d: 1e9, failed: 0, cells: [] };
-        R.chunks.push(ch);
-        for (let i = Math.floor(ch.bb[0] / CG); i <= Math.floor(ch.bb[3] / CG); i++) for (let j = Math.floor(ch.bb[2] / CG); j <= Math.floor(ch.bb[5] / CG); j++) { const key = i * 100003 + j; let l = chunkGrid.get(key); if (!l) chunkGrid.set(key, l = []); l.push(ch); }
+      R.L = {};
+      for (const layer of ['detail', 'body', 'far']) {
+        const LC = LAYERS[layer].CH, t = R.t, nch = Math.max(1, Math.ceil(t.length / LC)), arr = R.L[layer] = [];
+        for (let k = 0; k < nch; k++) {
+          const s0 = k * LC, s1 = Math.min(t.length, (k + 1) * LC);
+          let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9, y0 = 1e9, y1 = -1e9;
+          for (let s = s0; ; s = Math.min(s1, s + 25)) { frameAt(R, s, F0); x0 = Math.min(x0, F0.x); x1 = Math.max(x1, F0.x); z0 = Math.min(z0, F0.z); z1 = Math.max(z1, F0.z); y0 = Math.min(y0, F0.y); y1 = Math.max(y1, F0.y); if (s >= s1) break; }
+          frameAt(R, (s0 + s1) / 2, F0);
+          const ch = { R, layer, k, s0, s1, ox: Math.round(F0.x), oz: Math.round(F0.z), bb: [x0 - 30, y0 - 40, z0 - 30, x1 + 30, y1 + 15, z1 + 30], g: null, job: null, d: 1e9, failed: 0, cells: [], mask: 0 };
+          arr.push(ch);
+          const G = grids[layer];
+          for (let i = Math.floor(ch.bb[0] / CG); i <= Math.floor(ch.bb[3] / CG); i++) for (let j = Math.floor(ch.bb[2] / CG); j <= Math.floor(ch.bb[5] / CG); j++) { const key = i * 100003 + j; let l = G.get(key); if (!l) G.set(key, l = []); l.push(ch); }
+        }
       }
+      R.chunks = R.L.detail;                                                      // (debug / legacy)
     }
   }
   const jobs = [];
@@ -495,20 +536,22 @@ const MetroTrack = (() => {
     const t0 = performance.now(); jobs.sort((a, b) => a.d - b.d);
     while (jobs.length && performance.now() - t0 < BUDGET) {
       const j = jobs[0]; let r;
-      try { r = j.gen.next(); } catch (e) { console.error('metrotrack job', j.layer, j.ch.R.id, j.ch.k, e); r = { done: true }; j.ch.failed++; j.ch.jobs[j.layer] = null; }
+      try { r = j.gen.next(); } catch (e) { console.error('metrotrack job', j.ch.layer, j.ch.R.id, j.ch.k, e); r = { done: true }; j.ch.failed++; j.ch.job = null; }
       if (r.done) jobs.shift();
     }
     stats.buildMs = +(performance.now() - t0).toFixed(2); stats.jobs = jobs.length;
   }
-  function dropJobs(ch, layer) { for (let i = jobs.length - 1; i >= 0; i--) if (jobs[i].ch === ch && (!layer || jobs[i].layer === layer)) jobs.splice(i, 1); if (layer) ch.jobs[layer] = null; else ch.jobs = {}; }
-  function disposeLayer(ch, layer) {
-    const g = ch[layer]; if (!g) return; group.remove(g);
-    g.traverse(o => { if (o.geometry) { stats.tris -= (o.geometry.index ? o.geometry.index.count : 0) / 3; o.geometry.dispose(); } if (typeof Under !== 'undefined' && Under.enabled) Under.outdoor(o, false); }); ch[layer] = null;
-    if (layer === 'body') {
+  function dropJob(ch) { for (let i = jobs.length - 1; i >= 0; i--) if (jobs[i].ch === ch) jobs.splice(i, 1); ch.job = null; if (!ch.g) built[ch.layer].delete(ch); }
+  function disposeChunk(ch) {
+    const g = ch.g; if (g) { group.remove(g);
+      g.traverse(o => { if (o.geometry) { stats.tris -= (o.geometry.index ? o.geometry.index.count : 0) / 3; o.geometry.dispose(); } if (o.material && ch.layer === 'far') o.material.dispose(); if (typeof Under !== 'undefined' && Under.enabled) Under.outdoor(o, false); }); }
+    ch.g = null;
+    if (ch.layer === 'body') {
       if (typeof MetroTube !== 'undefined') MetroTube.dropCells(ch);
       if (typeof Under !== 'undefined' && Under.enabled) for (const id of ch.cutIds || []) Under.remove(id);
       ch.cutIds = [];
     }
+    built[ch.layer].delete(ch);
   }
   // a layer's meshes: one group positioned at the chunk origin; builders fill GBs keyed by material
   function makeLayer(ch, name) { const g = new THREE.Group(); g.position.set(ch.ox, 0, ch.oz); g.name = 'metro-' + name + '-' + ch.R.id + '-' + ch.k; g.userData.ch = ch; return g; }
@@ -565,7 +608,7 @@ const MetroTrack = (() => {
     const mi = addMesh(g, B.infra, MATS.infra); if (mi) outdoorMark(ch, mi);
     if (B.fence) { const fm = B.fence.mesh(MATS.fence); if (fm) { g.add(fm); outdoorMark(ch, fm); } }
     if (typeof MetroTube !== 'undefined') MetroTube.finish(ctx, g);
-    ch.body = g; ch.jobs.body = null; g.visible = false; group.add(g);
+    ch.g = g; ch.job = null; g.visible = false; group.add(g);
     if (typeof MetroTube !== 'undefined') MetroTube.commitCells(ch);
   }
   // meshes of a chunk that are outdoors: hidden with the outdoor world when the camera is deep underground (Under)
@@ -576,19 +619,18 @@ const MetroTrack = (() => {
     if (typeof MetroGuide !== 'undefined') { for (const step of MetroGuide.detail(ctx)) yield; }
     const mi = addMesh(g, B.infra, MATS.infra, { shadow: true }); if (mi) outdoorMark(ch, mi);
     if (B.tunnel.count) addMesh(g, B.tunnel, MATS.tunnel, { shadow: false });
-    ch.detail = g; ch.jobs.detail = null; g.visible = false; group.add(g);
+    ch.g = g; ch.job = null; g.visible = false; group.add(g);
   }
   function* farJob(ch) {
     const g = makeLayer(ch, 'far'), ctx = ctxFor(ch, 'far'); const B = { infra: new GB() }; ctx.B = B;
-    if (typeof MetroGuide !== 'undefined') MetroGuide.far(ctx);
+    if (typeof MetroGuide !== 'undefined') MetroGuide.far(ctx, LAYERS.far.SUB);
     yield;
-    const m = addMesh(g, B.infra, MATS.far, { shadow: false }); if (m) m.castShadow = false;
-    ch.far = g; ch.jobs.far = null; g.visible = false; group.add(g);
+    const mat = infraMaterial('far'); ch.mat = mat;                              // (its own uHide mask; the program is shared)
+    const m = addMesh(g, B.infra, mat, { shadow: false }); if (m) { m.castShadow = false; outdoorMark(ch, m); }
+    ch.g = g; ch.job = null; g.visible = false; group.add(g);
   }
 
   // ---------------------------------------------------------------- per frame
-  const nearSet = new Set(); let lastCam = new THREE.Vector3(1e9, 0, 0);
-  function chunkDist(ch, p) { const b = ch.bb; const dx = Math.max(b[0] - p.x, 0, p.x - b[3]), dy = Math.max(b[1] - p.y, 0, p.y - b[4]), dz = Math.max(b[2] - p.z, 0, p.z - b[5]); return Math.sqrt(dx * dx + dy * dy + dz * dz); }
   // QA camera: MetroTrack.shot(trackId, s, lat, up, target) places the camera in a track's level frame (lat right, up
   // above top of rail) looking at target = { ds, lat, up } in the same frame (or a world point [x, y, z]); applied every
   // frame after the player (works underground, where fly mode clamps to the ground). MetroTrack.shot(null) releases it.
@@ -609,44 +651,57 @@ const MetroTrack = (() => {
     c.position.set(dbgCam.pos[0], dbgCam.pos[1], dbgCam.pos[2]); c.up.set(0, 1, 0); c.lookAt(dbgCam.look[0], dbgCam.look[1], dbgCam.look[2]);
     if (dbgCam.fov) { c.fov = dbgCam.fov; c.updateProjectionMatrix(); } c.near = 0.1; c.updateProjectionMatrix(); c.updateMatrixWorld();
   }
+  const nearSets = { detail: new Set(), body: new Set(), far: new Set() };
+  function chunkDist(ch, p) { const b = ch.bb; const dx = Math.max(b[0] - p.x, 0, p.x - b[3]), dy = Math.max(b[1] - p.y, 0, p.y - b[4]), dz = Math.max(b[2] - p.z, 0, p.z - b[5]); return Math.sqrt(dx * dx + dy * dy + dz * dz); }
+  function gather(layer, p) {
+    const set = nearSets[layer]; set.clear(); const G = grids[layer], rr = Math.ceil(LAYERS[layer].R * LAYERS[layer].keep / CG), ci = Math.floor(p.x / CG), cj = Math.floor(p.z / CG);
+    for (let a = -rr; a <= rr; a++) for (let b = -rr; b <= rr; b++) { const l = G.get((ci + a) * 100003 + (cj + b)); if (l) for (const ch of l) set.add(ch); }
+    for (const ch of set) ch.d = chunkDist(ch, p);
+    return set;
+  }
+  function schedule(ch, gen, dExtra) { ch.job = gen; built[ch.layer].add(ch); jobs.push({ gen, ch, d: ch.d + dExtra }); }
   function update(camPos, dt) {
     applyShot();
     if (!ready) return;
     // wetness follows the rain (dries slowly)
     const rain = typeof Precip !== 'undefined' && Precip.state && Precip.state.kind === 'rain' ? Precip.state.rate : 0;
     uWet.value = U.clamp(uWet.value + (rain > 0.05 ? dt / 40 : -dt / 900), 0, 1);
-    // chunks near the camera (grid of 1 km cells, within R_FAR)
-    nearSet.clear(); const R = Math.ceil(R_FAR / CG), ci = Math.floor(camPos.x / CG), cj = Math.floor(camPos.z / CG);
-    for (let a = -R; a <= R; a++) for (let b = -R; b <= R; b++) { const l = chunkGrid.get((ci + a) * 100003 + (cj + b)); if (l) for (const ch of l) nearSet.add(ch); }
-    let nFar = 0, nBody = 0, nDet = 0, n = 0;
-    for (const ch of nearSet) {
-      const d = chunkDist(ch, camPos); ch.d = d; n++;
-      if (ch.failed > 2) continue;
-      const hasSil = ch.R.hasSil && ch.R.hasSil[ch.k];
-      if (d < R_BODY && !ch.body && !ch.jobs.body) {
-        const b = ch.bb; if (Terrain.hasDetail(b[0], b[2], b[3], b[5], 7)) { ch.jobs.body = bodyJob(ch); jobs.push({ gen: ch.jobs.body, ch, layer: 'body', d }); }
-        else if (!ch.ensured) { ch.ensured = true; Terrain.ensure(b[0], b[2], b[3], b[5], 2, 7); }
-      }
-      if (d < R_DETAIL && ch.body && !ch.detail && !ch.jobs.detail) { ch.jobs.detail = detailJob(ch); jobs.push({ gen: ch.jobs.detail, ch, layer: 'detail', d: d + 30 }); }
-      if (hasSil && d < R_FAR && d > R_BODY * 0.7 && !ch.far && !ch.jobs.far) { ch.jobs.far = farJob(ch); jobs.push({ gen: ch.jobs.far, ch, layer: 'far', d: d * 0.5 + 400 }); }
-      // visibility (hysteresis on the ring edges)
-      if (ch.detail) ch.detail.visible = d < R_DETAIL * 1.15;
-      if (ch.body) ch.body.visible = d < R_BODY * 1.08;
-      if (ch.far) ch.far.visible = !(ch.body && ch.body.visible) && d < R_FAR;
-      if (ch.far && ch.far.visible) nFar++; if (ch.body && ch.body.visible) nBody++; if (ch.detail && ch.detail.visible) nDet++;
+    let nFar = 0, nBody = 0, nDet = 0;
+    // BODY: structures, tunnels, beds (after the fine terrain under them is in)
+    for (const ch of gather('body', camPos)) {
+      if (ch.failed > 2) continue; const d = ch.d;
+      if (d < R_BODY && !ch.g && !ch.job) { const b = ch.bb;
+        if (Terrain.hasDetail(b[0], b[2], b[3], b[5], 7)) schedule(ch, bodyJob(ch), 0); else if (!ch.ensured) { ch.ensured = true; Terrain.ensure(b[0], b[2], b[3], b[5], 2, 7); } }
+      if (ch.g) { ch.g.visible = d < R_BODY * 1.08; if (ch.g.visible) nBody++; }
     }
-    for (const j of jobs) j.d = j.ch.d + (j.layer === 'detail' ? 30 : j.layer === 'far' ? 400 : 0);
-    // dispose what fell out of the rings (and everything no longer near)
-    for (const Rr of TRACKS) for (const ch of Rr.chunks) {
-      if (!ch.far && !ch.body && !ch.detail && !ch.jobs.far && !ch.jobs.body && !ch.jobs.detail) continue;
-      const d = nearSet.has(ch) ? ch.d : 1e9;
-      if (d > R_DETAIL * 1.35) { if (ch.detail) disposeLayer(ch, 'detail'); if (ch.jobs.detail) dropJobs(ch, 'detail'); }
-      if (d > R_BODY * 1.3) { if (ch.body) disposeLayer(ch, 'body'); if (ch.jobs.body) dropJobs(ch, 'body'); ch.ensured = false; }
-      if (d > R_FAR * 1.15) { if (ch.far) disposeLayer(ch, 'far'); if (ch.jobs.far) dropJobs(ch, 'far'); }
+    // DETAIL: rails, plinths, third rail
+    for (const ch of gather('detail', camPos)) {
+      if (ch.failed > 2) continue; const d = ch.d;
+      if (d < R_DETAIL && !ch.g && !ch.job) schedule(ch, detailJob(ch), 60);
+      if (ch.g) { ch.g.visible = d < R_DETAIL * 1.15; if (ch.g.visible) nDet++; }
+    }
+    // FAR: silhouettes of aerials, bridges, embankments; each 400 m piece hides where a body chunk shows
+    const SUB = LAYERS.far.SUB, BC = LAYERS.body.CH;
+    for (const ch of gather('far', camPos)) {
+      if (ch.failed > 2 || !ch.R.hasSil[ch.k]) continue; const d = ch.d;
+      if (d < R_FAR && d > R_BODY * 0.5 && !ch.g && !ch.job) schedule(ch, farJob(ch), 500 + d * 0.3);
+      if (ch.g) {
+        let mask = 0, nsub = Math.ceil((ch.s1 - ch.s0) / SUB);
+        for (let j = 0; j < nsub; j++) { const sm = ch.s0 + (j + 0.5) * SUB, bc = ch.R.L.body[Math.min(ch.R.L.body.length - 1, Math.floor(sm / BC))]; if (bc && bc.g && bc.g.visible) mask |= 1 << j; }
+        ch.g.visible = d < R_FAR && mask !== (1 << nsub) - 1;
+        if (ch.mat) ch.mat.userData.u.uHide.value = mask;
+        if (ch.g.visible) nFar++;
+      }
+    }
+    for (const j of jobs) j.d = j.ch.d + (j.ch.layer === 'detail' ? 60 : j.ch.layer === 'far' ? 500 + j.ch.d * 0.3 : 0);
+    // dispose what fell out of each ring (with some hysteresis)
+    for (const layer of ['detail', 'body', 'far']) {
+      const lim = LAYERS[layer].R * LAYERS[layer].keep, near = nearSets[layer];
+      for (const ch of [...built[layer]]) { const d = near.has(ch) ? ch.d : 1e9; if (d > lim) { if (ch.job) dropJob(ch); disposeChunk(ch); if (layer === 'body') ch.ensured = false; } }
     }
     runJobs();
     if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) MetroGuide.updateInstances(camPos, TRACKS);
-    stats.chunks = n; stats.far = nFar; stats.body = nBody; stats.detail = nDet;
+    stats.chunks = nearSets.body.size + nearSets.detail.size + nearSets.far.size; stats.far = nFar; stats.body = nBody; stats.detail = nDet;
   }
 
   async function init() {
@@ -663,13 +718,13 @@ const MetroTrack = (() => {
     pairTracks();
     for (const R of TRACKS) { R.stations = stationRanges(R); R.hasSil = null; }
     planChunks();
-    for (const R of TRACKS) { R.hasSil = R.chunks.map(ch => R.runs.some(r => r.s1 > ch.s0 && r.s0 < ch.s1 && (r.type === 'aerial' || r.type === 'bridge' || r.type === 'embankment'))); }
+    for (const R of TRACKS) { R.hasSil = R.L.far.map(ch => R.runs.some(r => r.s1 > ch.s0 && r.s0 < ch.s1 && (r.type === 'aerial' || r.type === 'bridge' || r.type === 'embankment'))); }
     if (typeof MetroGuide !== 'undefined' && MetroGuide.init) MetroGuide.init({ DIM, PAL, GB, MATS, group });
     if (typeof MetroTube !== 'undefined' && MetroTube.init) MetroTube.init({ DIM, PAL, GB, MATS, group, TRACKS });
     ready = true;
-    console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.chunks.length, 0) + ' chunks');
+    console.log('MetroTrack: ' + TRACKS.length + ' tracks, ' + TRACKS.reduce((a, R) => a + R.L.body.length, 0) + ' body chunks');
   }
   return { enabled: true, init, update, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, pairAt, nbrAt, inStation, thirdSide, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
-    get ready() { return ready; }, get net() { return net; }, jobs, CH, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf: (t) => TI.get(t) };
+    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf: (t) => TI.get(t) };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)
