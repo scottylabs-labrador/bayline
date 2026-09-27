@@ -502,8 +502,13 @@ See the table in notes/bart-data.md (platform height, transfer timings, grades, 
   there has no cut (141.7 m against 101.6 m on the centreline at s 37000), and h9's "L7 surface + lidar detail" cannot
   restore a feature this wide, so the terrain, and the freeway on it, sit 15-40 m above the rails. Please take the base
   surface along this corridor from the lidar's own low-pass (the L8 3DEP tiles are in data/raw/lidar3dep/8/). Not a
-  trench: there are no retained walls between the tracks and the lanes. A search for other places where terrarium and
-  the lidar disagree by > 10 m within 60 m of a track is a cheap check (tools/metro/trackprof.py prints both).
+  trench: there are no retained walls between the tracks and the lanes. **Whole network checked** (every main track,
+  open and aerial samples every 20 m, terrarium vs 3DEP lidar at the centreline): the only stretches where they differ
+  by > 10 m over >= 60 m are all on this corridor, from east of North Concord to past the summit (C1/C2 s 33780-38120,
+  38.006-38.021 N, -122.022 to -121.980): terrarium is 11-42 m too HIGH through the summit cut (s 36540-37420, worst
+  +42 m) and at s 33780-33880 / 36100-36180, and 10-28 m too LOW where the regraded freeway runs on fill (s
+  35060-36020, worst -28 m; s 34780-34900; s 37820-38120). Terrarium there predates the regraded SR-4. Everywhere
+  else along BART the two agree within 10 m.
 
 - **sim**: the timetable's `legs[k]` align with `patterns[pat].legs[k].stops`; a trip's DMU leg and EMU leg are separate
   vehicles. Include yesterday's trips after midnight (times > 86400).
