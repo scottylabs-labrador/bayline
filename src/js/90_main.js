@@ -367,9 +367,18 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
         // set is built in slices of ~2.5 ms a frame while the old one stays live (Life's startRoads / pump; a whole
         // setRoads was one 40-170 ms frame), started at 450 m so it is in place before the old set's 1.5 km runs thin
         const moved = Math.hypot(cp.x - T.cx, cp.z - T.cz) > 450, empty = !T.lanes || !T.lanes.length;
-        if (alt < 1500 && (moved || (empty && !T.busy && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z;
+        // (M3.7.1) a new set waits, up to 6 s, for the base heights (L7) within 600 m of the camera, so that it is not built
+        // on the coarse levels that stream in first; whatever refines after it is followed by a re-sample (below)
+        if ((moved || empty) && !T.waitSince) T.waitSince = performance.now();
+        const groundIn = !Terrain.hasDetail || Terrain.hasDetail(cp.x - 600, cp.z - 600, cp.x + 600, cp.z + 600, 7) || performance.now() - T.waitSince > 6000;
+        if (alt < 1500 && groundIn && (moved || (empty && !T.busy && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z; T.waitSince = 0;
+          T.gStamp = Terrain.groundStamp || 0;
           const src = Towns.roadsNearIter ? Towns.roadsNearIter(cp.x, cp.z, 1500) : Towns.roadsNear(cp.x, cp.z, 1500), lots = Towns.areasNear ? Towns.areasNear(cp.x, cp.z, 500, 3) : [];
-          if (T.startRoads) T.startRoads(src, { x: cp.x, z: cp.z }, lots); else T.setRoads([...src], { x: cp.x, z: cp.z }, lots); } }
+          if (T.startRoads) T.startRoads(src, { x: cp.x, z: cp.z }, lots); else T.setRoads([...src], { x: cp.x, z: cp.z }, lots); }
+        // (M3.7.1) the ground under the live set refined since it was sampled (a finer height tile, a re-filter, a towns
+        // ribbon rebuilt): its lanes and cars re-sample their heights in place, time-sliced (Life's startResample)
+        else if (!T.busy && T.startResample && Terrain.groundChanged && T.lanes && T.lanes.length && Terrain.groundChanged(T.gStamp || 0, T.cx - 1500, T.cz - 1500, T.cx + 1500, T.cz + 1500)) {
+          T.gStamp = Terrain.groundStamp; T.startResample(); } }
       if (T.pump) T.pump(2.5);
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
     if (bay && typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));

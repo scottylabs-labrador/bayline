@@ -112,6 +112,28 @@ structure's way, `Flora.reloadIn(rects)` for the teardown; `Terrain.reloadHeight
    stand at that road's edge instead; procedural lamps landing on another road are left out.
    (There are no sign poles in Towns.)
 
+## M3.8 (world)
+
+1. **No lidar relief beside BART trenches** (INFRA, A1.2 33300: h9 3.2-3.7 m over the rail 4-6 m right of the track,
+   ~0.7 m over the natural ground, burying the 2.8 m coping). Rule `lidar.trench_weight` (in every bake from now on): no
+   detail within 10 m of a trench centreline (7 m behind the wall), smoothstep to full over 3 m. Replacement set
+   `data/raw/tiles/fix_trench` (`tools/metro_world/fix_trench.py`: h = base + w (h - base) on the published tiles, no
+   detail cache, offsets unchanged): 134 files (L8 52, L9 82), 1.1 MB, manifest with old / new sha256; 9 files are
+   fix_terrain's (their old hash is its new one), so publish after it (`publish_world.sh trench-check / trench`).
+   1,583 of the 1,731 trench samples (5 m) see a change; 1,194 by more than 0.3 m behind the walls (29,082 L9 samples
+   there: p50 0.25 m, p95 1.47 m, max 5.2 m). A1.2 33300 after: 2.5-2.6 m over the rail at 4-6 m right (= the L7 base);
+   the coping line runs unbroken (`shots/world/m38_trench_a12_33300_coping_before_after.jpg`). L9 edges toward unchanged
+   tiles: 0 of 205 differ.
+2. **DATA's isolated spots** (I-80 El Cerrito del Norte, I-280 Glen Park, the Bailey Rd ramp, E Warren Ave, 40th St at
+   MacArthur, the Castro Valley and Orinda ramps) were all in the M3.7 set (fix_terrain, published 09-27 ~14:30):
+   base minus lidar on DATA's stretches 3.6-10.2 m -> <= 0.03 m; road samples under the terrain there 534 -> 4. The
+   pre-M3.7 look can no longer be rendered locally (data/pub has the new tiles); the after views from a car and the
+   air: `shots/world/m38_data_spots_after.jpg`.
+3. **Lane audit, other levels**: a ribbon more than 4 m above or below a lane point is another level's (an overpass
+   over a junction gap with no ribbon at the lane's level): the lane is compared with the ground there (`otherLevel`).
+   MacArthur's -18 m and West Dublin's -10 m were such points; at MCAR LAKE PITT CAST COLM WDUB (with fix_trench): 40 of
+   79,608 lane points off by > 0.5 m (0.050 %), worst 0.91 m, 4 other-level points.
+
 ## The big finding: the world ends at lat 37.8429
 
 The Bayline world square (X0 -45056, Z0 -49152, 102.4 km, SPEC_v2) ends at **lat 37.8429** (just north of the Golden

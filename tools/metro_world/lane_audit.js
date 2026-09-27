@@ -9,7 +9,7 @@
   const B = () => window.__bayline, sleep = ms => new Promise(r => setTimeout(r, ms));
   await new Promise(r => { const f = () => (B() && B().World && B().World.traffic && B().Towns && window.__towns && B().Player) ? r(1) : setTimeout(f, 400); f(); });
   await sleep(4000);
-  const Ter = B().Terrain, Tw = B().Towns, T = B().World.traffic, P = B().Player, R = 600, out = [];
+  const Ter = B().Terrain, Tw = B().Towns, T = B().World.traffic, P = B().Player, R = 600, out = [], OTHER_LEVEL = 4;
   const LM = typeof Landmarks !== 'undefined' ? Landmarks : (B().Landmarks || null);
   function surface(x0, z0, r) {
     const C = 4, cells = new Map(); let nt = 0;
@@ -43,7 +43,7 @@
       if (c === last && c > 0) { if (++same >= 3) break; } else same = 0; last = c; }
     const ts = performance.now(); T.setRoads(Tw.roadsNear(x, z, 1500), { x, z }, Tw.areasNear ? Tw.areasNear(x, z, 500, 3) : []); const msRoads = performance.now() - ts;
     const S = surface(x, z, R + 20), G = T.group.position;
-    let n = 0, above = 0, below = 0, onRibbon = 0, offBr = 0, worst = [];
+    let n = 0, above = 0, below = 0, onRibbon = 0, offBr = 0, otherLevel = 0, worst = [];
     for (const ln of T.lanes) { const Q = ln.pts, m = Q.length / 3;
       for (let i = 0; i + 1 < m; i++) {
         const ax = Q[i * 3] + G.x, ay = Q[i * 3 + 1] + G.y, az = Q[i * 3 + 2] + G.z, bx = Q[i * 3 + 3] + G.x, by = Q[i * 3 + 4] + G.y, bz = Q[i * 3 + 5] + G.z;
@@ -51,11 +51,14 @@
         for (let j = 0; j < k; j++) { const u = j / k, px = ax + (bx - ax) * u, py = ay + (by - ay) * u, pz = az + (bz - az) * u;
           if (Math.hypot(px - x, pz - z) > R) continue;
           if (LM && LM.deckAt && LM.deckAt(px, pz, (bx - ax) / (L || 1), (bz - az) / (L || 1)) !== null) continue;
-          const rs = S.at(px, pz, py), ref = rs !== null ? rs : Ter.h(px, pz); if (rs !== null) onRibbon++;
+          // (M3.8) a ribbon more than OTHER_LEVEL m above or below the lane point is another level's (an overpass deck over
+          // a junction gap where no ribbon is drawn at the lane's level): the lane is compared with the ground there
+          let rs = S.at(px, pz, py); if (rs !== null && Math.abs(rs - py) > OTHER_LEVEL) { rs = null; otherLevel++; }
+          const ref = rs !== null ? rs : Ter.h(px, pz); if (rs !== null) onRibbon++;
           const dy = py - ref; n++; if (dy > 0.5) above++; else if (dy < -0.5) below++;
           if (Math.abs(dy) > 0.5) { if (ln.bridge) offBr++; worst.push([+dy.toFixed(2), +(37.40 - pz / 110985.1).toFixed(5), +(-122.10 + px / 88542.2).toFixed(5), rs !== null ? 'ribbon' : 'terrain', ln.bridge === undefined ? '?' : ln.bridge ? 'bridge' : 'road', ln.cls]); } } } }
     worst.sort((a, b) => Math.abs(b[0]) - Math.abs(a[0]));
-    out.push({ site: name, n, above, below, offBridge: offBr, onRibbon, maxDy: worst.length ? worst[0][0] : 0, worst: worst.slice(0, 5), lanes: T.lanes.length, msRoads: +msRoads.toFixed(1), tris: S.nt, sec: +((performance.now() - t0) / 1000).toFixed(1) });
+    out.push({ site: name, n, above, below, offBridge: offBr, onRibbon, otherLevel, maxDy: worst.length ? worst[0][0] : 0, worst: worst.slice(0, 5), lanes: T.lanes.length, msRoads: +msRoads.toFixed(1), tris: S.nt, sec: +((performance.now() - t0) / 1000).toFixed(1) });
     console.log('AUDIT ' + JSON.stringify(out[out.length - 1]));
   }
   return 'done ' + out.length;

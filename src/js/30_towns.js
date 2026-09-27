@@ -758,6 +758,9 @@ const Towns = (() => {
   // per-tile ground-height cache on the terrain's own L7 grid (6.25 m), bilinear, so ground objects match the terrain
   const HS = 6.25, HM = 2, HN = Math.round(TILE / HS) + 1 + HM * 2;      // 133 samples across (-12.5 .. 812.5 m)
   function* heightField(t) {
+    // (M3.7.1) was the base (L7) loaded all over the tile when its ground was read? If not (ensureGround gives up after
+    // 9 s on a slow link), the tile builds on a coarser level and rebuilds once the base is in (update)
+    t.hfFine = !hasTerrain() || typeof Terrain.hasDetail !== 'function' || Terrain.hasDetail(t.ox - 15, t.oz - 15, t.ox + TILE + 15, t.oz + TILE + 15, 7);
     const a = new Float32Array(HN * HN);
     for (let j = 0; j < HN; j++) {
       const z = t.oz + (j - HM) * HS;
@@ -869,8 +872,9 @@ const Towns = (() => {
   // tile-local, one per end of every such bridge piece; road pieces ending there rise toward E over their last ANCH_R m
   // so approach and deck meet. gl(x, z): the ground at tile-local (x, z).
   const ANCH_R = 20, ANCH_OUT = 10;
-  function anchors(T, gl, key) {                  // (key: the ribbons (on the tile's height field) and the lanes cache apart)
-    if (T[key]) return T[key];
+  function anchors(T, gl, key) {                  // (cached per key for the one ground gl: a new height field computes anew)
+    if (T[key] && T[key + 'G'] === gl) return T[key];
+    T[key + 'G'] = gl;
     const A = [];
     for (const r of T.r) {
       if (!(r.flags & 2) || !r.off) continue;
@@ -1769,6 +1773,8 @@ const Towns = (() => {
     t.nH = houses.length; t.nT = ntrees; t.nL = LL.length; stats.houses += t.nH; stats.trees += t.nT; stats.lights += t.nL;
     buildHouses(t, hi);
     t.gndLvl = lvl; t.treeNear = t.poleVis = t.glowVis = t.poolVis = t.gndVis = null; lodTouch(t, true);
+    // (M3.7.1) the drawn roads here changed (their raises, r._rib): what was built on them (road traffic) re-samples
+    if (typeof Terrain !== 'undefined' && Terrain.noteGround) Terrain.noteGround(t.ox, t.oz, t.ox + TILE, t.oz + TILE);
     stats.built++;
   }
   function clearGnd(t) {
@@ -1900,6 +1906,10 @@ const Towns = (() => {
         if (!t.sky && t.data.r.some(r => isFwy(r) && !(r.flags & 2))) floraRe.push([t.ox - 13, t.oz - 13, t.ox + TILE + 13, t.oz + TILE + 13]);
       }
       if (t.state !== 'ready') continue;
+      // (M3.7.1) built on a coarser level than the base (see heightField): once the base is in, read the ground again and
+      // rebuild (the current meshes stay until the new ones swap in)
+      if (t.hf && t.hfFine === false && !t.gen && (t.gndLvl || t.bldLvl) && now() - (t.hfCheck || 0) > 700) { t.hfCheck = now();
+        if (Terrain.hasDetail(t.ox - 15, t.oz - 15, t.ox + TILE + 15, t.oz + TILE + 15, 7)) { t.hf = null; if (t.gndLvl) t.forceG = true; if (t.bldLvl) t.forceB = true; stats.regrounded = (stats.regrounded || 0) + 1; } }
       let wb = d < hiR ? 2 : d < bldR ? 1 : 0, wg = d < hiR ? 2 : d < roadR ? 1 : 0;
       if (t.bldLvl > wb) { if (t.bldLvl === 2 && d < hiR + 400) wb = 2; else if (t.bldLvl >= 1 && d < bldR + 600) wb = Math.max(wb, 1); }
       if (t.gndLvl > wg) { if (t.gndLvl === 2 && d < hiR + 400) wg = 2; else if (t.gndLvl >= 1 && d < roadR + 500) wg = Math.max(wg, 1); }
@@ -2038,6 +2048,8 @@ const Towns = (() => {
     if (!ready) return;
     const tl = []; forTilesIn(x, z, r, T => tl.push(T));
     for (const T of tl) {
+      // (the bridge-end anchors on the live ground, once per tile and pass, when a piece here needs them)
+      let AL = null; const gl = (x, z) => ctx.groundY(T.ox + x, T.oz + z), anchL = () => AL || (AL = anchors(T, gl, '_anchL'));
       for (const rd of T.r) {
         if (rd.cls > 12) continue;
         const P = rd.pts, n = P.length / 2; let hit = false;
@@ -2052,7 +2064,7 @@ const Towns = (() => {
         if ((rd.flags & 2) && a === a0 && rd.off) { const lift = LIFT[Math.min(rd.cls, 14)] + 0.1, off = rd.off;
           // (as roadRibbon: never below the straight line between the piece's two ends)
           const cum = new Float32Array(n); for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]);
-          const AN = T._anchR || anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), a0 = anchorAt(AN, P[0], P[1]), a1 = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
+          const AN = anchL(), a0 = anchorAt(AN, P[0], P[1]), a1 = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
           const tot = cum[n - 1] || 1, E0 = a0 !== null ? a0 : ctx.groundY(T.ox + P[0], T.oz + P[1]) + off[0], E1 = a1 !== null ? a1 : ctx.groundY(T.ox + P[n * 2 - 2], T.oz + P[n * 2 - 1]) + off[n - 1];
           o.surf = (cx, cz) => { let best = 1e18, os = 0, u = 0;
             for (let i = 0; i + 1 < n; i++) { const ax = T.ox + P[i * 2], az = T.oz + P[i * 2 + 1], dx = T.ox + P[i * 2 + 2] - ax, dz = T.oz + P[i * 2 + 3] - az, L2 = dx * dx + dz * dz || 1;
@@ -2071,7 +2083,7 @@ const Towns = (() => {
         if (!(rd.flags & 2)) { const outer = ribbonOuter(rd, T.region >= 6 ? T.region : regionOf(T.oz + P[1])), lift = LIFT[Math.min(rd.cls, 14)], hw = rd.width / 2, k = Math.min(1, hw / outer);
           // edges(cx, cz, nx, nz, out): the strip's two edge heights (out[0] at -hw, out[1] at +hw along n); surf: a point on it
           o.hw = hw;
-          const AN = T._anchR || anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), aS = anchorAt(AN, P[0], P[1]), aE = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
+          const AN = anchL(), aS = anchorAt(AN, P[0], P[1]), aE = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
           const sx = T.ox + P[0], sz = T.oz + P[1], ex = T.ox + P[n * 2 - 2], ez = T.oz + P[n * 2 - 1];
           const cum = new Float32Array(n); for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]);
           // the raise the drawn ribbon got at this point (crest guard, bridge approach), by arc length along the piece; before
