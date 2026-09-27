@@ -9,7 +9,8 @@ bathymetry) stays the ground truth at large scales, so everything already built 
 towns, bridges, runways) keeps its heights. Only the lidar's fine relief is added on top:
     h = L7(x) + w(x) * (lidar(x) - lowpass_L7(lidar)(x))
 where lowpass_L7 is the lidar seen through the L7 grid (box-averaged to 6.25 m, bilinear back up), and w fades the
-detail out on the track bed and station zones (modelled geometry), over water and where the lidar has no data.
+detail out on the track bed and station zones (modelled geometry), beside BART trenches, over water and where the lidar
+has no data.
 L8 tiles are fetched once at 1.5625 m with a margin (so filters are identical across tile edges); their four L9
 children are cut from the same grid, and the L8 tile itself is the [1 2 1]-smoothed detail at every second sample.
 """
@@ -119,6 +120,64 @@ def keep_weight(X, Z):
         wt[tr['tunnel'][kk]] = np.minimum(wt[tr['tunnel'][kk]], np.clip((dd[tr['tunnel'][kk]] - 30.0) / 30.0, 0, 1))
         w[idx] = wt
     return w.reshape(X.shape)
+
+
+# ------------------------------------------------------------------ Bayline Metro trenches: keep the base surface
+# A BART trench (MetroNet struct 'trench') is cut into the ground at runtime (MetroGround: within 3.9 m of each track) and
+# walled by INFRA from 3 m out, with a coping and a skirt at the natural ground read from the L7 base (7.2 and 10.2 m out).
+# The lidar there has the real walls, fences and spoil in it, up to ~1 m over the natural ground, burying the coping. So
+# no lidar detail within TRENCH_KEEP m of a trench centreline (7 m behind its wall), full detail TRENCH_RAMP m beyond.
+TRENCH_KEEP, TRENCH_RAMP = 10.0, 3.0
+_trench = None
+
+
+def _trench_segs():
+    """(A (n, 4) float64 [ax, az, bx, bz] of every trench sample-to-sample segment of the metro network, cKDTree over
+    their midpoints or None). The metro data is read only."""
+    global _trench
+    if _trench is None:
+        segs = []
+        try:
+            from . import metro as MT
+            for t in MT.network_tracks():
+                P, S = t['P'], t['struct']
+                for i in range(len(P) - 1):
+                    if S[i] == 4:
+                        segs.append((P[i, 0], P[i, 2], P[i + 1, 0], P[i + 1, 2]))
+        except Exception:
+            segs = []
+        A = np.array(segs, np.float64).reshape(-1, 4)
+        _trench = (A, cKDTree((A[:, :2] + A[:, 2:]) / 2.0) if len(A) else None)
+    return _trench
+
+
+def trench_dist(X, Z, reach=TRENCH_KEEP + TRENCH_RAMP):
+    """Distance (m) from world points (any shape) to the nearest trench centreline segment, capped at reach + 1 (exact
+    within reach: a pure function of position, so tiles agree on their shared edges); also the index of that segment
+    (-1 where none is within reach)."""
+    A, kd = _trench_segs()
+    X = np.asarray(X, np.float64); Z = np.asarray(Z, np.float64)
+    d = np.full(X.shape, reach + 1.0); kbest = np.full(X.shape, -1, np.int64)
+    if kd is None or X.size == 0:
+        return d, kbest
+    cx, cz = (X.min() + X.max()) / 2.0, (Z.min() + Z.max()) / 2.0
+    half = max(X.max() - X.min(), Z.max() - Z.min()) / 2.0 * 1.4143
+    seglen = float(np.hypot(A[:, 2] - A[:, 0], A[:, 3] - A[:, 1]).max()) if len(A) else 0.0
+    for k in kd.query_ball_point([cx, cz], half + reach + seglen / 2.0 + 1.0):
+        ax, az, bx, bz = A[k]
+        dx, dz = bx - ax, bz - az; L2 = dx * dx + dz * dz
+        u = np.clip(((X - ax) * dx + (Z - az) * dz) / L2, 0.0, 1.0) if L2 > 1e-9 else np.zeros_like(X)
+        dk = np.hypot(X - (ax + dx * u), Z - (az + dz * u))
+        m = dk < d; d[m] = dk[m]; kbest[m] = k
+    kbest[d > reach] = -1
+    return d, kbest
+
+
+def trench_weight(X, Z):
+    """1 = lidar detail allowed, 0 = none: within TRENCH_KEEP m of a BART trench, smoothstep to 1 over TRENCH_RAMP m."""
+    d, _ = trench_dist(X, Z)
+    t = np.clip((d - TRENCH_KEEP) / TRENCH_RAMP, 0.0, 1.0)
+    return (t * t * (3.0 - 2.0 * t)).astype(np.float32)
 
 
 # ------------------------------------------------------------------ modelled ground: keep the base surface
@@ -323,7 +382,7 @@ def compute_l8(tx, ty):
     x0, z0, _, _ = bounds(8, tx, ty)
     g = np.arange(NV, dtype=np.float64) * STEP9
     X, Z = np.meshgrid(x0 + g, z0 + g)
-    w = keep_weight(X, Z) * (1.0 - np.clip(water_weight(tx, ty) * 1.5, 0, 1)) * modelled_weight(tx, ty) * edge_weight(tx, ty)
+    w = keep_weight(X, Z) * (1.0 - np.clip(water_weight(tx, ty) * 1.5, 0, 1)) * modelled_weight(tx, ty) * edge_weight(tx, ty) * trench_weight(X, Z)
     # (dilated on the whole fetch, then cropped: identical on both sides of a tile edge; +-6 samples covers the
     # low-pass footprint, so the no-data fill never leaks into kept detail)
     ndv = cv2.dilate(nd.astype(np.uint8), np.ones((13, 13), np.uint8))[M:M + NV, M:M + NV].astype(bool)
