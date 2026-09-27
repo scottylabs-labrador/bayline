@@ -106,7 +106,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
   // overlay. The promo is preferred, then the gameplay video; the first trailer stays as the last fallback
   { const btn = $('trailerbtn'), box = $('trailer'), vid = $('trailervid');
     const D = window.BAYLINE_DATA || hash.get('data') || './data/v2/';
-    const CANDS = [['trailer/bayline_promo.mp4', 'trailer/promo_poster.jpg'], ['trailer/bayline_gameplay.mp4', 'trailer/gameplay_poster.jpg'], ['trailer/bayline_trailer.mp4', 'trailer/poster.jpg']];
+    const CANDS = [['trailer/bayline_promo.mp4?v=3', 'trailer/promo_poster.jpg?v=3'],   // (versioned: a CDN never serves a stale copy or a cached miss)
+                    ['trailer/bayline_gameplay.mp4', 'trailer/gameplay_poster.jpg'], ['trailer/bayline_trailer.mp4', 'trailer/poster.jpg']];
     let SRC = null;
     if (btn && box && vid) {
       (async () => { for (const [v, p] of CANDS) { try { const r = await fetch(D + v, { method: 'HEAD' }); if (r.ok) { SRC = D + v; vid.poster = D + p; btn.hidden = false; return; } } catch (e) {} } })();
