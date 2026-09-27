@@ -29,9 +29,12 @@ headless Chrome at a time) unless it says offline.
 - **The navy rectangle over the Caltrain face** (face_s): the back of the transfer panels hung over the island's steps
   (one-sided, facing platform 3). Same class as the exit signs: an offline audit (every station built, each one-sided
   sign's back looked at from walk floors and the Peninsula's platforms up to 20 m behind it, straight and up to 75
-  degrees aside, line of sight clear of other meshes) finds 116 blank navy backs a walker can see on main: 112 exit
-  signs (an escalator bank's foot sign seen from the stairs it points to, a street stair's sign from the concourse
-  beside it), 2 platform panels, Millbrae's 4 transfer panels. Fixed for all: a one-sided sign's back is navy with the
+  degrees aside, line of sight clear of other meshes; `tools/metro_sign_backs.js`, run with `metro_offline.mjs eval`)
+  finds 120 blank navy backs a walker can see on main (of 699 blank backs): 112 exit signs (an escalator bank's foot
+  sign seen from the stairs it points to, a street stair's sign from the concourse beside it), 4 platform panels
+  (2 platform 1, 2 platform 3), Millbrae's 4 transfer panels; on 4906850 none (no blank back left). (The M3.5 message
+  and 159024a's message say 116: that count was taken with an interim fix already covering the transfer panels.)
+  Fixed for all: a one-sided sign's back is navy with the
   metro's wordmark centred (`MetroSigns` atlas region `back`, drawn centred and measured; `signGeometry` lays the navy
   around it in four coplanar bands: no overlap, no z-fighting). +8 triangles per one-sided sign (+40 to +550 per
   station). `shots/stations/m35_sign_backs.jpg` (face_s, Millbrae's platform 3 exit sign from the bridge stairs'
@@ -43,7 +46,7 @@ headless Chrome at a time) unless it says offline.
   `m35_benches_rails.jpg`. The Market St light-rail level (05131fc) stays an M4 proposal (backlog item 2).
 - **Offline, the whole M3.5 tree against main**: all 52 stations build without errors; floors and walls identical on
   every station (the benches keep their footprints), triangles +40..+670 per station; platform end faces unchanged
-  (406 front, the 2 known Orinda detail hits); walk gaps: none at Millbrae, Civic Center, North Berkeley, 12th St;
+  (406 front, the 2 known Orinda detail hits); walk gaps: none on all 52 (`gaps`, 19 min on the shared machine);
   the 31 Peninsula stations identical with the metro off and on (layouts, stops, doors, geometry hashes).
 
 ## M3.4 (src/js frozen for M3.3 at b220f6f; lead 18:00)
