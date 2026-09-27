@@ -53,6 +53,7 @@ const MetroTrack = (() => {
     galv: P(0xa2a7ab, 0.42, 0.85, 7), galvDark: P(0x7d8286, 0.5, 0.8, 7), steelPaint: P(0x5d6166, 0.55, 0.3, 0), railing: P(0x8a9096, 0.45, 0.7, 7),
     grate: P(0x4f5357, 0.55, 0.7, 7), cable: P(0x1c1d1f, 0.6, 0.0, 9), conduit: P(0x8b8f93, 0.45, 0.6, 7),
     ballast: P(0x9d978c, 0.95, 0, 4), soil: P(0x7a6a55, 0.95, 0, 1), asphalt: P(0x55534f, 0.92, 0, 1),
+    skirt: P(0x94876b, 0.97, 0, 4),                                              // earth-and-gravel strip behind trench walls (dry ground)
     lamp: P(0xfff1d6, 0.3, 0, 5), lampNight: P(0xffd9a8, 0.3, 0, 6), lampHousing: P(0x3a3c3f, 0.5, 0.4, 0),
     signBlue: P(0x1d4e89, 0.4, 0.1, 0), signWhite: P(0xe8e8e2, 0.45, 0, 0), yellow: P(0xd9ad22, 0.5, 0.05, 0), black: P(0x151617, 0.6, 0.1, 0),
     fence: P(0x8b9094, 0.45, 0.6, 7), bearing: P(0x202020, 0.8, 0, 9), steel: P(0x4a4d50, 0.55, 0.55, 0),

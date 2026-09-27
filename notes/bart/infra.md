@@ -7,6 +7,60 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **02:20 (09-27) M3.5 trench skirt + Daly City chamber** (on `bart-infra`, fast-forwarded to lead-int ba97382 first;
+  before = ba97382, after = this commit; q=high, 12:00):
+  - **Skirt behind every trench wall** (`24_metroguide.js` buildTrench): a 1.6 m earth-and-gravel strip at the natural
+    ground just behind the coping, then a 2 m apron that slopes 0.55 m down under the ground. The carve (MetroGround:
+    rail - 1.2 m within 3.9 m of each centreline) can't make a vertical step in a height grid, so the terrain dips from
+    the wall back up to the natural ground over a texel and a mesh cell (1.6-4.4 m at High). That facet is what showed
+    behind the walls. The natural height is read from the L7 base beyond the carve's reach (7.2 m and 10.2 m out,
+    carried in at its slope, capped at ±0.25). The strip never rises above the coping. Where the terrain is at its
+    natural height it covers the strip. No skirt within 30 m of a station's limits, in any STATIONS footprint
+    (`keepOut(.., 'grass')` at 0.8 / 1.6 / 3.6 m out), or over another track that is not the trench's pair (Daly City's
+    three tracks). Network audit: 1,982 wall rows, 1,753 skirted, 193 dropped for a neighbouring track, 22 near
+    stations, 14 low ground. At the stricter 'building' margins none touches a station zone (Milpitas' covers and
+    plaza included). Colour `PAL.skirt` 0x94876b (dry ground, gravel texture).
+  - **The trench terrain cut is always on.** Before, it was only a fallback where the carve hadn't reached
+    (`carvedAlong`, removed). Even where the carve reaches, the grid ramps up inside the walls, and those facets stood
+    in the trench as gravel-textured "dunes": Milpitas S1 3852-3942 and 4287-4637, Daly M1.2 1450-1560, and most
+    trenches. Now the trenches are clean at track level and from the air. Grass, trees and lamps inside a trench's
+    polygon drop too (WORLD's `onCutGround`).
+  - **Daly City chamber jc279 ends at the first tunnel mouth of any of its tracks** (`24_metrotube.js` chambersGen). It
+    now runs M1.2 1598-1728, from M2's mouth at one end to M3's at the other. Before, it ran 1590-1752, past M1.2's own
+    mouth at 1747. That showed as a black box over the tracks from the grade side and a black void from the air, and
+    riders saw a blown-out white wedge under a black hole ahead. Past each end, each track keeps its own box and portal
+    (M1.2 to its mouth at 1747). What a mouth end gets:
+    - full height (no thin-cover clamp within 12 m);
+    - daylight ramping in;
+    - an outdoors portal, including at an end where another track's box continues, so the outside is seen through
+      the opening and the chamber is seen from outside;
+    - openings in the end wall for tracks that leave into the open (M2's trench at 1598; before, the end wall stood
+      across M2's track);
+    - no opening above the chamber's own ceiling (a crossover 0.1 m higher opened a sliver to the sky);
+    - an outer concrete shell within 80 m of the mouth, like a tunnel's, where the approach's ground lies below the roof.
+
+    Tunnel shells also get a soffit just over the ceiling, so a crossover's gap in a double box's centre wall shows
+    concrete, not sky. The same rule trimmed 4 other chambers that ran past a mouth: jc524 M1.2 702-818 -> 710-812,
+    jc238 M1.2 1393-1433 -> 1397-1424 (M3's portal there is now clean), jc420 Y-main.8 0-182 -> 0-177, jc145 S-xo11
+    0-30 -> 0-22. None was dropped; the other 14 chambers are unchanged.
+  - **Perf** (tools/metro_share.js, current view, infra hidden vs shown): Milpitas air 20 -> 20 calls
+    (181 k -> 183 k tris); Daly City air 33 -> 36 calls (308 k -> 331 k). The chamber cells are now drawn from
+    outside through their new outdoor portals, plus the shells. Earlier sessions: S1 4560 27 -> 29, Concord C1 32300
+    28 -> 28, Hayward 22 -> 22. Under cuts in view: Milpitas 4 -> 18, Concord 1 -> 12. Each under-map redraw costs
+    0.4 -> 0.6 ms (it redraws when the camera moves 20 m). Streaming after a teleport, interleaved 2x2 over 30 s: frames
+    over 50 / 100 ms are the same within noise. `Flora.refreshIn` (WORLD, run for each second's batch of new cuts and
+    cells) takes ~50 ms in both builds; 3 calls instead of 2 at Concord.
+  - Shots: `notes/bart/shots/infra/m35_milpitas_before_after.jpg` (air, above, beside the wall, track level),
+    `m35_daly_before_after.jpg` (air, above, grade side, track level, M3 looking out of and into its mouth),
+    `m35_cab_before_after.jpg` (S1 3860-3940, M1.2 1620-1740).
+  - Known issues:
+    - On the tall right wall of the M1.2 / M2 trench (s ~1440-1560) the L7 base is 2-5 m above the lidar ground
+      behind it. The real cut there is wider and sloped. The wall already stood proud of the ground; the skirt now
+      sits at its coping and reads from the air as a gravel path.
+    - The skirt's outer edge follows the terrain's triangles, so it is ragged seen from straight above.
+    - Pre-existing, see Open problems: Daly City's M2 and M3 lose their own structures where the middle track M1.2
+      pairs with the other one.
+
 - **13:20 lens-aware ranges (M3.2, promo tele shots)**: every guideway range now uses an effective distance: in the
   view frustum, distance x tan(fov / 2) / tan(27.5°) (clamped to at most 1, so wider lenses keep today's budgets, and
   to at least 1/8), and in capture mode (`__bayline.capture.on`) every distance is divided by 3 as well. It applies to
@@ -429,20 +483,23 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
 
 ## Open problems
 
-- **Post-M3: Daly City junction chamber jc279 (M2b)**. Owned by M1.2 (s 1590-1752), it spans M1.2, M3, M2 and the
-  crossovers M-xo4 / M-xo7, and runs on over the portal runs where the three tracks leave the ground at different
-  points (M3's mouth at about M1.2 s 1695, M1.2's at 1750), so a single wide box covers part of M3's open trench.
-  Portals are exempt from the thin-cover clamp, so there the chamber keeps its full 4.78 m height and stands above the
-  lower ground on the M2 / M3 side. The terrain inside its volume is cut away, and the flora placed on that terrain
-  floats inside the chamber, dark because it is lit as interior. The bright far end is M1.2's real portal mouth.
-  Plan: end a chamber at the first mouth of any member track (each track then keeps its own portal box and
-  headwall), or build a stepped portal face per track; WORLD's flora and ground cover should skip points where
-  `Under.cutAt(x, z, y)` is true (offered earlier). Riders to Colma / Millbrae pass through it.
+- **Daly City: tracks paired one way only (pre-existing, found in the M3.5 cab rides)**. Structures are shared by pairs
+  (`MetroTrack.pairAt`: each track takes its nearest parallel track; the smaller id builds). With three tracks 5 m
+  apart the middle track, M1.2, pairs with one neighbour, and the third track's partner (M1.2) never builds for it:
+  - M3's portal and trench at M3 q 1680-1826 (M1.2 s 1426-1572) are not built: open sky, a hole in the ground, and
+    M3's trains pass 0.25 m inside M1.2's trench wall;
+  - M2's trench at M1.2 s 1565-1598 is missing (ties over a hole just before the chamber).
+
+  The same one-way pairs exist in yards and on some sidings (probe: `MetroTrack.TRACKS` `pairT` vs the partner's). Fix
+  proposed for M3.6+: the middle track's structure takes in the one-way partner's lane (a three-track trench, bed or
+  box: `lanes()` lo / hi and the box's track list), instead of the orphan building its own (5 m spacing leaves no room
+  for two walls). Its reach is network-wide, so not in M3.5.
+- (resolved in M3.5) Daly City junction chamber jc279 ran past its tracks' mouths: it now ends at the first mouth.
 - The data's accuracy limits the builders (aerial heights from clearance rules, the Wye's solved levels, portal
   profiles); builders adapt, but accuracy follows the data.
 - Milpitas (M2b): the data alternates cut-and-cover and trench every ~50 m around the station (the roofed trench), so
-  the approach is a row of short boxes with headwalls; the carved ground beside the trench still rises in steep facets
-  behind the walls (WORLD's carve / the terrain resolution). STATIONS is opening the ground over their trenches.
+  the approach is a row of short boxes with headwalls. (The terrain facets behind the trench walls are covered by the
+  M3.5 skirt; the facets inside are cut away.) STATIONS is opening the ground over their trenches.
 - Crossovers on aerials keep their own girder (real ones sit on special wide girders, not modelled).
 - The third rail's coverboard and insulators end with the detail ring (beyond ~250 m only the rails continue).
 
@@ -473,9 +530,9 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
   plane follows them (rail under the platform edges). STATIONS correct the sides from the layout, and so do I for the
   contact rail within stations; please flip the sides (and the plane) there so everyone reads the same answer.
 - **WORLD (07:40)**: at the West Oakland portal approach (M1.1 s 3330-3402, `trench` on M2) the rendered terrain was not
-  carved (the trench and its walls sat under a sand-coloured surface); infra now cuts the terrain itself wherever the
-  ground over a trench is not actually below the rail (`carvedAlong`), but please check the carve there. Milpitas (M2b):
-  the carve leaves steep facets behind the trench walls.
+  carved (the trench and its walls sat under a sand-coloured surface); infra now always cuts the terrain inside its
+  trenches (M3.5), but please check the carve there. Milpitas (M2b): the carve's facets behind the trench walls are
+  covered by infra's skirt since M3.5.
 - **WORLD (08:10)**: please extend MetroGround's `dropBuilding` to open cuts: buildings within ~8 m of a track whose
   structure is `trench` or `portal`, and within 30 m outside a tunnel mouth (towns tile 32,4 has one standing in the
   West Oakland portal, M1.1 s ~3400; **towns tile 46,-5 has one across the Berkeley Hills east portal box, C1 s ~8281,
