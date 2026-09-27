@@ -11,6 +11,7 @@ const StationParts = (() => {
     steel: lin(0xb7bcc0), steelDark: lin(0x5d6166), black: lin(0x141516), rubber: lin(0x1b1b1c), glassFrame: lin(0x9aa0a5),
     conc: lin(0xb3aea4), concDark: lin(0x8f8a82), tread: lin(0xa29d93), granite: lin(0x8b8986), navy: lin(0x16324f), teal: lin(0x1f9bb5),
     white: lin(0xf2f1ec), warm: lin(0xfff1d6), cool: lin(0xeaf2ff), yellow: lin(0xd7a915), paint: lin(0x2d3238), wood: lin(0x9a6a3e),
+    soffit: lin(0xcfccc4),
   };
 
   // ------------------------------------------------------------------------------------------------ stairs
@@ -95,6 +96,9 @@ const StationParts = (() => {
         else g.quad([x1, b1, z], [x0, b0, z], [x0, t0, z], [x1, t1, z], [-x1, b1, -x0, b0, -x0, t0, -x1, t1]);
       }
     }
+    // soffit: painted panels (the stainless underside of a truss has no sky to mirror and nothing lights it from
+    // below but the bounce light: it read as a black wedge over the platform); the sides stay stainless
+    g.mat(opts.soffitCol || C.soffit, K.PANEL, 1.2);
     for (let i = 0; i + 1 < xs.length; i++) {   // soffit
       const x0 = xs[i], x1 = xs[i + 1]; const b0 = yl(x0) - depth, b1 = yl(x1) - depth; if (yl(x0) < 0.3 && yl(x1) < 0.3) continue;
       g.quad([x0, b0, -hw], [x1, b1, -hw], [x1, b1, hw], [x0, b0, hw], [x0, -hw, x1, -hw, x1, hw, x0, hw]);
@@ -148,14 +152,17 @@ const StationParts = (() => {
   // The moving steps of every escalator of a station: one instanced draw. Each escalator contributes ceil(pathLen / pitch)
   // steps; the vertex shader places each one on the path (flat, arc, incline, arc, flat) at s = phase + speed * t, with
   // its tread level, and sinks it under the comb plates at the ends.
-  function stepGeometry() {
-    const g = new StationKit.GB(); const w = ESC.W / 2, d = ESC.PITCH;
-    // tread (grooved aluminium) with yellow demarcation along the sides and the front, and a riser dropping behind
-    g.mat(lin(0x6e7275), K.GRATING); g.quad([0, 0, w - 0.05], [d - 0.03, 0, w - 0.05], [d - 0.03, 0, -w + 0.05], [0, 0, -w + 0.05], [0, 0, d, 0, d, 1, 0, 1]);
+  // (sky: the vertex sky factor of the steps, 0 underground; the steps were a dark drain-grating finish, 15 % of an
+  // already dark grey between the bars, 60-80 % metal: a rider saw black blocks going up, 12th / 19th St)
+  function stepGeometry(sky = 0) {
+    const g = new StationKit.GB(); g.sky = sky; const w = ESC.W / 2, d = ESC.PITCH;
+    // tread: cleated aluminium (the grooves run with the steps) with yellow demarcation along the sides and the front;
+    // the riser behind it cleated too; the step's sides (seen through the gap to the skirts) painted
+    g.mat(lin(0xaeb2b6), K.CLEAT, 0.009); g.quad([0, 0, w - 0.05], [d - 0.03, 0, w - 0.05], [d - 0.03, 0, -w + 0.05], [0, 0, -w + 0.05], [w - 0.05, 0, w - 0.05, d - 0.03, -w + 0.05, d - 0.03, -w + 0.05, 0]);
     g.mat(C.yellow, K.PLAIN, 0.6); g.quad([d - 0.03, 0, w], [d, 0, w], [d, 0, -w], [d - 0.03, 0, -w], [0, 0, 1, 0, 1, 1, 0, 1]);
     for (const s of [-1, 1]) g.quad(s > 0 ? [0, 0, w] : [0, 0, -w + 0.05], s > 0 ? [d - 0.03, 0, w] : [d - 0.03, 0, -w + 0.05], s > 0 ? [d - 0.03, 0, w - 0.05] : [d - 0.03, 0, -w], s > 0 ? [0, 0, w - 0.05] : [0, 0, -w], [0, 0, 1, 0, 1, 1, 0, 1]);
-    g.mat(lin(0x3c3f42), K.GRATING); g.quad([0, -0.235, -w], [0, -0.235, w], [0, 0, w], [0, 0, -w], [0, 0, 1, 0, 1, 1, 0, 1]);   // riser faces -X
-    g.mat(lin(0x2a2c2e), K.PLAIN, 0.6); for (const s of [-1, 1]) { const z = s * w; const q = [[0, 0, z], [d, 0, z], [0, -0.235, z]]; if (s > 0) g.quad(q[0], q[2], q[2], q[1], [0, 0, 0, 0, 0, 0, 0, 0]); else g.quad(q[0], q[1], q[2], q[2], [0, 0, 0, 0, 0, 0, 0, 0]); }
+    g.mat(lin(0x9a9ea3), K.CLEAT, 0.009); g.quad([0, -0.235, -w], [0, -0.235, w], [0, 0, w], [0, 0, -w], [-w, -0.235, w, -0.235, w, 0, -w, 0]);   // riser faces -X
+    g.mat(lin(0x55595e), K.PAINT); for (const s of [-1, 1]) { const z = s * w; const q = [[0, 0, z], [d, 0, z], [0, -0.235, z]]; if (s > 0) g.quad(q[0], q[2], q[2], q[1], [0, 0, 0, 0, 0, 0, 0, 0]); else g.quad(q[0], q[1], q[2], q[2], [0, 0, 0, 0, 0, 0, 0, 0]); }
     return g.build();
   }
   const ESC_VERT = /* glsl */`
@@ -175,8 +182,9 @@ const StationParts = (() => {
       s -= l4; float xd = xc + RT * sa; return vec3(xd + s, H, 0.0);
     }
   `;
-  function escStepMaterial() {
-    const m = StationKit.stationMat({ rough: 0.5, metal: 0.6 });
+  // (env: the zone's interior environment underground, as the zone's own material has; metalness from the finish)
+  function escStepMaterial(env = null) {
+    const m = StationKit.stationMat({ rough: 0.45, metal: 0, env, envK: env ? 0.9 : 1 });
     const inner = m.onBeforeCompile; const uT = U.uTime;
     m.onBeforeCompile = (sh) => {
       inner(sh); sh.uniforms.uEscT = uT;
@@ -193,13 +201,14 @@ const StationParts = (() => {
             transformed = vec3(aE0.x + q.x * escC + q.z * escS, aE0.y + q.y, aE0.z - q.x * escS + q.z * escC);
           }`);
     };
-    m.customProgramCacheKey = () => 'stkit-esc-v1';
+    m.customProgramCacheKey = () => 'stkit-esc-v2';
     return m;
   }
-  // records: [{ x, y, z, yaw, H, dir }] (station-local lower comb, yaw of the run) -> a Mesh (or null)
-  function escSteps(records) {
+  // records: [{ x, y, z, yaw, H, dir }] (station-local lower comb, yaw of the run) -> a Mesh (or null); opts: { env, sky }
+  // (one per lighting zone: the caller binds the zone's light set)
+  function escSteps(records, opts = {}) {
     if (!records.length) return null;
-    const base = stepGeometry(); const geo = new THREE.InstancedBufferGeometry();
+    const base = stepGeometry(opts.sky || 0); const geo = new THREE.InstancedBufferGeometry();
     for (const k of ['position', 'normal', 'color', 'aSurf', 'aExt']) geo.setAttribute(k, base.getAttribute(k)); geo.setIndex(base.index);
     const e0 = [], e1 = [];
     for (const r of records) {
@@ -213,7 +222,7 @@ const StationParts = (() => {
     // bounds: all escalators (for culling)
     const bb = new THREE.Box3(); for (const r of records) { bb.expandByPoint(new THREE.Vector3(r.x - 25, r.y - 2, r.z - 25)); bb.expandByPoint(new THREE.Vector3(r.x + 25, r.y + r.H + 2, r.z + 25)); }
     geo.boundingBox = bb; geo.boundingSphere = bb.getBoundingSphere(new THREE.Sphere());
-    const mesh = new THREE.Mesh(geo, escStepMaterial()); mesh.name = 'escsteps'; mesh.receiveShadow = true;
+    const mesh = new THREE.Mesh(geo, escStepMaterial(opts.env || null)); mesh.name = 'escsteps'; mesh.receiveShadow = true;
     return mesh;
   }
 
