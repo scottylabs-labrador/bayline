@@ -1874,10 +1874,12 @@ const Towns = (() => {
     });
     return out;
   }
-  function roadsNear(x, z, r) {
-    const out = [];
-    if (!ready) return out;
-    forTilesIn(x, z, r, T => {
+  function roadsNear(x, z, r) { return [...roadsNearIter(x, z, r)]; }
+  // (the same, one road at a time: road traffic builds its lanes from it in slices, Bayline Metro world M3.7)
+  function* roadsNearIter(x, z, r) {
+    if (!ready) return;
+    const tl = []; forTilesIn(x, z, r, T => tl.push(T));
+    for (const T of tl) {
       for (const rd of T.r) {
         if (rd.cls > 12) continue;
         const P = rd.pts, n = P.length / 2; let hit = false;
@@ -1906,10 +1908,9 @@ const Towns = (() => {
           o.edges = (cx, cz, nx, nz, e) => { const gC = ctx.groundY(cx, cz);
             e[1] = Math.max(gC + (ctx.groundY(cx + nx * outer, cz + nz * outer) - gC) * k, gC - 0.6) + lift; e[0] = Math.max(gC + (ctx.groundY(cx - nx * outer, cz - nz * outer) - gC) * k, gC - 0.6) + lift; return e; };
           o.surf = (cx, cz, nx, nz, off) => { const e = o.edges(cx, cz, nx, nz, [0, 0]); return e[0] + (e[1] - e[0]) * Math.min(1, Math.max(0, (off + hw) / (2 * hw))); }; }
-        out.push(o);
+        yield o;
       }
-    });
-    return out;
+    }
   }
   const KINDS = ['house', 'residential', 'commercial', 'industrial', 'civic', 'garage', 'station', 'parking', 'building'];
   function buildingsAt(x, z, r = 60) {
@@ -2030,6 +2031,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh, addLampDrop, relamp,
+  return { init, update, group, roadsNear, roadsNearIter, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh, addLampDrop, relamp,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

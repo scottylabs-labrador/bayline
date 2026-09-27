@@ -1683,16 +1683,18 @@ const Life = (() => {
   // at +hw along the forward normal): each lane point then takes the strip's height at its own offset)
   function offsetLane(src, off, reverse, ax, ay, az, E, hw) {
     const n = src.length / 3; const out = new Float32Array(n * 3);
-    const P = i => { const k = reverse ? n - 1 - i : i; return [src[k * 3] - ax, src[k * 3 + 1] - ay, src[k * 3 + 2] - az]; };
+    // (no allocation per point: this runs over every lane of 1.5 km of roads)
+    const K = i => (reverse ? n - 1 - i : i) * 3;
     for (let i = 0; i < n; i++) {
-      const p = P(i), a = P(Math.max(0, i - 1)), b = P(Math.min(n - 1, i + 1));
-      let nx = 0, nz = 0, cnt = 0;
-      const addSeg = (u, v) => { const dx = v[0] - u[0], dz = v[2] - u[2], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; cnt++; } };
-      if (i > 0) addSeg(a, p); if (i < n - 1) addSeg(p, b);
+      const kp = K(i), ka = K(Math.max(0, i - 1)), kb = K(Math.min(n - 1, i + 1));
+      const px = src[kp] - ax, py = src[kp + 1] - ay, pz = src[kp + 2] - az;
+      let nx = 0, nz = 0;
+      if (i > 0) { const dx = src[kp] - src[ka], dz = src[kp + 2] - src[ka + 2], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; } }
+      if (i < n - 1) { const dx = src[kb] - src[kp], dz = src[kb + 2] - src[kp + 2], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; } }
       const l = Math.hypot(nx, nz) || 1; nx /= l; nz /= l;
       let miter = 1;
-      if (i > 0 && i < n - 1) { const dx = b[0] - p[0], dz = b[2] - p[2], L = Math.hypot(dx, dz) || 1; const d = nx * (-dz / L) + nz * (dx / L); miter = 1 / Math.max(0.5, d); }
-      out[i * 3] = p[0] + nx * off * miter; out[i * 3 + 1] = p[1]; out[i * 3 + 2] = p[2] + nz * off * miter;
+      if (i > 0 && i < n - 1) { const dx = src[kb] - src[kp], dz = src[kb + 2] - src[kp + 2], L = Math.hypot(dx, dz) || 1; const d = nx * (-dz / L) + nz * (dx / L); miter = 1 / Math.max(0.5, d); }
+      out[i * 3] = px + nx * off * miter; out[i * 3 + 1] = py; out[i * 3 + 2] = pz + nz * off * miter;
       if (E) { const k = reverse ? n - 1 - i : i, of = (reverse ? -off : off) * miter, y0 = E[k * 2], y1 = E[k * 2 + 1];
         out[i * 3 + 1] = y0 + (y1 - y0) * Math.min(1, Math.max(0, (of + hw) / (2 * hw))) - ay; }
     }
@@ -1704,8 +1706,8 @@ const Life = (() => {
     const P = rd.pts, n = P.length / 3, E = new Float64Array(n * 2), e = [0, 0];
     for (let i = 0; i < n; i++) {
       let nx = 0, nz = 0;
-      const seg = (a, b) => { const dx = P[b * 3] - P[a * 3], dz = P[b * 3 + 2] - P[a * 3 + 2], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; } };
-      if (i > 0) seg(i - 1, i); if (i < n - 1) seg(i, i + 1);
+      if (i > 0) { const dx = P[i * 3] - P[i * 3 - 3], dz = P[i * 3 + 2] - P[i * 3 - 1], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; } }
+      if (i < n - 1) { const dx = P[i * 3 + 3] - P[i * 3], dz = P[i * 3 + 5] - P[i * 3 + 2], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; } }
       const l = Math.hypot(nx, nz) || 1; rd.edges(P[i * 3], P[i * 3 + 2], nx / l, nz / l, e); E[i * 2] = e[0]; E[i * 2 + 1] = e[1];
     }
     return E;
@@ -1713,21 +1715,25 @@ const Life = (() => {
   // a polyline (world xyz) with no segment longer than seg m (the towns ribbon's stations: every <= 12 m near)
   function densify(P, seg) {
     const n = P.length / 3; if (n < 2) return P;
-    const out = [P[0], P[1], P[2]];
+    let cnt = 1; for (let i = 0; i + 1 < n; i++) cnt += Math.max(1, Math.ceil(Math.hypot(P[i * 3 + 3] - P[i * 3], P[i * 3 + 5] - P[i * 3 + 2]) / seg));
+    if (cnt === n) return P;
+    const out = new Float64Array(cnt * 3); out[0] = P[0]; out[1] = P[1]; out[2] = P[2]; let o = 3;
     for (let i = 0; i + 1 < n; i++) {
       const ax = P[i * 3], ay = P[i * 3 + 1], az = P[i * 3 + 2], bx = P[i * 3 + 3], by = P[i * 3 + 4], bz = P[i * 3 + 5];
       const m = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / seg));
-      for (let k = 1; k <= m; k++) { const t = k / m; out.push(ax + (bx - ax) * t, ay + (by - ay) * t, az + (bz - az) * t); }
+      for (let k = 1; k <= m; k++) { const t = k / m; out[o++] = ax + (bx - ax) * t; out[o++] = ay + (by - ay) * t; out[o++] = az + (bz - az) * t; }
     }
-    return Float64Array.from(out);
+    return out;
   }
 
   // roads: [{ pts: Float32Array|number[]|[{x,y,z}] (world xyz), lanes (total, both directions), speed (m/s), oneway, bus }]
   // roads split where they run through a keep-out zone (KO.keepOut(x, z, 'road')), sampled every 2 m; freeways, trunk
   // roads and bridges are left alone (they pass beside or over a station)
-  function cutRoads(R, KO) {
+  function cutRoads(R, KO) { const g = cutRoadsG(R, KO, () => false); let r; while (!(r = g.next()).done); return r.value; }
+  function* cutRoadsG(R, KO, over) {
     const out = [];
     for (const rd of R) {
+      if (over()) yield;
       const P = rd.pts, n = P.length / 3;
       if (rd.bridge || (rd.cls !== undefined && rd.cls < 4)) { out.push(rd); continue; }
       let x0 = 1e18, z0 = 1e18, x1 = -1e18, z1 = -1e18; for (let i = 0; i < n; i++) { x0 = Math.min(x0, P[i * 3]); x1 = Math.max(x1, P[i * 3]); z0 = Math.min(z0, P[i * 3 + 2]); z1 = Math.max(z1, P[i * 3 + 2]); }
@@ -1735,10 +1741,12 @@ const Life = (() => {
       if (!KO.keepOutAny(x0 - hw, z0 - hw, x1 + hw, z1 + hw, 'road')) { out.push(rd); continue; }
       let cur = [], cut = false;
       const flush = () => { if (cur.length >= 6) out.push({ ...rd, pts: Float32Array.from(cur) }); cur = []; };
+      let tick = 0;
       for (let i = 0; i + 1 < n; i++) {
         const ax = P[i * 3], ay = P[i * 3 + 1], az = P[i * 3 + 2], bx = P[i * 3 + 3], by = P[i * 3 + 4], bz = P[i * 3 + 5];
         const m = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 2));
         for (let k = i === 0 ? 0 : 1; k <= m; k++) {
+          if ((++tick & 15) === 0 && over()) yield;
           const t = k / m, x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
           if (KO.keepOut(x, z, 'road', hw, y)) { cut = true; flush(); } else cur.push(x, y, z);
         }
@@ -1789,35 +1797,59 @@ const Life = (() => {
     }
     let lanes = [], cars = [], parked = [];
     const PARK_W = VEH_TYPES.map(t => ({ sedan: 50, suv: 32, pickup: 8, van: 8, bus: 0, truck: 1 })[t] || 0);
-    function setRoads(list, center, lots) {
+    // A new lane set is built time-sliced (Bayline Metro world, M3.7): buildRoads is a generator that works into its own
+    // lanes / cars / parked and yields whenever over() says the frame's budget is spent; the old set stays live until the
+    // new one is complete, then commit() swaps it in in one step. setRoads(list, center, lots) runs it to the end at once
+    // (as before); startRoads(src, center, lots) + pump(ms) every frame run it in slices (src may be an iterator: the roads
+    // stream in from Towns as it goes).
+    let job = null, deadline = Infinity;
+    const over = () => performance.now() > deadline;
+    function setRoads(list, center, lots) { const g = buildRoads(list, center, lots); let r; deadline = Infinity; while (!(r = g.next()).done); job = null; r.value(); traffic.update(0.001); }
+    function startRoads(src, center, lots) { job = buildRoads(src, center, lots); }
+    // (QA: the longest slice so far and the phase it was in, the longest swap)
+    const jobStats = { maxStep: 0, phase: '', commitMs: 0 }; let phase = '';
+    function pump(ms) {
+      if (!job) return false;
+      const t0 = performance.now(); deadline = t0 + ms; const r = job.next(); deadline = Infinity;
+      const d = performance.now() - t0; if (d > jobStats.maxStep) { jobStats.maxStep = d; jobStats.phase = phase; }
+      if (!r.done) return false;
+      job = null; const t1 = performance.now(); r.value(); jobStats.commitMs = Math.max(jobStats.commitMs, performance.now() - t1); return true;
+    }
+    function* buildRoads(list, center, lots) {
+      let lanes = [], cars = [], parked = [];
       // Bayline Metro (#metro=1): no lane through a station's lobby, trackway or columns (a road may pass under a deck),
       // no parked car in them (MetroStations.keepOut)
       const KO = typeof MetroStations !== 'undefined' && MetroStations.enabled && MetroStations.keepOut ? MetroStations : null;
-      let R = (list || []).map(rd => (rd && rd.pts ? { ...rd, pts: toPts(rd.pts) } : { pts: toPts(rd) })).filter(rd => rd.pts.length >= 6);
-      if (KO) R = cutRoads(R, KO);
+      // (the stations' keep-out footprints are made lazily, a station at a time, 5-20 ms each: made here first, one per
+      // slice, for the stations within reach, so no later slice pays for one)
+      if (KO && KO.list && center) { phase = 'prewarm'; for (const st of KO.list) { if (Math.abs(st.x - center.x) > 2300 || Math.abs(st.z - center.z) > 2300) continue; if (over()) yield; KO.keepOut(st.x, st.z, 'road'); } }
+      let R = [];
+      phase = 'roads'; for (const rd of list || []) { const q = rd && rd.pts ? { ...rd, pts: toPts(rd.pts) } : { pts: toPts(rd) }; if (q.pts.length >= 6) R.push(q); if (over()) yield; }
+      phase = 'cut-stations'; if (KO) R = yield* cutRoadsG(R, KO, over);
       // Bayline Metro: no lane on a BART track at ground level or across an open trench (MetroGround.roadKeepOut)
-      if (typeof MetroGround !== 'undefined' && MetroGround.installed && MetroGround.roadKeepOut) R = cutRoads(R, MetroGround.roadKeepOut);
+      phase = 'cut-metro'; if (typeof MetroGround !== 'undefined' && MetroGround.installed && MetroGround.roadKeepOut) R = yield* cutRoadsG(R, MetroGround.roadKeepOut, over);
       // lanes and parked cars lie on the road as Towns draws it (Bayline Metro world, M3.7): a road with a surface
       // (rd.edges: its ribbon, or a bridge without a modelled deck) is followed every <= 12 m (the ribbon's stations), and
       // every lane point and parked car takes the ribbon's height at its own offset: no lane keeps its centreline's height
       // out over a cross slope or a bank the metro carved away, and none cuts a straight line between far-apart map nodes.
       // Within 900 m of the camera (where the towns draw the detailed ribbons and the cars read); farther, as before
-      const ccx = center ? center.x : null, ccz = center ? center.z : null;
+      phase = 'surface'; const ccx = center ? center.x : null, ccz = center ? center.z : null;
       for (const rd of R) {
         if (!rd.edges) continue;
         if (ccx !== null) { const P = rd.pts; let near = false; for (let i = 0; i < P.length; i += 3) if (Math.abs(P[i] - ccx) < 900 && Math.abs(P[i + 2] - ccz) < 900) { near = true; break; } if (!near) continue; }
         rd.pts = densify(rd.pts, 12); rd.E = stationEdges(rd);
+        if (over()) yield;
       }
       let sx = 0, sy = 0, sz = 0, sn = 0;
       for (const rd of R) for (let i = 0; i < rd.pts.length; i += 3) { sx += rd.pts[i]; sy += rd.pts[i + 1]; sz += rd.pts[i + 2]; sn++; }
       const ax = Math.round(sx / Math.max(1, sn)), ay = Math.round(sy / Math.max(1, sn)), az = Math.round(sz / Math.max(1, sn));
-      group.position.set(ax, ay, az); group.updateMatrixWorld();
-      lanes = []; cars = [];
-      const box3 = new THREE.Box3();
+      const box3 = new THREE.Box3(); phase = 'lanes';
       for (const rd of R) {
+        if (over()) yield;
         const total = Math.max(1, rd.lanes || 2), speed = rd.speed || 13.4, oneway = !!rd.oneway;
         const dirs = oneway ? [false] : [false, true], perDir = oneway ? total : Math.max(1, Math.round(total / 2));
         for (const rev of dirs) for (let j = 0; j < perDir; j++) {
+          if (over()) yield;
           const off = oneway ? (j - (perDir - 1) / 2) * laneW : (j + 0.5) * laneW;
           const pts = offsetLane(rd.pts, off, rev, ax, ay, az, rd.E, rd.hw); const n = pts.length / 3; const cum = new Float32Array(n);
           for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2], pts[i * 3 + 2] - pts[i * 3 - 1]);
@@ -1827,8 +1859,8 @@ const Life = (() => {
           lanes.push({ pts, cum, len: cum[n - 1], speed: speed * (1 - 0.06 * (perDir - 1 - j) / Math.max(1, perDir - 1)), cars: [], fast: speed > 20, busOK: rd.bus !== false && speed < 20, bridge: !!rd.bridge, cls: rd.cls });
         }
       }
-      for (const t of VEH_TYPES) { meshes[t].mesh.count = 0; if (meshes[t].lo) meshes[t].lo.mesh.count = 0; }
-      for (const lane of lanes) {
+      phase = 'cars'; for (const lane of lanes) {
+        if (over()) yield;
         const want = Math.min(Math.round(lane.len / 1000 * density * lerp(0.7, 1.3, r())), maxCars - cars.length);
         if (want <= 0) continue;
         for (let k = 0; k < want; k++) {
@@ -1847,9 +1879,9 @@ const Life = (() => {
       }
       // curbside parking on neighbourhood streets (secondary .. unclassified) within ~450 m of the camera: both sides,
       // a car every 6-7.6 m where the dice say so, clear of the ends (intersections), facing the flow of their side
-      parked = [];
-      const pcx = center ? center.x : ax, pcz = center ? center.z : az, PR = 450;
+      phase = 'parking'; const pcx = center ? center.x : ax, pcz = center ? center.z : az, PR = 450;
       for (const rd of R) {
+        if (over()) yield;
         const cls = rd.cls !== undefined ? rd.cls : 10; if (cls < 6 || cls > 11 || rd.bridge) continue;
         const P = rd.pts, n = P.length / 3; let near = false;
         for (let i = 0; i < n; i++) if (Math.abs(P[i * 3] - pcx) < PR + 60 && Math.abs(P[i * 3 + 2] - pcz) < PR + 60) { near = true; break; }
@@ -1858,6 +1890,7 @@ const Life = (() => {
         let total = 0; for (let i = 0; i + 1 < n; i++) total += Math.hypot(P[i * 3 + 3] - P[i * 3], P[i * 3 + 5] - P[i * 3 + 2]);
         let acc = 0, next = 11 + r() * 6;
         for (let i = 0; i + 1 < n; i++) {
+          if ((i & 15) === 15 && over()) yield;
           const x0 = P[i * 3], y0 = P[i * 3 + 1], z0 = P[i * 3 + 2], x1 = P[i * 3 + 3], y1 = P[i * 3 + 4], z1 = P[i * 3 + 5];
           const L = Math.hypot(x1 - x0, z1 - z0); if (L < 1e-3) continue;
           const ux = (x1 - x0) / L, uz = (z1 - z0) / L;
@@ -1882,7 +1915,8 @@ const Life = (() => {
       // parking lots: cars nose-in in the painted stalls (the towns shader draws rows of 2.75 m stalls, 5.2 m deep,
       // every 12 m along the lot's short axis, in coordinates aligned with the lot's long axis)
       const hour = (typeof Env !== 'undefined' ? Env.time.sec : 43200) / 3600, busyLot = hour > 7 && hour < 18.5 ? 0.72 : hour > 6 && hour < 22 ? 0.45 : 0.18;
-      for (const lot of lots || []) {
+      phase = 'lots'; for (const lot of lots || []) {
+        if (over()) yield;
         const W = lot.pts, n = W.length / 2; if (n < 3) continue;
         let cxL = 0, czL = 0; for (let i = 0; i < n; i++) { cxL += W[i * 2]; czL += W[i * 2 + 1]; } cxL /= n; czL /= n;
         if (Math.hypot(cxL - pcx, czL - pcz) > PR) continue;
@@ -1919,9 +1953,15 @@ const Life = (() => {
       }
       const sphere = box3.isEmpty() ? new THREE.Sphere(new V3(), 1) : box3.getBoundingSphere(new THREE.Sphere());
       sphere.radius += 12;
-      for (const t of VEH_TYPES) { meshes[t].mesh.boundingSphere.copy(sphere); if (meshes[t].lo) meshes[t].lo.mesh.boundingSphere.copy(sphere); }
-      traffic.update(0.001);
+      // the swap: one step, between frames
+      return () => {
+        setLive(lanes, cars, parked);
+        group.position.set(ax, ay, az); group.updateMatrixWorld();
+        for (const t of VEH_TYPES) { meshes[t].mesh.count = 0; if (meshes[t].lo) meshes[t].lo.mesh.count = 0; }
+        for (const t of VEH_TYPES) { meshes[t].mesh.boundingSphere.copy(sphere); if (meshes[t].lo) meshes[t].lo.mesh.boundingSphere.copy(sphere); }
+      };
     }
+    function setLive(L, C, P) { lanes = L; cars = C; parked = P; }
     function locate(lane, s, car) { // position at distance s along lane (car.seg caches the segment)
       const cum = lane.cum, n = cum.length; let i = car.seg;
       if (i >= n - 1 || cum[i] > s) i = 0;
@@ -1939,7 +1979,7 @@ const Life = (() => {
     const ahead = new V3(), behind = new V3(), pos = new V3();
     const A = 1.6, B = 2.8, S0 = 2.5, T = 1.25, SQ = 2 * Math.sqrt(A * B);
     const traffic = {
-      group, meshes, setRoads,
+      group, meshes, setRoads, startRoads, pump, get busy() { return !!job; }, jobStats,
       get cars() { return cars; }, get lanes() { return lanes; }, get count() { return cars.length; }, get parked() { return parked.length; },
       update(dt = 1 / 60, env = {}) {
         dt = Math.min(dt, 0.1);
