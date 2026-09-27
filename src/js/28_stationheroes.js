@@ -10,6 +10,11 @@
 //   ends      what the open platform ends carry: 'beam' | 'T' | 'L' | 'poles' | 'pergola' | 'wall'
 //   floor / tactile / wall / ceil / cWall / cFloor / cCeil  palette entries [colour, kind, parameter]
 //   cols      platform-level columns in subway stations: { rows, across, along, shape, size, col, kind }
+//   benches   round platform benches: 'bullseye' (terrazzo) | 'drum' (precast); benchStyle: the long benches' style
+//             ('steel' | 'stone' | 'terrazzo' | 'wood'; default steel, stone underground), benchCol its colour
+//   rail      the station's own railings (well guards, the fare line's): { infill: 'bars' | 'glass', col }; default glass
+//   spawnView what a platform spawn (#mst, "go to the platform") looks at: 'hall' (the footbridge hall's middle, along
+//             the island: Millbrae); default up the platform toward the arriving train
 //   light     [r, g, b] lamp colour; lightI
 //   feature   named hero features built by StationHeroes.build(name, T)
 // Everything else falls back to the era defaults.
@@ -39,7 +44,7 @@ const StationHeroes = (() => {
     POWL: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: HERR(0x7d3a2b), wall: [0xe9dfc8, K.PANEL, 1.6], wallUp: PAINT(0xc2462f), ceil: [0x8c8880, K.COFFER, 1.5], tread: 0xb0aba2,
       cols: { rows: 2, across: 5.7, along: 10.4, shape: 'round', size: 0.62, col: 0xd4d8db, kind: K.STEEL }, pendants: 'dome', benches: 'bullseye',
       cFloor: [0xcfc8b8, K.TERRAZZO, 4.0], cWall: [0xf1efe9, K.BUBBLE, 0.15], cCeil: [0x2a2a2c, K.GRATING, 0], muniCol: 0xb3362a, hero: 1 },
-    CIVC: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, floor: MARB(0xdcdad4), wall: [0xe6e3dc, K.PANEL, 1.5], wallUp: PAINT(0x1c2c4a), ceil: [0xe9e7e2, K.PANEL, 0.15],
+    CIVC: { canopyEnt: true, layout: 'island', type: 'subway', access: 'above', muni: true, benchStyle: 'terrazzo', benchCol: 0x2c2c2e, floor: MARB(0xdcdad4), wall: [0xe6e3dc, K.PANEL, 1.5], wallUp: PAINT(0x1c2c4a), ceil: [0xe9e7e2, K.PANEL, 0.15],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 0.9, depth: 0.5, col: 0x1a1a1b, kind: K.GRANITE }, cFloor: MARB(0xd6d3cc), cWall: BRICK(0x6e6358, 1), cCeil: [0xe2e0dc, K.PANEL, 0.15], hero: 1 },
     '16TH': { layout: 'island', type: 'subway', access: 'above', floor: QUARRY(0x8e3e2c), wall: TILE(0xeceae4, 0.152), wallUp: CONC(0x9b958a, 0), ceil: [0x8a857c, K.CONCRETE, 2.0],
       cFloor: QUARRY(0x8e3e2c), cWall: [0xd9cfb8, K.CONCRETE, 0], cCeil: [0xb07a45, K.WOOD, 0.09], vault: 'ribs', mural: [0x2f5d8c, 0x7c8a3a, 0xa9b83e, 0x8a8d88], wellWall: [0xa39c8f, K.CIRCLES, 2.6], hero: 1 },
@@ -57,14 +62,14 @@ const StationHeroes = (() => {
     SFIA: { type: 'aerial', access: 'end', endHall: { toward: [133, -43], len: 30 }, floor: TERR(0xb3b0aa, 4.0), ceil: PANEL(0x9a9d9f, 0.6), enclosed: true, canopy: { style: 'shed', len: 216, top: 0xa9adb0, under: 0x8e9194, fascia: 0x6f7377,
       posts: { shape: 'round', col: 0xaaa59c, size: 1.2, spacing: 18, where: 'centre', kind: K.BOARDFORM } }, feature: ['windPortal'], hero: 1 },
     MLBR: { type: 'surface', access: 'bridge', floor: GRAN(0xa3a098, 0.6), canopy: { style: 'flat', len: 150, top: 0xefe8d6, under: 0xf2ecdd, fascia: 0xe4dcc8, posts: { shape: 'round', col: 0xf2f0ea, size: 0.3, spacing: 10, where: 'centre' } },
-      bridgeStyle: 'wings', hero: 1,
+      bridgeStyle: 'wings', benchStyle: 'terrazzo', spawnView: 'hall', hero: 1,
       // the shared intermodal hall over the Caltrain island and BART platform 3 (replaces the Caltrain-era depot hall with
       // the metro on): the Peninsula station it spans, and fallbacks in station v if that is not there
       sharedHall: { peninsula: 'place_MLBR', vWest: -20.5, vNB: -16.0, len: 84, rise: 5.2 } },
     // ---------------------------------------------------------------- Oakland core
     WOAK: { layout: 'side', type: 'aerial', access: 'below', floor: CONC(0x9a958c), deck: FLUTE(0xb9b3a7, 0.1), canopy: { style: 'hipped', len: 100, top: 0x55807e, under: 0x6d8f8b, fascia: 0x3f6f6d, posts: { shape: 'rect', col: 0x3f6f6d, size: 0.3, spacing: 9, where: 'back' } },
       windscreen: 0x35598c, ends: 'poles', poleCol: 0x3f6f6d, hero: 1 },
-    '12TH': { type: 'subway', access: 'above', stacked: true, floor: [0xc8bca6, K.GRANITE, 0.4], wall: TILE(0xeae6dc, 0.2), band: 0xd0512b, wallUp: [0x6b2a22, K.BRICK, 1], ceil: [0xecebe7, K.COFFER, 2.4],
+    '12TH': { type: 'subway', access: 'above', stacked: true, rail: { infill: 'bars', col: 0x8a6a3c }, floor: [0xc8bca6, K.GRANITE, 0.4], wall: TILE(0xeae6dc, 0.2), band: 0xd0512b, wallUp: [0x6b2a22, K.BRICK, 1], ceil: [0xecebe7, K.COFFER, 2.4],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 1.2, depth: 1.2, col: 0x6b2a22, kind: K.BRICK }, cFloor: [0xc8bca6, K.GRANITE, 0.4], cWall: [0x6b2a22, K.BRICK, 1], cCeil: [0xecebe7, K.COFFER, 2.4], hero: 1 },
     '19TH': { type: 'subway', access: 'above', stacked: true, floor: [0xc8bca6, K.GRANITE, 0.4], wall: TILE(0xeae6dc, 0.2), band: 0x2a4fa0, wallUp: [0x1f3570, K.BRICK, 1], ceil: [0xecebe7, K.COFFER, 2.4],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 1.2, depth: 1.2, col: 0x1f3570, kind: K.BRICK }, cFloor: [0xc8bca6, K.GRANITE, 0.4], cWall: [0x1f3570, K.BRICK, 1], cCeil: [0xecebe7, K.COFFER, 2.4], hero: 1 },
@@ -101,7 +106,7 @@ const StationHeroes = (() => {
     // ---------------------------------------------------------------- Berkeley / Richmond
     ASHB: { layout: 'island', type: 'subway', access: 'above', floor: QUARRY(0x9a4a36), wall: [0xe2e2de, K.PANEL, 1.2], wallUp: [0xe2e2de, K.PANEL, 1.2], ceil: [0xd6d3cc, K.CONCRETE, 0], ribs: true, daylight: true },
     DBRK: { layout: 'island', type: 'subway', access: 'above', floor: TERR(0xd3ccbb, 3.0), wall: [0x7a3526, K.BRICK, 0], wallUp: [0xe6e2d9, K.CONCRETE, 0], ceil: [0xcac6be, K.COFFER, 1.4], cFloor: TERR(0xd6cfbe), cWall: [0x7a3526, K.BRICK, 0], cCeil: [0xece9e2, K.PANEL, 0.12], arches: 0xe9e6de, hero: 1 },
-    NBRK: { layout: 'island', type: 'subway', access: 'above', floor: [0x8e3e2c, K.BRICK, 0], wall: FLUTE(0xc9ccc9, 0.2), band: 0xd0512b, wallUp: PAINT(0x151515), ceil: [0xf0efeb, K.COFFER, 2.0], cWall: [0x1f8a8a, K.MOSAIC, 0.03] },
+    NBRK: { layout: 'island', type: 'subway', access: 'above', benches: 'drum', floor: [0x8e3e2c, K.BRICK, 0], wall: FLUTE(0xc9ccc9, 0.2), band: 0xd0512b, wallUp: PAINT(0x151515), ceil: [0xf0efeb, K.COFFER, 2.0], cWall: [0x1f8a8a, K.MOSAIC, 0.03] },
     PLZA: { layout: 'side', type: 'aerial', access: 'below', floor: QUARRY(0x8a3a2a), deck: FLUTE(0xd2cdc2, 0.3), canopy: { style: 'flat', len: 110, top: 0xd2cdc2, under: 0x3a3836, underKind: K.CORRUG, fascia: 0xd2cdc2, slot: true, posts: { shape: 'rect', col: 0xd2cdc2, size: 0.4, spacing: 13, where: 'back' } }, ends: 'wall' },
     DELN: { layout: 'side', type: 'aerial', access: 'below', floor: [0xa4583c, K.TILE, 0.3], deck: FLUTE(0xd2cdc2, 0.3), canopy: { style: 'flat', len: 60, top: 0xd2cdc2, under: 0x3a3836, fascia: 0xd2cdc2, posts: { shape: 'rect', col: 0xd2cdc2, size: 0.4, spacing: 13, where: 'back' } }, ends: 'beam', towers: 0x46b6d6 },
     RICH: { layout: 'island', type: 'surface', access: 'under', underpass: { floor: 8.3, westRise: 4.1, band: 0x6b4a32, mushroom: true, relief: true }, floor: CONC(0xa39e94), cFloor: QUARRY(0x8e4a34), cWall: [0xd9cba9, K.TILE, -0.2], cCeil: [0xe7e4dc, K.PANEL, 1.2], canopy: { style: 'flat', len: 92, top: 0x3a3a3c, under: 0xc0552e, underKind: K.PAINT, fascia: 0x2e2e30, posts: { shape: 'rect', col: 0x8f8b84, size: 0.5, spacing: 10, where: 'centre' } }, ends: 'poles', plazaCanopy: true },

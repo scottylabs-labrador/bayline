@@ -772,6 +772,12 @@ const StationTypes = (() => {
   function footprint(st, C) { const T = setup(st, C); return T ? footprintT(T) : []; }
   function footprintT(T) {
     const out = [];
+    // (the spawn's view target, heroes' spawnView: the footbridge hall's middle, over the island's strip where there is
+    // one, at eye height on the platform)
+    // (and where to stand: 14 m in from the platform's end, where the hall shows over the end of the platform's roof)
+    if (T.H.spawnView === 'hall' && T.ub0 !== undefined) { const u = (T.ub0 + T.ub1) / 2, p = T.plats[0], back = p.sideV < 0 ? p.eL(u) : p.eR(u);
+      const v = T.xp ? (T.xp.face(u) + T.xp.back(u)) / 2 : back, [x, z] = T.WUV(u, v), uf = p.u0 + 14, [fx, fz] = T.WUV(uf, (p.eL(uf) + p.eR(uf)) / 2);
+      out.view = { x, z, y: p.y + 1.6, from: { x: fx, z: fz } }; }
     const quad = (kind, u0, u1, v0, v1) => out.push({ kind, pts: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => T.WUV(u, v)) });
     const strip = (kind, u0, u1, vl, vr, step = 8) => { for (let u = u0; u < u1 - 1e-3; u += step) { const ub = Math.min(u1, u + step);
       out.push({ kind, pts: [[u, vl(u)], [ub, vl(ub)], [ub, vr(ub)], [u, vr(u)]].map(([a, b]) => T.WUV(a, b)) }); } };
@@ -1511,8 +1517,10 @@ const StationTypes = (() => {
       const uOpen = g.uHead, uClosed = up ? (hTop ? (g.dir > 0 ? (hTop.cu0 ?? hTop.u0) : (hTop.cu1 ?? hTop.u1)) : (g.dir > 0 ? u0 + 2 : u1 - 2)) : g.uFoot;
       const railPts = (vv) => { const pts = []; const ua = Math.min(uOpen, uClosed), ub = Math.max(uOpen, uClosed); for (let u = ua; u <= ub + 1e-6; u += 2) { const [x, z] = T.L2(Math.min(u, ub), vv); pts.push([x, yUp, z]); } return pts; };
       const zR = g.upPlat ? (g.upPlat.zone || zones[0]) : up ? zC : zP;
-      SP.railing(zR.d, railPts(hv0), 1.07, 'glass'); SP.railing(zR.d, railPts(hv1), 1.07, 'glass');
-      { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, 'glass'); }
+      // (a station's own railings, research: 12th St's bronze bars; glass elsewhere)
+      const RS = T.H.rail ? [T.H.rail.infill || 'bars', T.H.rail.col] : ['glass'];
+      SP.railing(zR.d, railPts(hv0), 1.07, ...RS); SP.railing(zR.d, railPts(hv1), 1.07, ...RS);
+      { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, ...RS); }
       for (const vv of [hv0, hv1]) { const a = T.WUV(Math.min(uOpen, uClosed), vv), b = T.WUV(Math.max(uOpen, uClosed), vv); addWall(T.walk, a, b, yUp - 0.5, yUp + 2.5); }
       addWall(T.walk, T.WUV(uClosed, hv0), T.WUV(uClosed, hv1), yUp - 0.5, yUp + 2.5);
       // direction signs over the group's foot (and, where the station has transfers, the transfer panel beyond it), hung
@@ -1587,7 +1595,7 @@ const StationTypes = (() => {
       // gates: local +X = paid side; face -1 -> paid side is +u
       T.placeB(zC.d, ug, v0, yCF, face < 0 ? 0 : Math.PI); SP.fareGates(zC.d, nG); T.popB(zC.d);
       // fixed barriers (glass) from the walls to the gate array
-      for (const [va, vb] of [[a, v0], [v0 + arrW, b]]) { const [x0, z0] = T.L2(ug, va + 0.1), [x1, z1] = T.L2(ug, vb - 0.1); SP.railing(zC.d, [[x0, yCF, z0], [x1, yCF, z1]], 1.25, 'glass'); addWall(walk, W2(x0, z0), W2(x1, z1), yCF - 0.5, yCF + 2.5); }
+      for (const [va, vb] of [[a, v0], [v0 + arrW, b]]) { const [x0, z0] = T.L2(ug, va + 0.1), [x1, z1] = T.L2(ug, vb - 0.1); SP.railing(zC.d, [[x0, yCF, z0], [x1, yCF, z1]], 1.25, ...(T.H.rail ? [T.H.rail.infill || 'bars', T.H.rail.col] : ['glass'])); addWall(walk, W2(x0, z0), W2(x1, z1), yCF - 0.5, yCF + 2.5); }
       // gate cabinets as walls (aisles stay open in walk mode)
       // agent booth on the unpaid side next to the array
       T.placeB(zC.d, ug - face * 3.5, b - 2.4, yCF, 0); SP.agentBooth(zC.d, { w: 3.0, d: 2.2 }); T.popB(zC.d);
@@ -2280,7 +2288,8 @@ const StationTypes = (() => {
       const top = X.y(q.u), dF = q.n * 0.32;
       addSlope(walk, [[q.u - 1.45, -o * 0.05, top], [q.u + 1.45, -o * 0.05, top], [q.u + 1.45, o * dF, yP], [q.u - 1.45, o * dF, yP]].map(([u, dv, y]) => [...WUV(u, vf + dv), y]));
       for (const x of [-1.5, 1.5]) addWall(walk, WUV(q.u + x, vf - o * 0.3), WUV(q.u + x, vf + o * (q.D + 0.2)), yP - 0.5, top + 1.1);
-      // the transfer panel over the steps, facing platform 3, hung from its roof where the roof reaches
+      // the transfer panel over the steps, facing platform 3, hung from its roof where the roof reaches (its back, toward the
+      // Caltrain face, carries the wordmark: signGeometry)
       const cv = X.p3.canopy; if (cv && q.u > cv[0] + 2 && q.u < cv[1] - 2) { const vs = vf + o * Math.min(q.D + 0.8, X.width(q.u) - 0.4), ys = yP + 2.75;
         z.signs.push({ u: q.u, v: vs, y: ys, yaw: T.yawAt(q.u) + (o > 0 ? 0 : Math.PI), w: 3.4, h: 0.64, region: 'info', both: false, T });
         T.place(z.d.sk, q.u, vs, ys + 0.3, 0); z.d.sk.mat(0x2a2c2e, K.PAINT); for (const x of [-1.5, 1.5]) z.d.sk.cbox(x, 0, 0, 0.03, 0.72, 0.03); z.d.sk.pop(); }
@@ -2335,7 +2344,9 @@ const StationTypes = (() => {
     const N = 18, arch = (u, inner) => { const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, P = [];
       for (let k = 0; k <= N; k++) { const t = Math.PI * k / N, v = c - hw * Math.cos(t), y = ys + R * Math.sin(t) - (inner ? 0.18 : 0); P.push([v, y]); }
       return P; };
-    const mOut = M([0xb9c0c6, K.STEEL, 0.3], { sky: 1 }), mIn = M([0xdfe2e3, K.PAINT, 0.2], { sky: 0.7 }), mSteel = M([0x8d949a, K.STEEL, 0.3], { sky: 0.9 });
+    // (research: "white translucent vaulted 'wing' canopies on cream steel tree columns": a white membrane on white-cream
+    // ribs, its soffit as bright as the daylight through it; cream columns branching into arms under the vault)
+    const mOut = M([0xeef0ef, K.PAINT, 0.15], { sky: 1 }), mIn = M([0xf6f5f0, K.PAINT, 0.1], { sky: 1 }), mSteel = M([0xe3dac6, K.PAINT, 0.2], { sky: 0.9 });
     const fr = frames(u0, u1);
     g.sweep(fr, (i, f) => arch(f.u, false).map(([v, y], k) => [v, y, null, k < N ? mOut : undefined]));                        // outside (up)
     g.sweep(fr, (i, f) => arch(f.u, true).reverse().map(([v, y], k) => [v, y, null, k < N ? mIn : undefined]));               // soffit (down)
@@ -2361,7 +2372,11 @@ const StationTypes = (() => {
         const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, t = U.clamp((v - c) / hw, -1, 1);
         // (on the island's strip a column stands on the floor and is solid to a walker)
         const onStrip = XP && ci === 0, gy = onStrip ? XP.yP : Terrain.h(x + T.OX, zz + T.OZ) - 0.2, top = ys + R * Math.sqrt(1 - t * t) - 0.2;
-        g.set(mSteel); g.cyl(x, gy, zz, 0.24, 0.3, top - gy, 14, true);
+        // (a tree column: the trunk to 3.4 m under the soffit, four arms from its head to the soffit, the ones that would
+        // leave the vault left off)
+        const yb = Math.max(gy + 2.5, top - 3.4); g.set(mSteel); g.cyl(x, gy, zz, 0.22, 0.28, yb - gy + 0.1, 14, true);
+        for (const [du, dv] of [[-1.7, -1.3], [1.7, -1.3], [-1.7, 1.3], [1.7, 1.3]]) { const uu = u + du, vv = v + dv, a2 = vA(uu), b2 = vB(uu); if ((vv - a2) * (b2 - vv) <= 0.2) continue;
+          const tt = U.clamp((vv - (a2 + b2) / 2) / ((b2 - a2) / 2), -1, 1), ya = ys + R * Math.sqrt(1 - tt * tt) - 0.25, [xa, za] = L2(uu, vv); g.tube([x, yb, zz], [xa, ya, za], 0.1, 8, true); }
         if (onStrip) { const q = [[-0.32, -0.32], [0.32, -0.32], [0.32, 0.32], [-0.32, 0.32]].map(([du, dv]) => WUV(u + du, v + dv)); for (let k = 0; k < 4; k++) addWall(T.walk, q[k], q[(k + 1) % 4], gy - 0.5, gy + 3); } }
       yield;
     }
@@ -2624,8 +2639,8 @@ const StationTypes = (() => {
           else { gd.mat(0xaaa59a, K.CONCRETE, 0); gd.cyl(0, 0, 0, r, r, 0.45, 22, true); }
           gd.pop();
         }
-        else if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); solid(p, u, cv(u), 1.3, 0.75, 0.5); }
-        else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); solid(p, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), 1.3, 0.4, 0.5); }
+        else if (island) { const bs = T.H.benchStyle || (under ? 'stone' : 'steel'); place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, bs, T.H.benchCol); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, bs, T.H.benchCol); gd.pop(); solid(p, u, cv(u), 1.3, 0.75, 0.5); }
+        else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, T.H.benchStyle || 'steel', T.H.benchCol); gd.pop(); solid(p, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), 1.3, 0.4, 0.5); }
         if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); solid(p, u + 4.5, island ? cv(u) : backV(u), 0.6, 0.3, 1.0); }
         const [bx, bz] = T.L2(u, island ? cv(u) : backV(u)); void bx; void bz;
       }
@@ -2688,18 +2703,26 @@ const StationTypes = (() => {
     const pos = [], nor = [], uv = [], idx = []; let n = 0;
     for (const s of list) {
       const [x, z] = s.T.L2(s.u, s.v); const r = rect[s.region] || rect.nameS;
-      // (a one-sided sign gets a plain navy back: seen from behind it was an invisible plane)
+      // (a one-sided sign gets a back: seen from behind it was an invisible plane)
       const faces = s.both ? [s.yaw, s.yaw + Math.PI] : [s.yaw, s.yaw + Math.PI];
       for (const yaw of faces) {
         const back = !s.both && yaw !== s.yaw;
         const c = Math.cos(yaw), sn = Math.sin(yaw); const ax = c, az = -sn; const nx = sn, nz = c;
         const hw = s.w / 2, hh = s.h / 2; const off = s.both ? 0.02 : back ? -0.002 : 0.004;
         const cx = x + nx * off, cz = z + nz * off;
-        const P = [[cx - ax * hw, s.y - hh, cz - az * hw], [cx + ax * hw, s.y - hh, cz + az * hw], [cx + ax * hw, s.y + hh, cz + az * hw], [cx - ax * hw, s.y + hh, cz - az * hw]];
         const q = rect.exit, nv = [q[0] + 0.001, q[3] - 0.004, q[0] + 0.004, q[3] - 0.001];            // (a navy corner of the atlas)
-        const UVs = back ? [[nv[0], nv[1]], [nv[2], nv[1]], [nv[2], nv[3]], [nv[0], nv[3]]] : [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
-        for (let k = 0; k < 4; k++) { pos.push(...P[k]); nor.push(nx, 0, nz); uv.push(...UVs[k]); }
-        idx.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4;
+        const quad = (x0, x1, y0, y1, t) => { if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4) return;
+          const Q = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], T2 = [[t[0], t[1]], [t[2], t[1]], [t[2], t[3]], [t[0], t[3]]];
+          for (let k = 0; k < 4; k++) { pos.push(cx + ax * Q[k][0], s.y + Q[k][1], cz + az * Q[k][0]); nor.push(nx, 0, nz); uv.push(...T2[k]); }
+          idx.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4; };
+        if (!back) { quad(-hw, hw, -hh, hh, r); continue; }
+        // the back: navy, the metro's wordmark in its middle (a hanging sign seen from behind was a blank navy board that
+        // read as a sign turned the wrong way: Millbrae's transfer panels from the Caltrain face, the exit signs from the
+        // stairs they point to); the navy around the wordmark in four bands, coplanar with it (no overlap, no z-fighting)
+        const wb = rect.back; if (!wb) { quad(-hw, hw, -hh, hh, nv); continue; }
+        const A = (typeof MetroSigns !== 'undefined' && MetroSigns.BACK_ASPECT) || 256 / 56, wh = Math.min(0.8 * s.h, 0.96 * s.w / A), ww = wh * A;
+        quad(-ww / 2, ww / 2, -wh / 2, wh / 2, wb);
+        quad(-hw, -ww / 2, -hh, hh, nv); quad(ww / 2, hw, -hh, hh, nv); quad(-ww / 2, ww / 2, wh / 2, hh, nv); quad(-ww / 2, ww / 2, -hh, -wh / 2, nv);
       }
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);

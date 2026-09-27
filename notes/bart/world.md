@@ -27,11 +27,12 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 **Backlog (post-M3, queued):**
 1. Night aerials (lead): the glow almost entirely from the street / road mask at L7-L9 (thin bright lines), blocks dark apart
-   from sparse building points, the wash only at L5-L6 distances. (M3.2's lamp field covers the far look; freeway lines
-   from far away need an L0-L4 max re-pool of the mask: backlog.)
+   from sparse building points, the wash only at L5-L6 distances. (M3.2's lamp field covers the far look; M3.5 7cf3c7e:
+   freeways are lines of light from 1-3 km, code only; from ~10 km up they would need an L0-L3 max re-pool of the mask
+   (a new layer): not needed so far.)
 2. Milpitas trench facets: infra geometry (a ground-coloured coping on the walls' outer top); DATA: fewer, longer
    trench / cut-and-cover pieces.
-3. The faint line at lat 38.07 over San Pablo Bay (terrain vs Globe water shading; the data now match in tone).
+3. ~~The faint line at lat 38.07 over San Pablo Bay~~ fixed in M3.5 ca55f00 (code: both water looks meet in a 2.5 km blend at the edge).
 4. Plazas beyond downtown SF (the Peninsula downtowns): the same `fix_plaza.py` rule, a wider region list.
 5. Road traffic on cross slopes (outer lanes keep the centreline height; up to ~1.5 m at Walnut Creek, pre-existing):
    re-sample the ground per lane point in `Life.setRoads`.
