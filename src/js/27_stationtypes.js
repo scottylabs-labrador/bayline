@@ -2335,7 +2335,9 @@ const StationTypes = (() => {
     const N = 18, arch = (u, inner) => { const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, P = [];
       for (let k = 0; k <= N; k++) { const t = Math.PI * k / N, v = c - hw * Math.cos(t), y = ys + R * Math.sin(t) - (inner ? 0.18 : 0); P.push([v, y]); }
       return P; };
-    const mOut = M([0xb9c0c6, K.STEEL, 0.3], { sky: 1 }), mIn = M([0xdfe2e3, K.PAINT, 0.2], { sky: 0.7 }), mSteel = M([0x8d949a, K.STEEL, 0.3], { sky: 0.9 });
+    // (research: "white translucent vaulted 'wing' canopies on cream steel tree columns": a white membrane on white-cream
+    // ribs, its soffit as bright as the daylight through it; cream columns branching into arms under the vault)
+    const mOut = M([0xeef0ef, K.PAINT, 0.15], { sky: 1 }), mIn = M([0xf6f5f0, K.PAINT, 0.1], { sky: 1 }), mSteel = M([0xe3dac6, K.PAINT, 0.2], { sky: 0.9 });
     const fr = frames(u0, u1);
     g.sweep(fr, (i, f) => arch(f.u, false).map(([v, y], k) => [v, y, null, k < N ? mOut : undefined]));                        // outside (up)
     g.sweep(fr, (i, f) => arch(f.u, true).reverse().map(([v, y], k) => [v, y, null, k < N ? mIn : undefined]));               // soffit (down)
@@ -2361,7 +2363,11 @@ const StationTypes = (() => {
         const a = vA(u), b = vB(u), c = (a + b) / 2, hw = (b - a) / 2, t = U.clamp((v - c) / hw, -1, 1);
         // (on the island's strip a column stands on the floor and is solid to a walker)
         const onStrip = XP && ci === 0, gy = onStrip ? XP.yP : Terrain.h(x + T.OX, zz + T.OZ) - 0.2, top = ys + R * Math.sqrt(1 - t * t) - 0.2;
-        g.set(mSteel); g.cyl(x, gy, zz, 0.24, 0.3, top - gy, 14, true);
+        // (a tree column: the trunk to 3.4 m under the soffit, four arms from its head to the soffit, the ones that would
+        // leave the vault left off)
+        const yb = Math.max(gy + 2.5, top - 3.4); g.set(mSteel); g.cyl(x, gy, zz, 0.22, 0.28, yb - gy + 0.1, 14, true);
+        for (const [du, dv] of [[-1.7, -1.3], [1.7, -1.3], [-1.7, 1.3], [1.7, 1.3]]) { const uu = u + du, vv = v + dv, a2 = vA(uu), b2 = vB(uu); if ((vv - a2) * (b2 - vv) <= 0.2) continue;
+          const tt = U.clamp((vv - (a2 + b2) / 2) / ((b2 - a2) / 2), -1, 1), ya = ys + R * Math.sqrt(1 - tt * tt) - 0.25, [xa, za] = L2(uu, vv); g.tube([x, yb, zz], [xa, ya, za], 0.1, 8, true); }
         if (onStrip) { const q = [[-0.32, -0.32], [0.32, -0.32], [0.32, 0.32], [-0.32, 0.32]].map(([du, dv]) => WUV(u + du, v + dv)); for (let k = 0; k < 4; k++) addWall(T.walk, q[k], q[(k + 1) % 4], gy - 0.5, gy + 3); } }
       yield;
     }
