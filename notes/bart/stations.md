@@ -66,6 +66,12 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   Exit signs (`shots/stations/exit_signs_before_after.jpg`: 12th/19th lower levels' navy backs become "Street · Exit"),
   platform ends (`platform_ends_before_after.jpg`: WOAK, HAYW, FRMT, MCAR, COLM, SANL, the hollow ends now solid),
   MacArthur's roof (one roof, the same look and brightness day and night).
+  Peninsula suite (`qa_metro_peninsula.sh`, stations.html on :8135) with `METRO=1` and `METRO=0`: qa_all views without
+  page or console errors, ride flow boards, PTC warn/enforce/release, signal protection, flight FDM, and the six
+  Peninsula spots (HUD, strip, prompt, board) all PASS; Millbrae with the metro: "Press B for Millbrae departures · E
+  transfer to the metro". One FAIL in both runs, not a drive failure: `qa_all.sh`'s `shot()` cuts each output line at
+  400 characters and the keyboard drive's events list now runs past it, so the check's `maxMph` is cut off (the drive
+  itself reached Sunnyvale); SIM's script, reported to the lead.
 
 ## Since the M3 report (09:10)
 
