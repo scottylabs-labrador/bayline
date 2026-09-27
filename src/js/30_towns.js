@@ -811,6 +811,15 @@ const Towns = (() => {
   }
   // One road piece -> asphalt ribbon with lane markings (shader), curbs, verge, sidewalks (urban), shoulders (rural),
   // parapets + piers (bridges), crosswalks at urban intersections. Sidewalks stop at cross streets.
+  // the half-width over which a road's ribbon (hi) takes the cross-slope: asphalt + verge / sidewalk or shoulder + 0.4
+  function ribbonOuter(r, region) {
+    const bridge = !!(r.flags & 2), urban = !!(r.flags & 8), core = !!(r.flags & 4), c = r.cls;
+    const walks = urban && !bridge && c >= 4 && c <= 12 && c !== 5 && c !== 7 && c !== 9;
+    const strip = walks && !core && region >= 1 && c >= 8 ? 1.5 : 0;
+    const sw = walks ? (core ? (c <= 8 ? 3.8 : 3.0) : c <= 7 ? 3.0 : 1.9) : 0;
+    const shoulder = !walks && !bridge ? (c <= 3 ? 1.6 : 1.0) : 0;
+    return r.width / 2 + strip + sw + shoulder + 0.4;
+  }
   function roadRibbon(tb, r, T, hf, inter, hi) {
     const P = r.pts, n0 = P.length / 2; if (n0 < 2) return;
     const region = T.region >= 6 ? T.region : regionOf(T.oz + P[1]);
@@ -878,7 +887,7 @@ const Towns = (() => {
       }
       bands.push([hw + 0.35, -hw - 0.35, -1.4, -1.4, COL.deck, 0, 0, 3]);   // underside (faces down)
     }
-    const outer = hw + strip + sw + shoulder + 0.4;
+    const outer = hw + strip + sw + shoulder + 0.4;               // (= ribbonOuter(r, region) when hi)
     const gC = new Float32Array(n), gL = new Float32Array(n), gR = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       gC[i] = hf(xs[i], zs[i]);
@@ -1876,8 +1885,28 @@ const Towns = (() => {
         if (!hit) continue;
         let a = new Float32Array(n * 3);
         for (let i = 0; i < n; i++) { const wx = T.ox + P[i * 2], wz = T.oz + P[i * 2 + 1]; a[i * 3] = wx; a[i * 3 + 1] = ctx.groundY(wx, wz) + LIFT[Math.min(rd.cls, 14)] + (rd.off ? rd.off[i] : 0); a[i * 3 + 2] = wz; }
-        if (rd.flags & 2) a = onDecks(a);
-        out.push({ pts: a, cls: rd.cls, lanes: rd.lanes, oneway: !!(rd.flags & 1), speed: _speed[rd.cls], width: rd.width, urban: !!(rd.flags & 8), bridge: !!(rd.flags & 2) });
+        const a0 = a; if (rd.flags & 2) a = onDecks(a);
+        const o = { pts: a, cls: rd.cls, lanes: rd.lanes, oneway: !!(rd.flags & 1), speed: _speed[rd.cls], width: rd.width, urban: !!(rd.flags & 8), bridge: !!(rd.flags & 2) };
+        // (a bridge without a modelled deck is drawn at the ground under each ribbon station plus its height over the ground,
+        // interpolated between the map's nodes, flat across: its traffic follows that)
+        if ((rd.flags & 2) && a === a0 && rd.off) { const lift = LIFT[Math.min(rd.cls, 14)] + 0.1, off = rd.off;
+          o.surf = (cx, cz) => { let best = 1e18, os = 0;
+            for (let i = 0; i + 1 < n; i++) { const ax = T.ox + P[i * 2], az = T.oz + P[i * 2 + 1], dx = T.ox + P[i * 2 + 2] - ax, dz = T.oz + P[i * 2 + 3] - az, L2 = dx * dx + dz * dz || 1;
+              const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cz - az) * dz) / L2)), d2 = (ax + dx * t - cx) ** 2 + (az + dz * t - cz) ** 2;
+              if (d2 < best) { best = d2; os = off[i] + (off[i + 1] - off[i]) * t; } }
+            return ctx.groundY(cx, cz) + os + lift; };
+          o.hw = Math.max(0.5, rd.width / 2); o.edges = (cx, cz, nx, nz, e) => { e[0] = e[1] = o.surf(cx, cz); return e; }; }
+        // (Bayline Metro world, M3.7) the drawn ribbon's surface across the centreline point (cx, cz), at the signed offset
+        // off along the unit normal (nx, nz): the asphalt is one flat strip from edge to edge, each edge taking the ground's
+        // cross-slope toward the ribbon's outer edge (never more than 0.6 m under the centre), plus the road's lift, as
+        // roadRibbon builds it. Road traffic puts its lanes and parked cars on it (bridges keep their decks)
+        if (!(rd.flags & 2)) { const outer = ribbonOuter(rd, T.region >= 6 ? T.region : regionOf(T.oz + P[1])), lift = LIFT[Math.min(rd.cls, 14)], hw = rd.width / 2, k = Math.min(1, hw / outer);
+          // edges(cx, cz, nx, nz, out): the strip's two edge heights (out[0] at -hw, out[1] at +hw along n); surf: a point on it
+          o.hw = hw;
+          o.edges = (cx, cz, nx, nz, e) => { const gC = ctx.groundY(cx, cz);
+            e[1] = Math.max(gC + (ctx.groundY(cx + nx * outer, cz + nz * outer) - gC) * k, gC - 0.6) + lift; e[0] = Math.max(gC + (ctx.groundY(cx - nx * outer, cz - nz * outer) - gC) * k, gC - 0.6) + lift; return e; };
+          o.surf = (cx, cz, nx, nz, off) => { const e = o.edges(cx, cz, nx, nz, [0, 0]); return e[0] + (e[1] - e[0]) * Math.min(1, Math.max(0, (off + hw) / (2 * hw))); }; }
+        out.push(o);
       }
     });
     return out;
