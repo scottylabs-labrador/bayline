@@ -106,6 +106,7 @@ const MetroSigns = (() => {
     esc: [1024, 576, 512, 128],         // escalator + stairs to platforms
     elev: [1536, 576, 512, 128],        // elevator
     word: [0, 704, 1024, 128],          // wordmark panel (entrance canopies, totems)
+    back: [1024, 128, 1024, 64],        // the back of a one-sided sign: navy, the wordmark centred (used: its middle 256 x 56)
     totem: [1024, 704, 256, 320],       // entrance totem face (0.8 x 1 m)
     map: [1280, 704, 768, 320],         // system map (2.4 x 1 m)
     info: [0, 832, 1024, 192],          // info panel (station name + lines + "Trains every few minutes")
@@ -155,6 +156,10 @@ const MetroSigns = (() => {
     way('exit', 'Street · Exit', 'exit', 1); way('gates', 'Fare gates', 'gates', 0); way('esc', 'Trains', 'esc', 3); way('elev', 'Elevator', 'elev', 0);
     // wordmark panel
     { const [x, y, w, h] = R.word; panel(c, x, y, w, h); wordmark(c, x + 30, y + 22, 84); }
+    // the back of a one-sided sign: the wordmark centred on navy (no teal rule), inside the middle 256 x 56 px
+    { const [x, y, w, h] = R.back; c.fillStyle = NAVY; c.fillRect(x, y, w, h); let sz = 36, tw = 0;
+      for (; sz >= 20; sz -= 2) { c.font = `700 ${sz * 0.62}px ${FONT}`; const w1 = c.measureText('Bayline').width; c.font = `500 ${sz * 0.62}px ${FONT}`; tw = sz * 1.22 + w1 + sz * 0.16 + c.measureText('Metro').width; if (tw <= 232) break; }
+      wordmark(c, x + (w - tw) / 2, y + (h - sz) / 2, sz); }
     // totem face: mark + name stacked
     { const [x, y, w, h] = R.totem; c.fillStyle = NAVY; c.fillRect(x, y, w, h); mark(c, x + 48, y + 26, 160); c.fillStyle = WHITE; c.textAlign = 'center'; c.textBaseline = 'middle';
       const words = name.split(/\s+/); let yy = y + 226; const sz = fit(c, words.reduce((a, b) => a.length > b.length ? a : b, ''), `600 #px ${FONT}`, w - 24, 48, 20);
@@ -178,6 +183,7 @@ const MetroSigns = (() => {
       lines.forEach((l, i) => { bullet(c, x + 40 + i * 58, y + 160, 18, l); }); }
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.generateMipmaps = true;
     const rect = {}; for (const k in R) { const [x, y, w, h] = R[k]; rect[k] = [x / AW, 1 - (y + h) / AH, (x + w) / AW, 1 - y / AH]; }
+    { const [x, y, w] = R.back; rect.back = [(x + w / 2 - 128) / AW, 1 - (y + 60) / AH, (x + w / 2 + 128) / AW, 1 - (y + 4) / AH]; }   // (its middle, clear of the neighbours' edges)
     const out = { tex, rect }; atlasCache.set(st.id, out);
     return out;
   }
@@ -299,5 +305,5 @@ const MetroSigns = (() => {
     let n = 0; for (let k = 0; k < boards.length && n < 2; k++) { const b = boards[(redrawI + k) % boards.length]; if (b.dirty) { drawBoard(b); n++; } } redrawI = (redrawI + 1) % Math.max(1, boards.length);
   }
 
-  return { stationAtlasGen, setScale, warm, NAVY, TEAL, WHITE, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, scheduledRows, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
+  return { stationAtlasGen, setScale, warm, NAVY, TEAL, WHITE, BACK_ASPECT: 256 / 56, init, stationAtlas, releaseAtlas, newBoard, freeBoards, setBoard, scheduledRows, update, linesAt, lineColor, destsFor, mark, wordmark, get lines() { return LINES; } };
 })();

@@ -290,8 +290,10 @@ const StationParts = (() => {
 
   // ------------------------------------------------------------------------------------------------ furniture
   // bench along X centred at the origin, seat facing -Z (back at +Z). style: 'steel' | 'wood' | 'stone'
-  function bench(B, L = 2.4, style = 'steel') {
+  function bench(B, L = 2.4, style = 'steel', col) {
     if (style === 'stone') { B.sk.mat(C.granite, K.GRANITE, 0.6); B.sk.box(-L / 2, 0, -0.25, L / 2, 0.46, 0.25, 'y-'); return; }
+    // (a cast terrazzo block, cream with dark chips, its top edges eased: Millbrae)
+    if (style === 'terrazzo') { B.sk.mat(col ?? 0xd8d0bf, K.TERRAZZO, 0); B.sk.box(-L / 2, 0, -0.25, L / 2, 0.43, 0.25, 'y-'); B.sk.box(-L / 2 + 0.03, 0.43, -0.22, L / 2 - 0.03, 0.46, 0.22, 'y-'); return; }
     const seat = style === 'wood' ? B.sk : B.metal;
     if (style === 'wood') seat.mat(C.wood, K.WOOD, 0.09); else seat.mat(C.steel, K.STEEL);
     seat.box(-L / 2, 0.42, -0.24, L / 2, 0.47, 0.22); seat.push().translate(0, 0.47, 0.22).rotX(0.2); seat.box(-L / 2, 0.05, -0.03, L / 2, 0.45, 0.02); seat.pop();
@@ -325,8 +327,8 @@ const StationParts = (() => {
   function callBox(B) { B.sk.mat(lin(0x1d4f9c), K.PAINT); B.sk.box(-0.14, 1.1, -0.18, 0, 1.55, 0.18); B.glow.mat(lin(0x6db4ff)); B.glow.box(-0.15, 1.5, -0.05, -0.14, 1.53, 0.05); }
   function fireCabinet(B) { B.sk.mat(lin(0xb2231f), K.PAINT); B.sk.box(-0.12, 0.9, -0.4, 0, 1.8, 0.4); B.glass.quad([-0.125, 1.0, 0.3], [-0.125, 1.0, -0.3], [-0.125, 1.7, -0.3], [-0.125, 1.7, 0.3], [0, 0, 1, 0, 1, 1, 0, 1]); }
   // railing along a local polyline (x, z) at base heights: posts every ~1.2 m, top rail, mid rails or glass infill
-  function railing(B, pts, h = 1.07, infill = 'bars') {
-    B.metal.mat(C.steel, K.STEEL);
+  function railing(B, pts, h = 1.07, infill = 'bars', col) {
+    B.metal.mat(col ?? C.steel, K.STEEL);
     for (let i = 0; i + 1 < pts.length; i++) {
       const [x0, y0, z0] = pts[i], [x1, y1, z1] = pts[i + 1]; const L = Math.hypot(x1 - x0, z1 - z0); const n = Math.max(1, Math.round(L / 1.2));
       B.metal.tube([x0, y0 + h, z0], [x1, y1 + h, z1], 0.024, 8);

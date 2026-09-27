@@ -40,7 +40,10 @@ const MetroStations = (() => {
     const q = QT[name] || QT.high; const redo = q.detail !== Q.detail || q.atlas !== Q.atlas; Object.assign(Q, q, { name: QT[name] ? name : 'high' });
     try { if (typeof StationKit !== 'undefined' && StationKit.setLightCap) StationKit.setLightCap(Q.lights); } catch (e) {}
     try { if (typeof MetroSigns !== 'undefined' && MetroSigns.setScale) MetroSigns.setScale(Q.atlas); } catch (e) {}
-    if (redo) for (const st of list) { if (st.root) drop(st); }
+    // (the stations are rebuilt at the new level; their walk floors stay until the new build attaches its own: a walker on
+    // a platform stays on it through the rebuild instead of falling to the ground under it (the auto quality tier
+    // changes a few seconds after a slow start: #mst=MLBR ended under platform 3, looking through its floor))
+    if (redo) for (const st of list) { if (st.root) drop(st, true); }
     return Q;
   }
   const stats = { built: 0, building: 0, jobsMs: 0, lastBuildMs: 0, tris: 0, calls: 0, koStations: 0, koZones: 0, koMs: 0, koCalls: 0, maxStepMs: 0, maxStepAt: '', slowSteps: [], maxFrameMs: 0, slowFrames: [], maxFootMs: 0 };
@@ -271,13 +274,14 @@ const MetroStations = (() => {
     for (const c of parts) { warmUp(c, () => { if (--left === 0) fin(); }); yield; }
   }
   function attachGround(st, res) {
+    if (res.footprint && res.footprint.view) st.spawnView = res.footprint.view;       // (the built plan's own view target)
     if (res.footprint && res.footprint.pads) { const old = pads.filter(p => p.st === st.id); const nw = res.footprint.pads;
       if (old.length !== nw.length || nw.some((p, i) => Math.abs(p.y - old[i].y) > 0.05)) setPads(st, nw); }
     if (res.footprint && setFootprint(st, res.footprint)) {
       try { const cp = Env.camera.position; if (typeof World !== 'undefined' && World.traffic && Math.hypot(cp.x - st.x, cp.z - st.z) < 900) World.traffic.cx = 1e9; } catch (e) {}
     }
   }
-  function drop(st) {
+  function drop(st, keepWalk = false) {
     if (!st.root) return;
     group.remove(st.root);
     const root = st.root, dispose = () => root.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.userData && m.userData.shared) continue; if (m.map && !(m.map.userData && m.map.userData.shared)) m.map.dispose(); m.dispose(); } } });
@@ -285,7 +289,7 @@ const MetroStations = (() => {
     if (typeof Under !== 'undefined' && Under.enabled && st.res) { for (const c of st.res.cells || []) try { Under.remove(c.under.id); } catch (e) {} for (const c of st.res.cuts || []) try { Under.remove(c.id); } catch (e) {}
       for (const p of st.res.portals || []) if (p.id) try { Under.remove(p.id); } catch (e) {} try { Under.outdoor(st.root, false); } catch (e) {} }
     if (typeof MetroSigns !== 'undefined') { MetroSigns.freeBoards(st); MetroSigns.releaseAtlas(st); }
-    st.root = null; st.res = null; st.walk = null; st.boards.clear(); st.state = 'idle'; stats.built--;
+    st.root = null; st.res = null; if (!keepWalk) st.walk = null; st.boards.clear(); st.state = 'idle'; stats.built--;
   }
   // build context shared with the type builders
   let CTX = null;
@@ -462,6 +466,9 @@ const MetroStations = (() => {
     const S = spineAt(pl, u, {}); const v = trackV(pl, p.t, u) + p.sideV * ((p.edge || EDGE) + 2.2);
     return { x: S.x + S.rx * v, y: p.yRail + (p.ph || PLAT_H), z: S.z + S.rz * v, yaw: Math.atan2(-S.rx * p.sideV, -S.rz * p.sideV) };
   }
+  // what a platform spawn should look at (heroes' spawnView: Millbrae looks along its island at the shared hall), a world
+  // point { x, y, z }, or null: up the platform as usual (made with the station's footprint, before it is built)
+  function spawnView(id) { const st = byId[id]; if (!st) return null; if (!kdone.has(st.id)) footprintOf(st); return st.spawnView || null; }
   function limits(id) {
     const st0 = byId[id]; if (!st0) return [];
     if (st0.oacSub && !String(id).includes('~')) return [...limits(id + '~OAC'), ...limits0(st0)];
@@ -509,7 +516,7 @@ const MetroStations = (() => {
     if (!st.plan) st.plan = makePlan(st.data);
     if (!st.plan || typeof StationTypes === 'undefined' || !StationTypes.footprint) return;
     let zs = []; try { zs = StationTypes.footprint(st, ctx()); } catch (e) { console.warn('metrostations footprint', st.id, e); return; }
-    addZones(st, zs); setPads(st, zs.pads || []);
+    addZones(st, zs); setPads(st, zs.pads || []); st.spawnView = zs.view || null;
     const dF = performance.now() - t0; stats.koStations++; stats.koZones = kzones.length; stats.koMs += dF; if (dF > stats.maxFootMs) stats.maxFootMs = +dF.toFixed(2);
   }
   // ------------------------------------------------------------------------------------------------ ground pads
@@ -787,7 +794,7 @@ const MetroStations = (() => {
     return { state: st.state, tris: Math.round(tris), post: B.Post ? B.Post.stats : null, ms: stats.lastBuildMs | 0, spread: +pl.spread.toFixed(2), info: st.res ? st.res.info : null, perf };
   }
 
-  const api = { init, update, setBoard, floorAt, blocked, spawnPoint, limits, list, byId, group, stats, setQuality, quality: Q, warmUp, get enabled() { return enabled; }, get ready() { return ready; },
+  const api = { init, update, setBoard, floorAt, blocked, spawnPoint, spawnView, limits, list, byId, group, stats, setQuality, quality: Q, warmUp, get enabled() { return enabled; }, get ready() { return ready; },
     keepOut, keepOutAny, dropBuilding, keepOutZones, KEEPOUT_PAD: PAD, get droppedBuildings() { return dropped; }, get worldRefresh() { return refresh; },
     makePlan, spineAt, trackV, net: N, PLAT_H, EDGE, VEH, jobs, shot, debug };
   // hooks: ride along with the Peninsula stations' init/update (no edits to the shared main loop; inert without #metro=1)
