@@ -290,10 +290,10 @@ const StationParts = (() => {
 
   // ------------------------------------------------------------------------------------------------ furniture
   // bench along X centred at the origin, seat facing -Z (back at +Z). style: 'steel' | 'wood' | 'stone'
-  function bench(B, L = 2.4, style = 'steel') {
+  function bench(B, L = 2.4, style = 'steel', col) {
     if (style === 'stone') { B.sk.mat(C.granite, K.GRANITE, 0.6); B.sk.box(-L / 2, 0, -0.25, L / 2, 0.46, 0.25, 'y-'); return; }
     // (a cast terrazzo block, cream with dark chips, its top edges eased: Millbrae)
-    if (style === 'terrazzo') { B.sk.mat(0xd8d0bf, K.TERRAZZO, 0); B.sk.box(-L / 2, 0, -0.25, L / 2, 0.43, 0.25, 'y-'); B.sk.box(-L / 2 + 0.03, 0.43, -0.22, L / 2 - 0.03, 0.46, 0.22, 'y-'); return; }
+    if (style === 'terrazzo') { B.sk.mat(col ?? 0xd8d0bf, K.TERRAZZO, 0); B.sk.box(-L / 2, 0, -0.25, L / 2, 0.43, 0.25, 'y-'); B.sk.box(-L / 2 + 0.03, 0.43, -0.22, L / 2 - 0.03, 0.46, 0.22, 'y-'); return; }
     const seat = style === 'wood' ? B.sk : B.metal;
     if (style === 'wood') seat.mat(C.wood, K.WOOD, 0.09); else seat.mat(C.steel, K.STEEL);
     seat.box(-L / 2, 0.42, -0.24, L / 2, 0.47, 0.22); seat.push().translate(0, 0.47, 0.22).rotX(0.2); seat.box(-L / 2, 0.05, -0.03, L / 2, 0.45, 0.02); seat.pop();
