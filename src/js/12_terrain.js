@@ -119,6 +119,12 @@ const Terrain = (() => {
   // height filters (Bayline Metro, world workstream: 19_metroground.js makes the ground meet the BART track bed):
   // fn(L, x0, z0, T, h) edits a decoded 129x129 tile in place, h[j * 129 + i] at (x0 + i T / 128, z0 + j T / 128)
   const heightFilters = [];
+  // (Bayline Metro world, M3.7.1) the ground log: every change of the base surface (a height tile of level <= 7 loaded,
+  // re-filtered or dropped, and the Towns ribbons rebuilt over it: Towns calls noteGround), with a stamp, so what was
+  // built on the ground earlier (road traffic) can tell that the ground under it refined since
+  const gLog = []; let gStamp = 0, gFloor = 0;
+  function noteGround(x0, z0, x1, z1) { gLog.push([x0, z0, x1, z1, ++gStamp]); if (gLog.length > 600) { gLog.splice(0, gLog.length - 400); gFloor = gLog[0][4] - 1; } }
+  function noteTile(L, x, y) { const T = tileSize(L); noteGround(X0 + x * T, Z0 + y * T, X0 + (x + 1) * T, Z0 + (y + 1) * T); }
   let frameNo = 0;
   function decodeHeights(u8, qs = 16, qo = 200) {   // MED-predicted zigzag residuals (uint16) -> Float32 heights (h = q/qs - qo)
     const n = HS * HS; const res = new Uint16Array(u8.buffer, u8.byteOffset, n); const q = new Int32Array(n); const h = new Float32Array(n);
@@ -145,7 +151,7 @@ const Terrain = (() => {
       r.h = d.h; r.mn = d.mn; r.mx = d.mx; r.base = d.mn;
       const hf = new Uint16Array(HS * HS); for (let i = 0; i < hf.length; i++) hf[i] = THREE.DataUtils.toHalfFloat(d.h[i] - r.base);
       const t = new THREE.DataTexture(hf, HS, HS, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
-      r.tex = t; r.state = 2; stats.hgt++; return r;
+      r.tex = t; r.state = 2; stats.hgt++; if (L <= LH) noteTile(L, x, y); return r;
     }, (e) => { r.state = 3; return r; });
     return r.p;
   }
@@ -984,7 +990,7 @@ const Terrain = (() => {
       if (r.state !== 2 || r.L < 5) continue;
       const T = tileSize(r.L), x0 = X0 + r.x * T, z0 = Z0 + r.y * T;
       if (rect && (x0 > rect[2] || x0 + T < rect[0] || z0 > rect[3] || z0 + T < rect[1])) continue;
-      if (r.tex) r.tex.dispose(); hrec.delete(k);
+      if (r.tex) r.tex.dispose(); hrec.delete(k); if (r.L <= LH) noteTile(r.L, r.x, r.y);
     }
   };
   api.cutUniforms = null;       // the fine cut level's uniforms (Under), used by the cut variant only
@@ -1016,6 +1022,17 @@ const Terrain = (() => {
     const hf = new Uint16Array(HS * HS); for (let i = 0; i < hf.length; i++) hf[i] = THREE.DataUtils.toHalfFloat(r.h[i] - r.base);
     const t = new THREE.DataTexture(hf, HS, HS, THREE.RedFormat, THREE.HalfFloatType); t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
     const old = r.tex; r.tex = t; if (old) setTimeout(() => old.dispose(), 0);         // (nodes pick the new one up next frame)
+    if (r.L <= LH) noteTile(r.L, r.x, r.y);
   }
+  // the ground log (see gLog): groundStamp now; groundChanged(since, x0, z0, x1, z1) -> the newest stamp after since of a
+  // change overlapping the rect (0: none); noteGround(x0, z0, x1, z1) for the modules that build the drawn ground (Towns)
+  api.noteGround = noteGround;
+  Object.defineProperty(api, 'groundStamp', { get: () => gStamp, enumerable: true });
+  api.groundChanged = (since, x0, z0, x1, z1) => {
+    if (since < gFloor) return gStamp;                   // (older than the log: assume it changed)
+    let s = 0;
+    for (let i = gLog.length - 1; i >= 0; i--) { const e = gLog[i]; if (e[4] <= since) break; if (e[0] < x1 && e[2] > x0 && e[1] < z1 && e[3] > z0 && e[4] > s) s = e[4]; }
+    return s;
+  };
   return api;
 })();

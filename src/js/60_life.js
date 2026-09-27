@@ -1681,7 +1681,7 @@ const Life = (() => {
   }
   // (E, hw: the road's drawn surface, Towns' ribbon, as its two edge heights at every point of src (E[2k] at -hw, E[2k+1]
   // at +hw along the forward normal): each lane point then takes the strip's height at its own offset)
-  function offsetLane(src, off, reverse, ax, ay, az, E, hw) {
+  function offsetLane(src, off, reverse, ax, ay, az, E, hw, F) {
     const n = src.length / 3; const out = new Float32Array(n * 3);
     // (no allocation per point: this runs over every lane of 1.5 km of roads)
     const K = i => (reverse ? n - 1 - i : i) * 3;
@@ -1695,8 +1695,8 @@ const Life = (() => {
       let miter = 1;
       if (i > 0 && i < n - 1) { const dx = src[kb] - src[kp], dz = src[kb + 2] - src[kp + 2], L = Math.hypot(dx, dz) || 1; const d = nx * (-dz / L) + nz * (dx / L); miter = 1 / Math.max(0.5, d); }
       out[i * 3] = px + nx * off * miter; out[i * 3 + 1] = py; out[i * 3 + 2] = pz + nz * off * miter;
-      if (E) { const k = reverse ? n - 1 - i : i, of = (reverse ? -off : off) * miter, y0 = E[k * 2], y1 = E[k * 2 + 1];
-        out[i * 3 + 1] = y0 + (y1 - y0) * Math.min(1, Math.max(0, (of + hw) / (2 * hw))) - ay; }
+      if (E) { const k = reverse ? n - 1 - i : i, of = (reverse ? -off : off) * miter, y0 = E[k * 2], y1 = E[k * 2 + 1], f = Math.min(1, Math.max(0, (of + hw) / (2 * hw)));
+        out[i * 3 + 1] = y0 + (y1 - y0) * f - ay; if (F) F[i] = f; }
     }
     return out;
   }
@@ -1851,12 +1851,14 @@ const Life = (() => {
         for (const rev of dirs) for (let j = 0; j < perDir; j++) {
           if (over()) yield;
           const off = oneway ? (j - (perDir - 1) / 2) * laneW : (j + 0.5) * laneW;
-          const pts = offsetLane(rd.pts, off, rev, ax, ay, az, rd.E, rd.hw); const n = pts.length / 3; const cum = new Float32Array(n);
+          const F = rd.E ? new Float32Array(rd.pts.length / 3) : null;
+          const pts = offsetLane(rd.pts, off, rev, ax, ay, az, rd.E, rd.hw, F); const n = pts.length / 3; const cum = new Float32Array(n);
           for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2], pts[i * 3 + 2] - pts[i * 3 - 1]);
           if (cum[n - 1] < 20) continue;
           for (let i = 0; i < n; i++) box3.expandByPoint(_v.set(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]));
           // fast outer lanes, slower curb lanes
-          lanes.push({ pts, cum, len: cum[n - 1], speed: speed * (1 - 0.06 * (perDir - 1 - j) / Math.max(1, perDir - 1)), cars: [], fast: speed > 20, busOK: rd.bus !== false && speed < 20, bridge: !!rd.bridge, cls: rd.cls });
+          lanes.push({ pts, cum, len: cum[n - 1], speed: speed * (1 - 0.06 * (perDir - 1 - j) / Math.max(1, perDir - 1)), cars: [], fast: speed > 20, busOK: rd.bus !== false && speed < 20, bridge: !!rd.bridge, cls: rd.cls,
+            rd, rev, F });                               // (for re-sampling its heights when the ground under it refines)
         }
       }
       phase = 'cars'; for (const lane of lanes) {
@@ -1905,7 +1907,7 @@ const Life = (() => {
               const yaw = Math.atan2(-uz, ux) + (side < 0 && !rd.oneway ? Math.PI : 0) + (r() - 0.5) * 0.05;
               _e.set(0, yaw, 0, 'YZX'); _q.setFromEuler(_e); _s.set(1, 1, 1);
               _m.compose(_v.set(x - ax, py - ay, z - az), _q, _s);
-              parked.push({ type, paint, phase: r() * 10, m: Float32Array.from(_m.elements), x: x - ax, z: z - az });
+              parked.push({ type, paint, phase: r() * 10, m: Float32Array.from(_m.elements), x: x - ax, z: z - az, ...(rd.E && rd.surf ? { rd, px, pz, nx: -uz, nz: ux, off } : {}) });
             }
             next += lerp(6.0, 7.6, r());
           }
@@ -1943,7 +1945,7 @@ const Life = (() => {
             const yaw = Math.atan2(-vDir[1], vDir[0]) + (r() < 0.5 ? Math.PI : 0) + (r() - 0.5) * 0.06;
             _e.set(0, yaw, 0, 'YZX'); _q.setFromEuler(_e); _s.set(1, 1, 1);
             _m.compose(_v.set(x - ax + (r() - 0.5) * 0.25 * vDir[0], gy - ay, z - az + (r() - 0.5) * 0.25 * vDir[1]), _q, _s);
-            parked.push({ type, paint, phase: r() * 10, m: Float32Array.from(_m.elements), x: x - ax, z: z - az });
+            parked.push({ type, paint, phase: r() * 10, m: Float32Array.from(_m.elements), x: x - ax, z: z - az, gx: x, gz: z });
           }
         }
       }
@@ -1955,13 +1957,57 @@ const Life = (() => {
       sphere.radius += 12;
       // the swap: one step, between frames
       return () => {
-        setLive(lanes, cars, parked);
+        setLive(lanes, cars, parked); liveR = R; liveA = [ax, ay, az];
         group.position.set(ax, ay, az); group.updateMatrixWorld();
         for (const t of VEH_TYPES) { meshes[t].mesh.count = 0; if (meshes[t].lo) meshes[t].lo.mesh.count = 0; }
         for (const t of VEH_TYPES) { meshes[t].mesh.boundingSphere.copy(sphere); if (meshes[t].lo) meshes[t].lo.mesh.boundingSphere.copy(sphere); }
       };
     }
     function setLive(L, C, P) { lanes = L; cars = C; parked = P; }
+    // (Bayline Metro world, M3.7.1) the live set follows the ground. A set is built on the ground as it is when it builds
+    // (after a jump the fine terrain and the towns' ribbons are often still streaming: at Willow Pass the coarse levels
+    // stand up to ~27 m over the cut). resample() re-reads every road's drawn surface (its ribbon's edges, or its
+    // centreline farther out) and re-sets the heights of the lanes, the cars on them and the parked cars in place: no
+    // car pops, time-sliced like a build (the main loop starts it when Terrain's ground log shows a change under the set).
+    let liveR = null, liveA = null;
+    function* resampleG() {
+      const R = liveR, A = liveA, L = lanes, PK = parked; if (!R || !A) return () => {};
+      const ay = A[1], e = [0, 0];
+      phase = 'resample-roads';
+      for (const rd of R) {
+        if (!rd.edges) continue;                       // (a modelled deck's heights are its own)
+        const P = rd.pts, n = P.length / 3, E = rd.E;
+        for (let i = 0; i < n; i++) {
+          if ((i & 15) === 15 && over()) yield;
+          let nx = 0, nz = 0;
+          if (i > 0) { const dx = P[i * 3] - P[i * 3 - 3], dz = P[i * 3 + 2] - P[i * 3 - 1], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; } }
+          if (i < n - 1) { const dx = P[i * 3 + 3] - P[i * 3], dz = P[i * 3 + 5] - P[i * 3 + 2], l = Math.hypot(dx, dz); if (l > 1e-6) { nx += -dz / l; nz += dx / l; } }
+          const l = Math.hypot(nx, nz) || 1; rd.edges(P[i * 3], P[i * 3 + 2], nx / l, nz / l, e);
+          if (E) { E[i * 2] = e[0]; E[i * 2 + 1] = e[1]; } else P[i * 3 + 1] = (e[0] + e[1]) / 2;       // (farther out: the centreline)
+        }
+        if (over()) yield;
+      }
+      phase = 'resample-lanes';
+      for (const ln of L) {
+        const rd = ln.rd; if (!rd || !rd.edges) continue;
+        const Q = ln.pts, n = Q.length / 3, E = rd.E, F = ln.F, S = rd.pts;
+        if (E && F && E.length === n * 2) for (let i = 0; i < n; i++) { const k = ln.rev ? n - 1 - i : i; Q[i * 3 + 1] = E[k * 2] + (E[k * 2 + 1] - E[k * 2]) * F[i] - ay; }
+        else if (!E && S.length === n * 3) for (let i = 0; i < n; i++) { const k = ln.rev ? n - 1 - i : i; Q[i * 3 + 1] = S[k * 3 + 1] - ay; }
+        const cum = ln.cum; for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(Q[i * 3] - Q[i * 3 - 3], Q[i * 3 + 1] - Q[i * 3 - 2], Q[i * 3 + 2] - Q[i * 3 - 1]);
+        ln.len = cum[n - 1]; for (const c of ln.cars) { c.seg = 0; if (c.s > ln.len) c.s = ln.len; }
+        if (over()) yield;
+      }
+      phase = 'resample-parked';
+      for (let i = 0; i < PK.length; i++) {
+        const p = PK[i];
+        if (p.rd) p.m[13] = p.rd.surf(p.px, p.pz, p.nx, p.nz, p.off) - ay;
+        else if (p.gx !== undefined && typeof Terrain !== 'undefined' && Terrain.h) p.m[13] = Terrain.h(p.gx, p.gz) + 0.14 - ay;
+        if ((i & 63) === 63 && over()) yield;
+      }
+      return () => { stats.resamples = (stats.resamples || 0) + 1; };
+    }
+    const stats = {};
+    function startResample() { if (!job && liveR) job = resampleG(); return !!job; }
     function locate(lane, s, car) { // position at distance s along lane (car.seg caches the segment)
       const cum = lane.cum, n = cum.length; let i = car.seg;
       if (i >= n - 1 || cum[i] > s) i = 0;
@@ -1979,7 +2025,7 @@ const Life = (() => {
     const ahead = new V3(), behind = new V3(), pos = new V3();
     const A = 1.6, B = 2.8, S0 = 2.5, T = 1.25, SQ = 2 * Math.sqrt(A * B);
     const traffic = {
-      group, meshes, setRoads, startRoads, pump, get busy() { return !!job; }, jobStats,
+      group, meshes, setRoads, startRoads, startResample, pump, get busy() { return !!job; }, jobStats, stats,
       get cars() { return cars; }, get lanes() { return lanes; }, get count() { return cars.length; }, get parked() { return parked.length; },
       update(dt = 1 / 60, env = {}) {
         dt = Math.min(dt, 0.1);
