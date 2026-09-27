@@ -650,7 +650,10 @@ const ACParts = (() => {
       beaconT += dt; strobeT += dt; const night = st.night;
       for (const k in L) { const l = L[k]; if (l.userData.bone) rig.apply(l.userData.bone, l.userData.rest, tmp) && l.position.copy(tmp); }
       const eng1 = ac.eng.some(e => e.n > 0.25), airborne = !ac.out.onGround;
-      const lit = (o, on, k = 1) => { if (!o) return; o.visible = on; if (on) o.scale.setScalar(o.userData.base * k * (0.55 + 0.45 * night)); };
+      // the lamps' glare is the lens's bloom: on a long lens (vertical fov under 55 deg) it keeps the apparent size it has on
+      // the normal lens, k = tan(fov / 2) / tan(27.5 deg); the lit lens itself (~0.15 m) stays (Bayline Metro world, M3.4)
+      const cam = typeof Env !== 'undefined' ? Env.camera : null, lensK = cam && cam.isPerspectiveCamera ? Math.min(1, Math.tan(cam.fov * Math.PI / 360) / (cam.zoom || 1) / 0.520567) : 1;
+      const lit = (o, on, k = 1) => { if (!o) return; o.visible = on; if (on) { const s = o.userData.base * k * (0.55 + 0.45 * night); o.scale.setScalar(Math.max(s * lensK, Math.min(s, 0.15))); } };
       lit(L.navL, true); lit(L.navR, true); lit(L.tail, true);
       const bOn = eng1 && (beaconT % 1.1) < 0.12; lit(L.beaconT, bOn); lit(L.beaconB, bOn && (beaconT % 1.1) < 0.1);
       const ph = strobeT % 1.25, sOn = (airborne || ac.out.gs > 20) && (ph < 0.05 || (jet && ph > 0.14 && ph < 0.19));
