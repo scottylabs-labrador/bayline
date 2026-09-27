@@ -496,6 +496,15 @@ See the table in notes/bart-data.md (platform height, transfer timings, grades, 
 
 ## Requests for other workstreams
 
+- **WORLD (2026-09-27, from INFRA's Willow Pass question):** the SR-4 corridor over Willow Pass (C1/C2 s ~36300-38000,
+  38.015-38.021 N, -121.994 to -121.981) is a 60-100 m wide freeway cut whose floor the 3DEP 1 m lidar puts at 101-114 m,
+  with BART at freeway grade in the median (the rails follow that lidar floor within 0.3 m). The terrarium z15 surface
+  there has no cut (141.7 m against 101.6 m on the centreline at s 37000), and h9's "L7 surface + lidar detail" cannot
+  restore a feature this wide, so the terrain, and the freeway on it, sit 15-40 m above the rails. Please take the base
+  surface along this corridor from the lidar's own low-pass (the L8 3DEP tiles are in data/raw/lidar3dep/8/). Not a
+  trench: there are no retained walls between the tracks and the lanes. A search for other places where terrarium and
+  the lidar disagree by > 10 m within 60 m of a track is a cheap check (tools/metro/trackprof.py prints both).
+
 - **sim**: the timetable's `legs[k]` align with `patterns[pat].legs[k].stops`; a trip's DMU leg and EMU leg are separate
   vehicles. Include yesterday's trips after midnight (times > 86400).
 - **infra**: `tracks[].structure` + per-sample `ST` codes drive guideway type; `cover` gives aerial clearance / tunnel
