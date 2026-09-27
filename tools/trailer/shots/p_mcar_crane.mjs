@@ -1,12 +1,12 @@
 // P06, late morning at MacArthur, the station in the freeway median: the camera starts at eye level on the west island
 // platform, looking north along it, eases to the platform's end and cranes up to 60 m past the canopy, revealing the
-// freeway lanes on both sides, trains both ways in the median and the Berkeley/Oakland hills beyond. The title BAYLINE sits over the
-// first half (calm centre: the platform's vanishing point and the hills). Trains: a northbound and a southbound both in
+// freeway lanes on both sides, trains both ways in the median and the Berkeley/Oakland hills beyond, then holds there. The edit uses
+// the crane from ~7 s (the camera clear of the platform's poles and the ballast between the track pairs) with BAYLINE over the reveal. Trains: a northbound and a southbound both in
 // the stretch 300-750 m up the median when the crane is near the top (from their passages at both ends of it).
 import { cine } from './_lib.mjs';
 import { metro } from './_metro.mjs';
 export default {
-  hash: '#auto&t=10:55&q=ultra&w=clear', warm: 50, frames: 375,
+  hash: '#auto&t=10:55&q=ultra&w=clear', warm: 50, frames: 460,
   setup: `async () => { ${cine}; ${metro}; const M = window.__m, B = window.__bayline;
     await M.day('2026-09-29', 10 * 3600 + 55 * 60); const N = B.MetroSim.net, F = {};
     N.frame(N.byId['K1'], 161, F); const yP = 35.49, nx = -F.tx, nz = -F.tz;          // (K1 runs south: north is -t; the island's centre 6.15 m right of K1)

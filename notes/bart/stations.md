@@ -5,6 +5,74 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## M3.4 (src/js frozen for M3.3 at b220f6f; lead 18:00)
+
+- **Non-hero sweep after today's changes** (29 stations + the Coliseum connector, a platform view and an aerial view
+  each, all built, no console errors): no regressions. One transient far LOD band (trees over unloaded far terrain) at
+  Glen Park from the air belongs to WORLD's streaming.
+- **Side platforms' track edge** (d24dbe4, taken into M3.3 as df9f36f): every side platform drew its coping, yellow
+  tactile strip and edge recess at the back (the platform profile's left/right flag was inverted since stage 1) and a
+  plain face at the track. Now at the track edge; the plain back face reaches the trackbed level. Verified on 16 views
+  (Hayward, Fruitvale, West Oakland, San Leandro, Union City, Millbrae 3, 12th/19th lower levels).
+- **Exit signs** (db6f2d8, M3.4): the signs over an escalator bank's foot faced sideways (a navy back to one side of
+  the platform, e.g. 12th St lower level); they now hang across the platform facing the people walking up to the bank
+  (an up bank from behind its foot, a down bank's well from its head), and a street stair's sign faces the concourse
+  (or its passage beside the box). Convention checked numerically; before/after views once the GPU is free.
+- **Platform end faces** (0568fc1): the transverse face at each end of every platform faced into the platform (culled
+  from the track and the cab: a platform's end showed its hollow); turned outward. Offline raycast from the trackway 12 m
+  past every platform end of all 52 stations: 365 of 408 rays met a back face before, 0 after (2 at Orinda hit a small
+  detail part near the end, not the end face).
+- **MacArthur's roof** (0568fc1): the all-track box roof was built once per island (two coincident roofs with posts,
+  beams and doubled line lights); built once, its lights carry both (the same brightness), -1.2 k triangles.
+- **Offline QA without the GPU**: `tools/metro_offline.mjs` runs the real stations stack in a Node vm (stubs for the DOM,
+  renderer, terrain and world; real data): every station built (exceptions, steps, walk data, triangles), platform
+  end faces, walk gaps, any page probe, Peninsula layouts and a geometry hash of every Peninsula station built,
+  top-down plans (SVG). Results for M3.4 so far (against db6f2d8): all 52 stations build, only MLBR and MCAR change
+  in size; walk gaps 0 on all 52; with the metro off all 31 Peninsula stations are identical (layouts and geometry
+  hashes); with the metro on only place_MLBR changes; the Millbrae walk check passes (below).
+- **Millbrae cross-platform island** (2fde725, e5af123, 795f26b, e8fe93e, 0568fc1; built and verified; unmerged, for
+  the lead's M3.4 gate after M3.3).
+  Facts from the data: the Peninsula lanes spread 5.4-7.4 m at Millbrae (the fallback island was 2-4 m wide);
+  platform 3's back runs 5.6-7.6 m east of the northbound edge; Caltrain's rails are 1.3 m over the metro's, so a
+  Caltrain face (rail + 0.25) stands 0.35-0.56 m over platform 3 (rail + 0.991); OSM maps validators, ticket machines,
+  help points and bins at 3.5-5 m east of the northbound lane (the island) and benches, validators, machines, bike racks
+  and an info case 4.8-6 m west of the southbound lane (a west side platform), i.e. exactly the real layout.
+  As built: `25_stations.js layout()` (guard: `Metro.on && st.id === 'place_MLBR'`) lays out R (southbound, 4.5 m) and
+  L (northbound, 4.5 m, `xplat`: no outer fence, four step openings and a ramp landing kept clear of furniture, OSM
+  furniture on its outer 0.3 m left to the metro side); if the metro fails, the fallback island comes back (rebuilt).
+  `50_landmarks.js`: the Caltrain-era depot's six platform lamps join its hall group with the metro on (they would
+  stand in the island, their heads 1.6 m over it). `27_stationtypes.js`: the strip from platform 3's back to the face
+  at platform 3's level (1.1-3.1 m), a glass railing on the face's edge, flights of 2-3 steps at the openings, a 1:12
+  ramp with a landing, walk data (the strip 3 cm under the face's edge: no gap), platform 3's back open onto the strip,
+  its roof carried across the strip (lapped under the face's canopy edge), the vault springing from between Caltrain's
+  tracks with its columns on the strip and between the tracks, the footbridge supports clear of the steps, keep-out
+  zones for the strip and the new southbound platform. Later: the seam is the research's "turquoise fence down the
+  middle" (posts, rails, bars) rather than glass; transfer panels over the steps; on Caltrain's side the footbridge's
+  stairs come down past the new southbound platform (they would have landed on it, and crossed over its track).
+  Offline (the build as the page makes it, flat ground): strip 1.4-2.6 m; openings at u 42, 0, -34, -61 (rises
+  0.46-0.56 m, 3 risers each), the ramp at -86 (landing, 6.6 m at 1:12 northward); a walker crosses at every opening
+  both ways (4.9 -> 5.37-5.47 m and back), the fence stops it between openings, the ramp climbs 4.9 -> 5.46 smoothly,
+  the strip's ends stop it, platform 3's back opens onto the strip; the west landing's stair top now 1.7 m past the
+  southbound platform (foot 14 m further west).
+  The published lidar ground under the strip and the new southbound platform is 4.04-4.19 m (the strip's floor 4.90,
+  the Caltrain faces 5.30-5.47): nothing pokes through.
+  **In the page (20:41-20:54, GPU free)**: the walk check gives the same result as offline; Caltrain doors at Millbrae
+  open on the right sides (northbound train 641: 14 doors 1.7-1.8 m east of its lane, onto the island face; southbound
+  642: 1.7-1.8 m west, onto the new side platform); before/after views metro on (`shots/stations/mlbr_island_
+  before_after_1.jpg`, `_2.jpg`: the gravel pit between the northbound track and platform 3 becomes the island with the
+  turquoise fence, steps and ramp; the southbound side platform appears, the footbridge's west stair lands beyond it,
+  `mlbr_island_face_night.jpg`); metro off: the same ten views before/after differ only where things move (traffic,
+  crowds, tree wind, TAA noise), the station geometry matching (and offline all 31 Peninsula stations hash identical).
+  Exit signs (`shots/stations/exit_signs_before_after.jpg`: 12th/19th lower levels' navy backs become "Street · Exit"),
+  platform ends (`platform_ends_before_after.jpg`: WOAK, HAYW, FRMT, MCAR, COLM, SANL, the hollow ends now solid),
+  MacArthur's roof (one roof, the same look and brightness day and night).
+  Peninsula suite (`qa_metro_peninsula.sh`, stations.html on :8135) with `METRO=1` and `METRO=0`: qa_all views without
+  page or console errors, ride flow boards, PTC warn/enforce/release, signal protection, flight FDM, and the six
+  Peninsula spots (HUD, strip, prompt, board) all PASS; Millbrae with the metro: "Press B for Millbrae departures · E
+  transfer to the metro". One FAIL in both runs, not a drive failure: `qa_all.sh`'s `shot()` cuts each output line at
+  400 characters and the keyboard drive's events list now runs past it, so the check's `maxMph` is cut off (the drive
+  itself reached Sunnyvale); SIM's script, reported to the lead.
+
 ## Since the M3 report (09:10)
 
 - **M2b round 2 re-verified** (`#metrodir=metro-next/`, 08:06 data): platform check clean on 52 records (the guard
