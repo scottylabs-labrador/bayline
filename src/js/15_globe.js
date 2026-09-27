@@ -277,8 +277,11 @@ const Globe = (() => {
               if (bq.x > 0.0 && bq.x < 1.0 && bq.y > 0.0 && bq.y < 1.0) { bayK = smoothstep(0.35, 0.75, texture2D(uBayW, bq).r) * (1.0 - smoothstep(0.4, 2.5, vGH)); gGWater = max(gGWater, bayK); }
               // one bay-water tone (the balanced NAIP of the Bayline bays) instead of the imagery tiles' patchwork of
               // acquisition dates, kept a little of the photo's own variation (sediment plumes, channels)
-              col = mix(col, vec3(0.29, 0.35, 0.34) * (0.85 + 0.3 * smoothstep(0.1, 0.45, lum)), bayK * 0.85);
-              depth = mix(depth, min(depth, 2.5), bayK); }    // (the DEM tiles' bathymetry differs tile to tile: shallow bay tone)
+              // (toward the Bayline terrain's north edge, lat 38.07 in San Pablo Bay, the tone goes pure and 2.5 m deep over the
+              // last 2.5 km, as the terrain's water does from its side: no line where the two meet)
+              float eG = uExclOn > 0.5 && vGW.x > uExcl.x && vGW.x < uExcl.z ? smoothstep(uExcl.y - 2500.0, uExcl.y, vGW.z) : 0.0;
+              col = mix(col, vec3(0.29, 0.35, 0.34) * mix(0.85 + 0.3 * smoothstep(0.1, 0.45, lum), 1.0, eG), bayK * mix(0.85, 1.0, eG));
+              depth = mix(depth, mix(min(depth, 2.5), 2.5, eG), bayK); }    // (the DEM tiles' bathymetry differs tile to tile: shallow bay tone)
             // non-bay water off the shore shades at least 15 m deep, like the Bayline terrain's ocean next to it (the surf
             // zone, above -0.5 m, keeps its own depth)
             depth = max(depth, 15.0 * (1.0 - bayK) * smoothstep(-0.5, -3.0, vGH));

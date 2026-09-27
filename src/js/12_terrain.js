@@ -40,6 +40,8 @@ const Terrain = (() => {
   // strip is Z in [Z0 - SIZE/4, Z0) over the square's full width (to lat 38.0736), rows ty = -1 .. -(2^L / 4) at L >= 2.
   // tiles/index.json lists it under `north` (old clients never read it): { z0, complete: [2, 5], levels: { "6": [[x, y]], ... } }.
   // Its quadtree roots are the four L2 tiles (0..3, -1); L0/L1 have no strip tiles.
+  // (the z of the terrain's north edge, for the water there: the square's edge until the strip is read)
+  const edgeN = { value: Z0 };
   const North = {
     on: false, lo: 2, hi: 5, z0: Z0 - SIZE / 4,
     rows: (L) => L >= 2 ? (1 << L) >> 2 : 0,
@@ -52,7 +54,7 @@ const Terrain = (() => {
     // merge idx.north into the level sets (called once the square's sets exist)
     read(idx) {
       const n = idx && idx.north; if (!n || !n.complete) return;
-      this.on = true; this.lo = n.complete[0]; this.hi = n.complete[1];
+      this.on = true; this.lo = n.complete[0]; this.hi = n.complete[1]; edgeN.value = this.z0;
       for (const L of [6, 7, 8, 9]) for (const [x, y] of (n.levels && n.levels[L]) || []) index[L].add(K(L, x, y));
     },
     roots() { const r = []; if (this.on) for (let x = 0; x < 4; x++) r.push([2, x, -1]); return r; },
@@ -416,7 +418,7 @@ const Terrain = (() => {
       mTex: { value: texFM }, mUV: { value: new THREE.Vector4(0, 0, 1, 1) }, mTC: { value: new THREE.Vector2(1, 0) },
       skirt: { value: 4 }, nodeSize: { value: 1000 }, night: U.uNight, time: U.uTime, uWaveN: { value: waveTexture() }, uWindW: U.uWind, uWaveT: U.uTime, uGround: { value: groundDetailTexture() },
       uMat: { value: matDummyTex() }, uMatUV: { value: new THREE.Vector4(0, 0, 1, 1) }, uMatOn: { value: 0 }, uGround2: { value: mat ? groundDetail2Texture() : groundDetailTexture() },
-      uSunT: { value: typeof Env !== 'undefined' && Env.sunDir ? Env.sunDir : new THREE.Vector3(0, 1, 0) },
+      uSunT: { value: typeof Env !== 'undefined' && Env.sunDir ? Env.sunDir : new THREE.Vector3(0, 1, 0) }, uEdgeN: edgeN,
     };
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0.0, envMapIntensity: 0.5 });
     m.userData.u = u;
@@ -446,7 +448,7 @@ const Terrain = (() => {
           uniform sampler2D iTex; uniform vec4 iUV; uniform float iHas; uniform float iTexel; uniform float iSize;
           uniform sampler2D mTex; uniform vec4 mUV; uniform vec2 mTC; uniform float nodeSize;
           uniform float night; uniform float time; uniform sampler2D uGround;
-          uniform sampler2D uMat; uniform vec4 uMatUV; uniform float uMatOn; uniform sampler2D uGround2; uniform vec3 uSunT;
+          uniform sampler2D uMat; uniform vec4 uMatUV; uniform float uMatOn; uniform sampler2D uGround2; uniform vec3 uSunT; uniform float uEdgeN;
           ${WATER_GLSL()}
           // ground material class (tiles/mat) -> surface weights: A = (asphalt, concrete, grass, soil),
           // B = (dry grass, gravel, sand, leaf litter). 0 none, 1 lawn, 2 dry grass, 3 shrub, 4 leaf litter, 5 soil, 6 gravel,
@@ -704,7 +706,14 @@ const Terrain = (() => {
               // the Pacific side of the Peninsula (west of a line from the Golden Gate to the San Mateo coast ridge)
               float sea = 1.0 - step(1.0, hw);
               float ocean = smoothstep(700.0, -700.0, vW.x - (-18638.0 + 0.3103 * vW.z)) * sea;
-              blWater(vW.xz, clamp(-hw, 0.0, 30.0), water, fwq, fwDepth, ocean, sea, col, nW, gRough);
+              // the last 2.5 km of bay water before the terrain's north edge (lat 38.07, San Pablo Bay) turns into the Globe's
+              // bay-water look beyond it (one tone, 2.5 m deep), which does the same from its side, so the two meet without a
+              // line (Bayline Metro world)
+              float depthW = clamp(-hw, 0.0, 30.0), eN = (1.0 - smoothstep(0.0, 2500.0, vW.z - uEdgeN)) * (1.0 - ocean);
+              if (eN > 0.0) { vec3 pcw = pow(max(col, vec3(0.0)), vec3(1.0 / 2.2)); float lw = dot(pcw, vec3(0.299, 0.587, 0.114));
+                col = mix(col, vec3(0.29, 0.35, 0.34) * mix(0.85 + 0.3 * smoothstep(0.1, 0.45, lw), 1.0, eN), eN * water);
+                depthW = mix(depthW, 2.5, eN * water); }
+              blWater(vW.xz, depthW, water, fwq, fwDepth, ocean, sea, col, nW, gRough);
             }
             // ---- night: the photo goes dark, streets and towns glow (mask G) ----
             // city lights from the air: a dim sodium/LED haze along lit areas plus sparse point lights; band-limited
@@ -752,6 +761,19 @@ const Terrain = (() => {
               float lines = pow(smoothstep(0.3, 0.95, gl), 2.5) * 0.12 * (1.0 - smoothstep(14.0, 40.0, mTexel));
               float glow = pow(smoothstep(0.55, 1.0, gl), 2.0) * 0.02 + asph * pow(smoothstep(0.4, 0.95, gl), 1.6) * 0.05;
               vec3 eFar = lampF * (fl.x * 0.10 + lines + glow) * nk * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
+              // freeways and wide arterials, a continuous line of light from the air (M3.5). From 1-3 km up the ground is drawn
+              // from the L4-L5 masks (texels of 25-50 m), where every lit street is pooled into a grey wash but a freeway stays
+              // a saturated line: a lit texel brighter than its surroundings (the mean of 4 samples 1.5 texels off). On finer
+              // masks (< ~14 m) the lit roads that survive an erosion of ~15-19 m (a street is gone, a freeway's 30-60 m stays).
+              // None beyond L4 (texels over ~60 m: the pooled mask no longer tells a freeway from a town)
+              float rM = max(15.0, 1.5 * mTexel), du = rM / nodeSize * mUV.z * mTC.x;
+              vec2 muv = (mUV.xy + vUV * mUV.zw) * mTC.x + mTC.y;
+              float g1 = texture2D(mTex, muv + vec2(du, du)).g, g2 = texture2D(mTex, muv - vec2(du, du)).g;
+              float g3 = texture2D(mTex, muv + vec2(du, -du)).g, g4 = texture2D(mTex, muv - vec2(du, -du)).g;
+              float fwyFine = smoothstep(0.8, 0.97, min(min(min(g1, g2), min(g3, g4)), gl));
+              float fwyCoarse = smoothstep(0.9, 0.99, gl) * smoothstep(0.1, 0.22, gl - 0.25 * (g1 + g2 + g3 + g4));
+              float fwy = mix(fwyFine, fwyCoarse, smoothstep(14.0, 25.0, mTexel)) * (1.0 - smoothstep(60.0, 90.0, mTexel)) * (1.0 - vegF);
+              eFar += vec3(0.97, 0.8, 0.62) * fwy * 0.17 * nk * (1.0 - water) * smoothstep(120.0, 900.0, dcam);
               gEmis = mix(gEmis, eFar, wFar);
             }
             diffuseColor.rgb = col;
