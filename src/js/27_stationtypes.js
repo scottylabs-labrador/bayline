@@ -2630,8 +2630,8 @@ const StationTypes = (() => {
           else { gd.mat(0xaaa59a, K.CONCRETE, 0); gd.cyl(0, 0, 0, r, r, 0.45, 22, true); }
           gd.pop();
         }
-        else if (island) { place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, under ? 'stone' : 'steel'); gd.pop(); solid(p, u, cv(u), 1.3, 0.75, 0.5); }
-        else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, 'steel'); gd.pop(); solid(p, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), 1.3, 0.4, 0.5); }
+        else if (island) { const bs = T.H.benchStyle || (under ? 'stone' : 'steel'); place(gd, u, cv(u) - 0.3, p.y, 0); SP.bench(B, 2.4, bs); gd.pop(); place(gd, u, cv(u) + 0.3, p.y, Math.PI); SP.bench(B, 2.4, bs); gd.pop(); solid(p, u, cv(u), 1.3, 0.75, 0.5); }
+        else { place(gd, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), p.y, faceYaw); SP.bench(B, 2.4, T.H.benchStyle || 'steel'); gd.pop(); solid(p, u, backV(u) + (p.sideV > 0 ? -0.3 : 0.3), 1.3, 0.4, 0.5); }
         if (!busy(p, u + 4.5, cv(u), 1)) { place(gd, u + 4.5, island ? cv(u) : backV(u), p.y, 0); SP.bins(B); gd.pop(); solid(p, u + 4.5, island ? cv(u) : backV(u), 0.6, 0.3, 1.0); }
         const [bx, bz] = T.L2(u, island ? cv(u) : backV(u)); void bx; void bz;
       }
