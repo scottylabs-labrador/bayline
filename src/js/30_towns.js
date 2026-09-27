@@ -820,6 +820,76 @@ const Towns = (() => {
     const shoulder = !walks && !bridge ? (c <= 3 ? 1.6 : 1.0) : 0;
     return r.width / 2 + strip + sw + shoulder + 0.4;
   }
+  // (Bayline Metro world, M3.7) the crest guard. The asphalt is one flat strip from edge to edge (roadRibbon), so wherever
+  // the ground under a road is convex across it (an embankment's crest, the approach to a bridge, a crowned street) or
+  // bulges between two stations, the terrain would show through: each station's strip is raised by the most the ground
+  // stands above it there or halfway to either neighbour (samples every <= CREST_STEP m across), by at most CREST_CAP m
+  // (more is a structure the map lacks, e.g. a road through a rail embankment: left as it is). eN / eP: the strip's edge
+  // heights at -hw / +hw (without the lift). -> Float32Array of raises, or null when nothing needs one.
+  const CREST_STEP = 2.0, CREST_CAP = 1.2;
+  function crestRaise(g, xs, zs, nx, nz, mit, n, hw, eN, eP) {
+    const m = Math.max(3, Math.ceil(2 * hw / CREST_STEP) + 1), R = new Float32Array(n);
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      let e = 0;
+      for (let q = 0; q < m; q++) { const t = q / (m - 1), s = (-hw + 2 * hw * t) * mit[i];
+        const d = g(xs[i] + nx[i] * s, zs[i] + nz[i] * s) - (eN[i] + (eP[i] - eN[i]) * t); if (d > e) e = d; }
+      R[i] = e;
+    }
+    // (halfway between two stations the quads' two triangles meet on the diagonal from +hw at i to -hw at j: a change of
+    // cross-slope between the stations puts that line below the stations' mean by up to a quarter of the change)
+    for (let i = 0; i + 1 < n; i++) {
+      let e = 0; const j = i + 1, A = eN[i], B = eP[i], C = eN[j], D = eP[j];
+      for (let q = 0; q < m; q++) { const t = q / (m - 1), o = -hw + 2 * hw * t, si = o * mit[i], sj = o * mit[j];
+        const y = t <= 0.5 ? A + 0.5 * (C - A) + t * (B - A) : D + 0.5 * (B - D) + (1 - t) * (C - D);
+        const d = g((xs[i] + nx[i] * si + xs[j] + nx[j] * sj) / 2, (zs[i] + nz[i] * si + zs[j] + nz[j] * sj) / 2) - y;
+        if (d > e) e = d; }
+      if (e > R[i]) R[i] = e; if (e > R[j]) R[j] = e;
+    }
+    for (let i = 0; i < n; i++) { if (R[i] > CREST_CAP) R[i] = CREST_CAP; if (R[i] > 0) any = true; }
+    return any ? R : null;
+  }
+  // the same at one centreline point (cx, cz) with unit normal (nx, nz), for road traffic (Towns.roadsNear edges): the
+  // strip there and 6 m either way along the road, each by the edge rule; -> the raise (m, 0 .. CREST_CAP)
+  function crestAt(g, cx, cz, nx, nz, hw, outer) {
+    const k = Math.min(1, hw / outer), m = Math.max(3, Math.ceil(2 * hw / CREST_STEP) + 1);
+    let e = 0;
+    for (let a = -6; a <= 6; a += 6) {
+      const px = cx + nz * a, pz = cz - nx * a, gc = g(px, pz);
+      const eP = Math.max(gc + (g(px + nx * outer, pz + nz * outer) - gc) * k, gc - 0.6), eN = Math.max(gc + (g(px - nx * outer, pz - nz * outer) - gc) * k, gc - 0.6);
+      for (let q = 0; q < m; q++) { const t = q / (m - 1), o = -hw + 2 * hw * t, d = g(px + nx * o, pz + nz * o) - (eN + (eP - eN) * t); if (d > e) e = d; }
+    }
+    return e > CREST_CAP ? CREST_CAP : e;
+  }
+  // (M3.7) bridge ends. A bridge without a modelled deck lies on the straight line between its two ends. Where the ground
+  // model blurs an underpass into an abutment (a 10 m cut is only a couple of 6.25 m cells wide: the lidar rebake shows
+  // them), the end's ground sits well below a level approach and well above the cut, so the end takes the approach's
+  // height (true abutments only: offset 0 there; the approach 10 m and 20 m out level within 1 m, 1.5 m or more above
+  // the end, and the ground under the middle of the bridge 2 m or more below the end). anchors(T, gl): [x, z, E, ...]
+  // tile-local, one per end of every such bridge piece; road pieces ending there rise toward E over their last ANCH_R m
+  // so approach and deck meet. gl(x, z): the ground at tile-local (x, z).
+  const ANCH_R = 20, ANCH_OUT = 10;
+  function anchors(T, gl, key) {                  // (key: the ribbons (on the tile's height field) and the lanes cache apart)
+    if (T[key]) return T[key];
+    const A = [];
+    for (const r of T.r) {
+      if (!(r.flags & 2) || !r.off) continue;
+      const P = r.pts, n = P.length / 2; if (n < 2) continue;
+      let mx = 0, mz = 0; for (let i = 0; i < n; i++) { mx += P[i * 2]; mz += P[i * 2 + 1]; } const gm = gl(mx / n, mz / n);
+      for (const [i, j] of [[0, 1], [n - 1, n - 2]]) {
+        const x = P[i * 2], z = P[i * 2 + 1], dx = x - P[j * 2], dz = z - P[j * 2 + 1], L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+        const g0 = gl(x, z); let E = g0;
+        if (!(r.off[i] > 0) && gm < g0 - 2) {
+          const g1 = gl(x + ux * ANCH_OUT, z + uz * ANCH_OUT), g2 = gl(x + ux * 2 * ANCH_OUT, z + uz * 2 * ANCH_OUT);
+          if (g1 > g0 + 1.5 && Math.abs(g2 - g1) < 1) E = g1;
+        }
+        A.push(x, z, E + r.off[i]);
+      }
+    }
+    return (T[key] = new Float32Array(A));
+  }
+  const anchorAt = (A, x, z) => { for (let k = 0; k < A.length; k += 3) if (Math.abs(A[k] - x) < 0.3 && Math.abs(A[k + 1] - z) < 0.3) return A[k + 2]; return null; };
+  const anchW = d => { const t = 1 - d / ANCH_R; return t <= 0 ? 0 : t * t * (3 - 2 * t); };
   function roadRibbon(tb, r, T, hf, inter, hi) {
     const P = r.pts, n0 = P.length / 2; if (n0 < 2) return;
     const region = T.region >= 6 ? T.region : regionOf(T.oz + P[1]);
@@ -895,11 +965,28 @@ const Towns = (() => {
     }
     // on a modelled bridge the road lies on the model's deck, which has its own parapets and piers (NaN = off it)
     const dk = bridge ? deckHeights(T.ox, T.oz, xs, zs, n) : null, onDeck = i => dk !== null && dk[i] === dk[i];
-    const Y = (i, off) => {
-      if (bridge) return onDeck(i) ? dk[i] - lift + 0.12 : gC[i] + os[i];
+    // (M3.7) a bridge without a modelled deck never dips below the straight line between its two ends (the ground and the
+    // deck offset there): a short one mapped with two nodes (offsets 0) over a road in a cut was drawn on the ground under it
+    const AN = anchors(T, hf, '_anchR'), aS = anchorAt(AN, P[0], P[1]), aE = anchorAt(AN, P[n0 * 2 - 2], P[n0 * 2 - 1]);
+    const bE0 = bridge && aS !== null ? aS : gC[0] + os[0], bE1 = bridge && aE !== null ? aE : gC[n - 1] + os[n - 1];
+    const Y0 = (i, off) => {
+      if (bridge) return onDeck(i) ? dk[i] - lift + 0.12 : Math.max(gC[i] + os[i], bE0 + (bE1 - bE0) * (us[i] / total));
       const g = off >= 0 ? gC[i] + (gL[i] - gC[i]) * Math.min(1, off / outer) : gC[i] + (gR[i] - gC[i]) * Math.min(1, -off / outer);
       return Math.max(g, gC[i] - 0.6) + os[i];
     };
+    // (the crest guard: the whole cross-section rises by the station's raise within the asphalt, tapering to nothing at the
+    // ribbon's outer edge, so shoulders, curbs and walks still meet the ground)
+    let Rg = null;
+    if (!bridge) { const eN = new Float32Array(n), eP = new Float32Array(n); for (let i = 0; i < n; i++) { eN[i] = Y0(i, -hw); eP[i] = Y0(i, hw); } Rg = crestRaise(hf, xs, zs, nx, nz, mit, n, hw, eN, eP);
+      // (a piece that ends at a bridge's end rises toward the deck's end height over its last ANCH_R m)
+      if (aS !== null || aE !== null) {
+        for (let i = 0; i < n; i++) {
+          const c = gC[i] + os[i], up = Math.max(aS !== null ? (aS - c) * anchW(us[i]) : 0, aE !== null ? (aE - c) * anchW(total - us[i]) : 0);
+          if (up > 0) { if (!Rg) Rg = new Float32Array(n); if (up > Rg[i]) Rg[i] = up; }
+        }
+      }
+    }
+    const Y = Rg === null ? Y0 : (i, off) => { const a = Math.abs(off); return Y0(i, off) + (a <= hw ? Rg[i] : a >= outer ? 0 : Rg[i] * (outer - a) / (outer - hw)); };
     const w4 = Math.min(255, Math.round(r.width * 4)), lanes = Math.min(255, r.lanes);
     for (let bi = 0; bi < bands.length; bi++) {
       const [o0, o1, dy0, dy1, col, mark, vert, kind] = bands[bi];
@@ -1587,8 +1674,17 @@ const Towns = (() => {
       t.occ = null;
     }
     // --- street lights: mapped lamps, plus arterials / SF / downtown San Jose streets away from mapped ones
-    const LM = T.lamps;
-    for (let i = 0; i < LM.length; i += 2) { const x = LM[i], z = LM[i + 1]; if (x < 0 || x >= TILE || z < 0 || z >= TILE) continue; lights.push([x, hf(x, z) + 0.3, z, rnd() * Math.PI * 2]); }
+    // (M3.7) a mapped lamp inside a road's asphalt (often a node of the street's own way, or a freeway's centre line) stands
+    // at that road's edge instead, 0.7 m out (the nearer side), and only when that spot is off every road; procedural ones
+    // that land on another road are left out
+    const LM = T.lamps, GA = T._gA || (T._gA = segGrid(T, isStreet, 0.3)), onRoad = (x, z) => segHit(GA, T.ox + x, T.oz + z);
+    for (let i = 0; i < LM.length; i += 2) {
+      let x = LM[i], z = LM[i + 1]; if (x < 0 || x >= TILE || z < 0 || z >= TILE) continue;
+      const w = segWhere(GA, T.ox + x, T.oz + z);
+      if (w) { const o = w[4] + 0.3 + 0.7; x = w[0] + w[2] * o - T.ox; z = w[1] + w[3] * o - T.oz; stats.lampsMoved = (stats.lampsMoved || 0) + 1;
+        if (x < 0 || x >= TILE || z < 0 || z >= TILE || onRoad(x, z)) continue; }
+      lights.push([x, hf(x, z) + 0.3, z, rnd() * Math.PI * 2]);
+    }
     const nearMapped = (x, z) => { for (let i = 0; i < LM.length; i += 2) if (Math.abs(LM[i] - x) < 22 && Math.abs(LM[i + 1] - z) < 22) return true; return false; };
     for (const r of T.r) {
       if (!(r.flags & 8) || r.flags & 2) continue;
@@ -1601,7 +1697,7 @@ const Towns = (() => {
         const ux = (bx - ax) / (L || 1), uz = (bz - az) / (L || 1);
         for (; next < u0 + L; next += gapL) {
           const s0 = next - u0, o = r.width / 2 + (r.cls <= 9 ? 1.0 : 0.7), px = ax + ux * s0 - uz * o * side, pz = az + uz * s0 + ux * o * side;
-          if (px >= 0 && px < TILE && pz >= 0 && pz < TILE && td(px, pz) > 6 && !nearMapped(px, pz)) lights.push([px, hf(px, pz) + 0.3, pz, Math.atan2(uz * side, -ux * side)]);
+          if (px >= 0 && px < TILE && pz >= 0 && pz < TILE && td(px, pz) > 6 && !nearMapped(px, pz) && !onRoad(px, pz)) lights.push([px, hf(px, pz) + 0.3, pz, Math.atan2(uz * side, -ux * side)]);
           if (r.cls <= 7 || !(r.flags & 1)) side = -side;
         }
         u0 += L;
@@ -1611,7 +1707,7 @@ const Towns = (() => {
     // --- fallback trees (no vegetation module): mapped trees, and trees in parks
     if (wantTrees) {
       for (const tr of T.t) { const arr = tr.kind === 1 ? trees.palm : tr.kind === 2 ? trees.conifer : tr.kind === 3 ? trees.euc : trees.broad;
-        if (td(tr.x, tr.z) > 7) arr.push([tr.x, hf(tr.x, tr.z), tr.z, [0.6, 0.9, 1.25, 1.6][tr.size] || 1]); }
+        if (td(tr.x, tr.z) > 7 && !inCarriageway(T.ox + tr.x, T.oz + tr.z)) arr.push([tr.x, hf(tr.x, tr.z), tr.z, [0.6, 0.9, 1.25, 1.6][tr.size] || 1]); }
       for (const a of T.a) {
         if (a.kind !== 0 && a.kind !== 5) continue;
         const P = a.pts, n = P.length / 2; const ar = Math.abs(polyArea(P, n)); const cnt = Math.min(120, Math.floor(ar / 420));
@@ -1761,6 +1857,7 @@ const Towns = (() => {
   }
   const tileDist = (t, p) => { const dx = Math.max(0, Math.abs(p.x - (t.ox + TILE / 2)) - TILE / 2), dz = Math.max(0, Math.abs(p.z - (t.oz + TILE / 2)) - TILE / 2); return Math.hypot(dx, dz); };
   const _jobs = [];
+  const floraRe = [];            // (rects of tiles whose motorways just decoded: Flora re-tests its trees there)
   let scanX = 1e9, scanZ = 1e9, scanR = 0, imgClock = 0;
   let qR = 1;
   function setQuality(name) { qR = { ultraplus: 1.35, high: 1, medium: 0.72, low: 0.5 }[name] || 1; scanR = 0; }
@@ -1797,6 +1894,7 @@ const Towns = (() => {
       if (t.state === 'decode' && now() < deadline) {
         try { t.data = decode(t.tx, t.ty, t.raw); remember(t.key, t.data); stats.roadGen++; } catch (e) { console.warn('[towns]', t.key, e); t.state = 'empty'; continue; }
         t.raw = null; ensureGround(t);
+        if (!t.sky && t.data.r.some(r => isFwy(r) && !(r.flags & 2))) floraRe.push([t.ox - 13, t.oz - 13, t.ox + TILE + 13, t.oz + TILE + 13]);
       }
       if (t.state !== 'ready') continue;
       let wb = d < hiR ? 2 : d < bldR ? 1 : 0, wg = d < hiR ? 2 : d < roadR ? 1 : 0;
@@ -1840,6 +1938,7 @@ const Towns = (() => {
       if (t.genKind === 'g') occ = t.occ || occ;
       while (now() <= deadline) { const r = t.gen.next(); if (r.done) { t.gen = null; break; } }
     }
+    if (floraRe.length && typeof Flora !== 'undefined' && Flora.refreshIn) { const R = floraRe.splice(0); try { Flora.refreshIn(R); } catch (e) { console.warn('[towns] flora', e); } }
     stats.lastBuildMs = now() - t0;
   }
   function idle() { return ready && stats.queue === 0 && stats.fetching === 0 && ![...tiles.values()].some(t => t.state === 'fetch' || t.state === 'decode' || t.state === 'ground'); }
@@ -1850,6 +1949,62 @@ const Towns = (() => {
     const k = K(tx, ty); if (decoded.has(k) || pendingDecode.has(k) || !index.has(k)) return;
     const p = getBin(pathOf(tx, ty, false), 30).then(u8 => { remember(k, decode(tx, ty, u8)); stats.roadGen++; }).catch(() => {}).finally(() => pendingDecode.delete(k));
     pendingDecode.set(k, p);
+  }
+  // (Bayline Metro world, M3.7) nothing stands in a carriageway. segGrid(T, pred, inset): a decoded tile's roads that pass
+  // pred (not bridges) as world segments [ax, az, bx, bz, half width - inset], binned in 25 m cells; segHit: is (x, z) on
+  // one of them. inCarriageway(x, z): inside a motorway's or trunk road's lanes (incl. links), 0.5 m in from the edge, in
+  // any decoded tile (false where none is decoded yet: Towns re-tests Flora's trees when the tile decodes). Flora drops
+  // the trees the canopy data puts there (90_main); street lamps inside any road's asphalt are left out (buildGnd).
+  const SG = 25;
+  function segGrid(T, pred, inset) {
+    const S = [], cells = new Map();
+    for (const r of T.r) {
+      if ((r.flags & 2) || !pred(r)) continue;
+      const hw = r.width / 2 - inset, P = r.pts, n = P.length / 2; if (hw < 0.5 || n < 2) continue;
+      for (let i = 0; i + 1 < n; i++) {
+        const k = S.length / 5, ax = T.ox + P[i * 2], az = T.oz + P[i * 2 + 1], bx = T.ox + P[i * 2 + 2], bz = T.oz + P[i * 2 + 3];
+        S.push(ax, az, bx, bz, hw);
+        for (let cz = Math.floor((Math.min(az, bz) - hw) / SG); cz <= Math.floor((Math.max(az, bz) + hw) / SG); cz++)
+          for (let cx = Math.floor((Math.min(ax, bx) - hw) / SG); cx <= Math.floor((Math.max(ax, bx) + hw) / SG); cx++) {
+            const key = cx * 65536 + cz; let a = cells.get(key); if (!a) cells.set(key, a = []); a.push(k); }
+      }
+    }
+    return { S, cells };
+  }
+  function segHit(G, x, z) {
+    const a = G.cells.get(Math.floor(x / SG) * 65536 + Math.floor(z / SG)); if (!a) return false;
+    const S = G.S;
+    for (const k of a) {
+      const o = k * 5, ax = S[o], az = S[o + 1], dx = S[o + 2] - ax, dz = S[o + 3] - az, hw = S[o + 4], L2 = dx * dx + dz * dz;
+      let u = L2 > 1e-9 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const ex = x - ax - dx * u, ez = z - az - dz * u; if (ex * ex + ez * ez < hw * hw) return true;
+    }
+    return false;
+  }
+  // (the segment whose band holds (x, z), nearest first: [foot x, foot z, unit normal x, z toward the point (or across when
+  // on the line), band half width]; null when none does)
+  function segWhere(G, x, z) {
+    const a = G.cells.get(Math.floor(x / SG) * 65536 + Math.floor(z / SG)); if (!a) return null;
+    const S = G.S; let best = null, bd = 1e18;
+    for (const k of a) {
+      const o = k * 5, ax = S[o], az = S[o + 1], dx = S[o + 2] - ax, dz = S[o + 3] - az, hw = S[o + 4], L2 = dx * dx + dz * dz;
+      let u = L2 > 1e-9 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const fx = ax + dx * u, fz = az + dz * u, ex = x - fx, ez = z - fz, d2 = ex * ex + ez * ez;
+      if (d2 >= hw * hw || d2 - hw * hw >= bd) continue;
+      bd = d2 - hw * hw; const d = Math.sqrt(d2), L = Math.sqrt(L2) || 1;
+      best = d > 0.05 ? [fx, fz, ex / d, ez / d, hw] : [fx, fz, -dz / L, dx / L, hw];
+    }
+    return best;
+  }
+  const isFwy = r => r.cls <= 3, isStreet = r => r.cls <= 12;
+  function inCarriageway(x, z) {
+    const tx = Math.floor((x - X0) / TILE), ty = Math.floor((z - Z0) / TILE), lx = x - X0 - tx * TILE, lz = z - Z0 - ty * TILE;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if ((dx < 0 && lx > 13) || (dx > 0 && lx < TILE - 13) || (dy < 0 && lz > 13) || (dy > 0 && lz < TILE - 13)) continue;
+      const T = decoded.get(K(tx + dx, ty + dy)); if (!T) continue;
+      if (segHit(T._gF || (T._gF = segGrid(T, isFwy, 0.5)), x, z)) return true;
+    }
+    return false;
   }
   function forTilesIn(x, z, r, fn) {
     const t0x = Math.floor((x - r - X0) / TILE), t1x = Math.floor((x + r - X0) / TILE), t0z = Math.floor((z - r - Z0) / TILE), t1z = Math.floor((z + r - Z0) / TILE);
@@ -1892,21 +2047,30 @@ const Towns = (() => {
         // (a bridge without a modelled deck is drawn at the ground under each ribbon station plus its height over the ground,
         // interpolated between the map's nodes, flat across: its traffic follows that)
         if ((rd.flags & 2) && a === a0 && rd.off) { const lift = LIFT[Math.min(rd.cls, 14)] + 0.1, off = rd.off;
-          o.surf = (cx, cz) => { let best = 1e18, os = 0;
+          // (as roadRibbon: never below the straight line between the piece's two ends)
+          const cum = new Float32Array(n); for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]);
+          const AN = anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), a0 = anchorAt(AN, P[0], P[1]), a1 = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
+          const tot = cum[n - 1] || 1, E0 = a0 !== null ? a0 : ctx.groundY(T.ox + P[0], T.oz + P[1]) + off[0], E1 = a1 !== null ? a1 : ctx.groundY(T.ox + P[n * 2 - 2], T.oz + P[n * 2 - 1]) + off[n - 1];
+          o.surf = (cx, cz) => { let best = 1e18, os = 0, u = 0;
             for (let i = 0; i + 1 < n; i++) { const ax = T.ox + P[i * 2], az = T.oz + P[i * 2 + 1], dx = T.ox + P[i * 2 + 2] - ax, dz = T.oz + P[i * 2 + 3] - az, L2 = dx * dx + dz * dz || 1;
               const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cz - az) * dz) / L2)), d2 = (ax + dx * t - cx) ** 2 + (az + dz * t - cz) ** 2;
-              if (d2 < best) { best = d2; os = off[i] + (off[i + 1] - off[i]) * t; } }
-            return ctx.groundY(cx, cz) + os + lift; };
+              if (d2 < best) { best = d2; os = off[i] + (off[i + 1] - off[i]) * t; u = cum[i] + (cum[i + 1] - cum[i]) * t; } }
+            return Math.max(ctx.groundY(cx, cz) + os, E0 + (E1 - E0) * (u / tot)) + lift; };
           o.hw = Math.max(0.5, rd.width / 2); o.edges = (cx, cz, nx, nz, e) => { e[0] = e[1] = o.surf(cx, cz); return e; }; }
         // (Bayline Metro world, M3.7) the drawn ribbon's surface across the centreline point (cx, cz), at the signed offset
         // off along the unit normal (nx, nz): the asphalt is one flat strip from edge to edge, each edge taking the ground's
-        // cross-slope toward the ribbon's outer edge (never more than 0.6 m under the centre), plus the road's lift, as
-        // roadRibbon builds it. Road traffic puts its lanes and parked cars on it (bridges keep their decks)
+        // cross-slope toward the ribbon's outer edge (never more than 0.6 m under the centre), raised by the crest guard,
+        // plus the road's lift, as roadRibbon builds it. Road traffic puts its lanes and parked cars on it (bridges keep
+        // their decks)
         if (!(rd.flags & 2)) { const outer = ribbonOuter(rd, T.region >= 6 ? T.region : regionOf(T.oz + P[1])), lift = LIFT[Math.min(rd.cls, 14)], hw = rd.width / 2, k = Math.min(1, hw / outer);
           // edges(cx, cz, nx, nz, out): the strip's two edge heights (out[0] at -hw, out[1] at +hw along n); surf: a point on it
           o.hw = hw;
+          const AN = anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), aS = anchorAt(AN, P[0], P[1]), aE = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
+          const sx = T.ox + P[0], sz = T.oz + P[1], ex = T.ox + P[n * 2 - 2], ez = T.oz + P[n * 2 - 1];
           o.edges = (cx, cz, nx, nz, e) => { const gC = ctx.groundY(cx, cz);
-            e[1] = Math.max(gC + (ctx.groundY(cx + nx * outer, cz + nz * outer) - gC) * k, gC - 0.6) + lift; e[0] = Math.max(gC + (ctx.groundY(cx - nx * outer, cz - nz * outer) - gC) * k, gC - 0.6) + lift; return e; };
+            let ra = 0; if (aS !== null) ra = Math.max(ra, (aS - gC) * anchW(Math.hypot(cx - sx, cz - sz))); if (aE !== null) ra = Math.max(ra, (aE - gC) * anchW(Math.hypot(cx - ex, cz - ez)));
+            const up = lift + Math.max(crestAt(ctx.groundY, cx, cz, nx, nz, hw, outer), ra);
+            e[1] = Math.max(gC + (ctx.groundY(cx + nx * outer, cz + nz * outer) - gC) * k, gC - 0.6) + up; e[0] = Math.max(gC + (ctx.groundY(cx - nx * outer, cz - nz * outer) - gC) * k, gC - 0.6) + up; return e; };
           o.surf = (cx, cz, nx, nz, off) => { const e = o.edges(cx, cz, nx, nz, [0, 0]); return e[0] + (e[1] - e[0]) * Math.min(1, Math.max(0, (off + hw) / (2 * hw))); }; }
         yield o;
       }
@@ -2031,6 +2195,6 @@ const Towns = (() => {
     if (typeof window !== 'undefined') window.__towns = { stats, tiles, skyTiles, index, idle };   // debug / screenshot tooling
     return { tiles: index.size };
   }
-  return { init, update, group, roadsNear, roadsNearIter, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh, addLampDrop, relamp,
+  return { init, update, group, roadsNear, roadsNearIter, areasNear, buildingsAt, stats, idle, dispose, regionOf, setQuality, rectsIn, addDrop, refresh, refreshIn: refresh, addLampDrop, relamp, inCarriageway,
     get ready() { return ready; }, materials: { roadMat, houseMat, treeMat, glowMat, poleMat, poolMat, get skyMat() { return skyMat; } } };
 })();

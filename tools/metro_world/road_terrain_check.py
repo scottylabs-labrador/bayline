@@ -132,8 +132,14 @@ def check_road_fine(r, region, G, guard=False, sub=4):
             e = G.at(X, Z) - st
             return np.nan_to_num(np.nanmax(np.where(np.isfinite(e), e, -1e9), axis=1), nan=0.0)
         e_st = exc(S[:, 0], S[:, 1], nx, nz, yN, yP)
+        # halfway: the quads' triangles (diagonal from +hw at i to -hw at i+1), as 30_towns.js crestRaise
+        A, Bq, Cq, Dq = yN[:-1], yP[:-1], yN[1:], yP[1:]
+        tq = (gof + hw) / (2 * hw)
         mx = (S[:-1] + S[1:]) / 2; mnx = (nx[:-1] + nx[1:]) / 2; mnz = (nz[:-1] + nz[1:]) / 2; ml = np.hypot(mnx, mnz); ml[ml < 1e-9] = 1
-        e_mid = exc(mx[:, 0], mx[:, 1], mnx / ml, mnz / ml, (yN[:-1] + yN[1:]) / 2, (yP[:-1] + yP[1:]) / 2)
+        Xm = mx[:, 0:1] + (mnx / ml)[:, None] * gof; Zm = mx[:, 1:2] + (mnz / ml)[:, None] * gof
+        ym = np.where(tq <= 0.5, (A + 0.5 * (Cq - A))[:, None] + tq * (Bq - A)[:, None], (Dq + 0.5 * (Bq - Dq))[:, None] + (1 - tq) * (Cq - Dq)[:, None])
+        em = G.at(Xm, Zm) - ym
+        e_mid = np.nan_to_num(np.nanmax(np.where(np.isfinite(em), em, -1e9), axis=1), nan=0.0)
         R = np.maximum(0.0, e_st)
         R[:-1] = np.maximum(R[:-1], e_mid); R[1:] = np.maximum(R[1:], e_mid)
         R = np.minimum(R, CREST_CAP)
@@ -144,9 +150,11 @@ def check_road_fine(r, region, G, guard=False, sub=4):
     ib = ia + 1
     PX = S[ia, 0] + (S[ib, 0] - S[ia, 0]) * tv; PZ = S[ia, 1] + (S[ib, 1] - S[ia, 1]) * tv
     NX = nx[ia] + (nx[ib] - nx[ia]) * tv; NZ = nz[ia] + (nz[ib] - nz[ia]) * tv; NL = np.hypot(NX, NZ); NL[NL < 1e-9] = 1; NX /= NL; NZ /= NL
-    YN = yN[ia] + (yN[ib] - yN[ia]) * tv; YP = yP[ia] + (yP[ib] - yP[ia]) * tv
+    # the quads' triangles: (A C B) where s + t <= 1 and (B C D) beyond, the diagonal from +hw at i to -hw at i+1
+    A, Bq, Cq, Dq = yN[ia][:, None], yP[ia][:, None], yN[ib][:, None], yP[ib][:, None]
+    T_ = tv[:, None]; Sx = (O + hw) / (2 * hw)
     X = PX[:, None] + NX[:, None] * O; Z = PZ[:, None] + NZ[:, None] * O
-    strip = YN[:, None] + (YP - YN)[:, None] * (O + hw) / (2 * hw) + lift
+    strip = np.where(Sx + T_ <= 1, A + T_ * (Cq - A) + Sx * (Bq - A), Dq + (1 - T_) * (Bq - Dq) + (1 - Sx) * (Cq - Dq)) + lift
     d = G.at(X, Z) - strip
     ok = np.isfinite(d)
     show = ok & (d > 0.05)

@@ -44,6 +44,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       World.traffic = safe('traffic', () => { const t = Life.createTraffic && typeof Towns !== 'undefined' ? Life.createTraffic([], { maxCars: 420 }) : null; if (t) { Env.scene.add(t.group); t.cx = 1e9; t.cz = 1e9; t.tick = 0; t.retries = 0; } return t; });
     }
     if (typeof Flora !== 'undefined' && Flora.init) { await step(0.92, 'Planting every tree…'); await safeA('flora', async () => { await Flora.init(ctx); if (Flora.group) Env.scene.add(Flora.group); }); }
+    // (M3.7) no tree stands in a motorway's lanes: the canopy data places a few there (a crown seen over the road)
+    if (typeof Flora !== 'undefined' && Flora.addDrop && typeof Towns !== 'undefined' && Towns.inCarriageway) Flora.addDrop((x, z) => Towns.inCarriageway(x, z));
     safe('groundcover', () => { if (typeof GroundCover !== 'undefined') GroundCover.init(); });
     safe('boats', () => { if (typeof Boats !== 'undefined') Boats.init(); });
     safe('globe', () => { if (typeof Globe !== 'undefined') Globe.init(); });

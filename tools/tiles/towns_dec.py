@@ -3,7 +3,8 @@ src/js/30_towns.js), for bakes that must agree with what Towns draws: the lidar 
 ribbons and infill yards, and the ground-material classes take asphalt, sidewalks and roofs from them.
 
 decode(tx, ty) -> None | dict(ox, oz, region, infill (32x32 bool or None),
-                               roads [dict(cls, flags, lanes, width, pts (n,2) world)], buildings [dict(kind, h, flags, pts)],
+                               roads [dict(cls, flags, lanes, width, pts (n,2) world, off (n,) deck m over the ground on
+                               bridges, else None)], buildings [dict(kind, h, flags, pts)],
                                areas [dict(kind, pts)])
 road_extent(road, region) -> half-width (m) of the widest ribbon Towns draws for it (carriageway + curb strip + walk,
                              or carriageway + shoulder), mirroring roadRibbon() in 30_towns.js.
@@ -62,9 +63,10 @@ def decode(tx, ty):
     for _ in range(nR):
         cls, rf, lanes, w4, nv = struct.unpack_from('<BBBBH', buf, o); o += 6
         pts, o = _pts(buf, o, nv, ox, oz)
-        if rf & 2:
-            o += nv                                       # bridge deck offsets (the ribbon is on the deck, not the ground)
-        roads.append(dict(cls=cls, flags=rf, lanes=lanes, width=w4 / 4.0, pts=pts))
+        off = None
+        if rf & 2:                                        # bridge deck offsets (the ribbon is on the deck, not the ground)
+            off = np.frombuffer(buf, np.uint8, nv, o).astype(np.float64) / 4.0; o += nv
+        roads.append(dict(cls=cls, flags=rf, lanes=lanes, width=w4 / 4.0, pts=pts, off=off))
     areas = []
     for _ in range(nA):
         kind, _pad, nv = struct.unpack_from('<BBH', buf, o); o += 4
