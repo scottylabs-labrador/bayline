@@ -5,6 +5,47 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## M3.5 (lead, after M3.4 shipped as main e548da6)
+
+Before/after below is always against main e548da6 (built from `git archive e548da6 src/js`), in the page (GPU, one
+headless Chrome at a time) unless it says offline.
+- **The #mst=MLBR spawn** (production 12:00, auto quality). Two causes. (1) The auto quality tier changes a few seconds
+  after a slow start; `MetroStations.setQuality` rebuilt every station at the new level and `drop()` cleared its walk
+  floors meanwhile, so a walker standing on platform 3 fell through to the ground under it (y 4.9 -> 2.99) and looked
+  WNW through the platform's floor (drawn one-sided) at the water tank and the office block. The rebuild now keeps the
+  walk floors until the new build attaches its own (`drop(st, keepWalk)`; teardown and LOD drops still clear them).
+  (2) The heading: a platform spawn looks up the platform toward the arriving train; Millbrae now asks for a view
+  (heroes' `spawnView: 'hall'`): `StationTypes.footprint` exports the shared hall's middle (over the island's strip, at
+  eye height) and a standing point 14 m in from platform 3's end; `MetroStations.spawnView(id)` hands it to SIM's
+  teleport, which picks its furniture-clear spot there with the corridor running toward the view (the same
+  `pickSpot`/`spotClear` rule) and faces the view (again once the floors settle). **SIM's file** `47_metroplay.js`: 12
+  lines, no change for a station without a view except that a spawn waiting for its station's floors now holds up to
+  45 s instead of 15 (a slow first build dropped the walker under an aerial platform after 15 s). In the page: main
+  reproduces the report (12:00: the walker at y 2.99 under platform 3, the Peninsula's prompt, the water tank and the
+  office block ahead); after, at 12:00 and 07:40: platform 3, u -94 (14 m in), y 4.90 on the platform, heading -42
+  degrees against the spine's -40, the vault ahead over the platform's roof, the turquoise fence on the left, the
+  prompt "Press B for Millbrae trains · E transfer to the Peninsula line"; #mst=EMBR identical before and after
+  (position, floor, heading) (`shots/stations/m35_spawn_mlbr.jpg`).
+- **The navy rectangle over the Caltrain face** (face_s): the back of the transfer panels hung over the island's steps
+  (one-sided, facing platform 3). Same class as the exit signs: an offline audit (every station built, each one-sided
+  sign's back looked at from walk floors and the Peninsula's platforms up to 20 m behind it, straight and up to 75
+  degrees aside, line of sight clear of other meshes) finds 116 blank navy backs a walker can see on main: 112 exit
+  signs (an escalator bank's foot sign seen from the stairs it points to, a street stair's sign from the concourse
+  beside it), 2 platform panels, Millbrae's 4 transfer panels. Fixed for all: a one-sided sign's back is navy with the
+  metro's wordmark centred (`MetroSigns` atlas region `back`, drawn centred and measured; `signGeometry` lays the navy
+  around it in four coplanar bands: no overlap, no z-fighting). +8 triangles per one-sided sign (+40 to +550 per
+  station). `shots/stations/m35_sign_backs.jpg` (face_s, Millbrae's platform 3 exit sign from the bridge stairs'
+  side, 19th St's lower platform).
+- **The post-M3.4 proposals, verified in the page** (views before/after): Millbrae's shared hall (b9e75de): the vault
+  white and translucent over white-cream ribs, cream tree columns instead of grey steel posts; Millbrae's terrazzo
+  benches (95355e7); Civic Center's black terrazzo, North Berkeley's precast drums (4c7c259); 12th St's bronze bar
+  railings at the wells and the fare line (84bbbac). `shots/stations/m35_mlbr_hall_benches.jpg`,
+  `m35_benches_rails.jpg`. The Market St light-rail level (05131fc) stays an M4 proposal (backlog item 2).
+- **Offline, the whole M3.5 tree against main**: all 52 stations build without errors; floors and walls identical on
+  every station (the benches keep their footprints), triangles +40..+670 per station; platform end faces unchanged
+  (406 front, the 2 known Orinda detail hits); walk gaps: none at Millbrae, Civic Center, North Berkeley, 12th St;
+  the 31 Peninsula stations identical with the metro off and on (layouts, stops, doors, geometry hashes).
+
 ## M3.4 (src/js frozen for M3.3 at b220f6f; lead 18:00)
 
 - **Non-hero sweep after today's changes** (29 stations + the Coliseum connector, a platform view and an aerial view
