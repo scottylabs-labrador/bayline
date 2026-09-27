@@ -223,6 +223,18 @@ Support in the stations: `res.esc` (escalators in world coordinates), `info.rotu
    platforms"): a platform level between the mezzanine and BART with its own box and track (trains later), its
    escalators from the mezzanine, the BART wells passing it behind glass; transfer panels already say "City light rail
    in the same station".
+   Scope (M4 proposal, 26 Sep evening): research levels below the street: mezzanine ~6 m, city light rail ~11.5 m, the
+   metro 17.6-20 m (data: EMBR street 3.6 / platform -15.5, MONT 9.7 / -8.0, POWL 11.4 / -5.7, CIVC 15.1 / -3.8), so
+   the 11-12 m between our mezzanine floor and the metro platform holds it. Per station: an island (EMBR ~9 m, MONT /
+   POWL / CIVC ~8-10 m) over the metro island, two trackbeds with rails (no trains: TRAINS / SIM run none), the level's
+   box, ceiling = the mezzanine's floor slab, dark tunnel mouths at both ends (the city tunnels are not in the data;
+   INFRA would have to cut them, or the mouths stay closed), its own Under cell and portals; the metro's escalator
+   banks pass through the light-rail island in glass wells (CIVC: "central escalators through the Muni island"), new
+   banks from the mezzanine down to the light-rail island at its ends; EMBR's mezzanine galleries look down into the
+   double-height void; walk data, crowds on the new island, brand-neutral signs ("City light rail", never the
+   operator's name). Stations' own palettes from the research (POWL: red columns and walls). Needs INFRA (cells in the
+   station's Under volume, tunnel mouths) and TRAINS/SIM if trains ever run. Estimate: 1-2 days with QA; the offline
+   tool checks the build and walk data before any view.
 3. **Signature pieces still missing**: SFO's Wind Portal (a 4.9 m radius drum of loose stainless discs around the
    escalators up to the AirTrain level: needs an AirTrain level, which nobody models yet), Richmond's semicircular
    metal canopy over the west plaza (goes with its underpass, item 5). Done: Warm Springs' rotunda, Lake Merritt's
