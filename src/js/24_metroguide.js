@@ -1,7 +1,8 @@
 // MetroGuide (Bayline Metro, infra workstream): the open-air guideway and everything on the track, for MetroTrack's
 // chunks (23_metrotrack.js). Inert unless #metro=1.
 //   body(ctx, run, a, b)   structures for s in [a, b] of one structure run: grade / embankment (ballast bed, cess, skirt
-//                          to the ground, terrain cut), trench (U-section with retaining walls), median (bed between
+//                          to the ground, terrain cut), trench (U-section with retaining walls, an earth skirt behind
+//                          each coping at the natural ground, terrain cut), median (bed between
 //                          freeway barriers, fences), aerial / bridge (box girders per track, hammerhead columns, bearings,
 //                          parapets, abutments), plus the underground builders' hand-off (24_metrotube.js)
 //   detail(ctx)            generator: rails (119 lb profile, polished band), plinths, third rail + coverboard + brackets,
@@ -56,11 +57,6 @@ const MetroGuide = (() => {
   // 1:2 slopes; trenches cut to rail - 1.2 m within 3.0 m): notes/bart/world.md "Ground meets BART". When it is active the
   // bed needs no terrain cut and its slopes simply run down to the (carved) ground.
   const carved = () => typeof MetroGround !== 'undefined' && MetroGround.stats && MetroGround.stats.segments > 0;
-  // is the ground over this stretch of track actually carved down (the rendered terrain below the rail)? Where the
-  // world's carve did not reach (a road deck, a tile not re-carved yet), a trench still needs its own terrain cut
-  function carvedAlong(R, a, b) { let n = 0, high = 0;
-    for (let s = a; ; s = Math.min(b, s + 10)) { MT.frameAt(R, s, F2); let h = 0; try { h = Terrain.h(F2.x, F2.z); } catch (e) {} n++; if (isFinite(h) && h > F2.y - 0.4) high++; if (s >= b) break; }
-    return high <= n * 0.2; }
   // ballast prism on carved ground: top at ~tie top, 0.305 m shoulders, 2:1 slopes down to the ground [BFS 34 05 17]
   function bedCarved(F, lo, hi) {
     const tie = DIM.tieLen / 2, top = -DIM.railH - 0.02 - 0.045, sh = DIM.ballastShoulder;   // crib ~4.5 cm below the tie tops
@@ -131,6 +127,7 @@ const MetroGuide = (() => {
   }
 
   // ------------------------------------------------------------------ trench (retained cut, U-section)
+  const SKIRT = 1.6, APRON = 2.0;
   function buildTrench(ctx, a, b) {
     for (const [s0, s1] of ownedRanges(ctx, a, b)) {
       // (a 'trench' whose ground is carved down to the track on both sides, as the world does in places, is just a bed:
@@ -146,14 +143,35 @@ const MetroGuide = (() => {
         // the carve slopes down toward it, so the slopes never show over the coping from the track)
         const gl = Math.max(gRel(F, wl - t - 0.5, -5, 14), gRel(F, wl - t - 3, -5, 14), gRel(F, wl - t - 6, -5, 14)), gr = Math.max(gRel(F, wr + t + 0.5, -5, 14), gRel(F, wr + t + 3, -5, 14), gRel(F, wr + t + 6, -5, 14));
         const tl = Math.max(gl + 0.35, 1.1), tr = Math.max(gr + 0.35, 1.1);                     // wall tops: coping just above the ground
+        // skirts (M3.5): an earth strip SKIRT m wide behind each coping at the natural ground's height, then an apron that
+        // slopes under the ground. The carve (MetroGround: rail - 1.2 m within 3.9 m of each centreline) can't make a
+        // vertical step in a height grid, so the terrain dips from the wall back up to the natural ground over a texel
+        // and a mesh cell (1.6-4.4 m), and that facet showed behind the walls (up to 2.5 m deep at Milpitas S1).
+        // The natural ground comes from beyond the carve's reach in the L7 base (3.9 + 6.25 m), carried in at its slope;
+        // where the terrain is at its natural height it covers the strip. None within 30 m of a station's limits or in
+        // any of its footprints (plaza, covers, entrances).
+        const sk = (sg, base, tp, g) => {
+          const fa = gRel(F, base + sg * 7.2, -5, 14), fb = gRel(F, base + sg * 10.2, -5, 14), nat = Math.max(g, fa - U.clamp((fb - fa) / 3, -0.25, 0.25) * 7.2);
+          const h = Math.min(tp - 0.1, nat - 0.03), ko = (x) => MetroStations.keepOut(F.x + F.lx * (base + sg * x), F.z + F.lz * (base + sg * x), 'grass');
+          // (nor over another track: a trench or bed alongside that is not this one's pair, e.g. Daly City's tail tracks)
+          const nb = (x) => { const px = F.x + F.lx * (base + sg * x), pz = F.z + F.lz * (base + sg * x);
+            for (const o of MT.net.nearAll(px, pz, 4.5, (t) => t !== ctx.R.t && !(ln.p && t === ln.p.R2.t))) { const Q = MT.trackOf(o.track); if (!Q) continue; MT.frameAt(Q, o.s, F2); const dy = F2.y - (F.y + h); if (dy > -12 && dy < 5) return true; }
+            return false; };
+          const off = h < -1.0 || ctx.inStation(ctx.R, s, 30) || nb(0.8) || nb(SKIRT + APRON) || (typeof MetroStations !== 'undefined' && MetroStations.keepOut && (ko(0.8) || ko(SKIRT) || ko(SKIRT + APRON)));
+          if (off) { const y0 = Math.min(g, tp - 0.3) - 0.2, y1 = tp - 0.05;                                    // (as before: a chamfer down into the ground)
+            return { p: [[base + sg * 0.35, y0], [base + sg * 0.25, (y0 + y1) / 2], [base + sg * 0.15, y1]], c: PAL.soil }; }
+          return { p: [[base + sg * (SKIRT + APRON), h - 0.55], [base + sg * SKIRT, h - 0.04], [base + sg * 0.02, h]], c: PAL.skirt };
+        };
+        const kl = sk(-1, wl - t, tl, gl), kr = sk(1, wr + t, tr, gr);
         rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], gnd: F.y + fl, top: F.y + Math.min(tl, tr),
-          prof: [[wl - t - 0.35, Math.min(gl, tl - 0.3) - 0.2], [wl - t - 0.15, tl - 0.05], [wl - t, tl], [wl + 0.12, tl], [wl + 0.05, tl - 0.12], [wl, tl - 0.3], [wl, fl + 0.25], [wl + 0.4, fl], [wr - 0.4, fl], [wr, fl + 0.25], [wr, tr - 0.3], [wr - 0.05, tr - 0.12], [wr - 0.12, tr], [wr + t, tr], [wr + t + 0.15, tr - 0.05], [wr + t + 0.35, Math.min(gr, tr - 0.3) - 0.2]],
-          col: [PAL.soil, PAL.concreteLight, PAL.concreteLight, PAL.concreteLight, PAL.concrete, PAL.concrete, PAL.concreteDark, PAL.deckTop, PAL.concreteDark, PAL.concrete, PAL.concrete, PAL.concreteLight, PAL.concreteLight, PAL.concreteLight, PAL.soil] });
+          prof: [kl.p[0], kl.p[1], kl.p[2], [wl - t, tl], [wl + 0.12, tl], [wl + 0.05, tl - 0.12], [wl, tl - 0.3], [wl, fl + 0.25], [wl + 0.4, fl], [wr - 0.4, fl], [wr, fl + 0.25], [wr, tr - 0.3], [wr - 0.05, tr - 0.12], [wr - 0.12, tr], [wr + t, tr], kr.p[2], kr.p[1], kr.p[0]],
+          col: [kl.c, kl.c, PAL.concreteLight, PAL.concreteLight, PAL.concreteLight, PAL.concrete, PAL.concrete, PAL.concreteDark, PAL.deckTop, PAL.concreteDark, PAL.concrete, PAL.concrete, PAL.concreteLight, PAL.concreteLight, PAL.concreteLight, kr.c, kr.c] });
         cutL.push([F.x + F.lx * (wl - t - 0.1), F.z + F.lz * (wl - t - 0.1)]); cutR.push([F.x + F.lx * (wr + t + 0.1), F.z + F.lz * (wr + t + 0.1)]); below = Math.min(below, F.y + fl);
       }
       for (const R of rows) R.top = R.o[1] + 1.2;
       sweepVar(ctx.B.infra, rows);
-      if (!carved() || !carvedAlong(ctx.R, s0, s1)) addCut(ctx, 'mt:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
+      // (always cut: even where the carve reaches, the height grid ramps up inside the walls and its facets poked into the trench)
+      addCut(ctx, 'mt:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
       // drainage grates in the floor gutter and wall weep holes every 6 m (small, near only: part of the body for now)
       for (let s = Math.ceil(s0 / 6) * 6; s < s1; s += 6) { MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s);
         for (const lat of [ln.lo - 3.05 + 0.02, ln.hi + 3.05 - 0.02]) ctx.B.infra.box(F.x + F.lx * lat - ctx.ox, F.y - 0.1, F.z + F.lz * lat - ctx.oz, [F.tx, F.ty, F.tz], [F.vx, F.vy, F.vz], [F.lx, F.ly, F.lz], 0.05, 0.05, 0.025, PAL.black, 4); }

@@ -214,7 +214,11 @@ const MetroTube = (() => {
       L0 -= 0.45; L1 += 0.45; const C3 = [PAL.concrete, PAL.concrete, PAL.concrete];
       // (the lid's top stays under the volume's ceiling, i.e. under the ground where the cover is thin)
       const yt = (q) => cov ? Math.min(cov.top(q) + 0.45, cov.vol(q) - 0.02) : -TB + sec.H + 0.45;
-      gb.wear = 0.7; MetroGuide.sweepVar(gb, rows.map(row => Object.assign({}, row, { prof: [[L0, yb], [L0, yt(row.s)], [L1, yt(row.s)], [L1, yb]], col: C3 }))); gb.wear = 0.5; return;
+      gb.wear = 0.7; MetroGuide.sweepVar(gb, rows.map(row => Object.assign({}, row, { prof: [[L0, yb], [L0, yt(row.s)], [L1, yt(row.s)], [L1, yb]], col: C3 })));
+      // (and the lid's underside just over the ceiling: where a crossover takes out a centre wall, the gap it leaves between
+      // two cells' ceilings shows concrete, not the sky through the lid (Daly City, M3.5))
+      const ys = (q) => { const c = cov ? cov.top(q) : -TB + sec.H; return c + Math.min(0.05, (yt(q) - c) / 2); };
+      MetroGuide.sweepVar(gb, rows.map(row => Object.assign({}, row, { prof: [[L1 - 0.45, ys(row.s)], [L0 + 0.45, ys(row.s)]], col: [PAL.concrete] }))); gb.wear = 0.5; return;
     }
     for (const t of tl) {                                   // bores: an outer ring 0.35 m out, down to the ground on both sides
       const bp = boreProfile(sec, t.L, t.o), R = bp.R + 0.35, pts = [[bp.lc - R, yb]];
@@ -296,7 +300,18 @@ const MetroTube = (() => {
           yield;
         }
         if (!best || best.b - best.a < 12) continue;
-        const c = { key, lvl: li, R: best.R, s0: Math.max(0, best.a - 6), s1: Math.min(best.R.len, best.b + 6), tracks: set, partner: best.partner };
+        // (M3.5) the chamber ends at the first tunnel mouth of any of its tracks: past it that track runs in the open, and
+        // one box over it would stand above its trench (Daly City); the tracks there get their own portals. A mouth end
+        // opens to daylight (a portal to the outdoors, daylight ramping in, the ground cut at the opening).
+        let s0 = Math.max(0, best.a - 6), s1 = Math.min(best.R.len, best.b + 6), m0 = null, m1 = null;
+        for (const Q of set) for (const m of mouths(Q)) {
+          MT.frameAt(Q, m.s, F2); const q = MT.net.nearAll(F2.x, F2.z, 25, (t) => t === best.R.t)[0]; if (!q || q.s < s0 - 1 || q.s > s1 + 1) continue;
+          MT.frameAt(best.R, q.s, F); if (Math.abs(F2.y - F.y) > 4) continue;
+          const openAbove = (m.dir > 0) === (F2.tx * F.tx + F2.tz * F.tz >= 0);        // (that track is in the open for the owner's s > q.s)
+          if (openAbove) { if (q.s < s1) { s1 = q.s; m1 = { s: q.s, dir: 1 }; } } else if (q.s > s0) { s0 = q.s; m0 = { s: q.s, dir: -1 }; }
+        }
+        if (s1 - s0 < 12) continue;
+        const c = { key, lvl: li, R: best.R, s0, s1, tracks: set, partner: best.partner, mouth0: m0, mouth1: m1 };
         // (a world bbox for quick rejects in inChamber)
         let bx0 = 1e9, bz0 = 1e9, bx1 = -1e9, bz1 = -1e9; for (let q = c.s0; ; q = Math.min(c.s1, q + 5)) { MT.frameAt(c.R, q, F); bx0 = Math.min(bx0, F.x); bx1 = Math.max(bx1, F.x); bz0 = Math.min(bz0, F.z); bz1 = Math.max(bz1, F.z); if (q >= c.s1) break; }
         c.bb = [bx0 - 25, bz0 - 25, bx1 + 25, bz1 + 25];
@@ -354,8 +369,9 @@ const MetroTube = (() => {
   }
   // the openings in a chamber's end wall at frame F (the owner's, at the face): one per underground track crossing the
   // face's plane (found on the track: a sign change of its distance along the owner's tangent, then bisection), its
-  // tunnel section at its lateral and height, widened by the crossing angle
-  function faceHoles(F, sp) {
+  // tunnel section at its lateral and height, widened by the crossing angle; with open = true (a chamber's end at a
+  // tunnel mouth) the tracks that leave into the open there get a box-sized opening too
+  function faceHoles(F, sp, open = false) {
     const hs = [];
     for (const o of MT.net.nearAll(F.x, F.z, 16)) {
       const Q = MT.trackOf(o.track); if (!Q) continue;
@@ -364,10 +380,10 @@ const MetroTube = (() => {
       for (let sq = qa + 2; ; sq = Math.min(qb, sq + 2)) { const aa = al(sq); if ((aa >= 0) !== (pA >= 0)) { lo = pS; hi = sq; alo = pA; break; } pS = sq; pA = aa; if (sq >= qb) break; }
       if (lo === null) continue;
       for (let k = 0; k < 8; k++) { const m = (lo + hi) / 2, am = al(m); if ((am >= 0) === (alo >= 0)) { lo = m; alo = am; } else hi = m; }
-      MT.frameAt(Q, (lo + hi) / 2, _Fq); const dy = _Fq.y - F.y; if (Math.abs(dy) > 3 || _Fq.struct < 6) continue;
+      MT.frameAt(Q, (lo + hi) / 2, _Fq); const dy = _Fq.y - F.y; if (Math.abs(dy) > 3 || (_Fq.struct < 6 && !open)) continue;
       const L = (_Fq.x - F.x) * F.lx + (_Fq.z - F.z) * F.lz; if (L < sp[0] - 4 || L > sp[1] + 4) continue;
       const cth = Math.max(0.5, Math.abs(F.tx * _Fq.tx + F.tz * _Fq.tz));
-      const sec = sectionOf(MT.STRUCT[_Fq.struct] || 'cutcover', _Fq.x, _Fq.z), prof = sec.kind === 'box' ? boxProfile(sec, L, 1, 2.25) : boreProfile(sec, L, 1);
+      const sec = sectionOf((_Fq.struct >= 6 && MT.STRUCT[_Fq.struct]) || 'cutcover', _Fq.x, _Fq.z), prof = sec.kind === 'box' ? boxProfile(sec, L, 1, 2.25) : boreProfile(sec, L, 1);
       const pts = prof.arc.concat([prof.floor[0]]).map(p => [L + (p[0] - L) / cth, p[1] + dy]);
       hs.push({ id: Q.id, s: (lo + hi) / 2, L, dy, cth, pts, x0: Math.min(...pts.map(p => p[0])), x1: Math.max(...pts.map(p => p[0])), y0: Math.min(...pts.map(p => p[1])), y1: Math.max(...pts.map(p => p[1])) });
     }
@@ -383,8 +399,10 @@ const MetroTube = (() => {
     let nr = 0;
     // (thin cover: per row, the ceiling comes down under the lowest ground within 10 m, like a box's; see coverFor)
     // (rows over open track, e.g. a trench the chamber reaches into, do not count)
-    const pre = []; for (const q of ss) { if (++nr % 30 === 0) yield; const tr = []; const sp = spanAt(R, q, tr); MT.frameAt(R, q, _Fc); pre.push({ q, sp, tr, c: _Fc.struct >= 7 && !nearMouth(R, q) ? coverAt(R, q, sp[0], sp[1]) : 1e9 }); }
-    for (const e of pre) { let m = 1e9; if (!nearMouth(R, e.q)) for (const f of pre) if (Math.abs(f.q - e.q) <= 10.01) m = Math.min(m, f.c); e.top = boxTop(5.3, m); e.vol = Math.max(e.top + 0.05, Math.min(top + 0.6, m - 0.5)); }
+    // (the chamber's own mouth ends count as mouths: full height there, like any portal)
+    const nearM = (q) => nearMouth(R, q) || (chb.mouth0 && Math.abs(q - chb.mouth0.s) < MOUTH_KEEP) || (chb.mouth1 && Math.abs(q - chb.mouth1.s) < MOUTH_KEEP);
+    const pre = []; for (const q of ss) { if (++nr % 30 === 0) yield; const tr = []; const sp = spanAt(R, q, tr); MT.frameAt(R, q, _Fc); pre.push({ q, sp, tr, c: _Fc.struct >= 7 && !nearM(q) ? coverAt(R, q, sp[0], sp[1]) : 1e9 }); }
+    for (const e of pre) { let m = 1e9; if (!nearM(e.q)) for (const f of pre) if (Math.abs(f.q - e.q) <= 10.01) m = Math.min(m, f.c); e.top = boxTop(5.3, m); e.vol = Math.max(e.top + 0.05, Math.min(top + 0.6, m - 0.5)); }
     if (pre.some(e => e.top < top - 0.01)) { cell.thin = true; MT.stats.thinBoxes = (MT.stats.thinBoxes || 0) + 1; }
     nr = 0;
     for (const e of pre) { const q = e.q; if (++nr % 30 === 0) yield; MT.frameAt(R, q, F); const tr = e.tr, sp = e.sp, tq = e.top; spans.push(sp); const Lw = sp[0] - 2.01, Rw = sp[1] + 2.01;
@@ -410,13 +428,17 @@ const MetroTube = (() => {
     for (const [q, dir] of [[a, -1], [b, 1]]) {
       const isEnd = (dir < 0 && Math.abs(q - chb.s0) < 0.6) || (dir > 0 && Math.abs(q - chb.s1) < 0.6); if (!isEnd) continue;
       MT.frameAt(R, q, F); const sp = spanAt(R, q), Lw = sp[0] - 2.01, Rw = sp[1] + 2.01;
-      const hs = faceHoles(F, sp);
+      const hs = faceHoles(F, sp, !!(dir < 0 ? chb.mouth0 : chb.mouth1));
       for (let merged = true; merged;) { merged = false;
         for (let i = 0; i < hs.length && !merged; i++) for (let j = i + 1; j < hs.length && !merged; j++) { const A = hs[i], B = hs[j];
           if (A.x0 < B.x1 + 0.15 && B.x0 < A.x1 + 0.15 && A.y0 < B.y1 + 0.15 && B.y0 < A.y1 + 0.15) {
             const x0 = Math.min(A.x0, B.x0), x1 = Math.max(A.x1, B.x1), y0 = Math.min(A.y0, B.y0), y1 = Math.max(A.y1, B.y1);
             hs[i] = { x0, x1, y0, y1, pts: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] }; hs.splice(j, 1); merged = true; } } }
       const tEnd = (dir < 0 ? pre[0] : pre[pre.length - 1]).top;
+      // (no opening above the chamber's own ceiling: a neighbour's section that stands higher (a crossover 0.1 m up, a
+      // full-height box against a thinned ceiling) opened a sliver to the sky over both ceilings: Daly City, M3.5)
+      for (let i = hs.length - 1; i >= 0; i--) { const h = hs[i]; if (h.y0 > tEnd - 0.3) { hs.splice(i, 1); continue; }
+        h.pts = h.pts.map(p => [p[0], Math.min(p[1], tEnd - 0.02)]); h.y1 = Math.min(h.y1, tEnd - 0.02); }
       let X0 = Lw, X1 = Rw, Y0 = -TB - 0.1, Y1 = tEnd + 0.1; for (const h of hs) { X0 = Math.min(X0, h.x0 - 0.3); X1 = Math.max(X1, h.x1 + 0.3); Y0 = Math.min(Y0, h.y0 - 0.3); Y1 = Math.max(Y1, h.y1 + 0.3); }
       const shape = new THREE.Shape(); shape.moveTo(X0, Y0); shape.lineTo(X1, Y0); shape.lineTo(X1, Y1); shape.lineTo(X0, Y1); shape.closePath();
       for (const h of hs) { const hole = new THREE.Path(), pts = h.pts, cw = THREE.ShapeUtils.isClockWise(pts.map(p => new THREE.Vector2(p[0], p[1])));
@@ -427,14 +449,30 @@ const MetroTube = (() => {
       m4.setPosition(F.x - ctx.ox, F.y, F.z - ctx.oz); setRef(gb, ctx, F); gb.s = q; gb.fix = [Lw + 0.14, 2.6, 15.24, 0]; appendGeo(gb, geo, m4, PAL.concrete); geo.dispose(); yield;
     }
     gb.wear = 0.5;
+    // an outer shell within 80 m of a mouth end, like a tunnel's (shell): where the approach's ground lies below the roof
+    // (the terrain is cut inside the volume) the chamber reads as a concrete structure from outside, not a see-through lining
+    if (chb.mouth0 || chb.mouth1) {
+      const nearEnd = (q) => (chb.mouth0 && Math.abs(q - chb.mouth0.s) < 80) || (chb.mouth1 && Math.abs(q - chb.mouth1.s) < 80);
+      const gbo = ctx.B.infra, yb = -TB - 0.8, C3 = [PAL.concrete, PAL.concrete, PAL.concrete], runs = []; let run = [];
+      rows.forEach((row, i) => { const e = pre[i]; if (!nearEnd(e.q)) { if (run.length > 1) runs.push(run); run = []; return; }
+        const sp = spans[i], L0 = sp[0] - 2.01 - 0.45, L1 = sp[1] + 2.01 + 0.45, yt = Math.min(e.top + 0.45, e.vol - 0.02);
+        const ys = e.top + Math.min(0.05, (yt - e.top) / 2);
+        run.push({ s: row.s, o: row.o, r: row.r, u: row.u, prof: [[L0, yb], [L0, yt], [L1, yt], [L1, yb]], col: C3, soffit: [[L1 - 0.45, ys], [L0 + 0.45, ys]] }); });
+      if (run.length > 1) runs.push(run);
+      gbo.wear = 0.7; for (const r of runs) { MetroGuide.sweepVar(gbo, r); MetroGuide.sweepVar(gbo, r.map(x => Object.assign({}, x, { prof: x.soffit, col: [PAL.concrete] }))); } gbo.wear = 0.5; yield;
+    }
     // Under cell over the whole chamber
-    const pts = [], day = []; let hw = 0; for (let k = 0; k < ss.length; k += Math.max(1, Math.floor(ss.length / 20))) { const q = ss[k]; MT.frameAt(R, q, F); const sp = spans[k]; const mid = (sp[0] + sp[1]) / 2; pts.push([F.x + F.lx * mid, F.y, F.z + F.lz * mid]); day.push(0); hw = Math.max(hw, (sp[1] - sp[0]) / 2 + 2.6); }
-    MT.frameAt(R, b, F); { const sp = spans[spans.length - 1], mid = (sp[0] + sp[1]) / 2; pts.push([F.x + F.lx * mid, F.y, F.z + F.lz * mid]); day.push(0); }
+    // (daylight ramps in from a mouth end, like dayOf for a tunnel)
+    const dayC = (q) => { let d = 1e9; for (const m of [chb.mouth0, chb.mouth1]) if (m) d = Math.min(d, Math.abs(q - m.s)); return d > 60 ? 0 : Math.exp(-d / 9); };
+    const pts = [], day = []; let hw = 0; for (let k = 0; k < ss.length; k += Math.max(1, Math.floor(ss.length / 20))) { const q = ss[k]; MT.frameAt(R, q, F); const sp = spans[k]; const mid = (sp[0] + sp[1]) / 2; pts.push([F.x + F.lx * mid, F.y, F.z + F.lz * mid]); day.push(dayC(q)); hw = Math.max(hw, (sp[1] - sp[0]) / 2 + 2.6); }
+    MT.frameAt(R, b, F); { const sp = spans[spans.length - 1], mid = (sp[0] + sp[1]) / 2; pts.push([F.x + F.lx * mid, F.y, F.z + F.lz * mid]); day.push(dayC(b)); }
+    cell.mouths = []; if (chb.mouth0 && Math.abs(a - chb.s0) < 0.6) cell.mouths.push({ s: a, dir: -1 }); if (chb.mouth1 && Math.abs(b - chb.s1) < 0.6) cell.mouths.push({ s: b, dir: 1 });
+    if (cell.mouths.length) cell.mouth = cell.mouths[0];
     // (1 m past each end, so the end walls lie inside the volume)
     { const ext = (e0, others) => { const e1 = others.find(q => Math.hypot(q[0] - e0[0], q[2] - e0[2]) > 0.5); if (!e1) return null; const n = Math.hypot(e0[0] - e1[0], e0[2] - e1[2]);
         return [e0[0] + (e0[0] - e1[0]) / n, e0[1], e0[2] + (e0[2] - e1[2]) / n]; };
       const pa = ext(pts[0], pts.slice(1)), pb = ext(pts[pts.length - 1], pts.slice(0, -1).reverse());
-      if (pa) { pts.unshift(pa); day.unshift(0); } if (pb) { pts.push(pb); day.push(0); } }
+      if (pa) { pts.unshift(pa); day.unshift(day[0]); } if (pb) { pts.push(pb); day.push(day[day.length - 1]); } }
     cell.strip = { pts, half: hw, below: TB + 1.2, above: top + 0.6, day }; cell.lo = spans[0][0]; cell.hi = spans[0][1]; cell.crown = top; cell.mid = 0;
     if (cell.thin) { const volAt = (q) => { let bst = pre[0]; for (const e of pre) if (Math.abs(e.q - q) < Math.abs(bst.q - q)) bst = e; return bst.vol; };
       cell.strip.aboveArr = pts.map(pt => { let bq = 0, bd = 1e18; for (const e of pre) { MT.frameAt(R, e.q, _Fc); const d = (_Fc.x - pt[0]) ** 2 + (_Fc.z - pt[2]) ** 2; if (d < bd) { bd = d; bq = e.q; } } return volAt(bq); }); }
@@ -615,8 +653,11 @@ const MetroTube = (() => {
       for (const [s, dir] of [[c.s0, -1], [c.s1, 1]]) {
         const nb = cells.find(o => o !== c && o.R === R && Math.abs((dir > 0 ? o.s0 : o.s1) - s) < 0.6);
         const pid = 'pt:' + c.id + ':' + (dir > 0 ? 'b' : 'a');
-        if (nb) { if (dir > 0) { Under.addPortal({ id: pid, a: c.id, b: nb.id, quad: quadAt(R, s, c) }); ch.portalIds.push(pid); } continue; }
-        const isMouth = c.mouth && Math.abs(c.mouth.s - s) < 1.0;
+        const isMouth = (c.mouths || (c.mouth ? [c.mouth] : [])).some(m => Math.abs(m.s - s) < 1.0);
+        if (nb) { if (dir > 0) { Under.addPortal({ id: pid, a: c.id, b: nb.id, quad: quadAt(R, s, c) }); ch.portalIds.push(pid); }
+          // (a chamber that ends at another track's mouth opens to the outdoors there too, beside its own track's box)
+          if (isMouth) { Under.addPortal({ id: pid + 'o', a: c.id, b: null, quad: quadAt(R, s, c) }); ch.portalIds.push(pid + 'o'); }
+          continue; }
         if (isMouth) { Under.addPortal({ id: pid, a: c.id, b: null, quad: quadAt(R, s, c) }); ch.portalIds.push(pid); continue; }
         // the probe 3 m past the face (extrapolated along the tangent past a track's end, where the next track begins)
         const sp = s + dir * 3, sc = U.clamp(sp, 0, R.len), over = (sp - sc) * 1; MT.frameAt(R, sc, F2);
