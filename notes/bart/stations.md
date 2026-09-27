@@ -53,8 +53,10 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   both ways (4.9 -> 5.37-5.47 m and back), the fence stops it between openings, the ramp climbs 4.9 -> 5.46 smoothly,
   the strip's ends stop it, platform 3's back opens onto the strip; the west landing's stair top now 1.7 m past the
   southbound platform (foot 14 m further west).
+  The published lidar ground under the strip and the new southbound platform is 4.04-4.19 m (the strip's floor 4.90,
+  the Caltrain faces 5.30-5.47): nothing pokes through.
   Still to run on the GPU: before/after views metro on and off, the Peninsula suite with `METRO=1`/`METRO=0` (stops,
-  door sides, boarding), the terrain under the strip (the gap's ground must stay below 4.9 m).
+  door sides, boarding).
 
 ## Since the M3 report (09:10)
 
