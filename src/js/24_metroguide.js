@@ -34,10 +34,37 @@ const MetroGuide = (() => {
   const CONTACTC = CONTACT.slice(0, -1).map((p, j) => j === 5 ? PAL.thirdTop : PAL.thirdRail);
 
   const clampLat = (v) => U.clamp(v, -30, 30);
-  // the track pair at s: { lo, hi } lateral range of the rails' centrelines in my level frame (0 and the partner's lat)
-  function lanes(ctx, s) { const p = ctx.pairAt(ctx.R, s); return p ? { lo: Math.min(0, p.lat), hi: Math.max(0, p.lat), p } : { lo: 0, hi: 0, p: null }; }
-  // shared structures (bed, walls, columns): built by the primary of a pair, or by an unpaired track
-  function owns(ctx, s) { const p = ctx.pairAt(ctx.R, s); return !p || p.primary; }
+  // the tracks sharing my structure at s: { lo, hi } lateral range of their centrelines in my level frame, p (my partner,
+  // when it is one of them), g (MetroTrack.groupAt). A pair (0 and the partner's lat) or a lone track as ever; a group of
+  // three or more (M3.7: a pair and a track beside it, yard bundles) also has lats (every member's, sorted)
+  const pairOrLone = (g, p) => g.mem.length === 1 ? !p : (g.mem.length === 2 && !!p && g.mem[1].Q === p.R2);
+  function lanes(ctx, s) {
+    const p = ctx.pairAt(ctx.R, s), g = MT.groupAt ? MT.groupAt(ctx.R, s) : null;
+    if (!g || pairOrLone(g, p)) return p ? { lo: Math.min(0, p.lat), hi: Math.max(0, p.lat), p, g } : { lo: 0, hi: 0, p: null, g };
+    let lo = 0, hi = 0, pin = null; const lats = [0];
+    for (const m of g.mem) { if (m.Q === ctx.R) continue; let lat;
+      if (p && m.Q === p.R2) { lat = p.lat; pin = p; } else { lat = MT.latOf(ctx.R, s, m.Q); if (lat === null || Math.abs(lat) > 60) continue; }
+      lats.push(lat); lo = Math.min(lo, lat); hi = Math.max(hi, lat); }
+    return { lo, hi, p: pin, g, lats: lats.sort((x, y) => x - y) };
+  }
+  const isMember = (ln, Q) => (ln.p && ln.p.R2 === Q) || (ln.g && ln.g.mem.some(m => m.Q === Q));
+  // shared structures (bed, walls, columns): built by the owner of the group (a pair's primary, the lexically smallest id
+  // of a group, a lone track itself)
+  function owns(ctx, s) { const p = ctx.pairAt(ctx.R, s); return MT.groupAt ? MT.groupAt(ctx.R, s).owner === ctx.R : !p || p.primary; }
+  // the nearest parallel track at my level beside my group's outer lane (side -1 left, +1 right), within `reach` m of it,
+  // that is not one of the group (a track whose structure is of another kind there): its distance from the lane, or null.
+  // (a wall, fence or barrier may not stand in its envelope: M3.7)
+  const _Fn = {}, _Fm = {};
+  function sideNeighbour(ctx, s, ln, side, reach) {
+    const lane = side < 0 ? ln.lo : ln.hi; MT.frameAt(ctx.R, s, _Fn);
+    const px = _Fn.x + _Fn.lx * (lane + side * reach / 2), pz = _Fn.z + _Fn.lz * (lane + side * reach / 2); let best = null;
+    for (const o of MT.net.nearAll(px, pz, reach / 2 + 0.5)) {
+      const Q = MT.trackOf(o.track); if (!Q || Q === ctx.R || Q.cls === 'crossover' || isMember(ln, Q)) continue;
+      MT.frameAt(Q, o.s, _Fm); if (Math.abs(_Fm.y - _Fn.y) > 1.5 || Math.abs(_Fm.tx * _Fn.tx + _Fm.tz * _Fn.tz) < 0.9) continue;
+      const d = side * ((_Fm.x - _Fn.x) * _Fn.lx + (_Fm.z - _Fn.z) * _Fn.lz - lane); if (d > 0.5 && d < reach && (best === null || d < best)) best = d;
+    }
+    return best;
+  }
   // s-ranges of [a, b] where I own the shared structure and am not inside a station's limits
   function ownedRanges(ctx, a, b, needOwn = true, keepStations = false) {
     const out = []; let cur = null;
@@ -87,25 +114,39 @@ const MetroGuide = (() => {
       const rows = []; const cutL = [], cutR = []; let below = 1e9;
       for (const s of ss) {
         MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const bp = cv ? bedCarved(F, ln.lo, ln.hi) : bedProfile(F, ln.lo, ln.hi, kind);
-        if (cv) { rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: bp.prof, col: bp.col, gnd: F.y + bp.toe }); continue; }
-        rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: bp.prof, col: bp.col, gnd: F.y + bp.toe });
+        if (cv) { rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: bp.prof, col: bp.col, gnd: F.y + bp.toe, ext: [ln.lo, ln.hi] }); continue; }
+        rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], prof: bp.prof, col: bp.col, gnd: F.y + bp.toe, ext: [ln.lo, ln.hi] });
         cutL.push([F.x + F.lx * bp.cutL, F.z + F.lz * bp.cutL]); cutR.push([F.x + F.lx * bp.cutR, F.z + F.lz * bp.cutR]); below = Math.min(below, F.y + bp.toe + 0.1);
       }
-      sweepVar(ctx.B.infra, rows);
+      for (const piece of splitJumps(rows)) sweepVar(ctx.B.infra, piece);
       if (!cv) addCut(ctx, 'mg:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
       // right-of-way fences (all at-grade BART track is fenced: 2.13 m chain link + 3 barbed strands [BFS 32 31 13]),
       // 5.8 m outside the outer tracks, on the ground; not beside platforms or in medians (the barriers carry those)
       if (kind !== 'median') for (const side of [-1, 1]) {
-        const pts = []; let run = [];
+        const pts = []; let run = [], lastLat = null;
         for (let q = Math.ceil(s0 / 3) * 3; q <= s1; q += 3) {
           if (ctx.inStation(ctx.R, q, 25)) { if (run.length > 1) pts.push(run); run = []; continue; }
           MT.frameAt(ctx.R, q, F); const ln = lanes(ctx, q), lat = side < 0 ? ln.lo - 5.8 : ln.hi + 5.8; const x = F.x + F.lx * lat, z = F.z + F.lz * lat;
-          run.push([x - ctx.ox, Math.max(MT.groundAt(x, z), F.y - 8), z - ctx.oz]);
+          // (none where another track runs within 7.6 m outside: the fence would stand in its envelope; a new run where
+          // the line jumps, a track joining or leaving the group, M3.7)
+          if (sideNeighbour(ctx, q, ln, side, 7.6) !== null) { if (run.length > 1) pts.push(run); run = []; continue; }
+          if (lastLat !== null && Math.abs(lat - lastLat) > 1.5 && run.length) { if (run.length > 1) pts.push(run); run = []; }
+          lastLat = lat; run.push([x - ctx.ox, Math.max(MT.groundAt(x, z), F.y - 8), z - ctx.oz]);
         }
         if (run.length > 1) pts.push(run);
         for (const r of pts) fenceRun(ctx, r, DIM.fenceH, side);
       }
     }
+  }
+  // rows in pieces where the structure's extent jumps between two rows (a track joins or leaves a group, a middle track's
+  // partner switches sides): each piece swept on its own, so no wall or slope runs diagonally across a track (M3.7)
+  // (the piece before a jump runs on to the next row with its own profile, so nothing is left open between the two)
+  function splitJumps(rows) {
+    const out = []; let cur = [];
+    for (const r of rows) { const p = cur[cur.length - 1];
+      if (p && p.ext && r.ext && (Math.abs(r.ext[0] - p.ext[0]) > 1.5 || Math.abs(r.ext[1] - p.ext[1]) > 1.5)) { cur.push(Object.assign({}, p, { s: r.s, o: r.o, r: r.r, u: r.u, gnd: r.gnd })); out.push(cur); cur = []; }
+      cur.push(r); }
+    if (cur.length > 1) out.push(cur); return out;
   }
   // sweep with a per-row profile (same point count on every row): rows[i].prof, rows[i].col (per segment)
   function sweepVar(gb, rows) {
@@ -138,10 +179,14 @@ const MetroGuide = (() => {
       const ss = ctx.sampleS(ctx.R, s0, s1, 5, 2); const rows = []; const cutL = [], cutR = []; let below = 1e9;
       for (const s of ss) {
         MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s);
-        const wl = ln.lo - 3.05, wr = ln.hi + 3.05, t = 0.6, fl = -0.72;             // inner wall faces (MetroGround steps at 3.0-3.9 m), thickness, floor (DF slab)
+        // (a wall with another track close outside it, whose own structure is of another kind (Daly City: a portal box
+        // beside the trench): midway between the tracks, 0.3-0.6 m thick, clear of both envelopes (M3.7))
+        const wallAt = (side) => { const d = sideNeighbour(ctx, s, ln, side, 5.6); if (d === null) return [3.05, 0.6]; const w = U.clamp(d / 2 - 0.2, 1.9, 3.05); return [w, U.clamp(d - w - 1.7, 0.3, 0.6)]; };
+        const [wlI, tL] = wallAt(-1), [wrI, tR] = wallAt(1);
+        const wl = ln.lo - wlI, wr = ln.hi + wrI, t = tL, fl = -0.72;             // inner wall faces (MetroGround steps at 3.0-3.9 m), thickness, floor (DF slab)
         // (the ground just behind the wall, and 3 and 6 m further out: the wall retains up to the natural ground even where
         // the carve slopes down toward it, so the slopes never show over the coping from the track)
-        const gl = Math.max(gRel(F, wl - t - 0.5, -5, 14), gRel(F, wl - t - 3, -5, 14), gRel(F, wl - t - 6, -5, 14)), gr = Math.max(gRel(F, wr + t + 0.5, -5, 14), gRel(F, wr + t + 3, -5, 14), gRel(F, wr + t + 6, -5, 14));
+        const gl = Math.max(gRel(F, wl - t - 0.5, -5, 14), gRel(F, wl - t - 3, -5, 14), gRel(F, wl - t - 6, -5, 14)), gr = Math.max(gRel(F, wr + tR + 0.5, -5, 14), gRel(F, wr + tR + 3, -5, 14), gRel(F, wr + tR + 6, -5, 14));
         const tl = Math.max(gl + 0.35, 1.1), tr = Math.max(gr + 0.35, 1.1);                     // wall tops: coping just above the ground
         // skirts (M3.5): an earth strip SKIRT m wide behind each coping at the natural ground's height, then an apron that
         // slopes under the ground. The carve (MetroGround: rail - 1.2 m within 3.9 m of each centreline) can't make a
@@ -155,21 +200,24 @@ const MetroGuide = (() => {
           const h = Math.min(tp - 0.1, nat - 0.03), ko = (x) => MetroStations.keepOut(F.x + F.lx * (base + sg * x), F.z + F.lz * (base + sg * x), 'grass');
           // (nor over another track: a trench or bed alongside that is not this one's pair, e.g. Daly City's tail tracks)
           const nb = (x) => { const px = F.x + F.lx * (base + sg * x), pz = F.z + F.lz * (base + sg * x);
-            for (const o of MT.net.nearAll(px, pz, 4.5, (t) => t !== ctx.R.t && !(ln.p && t === ln.p.R2.t))) { const Q = MT.trackOf(o.track); if (!Q) continue; MT.frameAt(Q, o.s, F2); const dy = F2.y - (F.y + h); if (dy > -12 && dy < 5) return true; }
+            for (const o of MT.net.nearAll(px, pz, 4.5, (t) => t !== ctx.R.t && !(ln.p && t === ln.p.R2.t))) { const Q = MT.trackOf(o.track); if (!Q || isMember(ln, Q)) continue; MT.frameAt(Q, o.s, F2); const dy = F2.y - (F.y + h); if (dy > -12 && dy < 5) return true; }
             return false; };
-          const off = h < -1.0 || ctx.inStation(ctx.R, s, 30) || nb(0.8) || nb(SKIRT + APRON) || (typeof MetroStations !== 'undefined' && MetroStations.keepOut && (ko(0.8) || ko(SKIRT) || ko(SKIRT + APRON)));
+          // (nor where the ground behind the wall rises more than 1 m over the coping, or the wall stands over 6 m: a deep cut
+          // whose real slopes the L7 base smooths over, where the lidar ground lies metres below the coping and the strip
+          // stood out as a gravel path on top of the wall (Daly City, M3.7))
+          const off = h < -1.0 || Math.max(fa, fb) > tp + 1.0 || tp > 6.0 || ctx.inStation(ctx.R, s, 30) || nb(0.8) || nb(SKIRT + APRON) || (typeof MetroStations !== 'undefined' && MetroStations.keepOut && (ko(0.8) || ko(SKIRT) || ko(SKIRT + APRON)));
           if (off) { const y0 = Math.min(g, tp - 0.3) - 0.2, y1 = tp - 0.05;                                    // (as before: a chamfer down into the ground)
             return { p: [[base + sg * 0.35, y0], [base + sg * 0.25, (y0 + y1) / 2], [base + sg * 0.15, y1]], c: PAL.soil }; }
           return { p: [[base + sg * (SKIRT + APRON), h - 0.55], [base + sg * SKIRT, h - 0.04], [base + sg * 0.02, h]], c: PAL.skirt };
         };
-        const kl = sk(-1, wl - t, tl, gl), kr = sk(1, wr + t, tr, gr);
-        rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], gnd: F.y + fl, top: F.y + Math.min(tl, tr),
-          prof: [kl.p[0], kl.p[1], kl.p[2], [wl - t, tl], [wl + 0.12, tl], [wl + 0.05, tl - 0.12], [wl, tl - 0.3], [wl, fl + 0.25], [wl + 0.4, fl], [wr - 0.4, fl], [wr, fl + 0.25], [wr, tr - 0.3], [wr - 0.05, tr - 0.12], [wr - 0.12, tr], [wr + t, tr], kr.p[2], kr.p[1], kr.p[0]],
+        const kl = sk(-1, wl - t, tl, gl), kr = sk(1, wr + tR, tr, gr);
+        rows.push({ s, o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], gnd: F.y + fl, top: F.y + Math.min(tl, tr), ext: [wl, wr],
+          prof: [kl.p[0], kl.p[1], kl.p[2], [wl - t, tl], [wl + 0.12, tl], [wl + 0.05, tl - 0.12], [wl, tl - 0.3], [wl, fl + 0.25], [wl + 0.4, fl], [wr - 0.4, fl], [wr, fl + 0.25], [wr, tr - 0.3], [wr - 0.05, tr - 0.12], [wr - 0.12, tr], [wr + tR, tr], kr.p[2], kr.p[1], kr.p[0]],
           col: [kl.c, kl.c, PAL.concreteLight, PAL.concreteLight, PAL.concreteLight, PAL.concrete, PAL.concrete, PAL.concreteDark, PAL.deckTop, PAL.concreteDark, PAL.concrete, PAL.concrete, PAL.concreteLight, PAL.concreteLight, PAL.concreteLight, kr.c, kr.c] });
-        cutL.push([F.x + F.lx * (wl - t - 0.1), F.z + F.lz * (wl - t - 0.1)]); cutR.push([F.x + F.lx * (wr + t + 0.1), F.z + F.lz * (wr + t + 0.1)]); below = Math.min(below, F.y + fl);
+        cutL.push([F.x + F.lx * (wl - t - 0.1), F.z + F.lz * (wl - t - 0.1)]); cutR.push([F.x + F.lx * (wr + tR + 0.1), F.z + F.lz * (wr + tR + 0.1)]); below = Math.min(below, F.y + fl);
       }
       for (const R of rows) R.top = R.o[1] + 1.2;
-      sweepVar(ctx.B.infra, rows);
+      for (const piece of splitJumps(rows)) sweepVar(ctx.B.infra, piece);
       // (always cut: even where the carve reaches, the height grid ramps up inside the walls and its facets poked into the trench)
       addCut(ctx, 'mt:' + ctx.R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0), cutL.concat(cutR.reverse()), below);
       // drainage grates in the floor gutter and wall weep holes every 6 m (small, near only: part of the body for now)
@@ -186,12 +234,19 @@ const MetroGuide = (() => {
     for (const [s0, s1] of ownedRanges(ctx, a, b)) {
       const ss = ctx.sampleS(ctx.R, s0, s1, 6, 2);
       for (const side of [-1, 1]) {
-        const rows = ss.map(s => { MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const lat = side < 0 ? ln.lo - 3.9 : ln.hi + 3.9; const gy = gRel(F, lat, -3, 2);
-          return { s, o: [F.x + F.lx * lat - ctx.ox, F.y + gy, F.z + F.lz * lat - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], top: F.y + gy + 0.97, gnd: F.y + gy }; });
-        // single-slope barrier: 0.61 m base, 0.24 m top, 0.97 m tall (both faces sloped)
-        ctx.B.infra.sweep(rows, [[-0.305, -0.3], [-0.305, 0.05], [-0.12, 0.97], [0.12, 0.97], [0.305, 0.05], [0.305, -0.3]], PAL.concreteLight);
-        const posts = []; for (const R of rows) posts.push(R);
-        fenceRun(ctx, rows.map(R => [R.o[0], R.o[1] + 0.97, R.o[2]]), 1.15);
+        // (none where another track runs within 6 m outside it (it would stand in its envelope), nor where the ground at
+        // the barrier line lies more than 0.75 m over the rail: there the median is a cut whose slopes the barrier was
+        // draped on, a wavy white band along their foot (Willow Pass, C1 36500-37350), M3.7)
+        const all = ss.map(s => { MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const lat = side < 0 ? ln.lo - 3.9 : ln.hi + 3.9; const gy = gRel(F, lat, -3, 2);
+          return { s, o: [F.x + F.lx * lat - ctx.ox, F.y + gy, F.z + F.lz * lat - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], top: F.y + gy + 0.97, gnd: F.y + gy, clash: gy > 0.75 || sideNeighbour(ctx, s, ln, side, 6) !== null }; });
+        const pieces = []; let cur = []; for (const r0 of all) { const pv = cur[cur.length - 1];
+          if (r0.clash || (pv && Math.hypot(r0.o[0] - pv.o[0], r0.o[2] - pv.o[2]) > 0 && Math.abs((r0.o[0] - pv.o[0]) * r0.r[0] + (r0.o[2] - pv.o[2]) * r0.r[2]) > 1.5)) { if (cur.length > 1) pieces.push(cur); cur = []; }
+          if (!r0.clash) cur.push(r0); } if (cur.length > 1) pieces.push(cur);
+        for (const rows of pieces) {
+          // single-slope barrier: 0.61 m base, 0.24 m top, 0.97 m tall (both faces sloped)
+          ctx.B.infra.sweep(rows, [[-0.305, -0.3], [-0.305, 0.05], [-0.12, 0.97], [0.12, 0.97], [0.305, 0.05], [0.305, -0.3]], PAL.concreteLight);
+          fenceRun(ctx, rows.map(R => [R.o[0], R.o[1] + 0.97, R.o[2]]), 1.15);
+        }
       }
     }
   }
@@ -295,10 +350,12 @@ const MetroGuide = (() => {
         const subs = ownedRanges(ctx, s0, s1); if (!subs.length) continue;
         for (const [q0, q1] of subs) {
           const ss = ctx.sampleS(R, q0, q1, 8, 2.5);
-          const pp = ctx.pairAt(R, (q0 + q1) / 2);
-          for (const which of pp ? [0, 1] : [0]) {
-            let lastLa = pp ? pp.lat : 0;
-            const rows = ss.map(s => { MT.frameAt(R, s, F); const pq = which ? MT.pairAt(R, s) : null; const la = which ? (pq ? (lastLa = pq.lat) : lastLa) : 0;
+          // (my partner when it shares my structure; a group's other tracks follow their own offsets, M3.7)
+          const lnm = lanes(ctx, (q0 + q1) / 2), pp = lnm.p, extra = lnm.lats ? lnm.g.mem.filter(m => m.Q !== R && !(pp && m.Q === pp.R2)).map(m => m.Q) : [];
+          for (const which of (pp ? [0, 1] : [0]).concat(extra.map((_, k) => 2 + k))) {
+            let lastLa = which === 1 ? pp.lat : which >= 2 ? (MT.latOf(R, (q0 + q1) / 2, extra[which - 2]) || 0) : 0;
+            const rows = ss.map(s => { MT.frameAt(R, s, F); let la = 0;
+              if (which === 1) { const pq = MT.pairAt(R, s); la = pq ? (lastLa = pq.lat) : lastLa; } else if (which >= 2) { const l2 = MT.latOf(R, s, extra[which - 2]); la = l2 === null ? lastLa : (lastLa = l2); MT.frameAt(R, s, F); }
               return { s, o: [F.x + F.lx * la - ctx.ox, F.y, F.z + F.lz * la - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz], top: F.y + hD, gnd: -1e4 }; });
             gb.wear = 0.75; gb.sweep(rows, prof, PAL.precast, { closed: true });
             if (capA && q0 === subs[0][0]) gb.capProfile(rows[0], prof, PAL.precast, -1);
@@ -306,11 +363,15 @@ const MetroGuide = (() => {
             // drainage channel on the girder centreline (a shallow dark groove between the plinths)
             gb.sweep(rows, [[-0.09, hD + 0.004], [0.09, hD + 0.004]], PAL.concreteDark);
           }
-          // the sunken walkway between the two girders: a slab 0.25 m below the decks
-          if (pp) {
+          // the sunken walkway between two girders: a slab 0.25 m below the decks (between each neighbouring pair of a group's)
+          if (pp && !extra.length) {
             const rows = ctx.rowsAt(ctx, ss, 0, 0, false);
             const w0 = Math.min(0, pp.lat) + A.girderTopW / 2 + 0.01, w1 = Math.max(0, pp.lat) - A.girderTopW / 2 - 0.01;
             if (w1 - w0 > 0.2) { const yw = hD - A.walkDrop; gb.sweep(rows, [[w0, yw - 0.14], [w0, yw], [w1, yw], [w1, yw - 0.14]], PAL.concrete); }
+          } else if (extra.length) {
+            const rows = ctx.rowsAt(ctx, ss, 0, 0, false), L = lnm.lats;
+            for (let k = 0; k + 1 < L.length; k++) { const w0 = L[k] + A.girderTopW / 2 + 0.01, w1 = L[k + 1] - A.girderTopW / 2 - 0.01;
+              if (w1 - w0 > 0.2) { const yw = hD - A.walkDrop; gb.sweep(rows, [[w0, yw - 0.14], [w0, yw], [w1, yw], [w1, yw - 0.14]], PAL.concrete); } }
           }
           gb.wear = 0.5;
         }
@@ -350,7 +411,7 @@ const MetroGuide = (() => {
     gb.s = s; gb.wear = 0.8;
     const P = (lat, y, along) => [cx + Lv[0] * lat + T[0] * along, y, cz + Lv[2] * lat + T[2] * along];
     // bearings: elastomeric pads under each web of each girder, both sides of the deck joint
-    const girders = modern ? [0] : (half > 0.5 ? [ln.lo - mid, ln.hi - mid] : [0]);
+    const girders = modern ? [0] : ln.lats ? ln.lats.map(l => l - mid) : (half > 0.5 ? [ln.lo - mid, ln.hi - mid] : [0]);
     for (const gl of girders) for (const w of modern ? [-2.2, 2.2] : [-0.55, 0.55]) for (const dt of [-0.42, 0.42]) {
       const c = P(gl + w, soffit + 0.035, dt); gb.box(c[0], c[1], c[2], T, [0, 1, 0], Lv, 0.16, 0.035, 0.24, PAL.bearing);
     }
@@ -532,22 +593,24 @@ const MetroGuide = (() => {
 
   // ------------------------------------------------------------------ detail layer: rails, plinths, third rail
   const DF = new Set(['aerial', 'bridge', 'trench', 'portal', 'cutcover', 'bored', 'tube']);
-  // the detail layer of a chunk: my own rails where I am unpaired or the primary of a pair, and my partner's rails on
-  // the paired pieces (so a pair's track detail is one draw call); the non-primary builds nothing on paired pieces
+  // the detail layer of a chunk: my own rails, plinths and third rail except where my partner builds them, and my
+  // partners' where I build them (a pair's track detail is one draw call), decided a bin at a time the same way by both
+  // (MetroTrack.detailCover / detailFor, M3.7)
   function* detail(ctx) {
-    const R = ctx.R, s0 = ctx.s0, s1 = ctx.s1;
+    const R = ctx.R, s0 = ctx.s0, s1 = ctx.s1, cov = MT.detailCover ? MT.detailCover(R, s0, s1) : [];
     for (const run of R.runs) {
       if (run.s1 <= s0 || run.s0 >= s1) continue;
-      const a = Math.max(run.s0, s0), b = Math.min(run.s1, s1); if (b - a < 0.05) continue;
-      for (const [q0, q1] of ownedRanges(ctx, a, b, true, true)) {
-        for (const [u0, u1] of splitRange(q0, q1, run)) yield* trackDetail(ctx, run, u0, u1);
-        const p = ctx.pairAt(R, (q0 + q1) / 2);
-        if (p && p.primary) {                                                 // the partner's piece: map my ends onto its s
-          const pa = ctx.pairAt(R, q0), pb = ctx.pairAt(R, q1); if (!pa || !pb || pa.R2 !== p.R2 || pb.R2 !== p.R2) continue;
-          const Q = p.R2, qa = Math.max(0, Math.min(pa.s2, pb.s2)), qb = Math.min(Q.len, Math.max(pa.s2, pb.s2)); if (qb - qa < 0.5 || qb - qa > (q1 - q0) * 1.3 + 10) continue;   // (a sane mapping only)
-          const ctx2 = Object.assign({}, ctx, { R: Q });
-          for (const r2 of Q.runs) { if (r2.s1 <= qa || r2.s0 >= qb) continue; for (const [u0, u1] of splitRange(Math.max(qa, r2.s0), Math.min(qb, r2.s1), r2)) yield* trackDetail(ctx2, r2, u0, u1); }
-        }
+      const a = Math.max(run.s0, s0), b = Math.min(run.s1, s1);
+      if (b - a >= 0.05) {
+        let c = a; const mine = [];
+        for (const [u0, u1] of cov) { if (u1 <= c || u0 >= b) continue; if (u0 - c > 0.02) mine.push([c, u0]); c = Math.max(c, u1); }
+        if (b - c > 0.02) mine.push([c, b]);
+        for (const [q0, q1] of mine) for (const [u0, u1] of splitRange(q0, q1, run)) yield* trackDetail(ctx, run, u0, u1);
+      }
+      // my partners' pieces that go with this run's piece of the chunk
+      for (const { Q, a: qa, b: qb } of (MT.detailFor ? MT.detailFor(R, a, b) : [])) {
+        const ctx2 = Object.assign({}, ctx, { R: Q });
+        for (const r2 of Q.runs) { if (r2.s1 <= qa || r2.s0 >= qb) continue; for (const [u0, u1] of splitRange(Math.max(qa, r2.s0), Math.min(qb, r2.s1), r2)) yield* trackDetail(ctx2, r2, u0, u1); }
       }
     }
   }

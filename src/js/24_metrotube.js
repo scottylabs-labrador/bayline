@@ -72,8 +72,8 @@ const MetroTube = (() => {
     return out;
   }
   // a box cell: outer wall at L + 2.45 o, inner wall at L - wi o (the centre wall face of a pair, or 2.25 for one track)
-  function boxProfile(sec, L, o, wi) {
-    const wo = 2.01, top = -TB + sec.H, ch = 0.35, edge = 1.84;          // (2.01 m track to wall [WSX 2-5c/d])
+  function boxProfile(sec, L, o, wi, woIn) {
+    const wo = woIn || 2.01, top = -TB + sec.H, ch = 0.35, edge = 1.84;          // (2.01 m track to wall [WSX 2-5c/d]; a group's middle track: to the centre wall)
     const oW = L + wo, iW = L - wi;
     const p = { arc: [[oW, -TB], [oW, top - ch], [oW - ch, top], [iW + ch, top], [iW, top - ch], [iW, WALK]], floor: [[L - edge, -TB], [oW, -TB]],
       walkTop: [[iW, WALK], [L - edge, WALK]], walkFace: [[L - edge, WALK], [L - edge, -TB + 0.02]], crown: top, flatArc: true };
@@ -87,27 +87,37 @@ const MetroTube = (() => {
   function buildCell(ctx, cell, sec, tracksL, ss, topAt) {
     const gb = cell.tgb, pair = tracksL.length > 1;
     const rows = ctx.rowsAt(ctx, ss, 0, 0, false, (row, Fr) => { row.top = Fr.y + 6; row.gnd = Fr.y - TB; });
-    for (const tk of tracksL) {
+    // (per row where the cell's tracks diverge: cell.tlAt, junction zones)
+    const perRow = cell.tlAt && sec.kind === 'box' ? new Map(ss.map(s => [s, cell.tlAt(s)])) : null;
+    tracksL.forEach((tk, ti) => {
       const L = tk.L, o = tk.o;
-      const wi = pair ? Math.max(1.9, Math.abs(tracksL[1].L - tracksL[0].L) / 2 - 0.3) : 2.25;
-      const P = sec.kind === 'box' ? boxProfile(sec, L, o, wi) : boreProfile(sec, L, o);
+      const wi = tk.wi !== undefined ? tk.wi : pair ? Math.max(1.9, Math.abs(tracksL[1].L - tracksL[0].L) / 2 - 0.3) : 2.25;
+      const P = sec.kind === 'box' ? boxProfile(sec, L, o, wi, tk.wo) : boreProfile(sec, L, o), P0 = P;
+      const Pat = perRow ? (s) => { const t2 = (perRow.get(s) || cell.tlAt(s))[ti]; return boxProfile(topAt ? Object.assign({}, sec, { H: topAt(s) + TB }) : sec, t2.L, o, t2.wi !== undefined ? t2.wi : wi, t2.wo); } : null;
       // light line above the walkway (inner side): fixture lateral just off the wall, 2.35 m above rail
       const hF = sec.kind === 'box' ? 2.6 : 2.3, latF = P.wallAt(hF) + o * 0.14;      // (the inner wall is on the -o side: step back toward +o)
       gb.fix = [latF, hF, sec.lamp, 0.0];
       gb.wear = 0.8;
-      if (topAt && sec.kind === 'box') {                   // (thin cover: the ceiling follows the lid, row by row)
-        const nseg = P.arc.length - 1, col = new Array(nseg).fill(sec.lining);
-        sweepVarT(gb, rows.map(row => Object.assign({}, row, { prof: boxProfile(Object.assign({}, sec, { H: topAt(row.s) + TB }), L, o, wi).arc, col }))); }
-      else gb.sweep(rows, P.arc, sec.lining, { flat: !!P.flatArc });
-      gb.sweep(rows, P.floor, PAL.concreteDark); gb.sweep(rows, P.walkTop, PAL.concrete); gb.sweep(rows, P.walkFace, PAL.concreteDark);
+      if (Pat) {
+        const vr = (key, cols) => sweepVarT(gb, rows.map(row => { const pr = Pat(row.s)[key]; return Object.assign({}, row, { prof: pr, col: new Array(pr.length - 1).fill(cols) }); }));
+        vr('arc', sec.lining); vr('floor', PAL.concreteDark); vr('walkTop', PAL.concrete); vr('walkFace', PAL.concreteDark);
+      } else {
+        if (topAt && sec.kind === 'box') {                   // (thin cover: the ceiling follows the lid, row by row)
+          const nseg = P.arc.length - 1, col = new Array(nseg).fill(sec.lining);
+          sweepVarT(gb, rows.map(row => Object.assign({}, row, { prof: boxProfile(Object.assign({}, sec, { H: topAt(row.s) + TB }), L, o, wi, tk.wo).arc, col }))); }
+        else gb.sweep(rows, P.arc, sec.lining, { flat: !!P.flatArc });
+        gb.sweep(rows, P.floor, PAL.concreteDark); gb.sweep(rows, P.walkTop, PAL.concrete); gb.sweep(rows, P.walkFace, PAL.concreteDark);
+      }
       // walkway handrail on the wall side, cable trough cover lines, cables on the outer wall
       const hr = WALK + 1.0, hrL = P.wallAt(hr) - (-o) * 0.1;
-      gb.sweep(ctx.rowsAt(ctx, ss, hrL, hr, false), [[-0.022, -0.022], [-0.022, 0.022], [0.022, 0.022], [0.022, -0.022]], PAL.railing, { closed: true });
+      const railRows = (latOf, h) => Pat ? ss.map(s => ctx.rowsAt(ctx, [s], latOf(Pat(s)), h, false)[0]) : ctx.rowsAt(ctx, ss, latOf(P), h, false);
+      gb.sweep(railRows((Q) => Q.wallAt(hr) - (-o) * 0.1, hr), [[-0.022, -0.022], [-0.022, 0.022], [0.022, 0.022], [0.022, -0.022]], PAL.railing, { closed: true });
       for (const [h, r] of [[1.235, 0.034], [1.435, 0.027], [1.605, 0.027], [1.78, 0.038]]) {
-        const cl = P.outerAt(h) - o * (0.14 + r); gb.sweep(ctx.rowsAt(ctx, ss, cl, h, false), [[-r, 0], [0, r], [r, 0], [0, -r]], PAL.cable, { closed: true, flat: false });
+        gb.sweep(railRows((Q) => Q.outerAt(h) - o * (0.14 + r), h), [[-r, 0], [0, r], [r, 0], [0, -r]], PAL.cable, { closed: true, flat: false });
       }
       // brackets, handrail posts, lamps, doors, blue light stations along the cell
       for (let s = Math.ceil(ss[0] / 1.52) * 1.52; s < ss[ss.length - 1]; s += 1.52) {
+        const P = Pat ? Pat(s) : P0;
         MT.frameAt(ctx.R, s, F); setRef(gb, ctx, F); gb.s = s;
         const T = [F.tx, F.ty, F.tz], Lv = [F.lx, F.ly, F.lz], Uv = [F.vx, F.vy, F.vz];
         const at = (lat, h) => [F.x + F.lx * lat + F.vx * h - ctx.ox, F.y + F.ly * lat + F.vy * h, F.z + F.lz * lat + F.vz * h - ctx.oz];
@@ -117,6 +127,7 @@ const MetroTube = (() => {
         if (Math.round(s / 1.52) % 2 === 0) { const pl = P.wallAt(WALK + 0.5) - (-o) * 0.1, pc = at(pl, WALK + 0.5); gb.box(pc[0], pc[1], pc[2], T, Uv, Lv, 0.02, 0.5, 0.02, PAL.railing); }
       }
       for (let s = Math.ceil(ss[0] / sec.lamp) * sec.lamp; s < ss[ss.length - 1]; s += sec.lamp) {
+        const P = Pat ? Pat(s) : P0;
         MT.frameAt(ctx.R, s, F); setRef(gb, ctx, F); gb.s = s;
         const T = [F.tx, F.ty, F.tz], Lv = [F.lx, F.ly, F.lz], Uv = [F.vx, F.vy, F.vz];
         const wl = P.wallAt(hF) + o * 0.06, c = [F.x + F.lx * wl + F.vx * hF - ctx.ox, F.y + F.ly * wl + F.vy * hF, F.z + F.lz * wl + F.vz * hF - ctx.oz];
@@ -125,6 +136,7 @@ const MetroTube = (() => {
       }
       // doors into the gallery / cross passages (grey steel in a concrete frame) and blue light stations
       for (let s = Math.ceil((ss[0] - 12) / sec.doors) * sec.doors + 12; s < ss[ss.length - 1]; s += sec.doors) {
+        const P = Pat ? Pat(s) : P0;
         MT.frameAt(ctx.R, s, F); setRef(gb, ctx, F); gb.s = s;
         const T = [F.tx, F.ty, F.tz], Lv = [F.lx, F.ly, F.lz], Uv = [F.vx, F.vy, F.vz];
         const h0 = WALK, wl = P.wallAt(h0 + 1.05) + o * 0.02, c = [F.x + F.lx * wl + F.vx * (h0 + 1.05) - ctx.ox, F.y + F.ly * wl + F.vy * (h0 + 1.05), F.z + F.lz * wl + F.vz * (h0 + 1.05) - ctx.oz];
@@ -138,7 +150,7 @@ const MetroTube = (() => {
         gb.box(b[0], b[1], b[2], T2, U2, L2, 0.25, 0.32, 0.12, PAL.steelPaint);
         gb.box(b[0], b[1] + 0.55, b[2], T2, U2, L2, 0.07, 0.09, 0.07, PAL.blueLamp);
       }
-    }
+    });
     gb.wear = 0.5;
   }
   function setRef(gb, ctx, F) { gb.ref = { o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz] }; }
@@ -210,7 +222,7 @@ const MetroTube = (() => {
   function shell(ctx, sec, tl, wi, a, b, cov) {
     const gb = ctx.B.infra, ss = ctx.sampleS(ctx.R, a, b, 6, 1.5), rows = ctx.rowsAt(ctx, ss, 0, 0, false), yb = -TB - 0.8;
     if (sec.kind === 'box') {
-      let L0 = 1e9, L1 = -1e9; for (const t of tl) { const oW = t.L + 2.01 * t.o, iW = t.L - wi * t.o; L0 = Math.min(L0, oW, iW); L1 = Math.max(L1, oW, iW); }
+      let L0 = 1e9, L1 = -1e9; for (const t of tl) { const oW = t.L + (t.wo || 2.01) * t.o, iW = t.L - (t.wi !== undefined ? t.wi : wi) * t.o; L0 = Math.min(L0, oW, iW); L1 = Math.max(L1, oW, iW); }
       L0 -= 0.45; L1 += 0.45; const C3 = [PAL.concrete, PAL.concrete, PAL.concrete];
       // (the lid's top stays under the volume's ceiling, i.e. under the ground where the cover is thin)
       const yt = (q) => cov ? Math.min(cov.top(q) + 0.45, cov.vol(q) - 0.02) : -TB + sec.H + 0.45;
@@ -248,7 +260,7 @@ const MetroTube = (() => {
     const top = -TB + sec.H; let L0 = 1e9, L1 = -1e9, H1 = top;
     const shape = new THREE.Shape(), holes = [];
     for (const t of tl) {
-      const oW = t.L + 2.01 * t.o, iW = t.L - wi * t.o, bx0 = Math.min(oW, iW) + 0.02, bx1 = Math.max(oW, iW) - 0.02;
+      const oW = t.L + (t.wo || 2.01) * t.o, iW = t.L - (t.wi !== undefined ? t.wi : wi) * t.o, bx0 = Math.min(oW, iW) + 0.02, bx1 = Math.max(oW, iW) - 0.02;
       const bp = boreProfile(secN, t.L, t.o), pts = bp.arc.concat([bp.floor[0]]);
       for (const q of pts) { L0 = Math.min(L0, q[0]); L1 = Math.max(L1, q[0]); H1 = Math.max(H1, q[1]); }
       L0 = Math.min(L0, bx0); L1 = Math.max(L1, bx1);
@@ -518,8 +530,24 @@ const MetroTube = (() => {
     }
     yield* body1(ctx, run, sec, a, b);
   }
+  // is a crossover's stretch [a, b] inside the box of the pair it crosses between? (every 4 m: two paired tracks at its level,
+  // both underground there, with its centreline within their span; the pair's box opens its centre wall where it passes)
+  const _Fx = {}, _Fy = {};
+  function inPairBox(R, a, b) {
+    for (let s = a; ; s = Math.min(b, s + 4)) { MT.frameAt(R, s, _Fx); let ok = false;
+      for (const o of MT.net.nearAll(_Fx.x, _Fx.z, 7)) { const P = MT.trackOf(o.track); if (!P || P === R || P.cls === 'crossover') continue;
+        MT.frameAt(P, o.s, _Fy); if (Math.abs(_Fy.y - _Fx.y) > 1.5 || _Fy.struct < 6) continue; const p = MT.pairAt(P, o.s); if (!p || !MT.recipAt(P, o.s)) continue;
+        const Q = MT.frameAt(p.R2, p.s2, {}); if (Q.struct < 6) continue;
+        const l0 = (_Fy.x - _Fx.x) * _Fx.lx + (_Fy.z - _Fx.z) * _Fx.lz, l1 = (Q.x - _Fx.x) * _Fx.lx + (Q.z - _Fx.z) * _Fx.lz;
+        if (Math.min(l0, l1) <= 0.3 && Math.max(l0, l1) >= -0.3) { ok = true; break; } }
+      if (!ok) return false; if (s >= b) break; }
+    return true;
+  }
   function* body1(ctx, run, sec, a, b) {
     const R = ctx.R;
+    // (a crossover inside its pair's box brings no box of its own: its walls stood across the other track, M3.7 W1 at the
+    // SFO wye; the box's centre wall is opened where it passes, cullInside)
+    if (R.cls === 'crossover' && sec.kind === 'box' && inPairBox(R, a, b)) return;
     // pieces of [a, b] outside any chamber (another track's) that swallows this track; where a piece meets a chamber,
     // its end is found to a few cm (bisection) and reaches 0.3 m into the chamber's end wall, so no gap shows
     ctx.ch.stage = 'tube:pieces'; const ins = (q) => { MT.frameAt(R, q, F); return !!inChamber(R, F.x, F.y, F.z); };
@@ -541,11 +569,25 @@ const MetroTube = (() => {
         const s0 = q0 + (q1 - q0) * k / n, s1 = q0 + (q1 - q0) * (k + 1) / n;
         const inJ = MetroGuide.zonesOf(R).some(z => z[1] > s0 && z[0] < s1);
         const ss = ctx.sampleS(R, s0, s1, inJ ? 1.0 : sec.kind === 'box' ? 8 : 6, inJ ? 0.8 : 1.5);          // (fine rows at junctions)
-        // the tracks of this section (mine at 0 and my pair's), each with its outer side
-        const p = MT.pairAt(R, (s0 + s1) / 2); const tl = [];
-        if (p) { const o = p.lat > 0 ? -1 : 1; tl.push({ L: 0, o }, { L: p.lat, o: -o }); } else tl.push({ L: 0, o: -innerSide(R, (s0 + s1) / 2) });
+        // the tracks of this section (mine at 0 and my pair's), each with its outer side; a group of three or more (M3.7):
+        // sorted across, the outermost with their outer walls, a middle one with a full wall toward its right-hand
+        // neighbour (and its walkway toward the left), each wall at half the gap less 0.3 m
+        const ln = MetroGuide.lanes(ctx, (s0 + s1) / 2), p = ln.p, tl = [];
+        const own = [R].concat(p ? [p.R2] : [], ln.lats ? ln.g.mem.map(m => m.Q).filter(Q => Q !== R && !(p && Q === p.R2)) : []);
+        const half = (g) => Math.max(1.9, g / 2 - 0.3);
+        // (a group's tracks sorted across at s, with their inner / outer walls)
+        const groupTl = (s) => { const T = [{ Q: R, L: 0 }]; for (const Q of own) { if (Q === R) continue; const l = p && Q === p.R2 ? (MT.pairAt(R, s) && MT.pairAt(R, s).R2 === Q ? MT.pairAt(R, s).lat : MT.latOf(R, s, Q)) : MT.latOf(R, s, Q); if (l !== null && Math.abs(l) < 60) T.push({ Q, L: l }); }
+          T.sort((x, y) => x.L - y.L); const n = T.length;
+          return T.map((t, i) => { const gl = i > 0 ? t.L - T[i - 1].L : null, gr = i < n - 1 ? T[i + 1].L - t.L : null;
+            return Object.assign(t, gl === null && gr === null ? { o: -innerSide(R, s) } : gl === null ? { o: -1, wi: half(gr) } : gr === null ? { o: 1, wi: half(gl) } : { o: 1, wi: half(gl), wo: half(gr) }); }); };
+        if (ln.lats && ln.lats.length > 1) { for (const t of groupTl((s0 + s1) / 2)) tl.push(t); }
+        else if (p) { const o = p.lat > 0 ? -1 : 1; tl.push({ L: 0, o, Q: R }, { L: p.lat, o: -o, Q: p.R2 }); } else tl.push({ L: 0, o: -innerSide(R, (s0 + s1) / 2), Q: R });
+        const wiOf = (t) => t.wi !== undefined ? t.wi : p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25;
         const id = 'tn:' + R.id + ':' + ctx.ch.k + ':' + s0.toFixed(0);
         const cell = { id, s0, s1, sec, tl, tgb: new MT.TGB(), R };
+        // (in a junction zone the tracks of a box diverge along it: the walls follow each one row by row, M3.7; W1 ran into
+        // its box's centre wall north of the SFO wye)
+        if (inJ && tl.length > 1 && sec.kind === 'box') cell.tlAt = (s) => { const T = groupTl(s); return tl.map(t => { const u = T.find(x => x.Q === t.Q); return u ? { L: u.L, o: t.o, wi: u.wi !== undefined ? u.wi : half(Math.abs(u.L - (T.find(x => x.Q !== t.Q) || u).L)), wo: u.wo } : t; }); };
         const wiP = p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25, lat0 = Math.min(...tl.map(t => t.L)), lat1 = Math.max(...tl.map(t => t.L));
         const cov = sec.kind === 'box' && run.type === 'cutcover' ? coverFor(R, s0, s1, lat0, lat1, sec.H, run.s0, run.s1) : null; if (cov && cov.thin) { cell.thin = true; MT.stats.thinBoxes = (MT.stats.thinBoxes || 0) + 1; }
         // (built in pieces of ~25 m that share their boundary rows, a step each)
@@ -559,7 +601,7 @@ const MetroTube = (() => {
           for (const [sEnd, nb] of [[s1, R.runs[k + 1]], [s0, R.runs[k - 1]]]) {
             if (!nb || !UNDER.has(nb.type) || Math.abs(sEnd - (nb === R.runs[k + 1] ? run.s1 : run.s0)) > 0.6) continue;
             MT.frameAt(R, sEnd, F); const secN = sectionOf(nb.type === 'portal' ? 'cutcover' : nb.type, F.x, F.z);
-            if (secN.kind !== 'box') bulkhead(ctx, cell, sEnd, secN, tl, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25);
+            if (secN.kind !== 'box') bulkhead(ctx, cell, sEnd, secN, tl, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25);   // (per track: t.wi / t.wo)
           }
         }
 
@@ -573,14 +615,14 @@ const MetroTube = (() => {
         // junctions: drop what lies inside another track's tunnel (the union of the tunnels remains: an opening in the
         // centre wall where a crossover passes, the split nose of a wye); the cluster's cells then show together
         const zs = MetroGuide.zonesOf(R).filter(z => z[1] > s0 && z[0] < s1);
-        if (zs.length) { ctx.ch.stage = 'tube:cull'; cell.zone = zs.map(z => z[2]).filter(Boolean); if (!cell.zone.length) cell.zone = null; yield* cullInside(ctx, cell, p ? [R, p.R2] : [R]); }
+        if (zs.length) { ctx.ch.stage = 'tube:cull'; cell.zone = zs.map(z => z[2]).filter(Boolean); if (!cell.zone.length) cell.zone = null; yield* cullInside(ctx, cell, own); }
         ctx.ch.stage = 'tube:head';
         ctx.B.tcells.push(cell);
         // mouths in this cell: a headwall facing out
         for (const m of mouths(R)) if (m.s >= s0 - 0.5 && m.s <= s1 + 0.5 && m.s >= ctx.s0 && m.s < ctx.s1) {
           const secM = cov && cov.thin ? Object.assign({}, sec, { H: cov.top(m.s) + TB }) : sec;
-          const secs = tl.map(t => sec.kind === 'box' ? boxProfile(secM, t.L, t.o, p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25) : boreProfile(sec, t.L, t.o));
-          headwall(ctx, m.s, m.dir, secs, lo, hi, crown, p ? [R, p.R2] : [R]); cell.mouth = m;
+          const secs = tl.map(t => sec.kind === 'box' ? boxProfile(secM, t.L, t.o, wiOf(t), t.wo) : boreProfile(sec, t.L, t.o));
+          headwall(ctx, m.s, m.dir, secs, lo, hi, crown, own); cell.mouth = m;
           // the outside of the tunnel for 80 m in from the mouth: where the ground does not cover it (or the terrain is
           // cut open over the mouth) it reads as a concrete portal structure instead of a see-through lining
           const ia = m.dir < 0 ? m.s : Math.max(s0, m.s - 80), ib = m.dir < 0 ? Math.min(s1, m.s + 80) : m.s;
