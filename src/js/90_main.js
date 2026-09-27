@@ -44,6 +44,8 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
       World.traffic = safe('traffic', () => { const t = Life.createTraffic && typeof Towns !== 'undefined' ? Life.createTraffic([], { maxCars: 420 }) : null; if (t) { Env.scene.add(t.group); t.cx = 1e9; t.cz = 1e9; t.tick = 0; t.retries = 0; } return t; });
     }
     if (typeof Flora !== 'undefined' && Flora.init) { await step(0.92, 'Planting every tree…'); await safeA('flora', async () => { await Flora.init(ctx); if (Flora.group) Env.scene.add(Flora.group); }); }
+    // (M3.7) no tree stands in a motorway's lanes: the canopy data places a few there (a crown seen over the road)
+    if (typeof Flora !== 'undefined' && Flora.addDrop && typeof Towns !== 'undefined' && Towns.inCarriageway) Flora.addDrop((x, z) => Towns.inCarriageway(x, z));
     safe('groundcover', () => { if (typeof GroundCover !== 'undefined') GroundCover.init(); });
     safe('boats', () => { if (typeof Boats !== 'undefined') Boats.init(); });
     safe('globe', () => { if (typeof Globe !== 'undefined') Globe.init(); });
@@ -361,9 +363,14 @@ const World = { landmarks: null, air: null, birds: null, traffic: null, started:
     if (bay && World.traffic) safeFrame('traffic', () => { const T = World.traffic; T.tick -= dt;
       const alt = cp.y - Terrain.h(cp.x, cp.z);
       if (T.tick <= 0) { T.tick = 1.2;
-        // re-stream when the camera moved, and keep retrying while empty (street tiles stream in after boot)
-        const moved = Math.hypot(cp.x - T.cx, cp.z - T.cz) > 650, empty = !T.lanes || !T.lanes.length;
-        if (alt < 1500 && (moved || (empty && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z; T.setRoads(Towns.roadsNear(cp.x, cp.z, 1500), { x: cp.x, z: cp.z }, Towns.areasNear ? Towns.areasNear(cp.x, cp.z, 500, 3) : []); } }
+        // re-stream when the camera moved, and keep retrying while empty (street tiles stream in after boot). The new lane
+        // set is built in slices of ~2.5 ms a frame while the old one stays live (Life's startRoads / pump; a whole
+        // setRoads was one 40-170 ms frame), started at 450 m so it is in place before the old set's 1.5 km runs thin
+        const moved = Math.hypot(cp.x - T.cx, cp.z - T.cz) > 450, empty = !T.lanes || !T.lanes.length;
+        if (alt < 1500 && (moved || (empty && !T.busy && ++T.retries < 40)) && Towns.ready !== false) { if (moved) T.retries = 0; T.cx = cp.x; T.cz = cp.z;
+          const src = Towns.roadsNearIter ? Towns.roadsNearIter(cp.x, cp.z, 1500) : Towns.roadsNear(cp.x, cp.z, 1500), lots = Towns.areasNear ? Towns.areasNear(cp.x, cp.z, 500, 3) : [];
+          if (T.startRoads) T.startRoads(src, { x: cp.x, z: cp.z }, lots); else T.setRoads([...src], { x: cp.x, z: cp.z }, lots); } }
+      if (T.pump) T.pump(2.5);
       T.group.visible = alt < 2500; if (T.group.visible) T.update(dt, envArg); });
     if (bay && typeof Flora !== 'undefined' && Flora.update) safeFrame('flora', () => Flora.update(cp, envArg));
     if (bay && typeof GroundCover !== 'undefined') safeFrame('groundcover', () => GroundCover.update(cp));

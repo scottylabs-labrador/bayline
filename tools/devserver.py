@@ -15,6 +15,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # served trees: the checkout, plus whatever data/pub (or data/) links to (git worktrees share the main checkout's data)
 ALLOWED = sorted({os.path.realpath(p) for p in (ROOT, os.path.join(ROOT, 'data'), os.path.join(ROOT, 'data', 'pub'))})
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
+# BAYLINE_OVERLAY=<dir with tiles/...>: files there are served instead of data/pub/v2's (a staged set, checked locally)
+OVERLAY = os.path.realpath(os.environ['BAYLINE_OVERLAY']) if os.environ.get('BAYLINE_OVERLAY') else None
+if OVERLAY:
+    ALLOWED = sorted(set(ALLOWED) | {OVERLAY})
 mimetypes.add_type('application/octet-stream', '.bin')
 mimetypes.add_type('application/javascript', '.js')
 mimetypes.add_type('application/json', '.json')
@@ -28,7 +32,10 @@ def resolve(path):
     if m and os.path.isfile(os.path.join(ROOT, 'dist', m.group(1) + '.html')):
         return os.path.join(ROOT, 'dist', m.group(1) + '.html')
     if path.startswith('/data/v2/'):
-        return os.path.join(ROOT, 'data', 'pub', 'v2', path[len('/data/v2/'):])
+        rel = path[len('/data/v2/'):]
+        if OVERLAY and os.path.isfile(os.path.join(OVERLAY, rel)):      # a staged replacement set, seen before publishing
+            return os.path.join(OVERLAY, rel)
+        return os.path.join(ROOT, 'data', 'pub', 'v2', rel)
     return os.path.join(ROOT, path.lstrip('/'))
 
 

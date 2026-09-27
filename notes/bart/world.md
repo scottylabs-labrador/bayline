@@ -34,8 +34,7 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
    trench / cut-and-cover pieces.
 3. ~~The faint line at lat 38.07 over San Pablo Bay~~ fixed in M3.5 ca55f00 (code: both water looks meet in a 2.5 km blend at the edge).
 4. Plazas beyond downtown SF (the Peninsula downtowns): the same `fix_plaza.py` rule, a wider region list.
-5. Road traffic on cross slopes (outer lanes keep the centreline height; up to ~1.5 m at Walnut Creek, pre-existing):
-   re-sample the ground per lane point in `Life.setRoads`.
+5. ~~Road traffic on cross slopes~~ done in M3.7 82149f9 (lanes and parked cars on the drawn ribbon's surface).
 6. The 90 broadly different pre-Metro mosaic parents (built from older children; left alone by the lead's call) and the
    invisible JPEG tails (~8,600 files, extra bytes or a last MCU off by a few levels): no action unless wanted.
 7. Housekeeping once Velroi has everything: delete the staging folders (`data/raw/tiles/sr_l8_stage` 470 MB, `fix_*`).
@@ -68,6 +67,50 @@ loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched t
 textures until the swap; `Flora.adjust(rects, dy)` moves trees by the carve's height change and drops those in a
 structure's way, `Flora.reloadIn(rects)` for the teardown; `Terrain.reloadHeights(rect)` for the metro teardown
 (SIM switches to it). Before / after: `shots/world/m3_no_dispose_macarthur.jpg`.
+
+## M3.7 (world)
+
+1. **Floating car at Daly City, lanes on cross slopes** (82149f9): road traffic sits on the surface the ribbon draws
+   (`Towns.roadsNear` pieces carry `edges` / `surf`; `Life` puts lanes and parked cars on them). Lane audit (63 sites,
+   `tools/metro_world/lane_audit.js`): lane points off the drawn ground by > 0.5 m 9.7 % -> 0.016 % near the metro.
+2. **setRoads time-sliced** (d40cbb1): `traffic.startRoads` / `pump(2.5 ms)`, old lanes live until one atomic swap.
+   Traffic work per frame, worst over identical runs: 3 km freeway drive 23.9 -> 10.1 ms, low flight over SF 89.5 ->
+   9.4 ms, cab past Daly City 108 -> 7.7 ms.
+3. **Terrain rebake from the USGS 3DEP lidar** (DATA's areas, notes/bart/data.md on bart-data): replacement set
+   `data/raw/tiles/fix_terrain` (1,434 files, 13.2 MB: tiles/h L7 111, L6 37, L5 16, L4..L0 27; tiles/h9 L8 285, L9 958;
+   no index change: every h9 offset still fits), manifest with old / new sha256, `publish_world.sh terrain-check /
+   terrain`. Tool: `tools/metro_world/rebake_terrain.py`. L7 = the lidar as the L7 grid sees it (the same low-pass the h9
+   detail is taken against) with a 250 m feather; L6..L0 follow; h9 = published tiles + the quantised L7 change (the
+   detail they were baked with is kept bit for bit). Seams: 0 of 106 L7 edges and 0 of 234 L9 edges toward unchanged
+   tiles differ. Willow Pass / North Concord (C1 33780-38120): ground at the track minus the bed p50 -3.9 m (p5 -24,
+   p95 +28, max +43) -> +0.5 m (p5 +0.2, p95 +1.4); ground > 0.75 m above the rail 289 -> 28 of 776 samples (a road
+   embankment at s 34200, the median at s 34500-34630). SR-4's carriageways minus the rail there: p50 -5.6 m (p5 -24.9,
+   p95 +27.5) -> -0.6 m (p5 -0.9, p95 +4.0 at s 34280-34700, where the lidar has the freeway above the tracks).
+4. **Why the terrain showed through SR-4** (E1 1300-7300): not the carve (it stays within ~6 m of E1 there), not a stale
+   snapshot (every Towns tile's height field equals `Terrain.hBase`; the drawn ribbon equals the model within 2 cm). The
+   asphalt is one flat strip spanned between two edges extrapolated from the ground beyond them, drawn as quads whose
+   diagonal folds when the cross-slope changes between stations; the terrarium surface under SR-4 predates the widening
+   (a trough 3-5 m deep along the median at E1 5300), so the ground rose through the outer lanes. Fixed at the root in
+   two places: the rebake (the ground is the freeway now) and the **crest guard** in `roadRibbon` (each station's strip
+   rises by the most the ground stands above it there or halfway to either neighbour on the quads' real triangles, at
+   most 1.2 m; tapers to 0 at the ribbon's outer edge; each piece keeps its raises (`r._rib`) and `Towns.roadsNear`
+   edges read them by arc length, so traffic follows; bridges without a model hand traffic their drawn deck line the
+   same way; ~2-5 ms more per 800 m tile's ground build, time-sliced). Lane audit at the 15 worst sites of the 63
+   (LAKE FTVL FRMT ROCK LAFY PITT MCAR CAST POWL DELN BERY COLM DALY WCRK HAYW): 86 of 188,796 lane points off the drawn
+   ground by > 0.5 m (0.046 %; the MacArthur maze -18 m as before).
+   Road samples under the terrain, network-wide (3,528 Towns tiles, 46.9 M samples: every 2 m across the asphalt, 4 per
+   12 m span, the quads' triangles, the ground after MetroGround's carve; `tools/metro_world/road_terrain_check.py
+   --all --fine [--guard] [--overlay data/raw/tiles/fix_terrain]`): production 166,551 (0.355 %); rebake alone
+   166,736; guard alone 413; rebake + guard **121** (0.0003 %: roads meeting a rail embankment or trench wall, e.g. a
+   residential street at North Concord beside C1's trench, 2.2 m; SF Potrero 1.0 m).
+5. **Bridges without a model** keep to the straight line between their ends (a two-node SR-4 bridge over the underpass at
+   C1 36280 was drawn on the ground in the new cut, 8 m down), and where the ground blurs an underpass into an abutment
+   the end takes the level approach's height and the approach rises to meet it (`anchors`, same in the traffic lanes).
+6. **Nothing stands in a carriageway**: the I-580 "pole" at L1 20300 was a Flora fan palm standing in the lanes; Flora
+   now leaves out trees in motorway / trunk lanes (1,077 of 5.9 M trees; `Towns.inCarriageway`, re-tested when a tile's
+   motorways decode). Mapped street lamps inside a road's asphalt (1,026 of 8,674, mostly mapped on the street's own line)
+   stand at that road's edge instead; procedural lamps landing on another road are left out.
+   (There are no sign poles in Towns.)
 
 ## The big finding: the world ends at lat 37.8429
 

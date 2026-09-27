@@ -475,9 +475,10 @@ const MetroTrack = (() => {
     for (const R of TRACKS) { const t = R.t; for (let i = 0; i < t.X.length; i += 2) { const k = key(Math.floor(t.X[i] / cell), Math.floor(t.Z[i] / cell)); let l = grid.get(k); if (!l) grid.set(k, l = []); l.push(R.k, i); } }
     for (const R of TRACKS) {
       const t = R.t, nb = Math.ceil(t.length / BIN) + 1; R.pairT = new Int16Array(nb).fill(-1); R.pairS = new Float32Array(nb); R.pairL = new Float32Array(nb); R.pairDy = new Float32Array(nb); R.nbrL = new Float32Array(nb);
+      R.cand = new Array(nb).fill(null);
       for (let b = 0; b < nb; b++) {
         const s = Math.min(t.length, b * BIN); frameAt(R, s, F0);
-        const cx = Math.floor(F0.x / cell), cz = Math.floor(F0.z / cell); let best = -1, bl = 7.6, bs = 0, bdy = 0, nbl = 22.5;
+        const cx = Math.floor(F0.x / cell), cz = Math.floor(F0.z / cell); let best = -1, bl = 7.6, bs = 0, bdy = 0, nbl = 22.5; const cands = new Map();
         for (let a = -1; a <= 1; a++) for (let c = -1; c <= 1; c++) {
           const l = grid.get(key(cx + a, cz + c)); if (!l) continue;
           for (let q = 0; q < l.length; q += 2) {
@@ -491,16 +492,115 @@ const MetroTrack = (() => {
               if (Math.abs(dy) > 3) continue;                                   // (stacked levels: 12th / 19th St, the Wye)
               if (Math.abs(lat) > 2.5 && Math.abs(lat) < Math.abs(nbl)) nbl = lat;
               if (Math.abs(lat) < Math.abs(bl) && Math.abs(lat) > 2.5 && Math.abs(dy) < 1.5) { bl = lat; best = R2.k; bs = (jj + uu) * t2.step; bdy = dy; }
+              // (every such track, not only the nearest: groups, below)
+              if (Math.abs(lat) > 2.5 && Math.abs(lat) < 7.6 && Math.abs(dy) < 1.5) { const c = cands.get(R2.k); if (!c || Math.abs(lat) < Math.abs(c[0])) cands.set(R2.k, [lat, (jj + uu) * t2.step]); }
             }
           }
         }
         if (best >= 0) { R.pairT[b] = best; R.pairS[b] = bs; R.pairL[b] = bl; R.pairDy[b] = bdy; }
         R.nbrL[b] = Math.abs(nbl) < 22.5 ? nbl : 0;
+        if (cands.size) R.cand[b] = [...cands].map(([k, v]) => ({ k, lat: v[0], s2: v[1] }));      // (a track beside a pair sees only the pair's near track)
       }
     }
     // primary: the lexically smaller id of a pair builds the shared structure
     for (const R of TRACKS) { R.primary = new Uint8Array(R.pairT.length); for (let b = 0; b < R.pairT.length; b++) { const p = R.pairT[b]; R.primary[b] = p < 0 || R.id < TRACKS[p].id ? 1 : 0; } }
   }
+  // groups (M3.7): the tracks at one place that share a structure. A pair's two tracks point at each other; a third track
+  // beside a pair points at its nearer one, which points at the other (a middle track has neighbours on both sides), so
+  // with pairs alone nobody built its structure (Daly City's M3) and the pair's walls and fences stood in its envelope.
+  // A pair or a lone track is its own group, exactly as before (a pair's structure is its primary's kind, even where the
+  // other track's is not yet). Where three or more parallel tracks at the same level lie within 7.6 m of each other,
+  // chained (a pair and a third track, a siding between two mains, a bundle of yard tracks), the group is those whose
+  // own structure is of the same kind there (open ground, elevated, underground), so a track in its portal box beside a
+  // pair in a trench keeps its box. The lexically smallest id builds a group's structure.
+  const CAT = { grade: 0, embankment: 0, median: 0, trench: 0, aerial: 1, bridge: 1, portal: 2, cutcover: 2, bored: 2, tube: 2 };
+  const binOf = (R, s) => U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1);
+  const OPEN = new Set(['grade', 'embankment', 'median']);
+  function runAt(R, s) { for (const r of R.runs) if (s >= r.s0 && s < r.s1) return r; return R.runs[s <= 0 ? 0 : R.runs.length - 1]; }
+  const catOf = (R, s) => { const c = CAT[runAt(R, s).type]; return c === undefined ? 0 : c; };
+  // does my partner at bin b point back at me there? (groups: where a middle track's partner switches sides, not a bin
+  // away) / within a bin either way (track detail: a pair's ends, where the bins of the two tracks fall differently)
+  function recipB(R, b) { const p = R.pairT[b]; if (p < 0) return false; const P = TRACKS[p]; return P.pairT[binOf(P, R.pairS[b])] === R.k; }
+  function recipNear(R, b) { const p = R.pairT[b]; if (p < 0) return false; const P = TRACKS[p], bp = binOf(P, R.pairS[b]);
+    for (let d = -1; d <= 1; d++) { const q = bp + d; if (q >= 0 && q < P.pairT.length && P.pairT[q] === R.k) return true; } return false; }
+  const recipAt = (R, s) => recipNear(R, binOf(R, s));
+  // track detail (rails, plinths, third rail; M3.7): a pair's primary builds its partner's too (one draw call). Decided a
+  // bin at a time, the same way by both tracks, so the secondary leaves out exactly what the primary builds (before,
+  // each sampled its own way: rails missing or drawn twice for a few metres where a pairing began or ended, and whole
+  // ranges without rails where a partner changed, W1 north of the SFO wye). Bin b of R is its partner's to build where R
+  // is the secondary there and the partner's bin at the pair's s points back at R, as the primary, within a bin either way.
+  function coveredBin(R, b) { const p = R.pairT[b]; if (p < 0 || R.primary[b]) return false; const P = TRACKS[p], pb = binOf(P, R.pairS[b]);
+    return P.pairT[pb] === R.k && !!P.primary[pb] && recipNear(P, pb); }
+  const binLo = (R, b) => Math.max(0, (b - 0.5) * BIN), binHi = (R, b) => Math.min(R.t.length, (b + 0.5) * BIN);
+  // the pieces of [a, b] on R whose detail its partner builds: [[u0, u1], ...]
+  function detailCover(R, a, b) {
+    const out = []; if (!R.pairT) return out;
+    for (let k = binOf(R, a); k <= binOf(R, b); k++) { if (!coveredBin(R, k)) continue; const u0 = Math.max(a, binLo(R, k)), u1 = Math.min(b, binHi(R, k)); if (u1 - u0 < 1e-6) continue;
+      const l = out[out.length - 1]; if (l && u0 - l[1] < 1e-6) l[1] = u1; else out.push([u0, u1]); }
+    return out;
+  }
+  // P's detail segments: its detail chunks cut at its runs' ends (a partner's piece is built with the segment its pair's s
+  // falls in, and meets the next segment's where P's bin at their boundary points, as before M3.7: the rails keep their
+  // joints wherever the pairing was already whole)
+  function segB(P) { if (P.segB) return P.segB; const L = P.t.length, v = [0, L]; for (let q = LAYERS.detail.CH; q < L; q += LAYERS.detail.CH) v.push(q); for (const r of P.runs) v.push(r.s0, r.s1);
+    v.sort((x, y) => x - y); const out = []; for (const x of v) if (x >= 0 && x <= L && (!out.length || x - out[out.length - 1] > 1e-9)) out.push(x); return (P.segB = out); }
+  function segIdx(P, x) { const B = segB(P); let lo = 0, hi = B.length - 2; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (B[m] <= x) lo = m; else hi = m - 1; } return lo; }
+  // the partners' pieces that P builds with its segment [a, b] (one of its runs within one chunk): [{ Q, a, b }] (s on Q)
+  function detailFor(P, a, b) {
+    const out = []; if (!P.pairT) return out; const ia = segIdx(P, (a + b) / 2), byQ = new Map();
+    for (let k = Math.max(0, binOf(P, a) - 2); k <= Math.min(P.pairT.length - 1, binOf(P, b) + 2); k++) {
+      const q = P.pairT[k]; if (q < 0 || !P.primary[k]) continue; const Q = TRACKS[q], c = binOf(Q, P.pairS[k]);
+      let set = byQ.get(Q); if (!set) byQ.set(Q, set = new Set()); for (let d = -4; d <= 4; d++) if (c + d >= 0 && c + d < Q.pairT.length) set.add(c + d); }
+    const mine = (Q, qb) => qb >= 0 && qb < Q.pairT.length && Q.pairT[qb] === P.k && coveredBin(Q, qb);
+    // (where the bin beyond an end is P's too, built with the neighbouring segment: they meet at P's bin at the boundary,
+    // if that falls within the two bins, else at the bins' edge; both segments decide it the same way)
+    const hand = (Q, kb, nb) => { if (!mine(Q, nb)) return null; const i1 = segIdx(P, Q.pairS[kb]), i2 = segIdx(P, Q.pairS[nb]); if (Math.abs(i1 - i2) !== 1) return null;
+      const h = P.pairS[binOf(P, segB(P)[Math.max(i1, i2)])], lo = binLo(Q, Math.min(kb, nb)), hi = binHi(Q, Math.max(kb, nb)); return h > lo + 0.05 && h < hi - 0.05 ? h : null; };
+    for (const [Q, set] of byQ) {
+      let cur = null; const iv = [];
+      for (const qb of [...set].sort((x, y) => x - y)) {
+        if (!mine(Q, qb) || segIdx(P, Q.pairS[qb]) !== ia || binHi(Q, qb) - binLo(Q, qb) < 1e-6) continue;
+        if (cur && qb === cur[1] + 1) cur[1] = qb; else { cur = [qb, qb]; iv.push(cur); } }
+      for (const [k0, k1] of iv) { const h0 = hand(Q, k0, k0 - 1), h1 = hand(Q, k1, k1 + 1), u0 = h0 !== null ? h0 : binLo(Q, k0), u1 = h1 !== null ? h1 : binHi(Q, k1); if (u1 - u0 > 1e-3) out.push({ Q, a: u0, b: u1 }); }
+    }
+    return out;
+  }
+  // the tracks chained to R at s through pairs and neighbours (same = only those of R's kind of structure, each its own)
+  function chain(R, s, same) {
+    const mem = [{ Q: R, s }], seen = new Set([R.k]);
+    for (let i = 0; i < mem.length && mem.length < 12; i++) {
+      const { Q, s: sq } = mem[i], bq = binOf(Q, sq), cq = same ? catOf(Q, sq) : 0, p = Q.pairT[bq];
+      if (p >= 0 && recipB(Q, bq) && !seen.has(p) && (!same || catOf(TRACKS[p], Q.pairS[bq]) === cq)) { seen.add(p); mem.push({ Q: TRACKS[p], s: Q.pairS[bq] }); }
+      for (const c of Q.cand[bq] || []) { if (seen.has(c.k) || mem.length >= 12) continue; const C = TRACKS[c.k]; if (C.cls === 'crossover' || (same && catOf(C, c.s2) !== cq)) continue; seen.add(c.k); mem.push({ Q: C, s: c.s2 }); }
+    }
+    return mem;
+  }
+  const _Fr = {};
+  function rawGroup(R, b) {
+    const rc = R.rc || (R.rc = new Map()); let mem = rc.get(b); if (mem) return mem;
+    mem = chain(R, b * BIN, false);
+    if (mem.length > 2) mem = chain(R, b * BIN, true);                         // (three or more: by kind of structure)
+    // (on open ground, beds side by side need no shared structure: a pair or a lone track stays its own group there, as
+    // before; a yard's whole ladder chained into one bed, handed from owner to owner, left tracks without one)
+    // (and only tracks at the owner's level: a group's structure is built in one level frame, and a track 0.3 m lower
+    // had its floor 0.3 m over its rails (K2 beside K1 at the Oakland wye))
+    if (mem.length > 2) { const y0 = frameAt(R, b * BIN, _Fr).y; const lv = mem.filter(m => Math.abs(frameAt(m.Q, m.s, _Fr).y - y0) < 0.2); if (lv.length > 2) mem = lv; else mem.levels = true; }
+    if (mem.length > 2 && (mem.levels || mem.every(m => OPEN.has(runAt(m.Q, m.s).type)))) { const p = R.pairT[b]; mem = [mem[0]]; if (p >= 0) mem.push({ Q: TRACKS[p], s: R.pairS[b] }); mem.legacy = true; }
+    rc.set(b, mem); return mem;
+  }
+  // (only members that see me in their own group there: where a run changes kind between the two tracks' bins, a track
+  // is never left to a partner that does not build for it)
+  function groupAt(R, s) {
+    const b = binOf(R, s); const gc = R.gc || (R.gc = new Map()); let g = gc.get(b); if (g) return g;
+    const raw = rawGroup(R, b);
+    if (raw.legacy) { const p = R.pairT[b]; g = { mem: raw, owner: p < 0 || R.primary[b] ? R : TRACKS[p], legacy: true }; gc.set(b, g); return g; }
+    const mem = raw.length < 2 ? raw : raw.filter((m, i) => i === 0 || rawGroup(m.Q, binOf(m.Q, m.s)).some(x => x.Q === R));
+    let owner = R; for (const m of mem) if (m.Q.id < owner.id) owner = m.Q;
+    g = { mem, owner }; gc.set(b, g); return g;
+  }
+  // a member's lateral in my level frame at s (its nearest point to my centreline), or null
+  const _Fg = {}, _Fh = {};
+  function latOf(R, s, Q) { frameAt(R, s, _Fg); const q = MetroNet.nearAll(_Fg.x, _Fg.z, 45, (t) => t === Q.t)[0]; if (!q) return null; frameAt(Q, q.s, _Fh); return (_Fh.x - _Fg.x) * _Fg.lx + (_Fh.z - _Fg.z) * _Fg.lz; }
   // the nearest parallel track within 22 m (e.g. the other bore of a twin-bore tunnel): its lateral (+ right), or 0
   function nbrAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.nbrL.length - 1); return R.nbrL[b]; }
   function pairAt(R, s) { const b = U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1); const p = R.pairT[b]; return p < 0 ? null : { R2: TRACKS[p], s2: R.pairS[b], lat: pairLatAt(R, s, p), dy: R.pairDy[b], primary: !!R.primary[b] }; }
@@ -870,6 +970,6 @@ const MetroTrack = (() => {
   const thirdRail = (id, s) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdAt(R, s) : null; };
   const thirdRuns = (id, s0, s1) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdRuns(R, s0, s1) : []; };
   return { enabled: true, init, update, setQuality, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
-    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf, lens };
+    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf, lens, groupAt, recipAt, latOf, CAT, runAt, catOf, detailCover, detailFor };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)

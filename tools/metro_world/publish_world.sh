@@ -13,6 +13,8 @@
 #   sh tools/metro_world/publish_world.sh jpeg-check / jpeg     the truncated-JPEG replacement set (data/raw/tiles/fix_jpeg)
 #   sh tools/metro_world/publish_world.sh water-check / water   the bay-water re-tone set (data/raw/tiles/fix_water)
 #   sh tools/metro_world/publish_world.sh plaza-check / plaza   downtown SF h9 set (data/raw/tiles/fix_plaza)
+#   sh tools/metro_world/publish_world.sh terrain-check / terrain   the lidar terrain rebake (data/raw/tiles/fix_terrain:
+#                                                           tiles/h L0-L7 + tiles/h9 L8/L9; h9 offsets unchanged, so no index)
 #   DRY=1 sh tools/metro_world/publish_world.sh <step>   rsync --dry-run: lists what would be sent, changes nothing
 set -euf          # (-f: no pathname expansion, the rsync patterns below stay literal)
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -79,7 +81,10 @@ case "${1:-}" in
   plaza-check) shacheck "$ROOT/data/raw/tiles/fix_plaza/manifest.json" old_sha256 ;;
   plaza)       replace_set "$ROOT/data/raw/tiles/fix_plaza" "$ROOT/data/raw/tiles/fix_plaza/manifest.json"
                [ -z "$N" ] && shacheck "$ROOT/data/raw/tiles/fix_plaza/manifest.json" new_sha256 ;;
-  *) sed -n 2,19p "$0"; exit 1 ;;
+  terrain-check) shacheck "$ROOT/data/raw/tiles/fix_terrain/manifest.json" old_sha256 ;;
+  terrain)     replace_set "$ROOT/data/raw/tiles/fix_terrain" "$ROOT/data/raw/tiles/fix_terrain/manifest.json"
+               [ -z "$N" ] && shacheck "$ROOT/data/raw/tiles/fix_terrain/manifest.json" new_sha256 ;;
+  *) sed -n 2,18p "$0"; exit 1 ;;
 esac
 [ -z "$N" ] && $SSH "root@$IP" "chmod -R a+rX $VOL/v2/tiles"
 echo "done: $1 ${N:+(dry run)}"

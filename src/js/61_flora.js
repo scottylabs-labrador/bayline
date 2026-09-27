@@ -1380,7 +1380,8 @@ const Flora = (() => {
       stats.trees -= t.n - m; t.n = m; t.ym = m ? ysum / m : 0;
       killFar(tkey(t.tx, t.ty)); if (m) pendingFar.push(t);
     }
-    dirty = true; stats.adjusted = (stats.adjusted || 0) + moved; stats.dropped = (stats.dropped || 0) + dropped;
+    if (moved || dropped) dirty = true;
+    stats.adjusted = (stats.adjusted || 0) + moved; stats.dropped = (stats.dropped || 0) + dropped;
     return { moved, dropped };
   }
   // the loaded tiles overlapping rects load again from their data (e.g. after drop filters went inert): only there
