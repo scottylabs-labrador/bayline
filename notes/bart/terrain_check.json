@@ -1,0 +1,893 @@
+{
+ "generated": "2026-09-27T05:07:31",
+ "r": 150.0,
+ "step": 20.0,
+ "thr": 3.0,
+ "samples": 23528,
+ "bad": 898,
+ "note": "diff = terrarium z15 - USGS 3DEP 1 m lidar (m); > 0: terrarium (the world base) too high",
+ "stretches": [
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 178,
+   "length_m": 3560,
+   "lat": [
+    38.01071,
+    38.01702
+   ],
+   "lon": [
+    -122.01776,
+    -121.99042
+   ],
+   "max": 41.7,
+   "mean": -8.5,
+   "mean_abs": 18.3,
+   "sign": "mixed (40 high / 136 low)",
+   "track": "C1",
+   "track_s": [
+    34779,
+    36999
+   ],
+   "ways": [
+    31151246,
+    31151327,
+    184361691,
+    184361754,
+    184361789,
+    394102304,
+    394102311,
+    929718170,
+    1359522292
+   ]
+  },
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 130,
+   "length_m": 2600,
+   "lat": [
+    38.01493,
+    38.02234
+   ],
+   "lon": [
+    -121.99473,
+    -121.97889
+   ],
+   "max": 44.8,
+   "mean": 8.7,
+   "mean_abs": 16.4,
+   "sign": "mixed (78 high / 52 low)",
+   "track": "C2",
+   "track_s": [
+    36527,
+    38092
+   ],
+   "ways": [
+    124952144,
+    172360663,
+    394102304,
+    1142677490
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 94,
+   "length_m": 1880,
+   "lat": [
+    38.01265,
+    38.01737
+   ],
+   "lon": [
+    -122.00299,
+    -121.99054
+   ],
+   "max": 39.8,
+   "mean": 9.1,
+   "mean_abs": 18.4,
+   "sign": "mixed (66 high / 28 low)",
+   "track": "C2",
+   "track_s": [
+    35752,
+    36992
+   ],
+   "ways": [
+    7853103,
+    7853105,
+    184361743,
+    184361776,
+    394107008,
+    394107009,
+    394107011,
+    394107012,
+    1359001889,
+    1359001890
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 16,
+   "length_m": 320,
+   "lat": [
+    38.01542,
+    38.01708
+   ],
+   "lon": [
+    -121.99434,
+    -121.99031
+   ],
+   "max": 43.3,
+   "mean": 24.7,
+   "mean_abs": 24.7,
+   "sign": "terrarium HIGH",
+   "track": "C1",
+   "track_s": [
+    36789,
+    37009
+   ],
+   "ways": [
+    7853105,
+    394107010
+   ]
+  },
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 58,
+   "length_m": 1160,
+   "lat": [
+    38.0096,
+    38.01141
+   ],
+   "lon": [
+    -122.02194,
+    -122.013
+   ],
+   "max": -14.3,
+   "mean": -10.4,
+   "mean_abs": 10.4,
+   "sign": "terrarium LOW",
+   "track": "C2",
+   "track_s": [
+    34207,
+    34852
+   ],
+   "ways": [
+    154831123,
+    157958674,
+    184361692
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 83,
+   "length_m": 1660,
+   "lat": [
+    38.00645,
+    38.01084
+   ],
+   "lon": [
+    -122.02291,
+    -122.01394
+   ],
+   "max": -11.3,
+   "mean": -8.9,
+   "mean_abs": 8.9,
+   "sign": "terrarium LOW",
+   "track": "C-yd2",
+   "track_s": [
+    163,
+    546
+   ],
+   "ways": [
+    31144575,
+    31151185,
+    31587510,
+    381352891
+   ]
+  },
+  {
+   "road": "Willow Pass Road",
+   "cls": [
+    "secondary"
+   ],
+   "n": 17,
+   "length_m": 340,
+   "lat": [
+    38.01247,
+    38.0142
+   ],
+   "lon": [
+    -121.99803,
+    -121.99702
+   ],
+   "max": 14.2,
+   "mean": 4.4,
+   "mean_abs": 6.5,
+   "sign": "mixed (13 high / 4 low)",
+   "track": "C1",
+   "track_s": [
+    36264,
+    36284
+   ],
+   "ways": [
+    184361739,
+    535137267,
+    535137268
+   ]
+  },
+  {
+   "road": "Eastshore Freeway (I 80)",
+   "cls": [
+    "motorway"
+   ],
+   "n": 26,
+   "length_m": 520,
+   "lat": [
+    37.92946,
+    37.93227
+   ],
+   "lon": [
+    -122.32585,
+    -122.32355
+   ],
+   "max": -7.2,
+   "mean": -4.5,
+   "mean_abs": 4.5,
+   "sign": "terrarium LOW",
+   "track": "R2",
+   "track_s": [
+    3074,
+    3239
+   ],
+   "ways": [
+    22719513,
+    167541514,
+    864168130
+   ]
+  },
+  {
+   "road": "John F Foran Freeway (I 280)",
+   "cls": [
+    "motorway"
+   ],
+   "n": 8,
+   "length_m": 160,
+   "lat": [
+    37.73123,
+    37.73161
+   ],
+   "lon": [
+    -122.43541,
+    -122.43473
+   ],
+   "max": 11.9,
+   "mean": 8.3,
+   "mean_abs": 8.3,
+   "sign": "terrarium HIGH",
+   "track": "M2",
+   "track_s": [
+    16234,
+    16304
+   ],
+   "ways": [
+    31487923,
+    931316063
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 8,
+   "length_m": 160,
+   "lat": [
+    38.02171,
+    38.02199
+   ],
+   "lon": [
+    -121.96733,
+    -121.96648
+   ],
+   "max": 10.4,
+   "mean": 6.4,
+   "mean_abs": 6.4,
+   "sign": "terrarium HIGH",
+   "track": "C1",
+   "track_s": [
+    39279,
+    39354
+   ],
+   "ways": [
+    158928624,
+    158928625
+   ]
+  },
+  {
+   "road": "East Warren Avenue",
+   "cls": [
+    "secondary"
+   ],
+   "n": 14,
+   "length_m": 280,
+   "lat": [
+    37.48561,
+    37.48614
+   ],
+   "lon": [
+    -121.93169,
+    -121.9304
+   ],
+   "max": 6.7,
+   "mean": 5.4,
+   "mean_abs": 5.4,
+   "sign": "terrarium HIGH",
+   "track": "A1.2",
+   "track_s": [
+    29813,
+    29823
+   ],
+   "ways": [
+    232195222,
+    593355405
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 17,
+   "length_m": 340,
+   "lat": [
+    37.9984,
+    37.99859
+   ],
+   "lon": [
+    -121.80379,
+    -121.80019
+   ],
+   "max": -5.5,
+   "mean": -4.7,
+   "mean_abs": 4.7,
+   "sign": "terrarium LOW",
+   "track": "E2",
+   "track_s": [
+    11126,
+    11441
+   ],
+   "ways": [
+    557154730
+   ]
+  },
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 25,
+   "length_m": 500,
+   "lat": [
+    38.00921,
+    38.01061
+   ],
+   "lon": [
+    -121.8613,
+    -121.85617
+   ],
+   "max": -4.3,
+   "mean": -3.5,
+   "mean_abs": 3.5,
+   "sign": "terrarium LOW",
+   "track": "E2",
+   "track_s": [
+    5803,
+    6283
+   ],
+   "ways": [
+    47228076
+   ]
+  },
+  {
+   "road": "Port Chicago Highway",
+   "cls": [
+    "primary"
+   ],
+   "n": 16,
+   "length_m": 320,
+   "lat": [
+    38.00487,
+    38.00708
+   ],
+   "lon": [
+    -122.0237,
+    -122.02277
+   ],
+   "max": -5.2,
+   "mean": -3.9,
+   "mean_abs": 3.9,
+   "sign": "terrarium LOW",
+   "track": "C-yd2",
+   "track_s": [
+    14,
+    233
+   ],
+   "ways": [
+    31151334,
+    316018367
+   ]
+  },
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 19,
+   "length_m": 380,
+   "lat": [
+    37.99838,
+    37.9984
+   ],
+   "lon": [
+    -121.80222,
+    -121.79823
+   ],
+   "max": -4.1,
+   "mean": -3.7,
+   "mean_abs": 3.7,
+   "sign": "terrarium LOW",
+   "track": "E2",
+   "track_s": [
+    11261,
+    11616
+   ],
+   "ways": [
+    157698097,
+    901539885
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 15,
+   "length_m": 300,
+   "lat": [
+    38.00281,
+    38.00394
+   ],
+   "lon": [
+    -121.83872,
+    -121.8359
+   ],
+   "max": 4.4,
+   "mean": 1.8,
+   "mean_abs": 3.6,
+   "sign": "mixed (11 high / 3 low)",
+   "track": "E1",
+   "track_s": [
+    7938,
+    8208
+   ],
+   "ways": [
+    7853064,
+    31827774,
+    35836150
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 7,
+   "length_m": 140,
+   "lat": [
+    37.93105,
+    37.93204
+   ],
+   "lon": [
+    -122.32522,
+    -122.32467
+   ],
+   "max": -6.4,
+   "mean": -5.1,
+   "mean_abs": 5.1,
+   "sign": "terrarium LOW",
+   "track": "R1",
+   "track_s": [
+    13779,
+    13829
+   ],
+   "ways": [
+    22719495
+   ]
+  },
+  {
+   "road": "40th Street",
+   "cls": [
+    "secondary"
+   ],
+   "n": 6,
+   "length_m": 120,
+   "lat": [
+    37.82944,
+    37.82963
+   ],
+   "lon": [
+    -122.26717,
+    -122.26669
+   ],
+   "max": 6.9,
+   "mean": 6.6,
+   "mean_abs": 6.6,
+   "sign": "terrarium HIGH",
+   "track": "K2",
+   "track_s": [
+    59,
+    74
+   ],
+   "ways": [
+    250656505,
+    250656507
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 7,
+   "length_m": 140,
+   "lat": [
+    38.01171,
+    38.01211
+   ],
+   "lon": [
+    -121.86677,
+    -121.86551
+   ],
+   "max": 6.2,
+   "mean": 4.7,
+   "mean_abs": 4.7,
+   "sign": "terrarium HIGH",
+   "track": "E2",
+   "track_s": [
+    5293,
+    5413
+   ],
+   "ways": [
+    392851715
+   ]
+  },
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 7,
+   "length_m": 140,
+   "lat": [
+    37.9984,
+    37.99843
+   ],
+   "lon": [
+    -121.81551,
+    -121.81415
+   ],
+   "max": 5.8,
+   "mean": 4.4,
+   "mean_abs": 4.4,
+   "sign": "terrarium HIGH",
+   "track": "E2",
+   "track_s": [
+    10086,
+    10206
+   ],
+   "ways": [
+    901539887
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 11,
+   "length_m": 220,
+   "lat": [
+    37.99836,
+    37.99928
+   ],
+   "lon": [
+    -121.81985,
+    -121.81866
+   ],
+   "max": -4.3,
+   "mean": -3.7,
+   "mean_abs": 3.7,
+   "sign": "terrarium LOW",
+   "track": "E1",
+   "track_s": [
+    9702,
+    9812
+   ],
+   "ways": [
+    184361767,
+    658503631,
+    932307963
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 10,
+   "length_m": 200,
+   "lat": [
+    37.69026,
+    37.69117
+   ],
+   "lon": [
+    -122.07314,
+    -122.07082
+   ],
+   "max": 4.4,
+   "mean": -0.6,
+   "mean_abs": 3.8,
+   "sign": "mixed (4 high / 6 low)",
+   "track": "L2",
+   "track_s": [
+    17167,
+    17272
+   ],
+   "ways": [
+    169629828,
+    393874099
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 10,
+   "length_m": 200,
+   "lat": [
+    38.00042,
+    38.00108
+   ],
+   "lon": [
+    -121.82658,
+    -121.82353
+   ],
+   "max": 4.1,
+   "mean": 0.1,
+   "mean_abs": 3.7,
+   "sign": "mixed (5 high / 5 low)",
+   "track": "E2",
+   "track_s": [
+    9052,
+    9332
+   ],
+   "ways": [
+    393489916
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 7,
+   "length_m": 140,
+   "lat": [
+    37.48705,
+    37.48755
+   ],
+   "lon": [
+    -121.93257,
+    -121.93177
+   ],
+   "max": 4.6,
+   "mean": 3.9,
+   "mean_abs": 3.9,
+   "sign": "terrarium HIGH",
+   "track": "A1.2",
+   "track_s": [
+    29608,
+    29663
+   ],
+   "ways": [
+    321390954,
+    321390955
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 6,
+   "length_m": 120,
+   "lat": [
+    37.99635,
+    37.99666
+   ],
+   "lon": [
+    -121.78495,
+    -121.78397
+   ],
+   "max": 4.8,
+   "mean": 4.1,
+   "mean_abs": 4.1,
+   "sign": "terrarium HIGH",
+   "track": "E2",
+   "track_s": [
+    12810,
+    12890
+   ],
+   "ways": [
+    496155800
+   ]
+  },
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 8,
+   "length_m": 160,
+   "lat": [
+    38.00151,
+    38.00192
+   ],
+   "lon": [
+    -121.83124,
+    -121.82975
+   ],
+   "max": 3.5,
+   "mean": 3.3,
+   "mean_abs": 3.3,
+   "sign": "terrarium HIGH",
+   "track": "E1",
+   "track_s": [
+    8628,
+    8768
+   ],
+   "ways": [
+    393481386
+   ]
+  },
+  {
+   "road": "Port Chicago Highway",
+   "cls": [
+    "primary"
+   ],
+   "n": 3,
+   "length_m": 60,
+   "lat": [
+    38.00355,
+    38.00384
+   ],
+   "lon": [
+    -122.0248,
+    -122.02454
+   ],
+   "max": 5.3,
+   "mean": 4.6,
+   "mean_abs": 4.6,
+   "sign": "terrarium HIGH",
+   "track": "C2",
+   "track_s": [
+    33427,
+    33467
+   ],
+   "ways": [
+    263304651
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 4,
+   "length_m": 80,
+   "lat": [
+    37.86304,
+    37.86356
+   ],
+   "lon": [
+    -122.20966,
+    -122.20948
+   ],
+   "max": 3.9,
+   "mean": 3.5,
+   "mean_abs": 3.5,
+   "sign": "terrarium HIGH",
+   "track": "C1",
+   "track_s": [
+    5969,
+    6009
+   ],
+   "ways": [
+    7854331
+   ]
+  },
+  {
+   "road": "motorway_link",
+   "cls": [
+    "motorway_link"
+   ],
+   "n": 3,
+   "length_m": 60,
+   "lat": [
+    37.8283,
+    37.82865
+   ],
+   "lon": [
+    -122.26659,
+    -122.26648
+   ],
+   "max": 3.9,
+   "mean": 3.8,
+   "mean_abs": 3.8,
+   "sign": "terrarium HIGH",
+   "track": "K1",
+   "track_s": [
+    169,
+    209
+   ],
+   "ways": [
+    25007070
+   ]
+  },
+  {
+   "road": "CA 4",
+   "cls": [
+    "motorway"
+   ],
+   "n": 4,
+   "length_m": 80,
+   "lat": [
+    37.9952,
+    37.99531
+   ],
+   "lon": [
+    -121.78107,
+    -121.78041
+   ],
+   "max": -3.1,
+   "mean": -3.1,
+   "mean_abs": 3.1,
+   "sign": "terrarium LOW",
+   "track": "E1",
+   "track_s": [
+    13167,
+    13227
+   ],
+   "ways": [
+    821494724
+   ]
+  }
+ ]
+}
