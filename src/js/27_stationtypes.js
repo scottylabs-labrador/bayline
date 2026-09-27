@@ -488,11 +488,18 @@ const StationTypes = (() => {
       yield;
     }
     yield; st._phase = 'fin:steps';
-    if (T.esc.length && !(C.q && C.q.detail === 0)) { const m = SP.escSteps(T.esc); if (m) { (T.levels.length > 1 ? near : res.zones.plat.near).add(m); zP.lights.bind(m, root); } }
+    // the moving steps: one instanced draw per lighting zone, in that zone's near group, lit by its lights (one draw for
+    // the station bound the top level's lights to every escalator: a lower level's steps, out of their range, drew black)
+    if (T.esc.length && !(C.q && C.q.detail === 0)) {
+      const byZone = new Map(); for (const e of T.esc) { const z = e.zone || zP; if (!byZone.has(z)) byZone.set(z, []); byZone.get(z).push(e); }
+      for (const [z, list] of byZone) { const m = SP.escSteps(list, { env: z.under ? env : null, sky: z.under ? 0 : 0.6 }); if (!m) continue;
+        (res.zones[z.name] ? res.zones[z.name].near : near).add(m); z.lights.bind(m, root); }
+    }
     res.nears = Object.values(res.zones).map(z => z.near);
     // the escalators in world coordinates (trailer shots put riders on them): foot point, yaw (GB.at: the steps rise
     // along (cos, -sin)), rise, run, the direction the steps move (+1 up)
     res.esc = T.esc.map(e => ({ x: e.x + root.position.x, y: e.y, z: e.z + root.position.z, yaw: e.yaw, H: e.H, dir: e.dir, run: SP.escRun(e.H) }));
+    for (const e of T.esc) delete e.zone;
     res.entrances = (T.entrances || []).map(e => ({ wx: e.wx, wz: e.wz, name: e.name }));
     // (the street entrances share one zone: their cells get no group, or Under would hide every shaft whenever one of
     // them is out of sight; the shafts are cheap and stay drawn with the station)
@@ -838,7 +845,10 @@ const StationTypes = (() => {
   }
   // the cell ambient handed to Under: the fixtures' bounce light, a little generous so people and trains (which get no
   // direct light from the station's line lights until Under.addLights) read under the lights
-  const ambOf = (S) => { const a = S.amb || [0.4, 0.4, 0.4]; return +(1.6 * (0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2])).toFixed(3); };
+  // (an interior's: the 1970s aerial style's amb is the open platform's (0.03), which made its underpasses' cells as
+  // good as unlit, walls and soffits black; interiors of such stations take the fixtures' default)
+  const ambIn = (S) => S.amb && S.amb[0] > 0.1 ? S.amb : [0.38, 0.38, 0.39];
+  const ambOf = (S) => { const a = ambIn(S); return +(1.6 * (0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2])).toFixed(3); };
   const stairRun = (H) => { const n = Math.max(1, Math.round(H / SP.RISER)); const flights = Math.ceil(n / 16); return (n - flights) * SP.TREAD + (flights - 1) * 1.6 + 0.6; };
 
   // ------------------------------------------------------------------------------------------------ slabs with openings
@@ -1480,14 +1490,24 @@ const StationTypes = (() => {
   function* buildCirculation(T) {
     const { plats, mode, zones, S, M, frames, place } = T;
     if (mode === 'ends' || !T.rise || T.rise < 1.5) { yield* platformEndsAccess(T); return; }
-    // the concourse zone
-    const zC = new Zone('conc', { under: T.under, amb: T.under ? S.amb : [0.03, 0.03, 0.03] }); zones.push(zC); T.zC = zC;
+    // the concourse zone (above ground: a covered lobby under the deck or an underpass, lit by its own fixtures, so it
+    // has their bounce light, as much as Under gives a subway level's cell (x 1.6, ambOf); it was 0.03: whatever its few
+    // line lights missed drew black)
+    const zC = new Zone('conc', { under: T.under, amb: T.under ? S.amb : ambIn(S).map(c => c * 1.6) }); zones.push(zC); T.zC = zC;
+    // (its detail, the fare arrays, booths and machines, stands indoors: covered, so a steel cabinet reads as satin steel
+    // lit by the lobby (with the open sky's factor it mirrored the environment's dark lower half: black))
+    if (!T.under) for (const q of [zC.d.sk, zC.d.glass, zC.d.glow]) q.sky = 0.35;
     // escalator + stair groups on each platform (in its level's zone; a stacked station's lower banks climb to the
     // platform over them)
     T.st._phase = 'circ:banks'; const xferDone = new Set();
     for (const p of plats) for (const g of p.groups || []) {
-      const zP = p.zone || zones[0];
+      // (a bank going down from the platform stands in the concourse below it, under the deck: it is built in the
+      // concourse's zone, lit by its lights and bounce light, covered (it was in the platform's zone, whose lights are
+      // up on the deck: its soffits and cheeks drew black in the concourse))
+      const zP0 = p.zone || zones[0], zP = g.down ? zC : zP0;
       const B = zP.d; const up = !g.down;
+      const skyB = zP === zP0 ? null : T.under ? 0 : 0.35, gbs = [zP.m.sk, zP.m.glass, zP.m.glow, zP.d.sk, zP.d.glass, zP.d.glow], skySave = gbs.map(q => q.sky);
+      if (skyB !== null) for (const q of gbs) q.sky = skyB;
       let v = g.vc - g.gw / 2;
       for (let k = 0; k < g.kinds.length; k++) {
         const w = g.widths[k]; const vcen = v + w / 2; v += w + 0.25;
@@ -1498,7 +1518,7 @@ const StationTypes = (() => {
         if (g.kinds[k] === 'esc') {
           const escUp = k === 0 ? 1 : -1;       // one up, one down
           T.placeB(zP.m, uFoot, vcen, yFoot, yaw); const e = SP.escalator(zP.m, g.H, { glass: T.S !== STYLE.sub70 && T.S !== STYLE.air70 }); T.popB(zP.m);
-          const [lx, lz] = T.L2(uFoot, vcen); T.esc.push({ x: lx, y: yFoot, z: lz, yaw: T.yawAt(uFoot) + yaw, H: g.H, dir: escUp, phase: k * 0.13 });
+          const [lx, lz] = T.L2(uFoot, vcen); T.esc.push({ x: lx, y: yFoot, z: lz, yaw: T.yawAt(uFoot) + yaw, H: g.H, dir: escUp, phase: k * 0.13, zone: zP });
           // walk: the escalator is a slope between its combs; its balustrades are walls
           slopeUV(T, uFoot, dirRun, vcen, 0.5, yFoot, g.H, e.run);
           wallsUV(T, uFoot, dirRun, vcen, SP.ESC.OW / 2, yFoot, e.run, g.H);
@@ -1509,6 +1529,7 @@ const StationTypes = (() => {
         }
         yield;
       }
+      if (skyB !== null) gbs.forEach((q, i) => { q.sky = skySave[i]; });
       // guard railings around the opening on the upper level (three sides; the head end is open)
       const u0 = Math.min(g.uFoot, g.uHead), u1 = Math.max(g.uFoot, g.uHead);
       const yUp = g.yUp ?? (up ? T.yCF : p.y); const hv0 = g.vc - g.gw / 2 - 0.3, hv1 = g.vc + g.gw / 2 + 0.3;
@@ -1516,7 +1537,7 @@ const StationTypes = (() => {
       const hTop = up ? (g.upPlat ? g.upPlat.holes : T.ceilHoles || []).find(h => h.g === g) : null;
       const uOpen = g.uHead, uClosed = up ? (hTop ? (g.dir > 0 ? (hTop.cu0 ?? hTop.u0) : (hTop.cu1 ?? hTop.u1)) : (g.dir > 0 ? u0 + 2 : u1 - 2)) : g.uFoot;
       const railPts = (vv) => { const pts = []; const ua = Math.min(uOpen, uClosed), ub = Math.max(uOpen, uClosed); for (let u = ua; u <= ub + 1e-6; u += 2) { const [x, z] = T.L2(Math.min(u, ub), vv); pts.push([x, yUp, z]); } return pts; };
-      const zR = g.upPlat ? (g.upPlat.zone || zones[0]) : up ? zC : zP;
+      const zR = g.upPlat ? (g.upPlat.zone || zones[0]) : up ? zC : zP0;
       // (a station's own railings, research: 12th St's bronze bars; glass elsewhere)
       const RS = T.H.rail ? [T.H.rail.infill || 'bars', T.H.rail.col] : ['glass'];
       SP.railing(zR.d, railPts(hv0), 1.07, ...RS); SP.railing(zR.d, railPts(hv1), 1.07, ...RS);
@@ -1526,9 +1547,9 @@ const StationTypes = (() => {
       // direction signs over the group's foot (and, where the station has transfers, the transfer panel beyond it), hung
       // across the platform facing the people walking up to the bank: an up bank's foot from behind it (-dir), a down
       // bank's head from past the head (they faced sideways, a navy back to one side of the platform)
-      zP.signs.push({ u: g.uFoot - (up ? g.dir : 0) * 1.5, v: g.vc, y: p.y + 2.9, yaw: T.yawAt(g.uFoot) + (up ? -g.dir : (g.uHead > g.uFoot ? 1 : -1)) * Math.PI / 2, w: 2.4, h: 0.6, region: 'exit', both: false, T });
+      zP0.signs.push({ u: g.uFoot - (up ? g.dir : 0) * 1.5, v: g.vc, y: p.y + 2.9, yaw: T.yawAt(g.uFoot) + (up ? -g.dir : (g.uHead > g.uFoot ? 1 : -1)) * Math.PI / 2, w: 2.4, h: 0.6, region: 'exit', both: false, T });
       if ((T.st.data.transfers || []).length && !xferDone.has(p)) { xferDone.add(p);
-        zP.signs.push({ u: g.uFoot - (up ? g.dir : 1) * 6, v: g.vc, y: p.y + 2.75, yaw: T.yawAt(g.uFoot) + Math.PI / 2, w: 3.4, h: 0.64, region: 'info', both: true, T }); }
+        zP0.signs.push({ u: g.uFoot - (up ? g.dir : 1) * 6, v: g.vc, y: p.y + 2.75, yaw: T.yawAt(g.uFoot) + Math.PI / 2, w: 3.4, h: 0.64, region: 'info', both: true, T }); }
       T.occupied.push({ p, u0: u0 - 1.5, u1: u1 + 1.5, v0: g.vc - g.gw / 2 - 0.6, v1: g.vc + g.gw / 2 + 0.6 });
       yield;
     }

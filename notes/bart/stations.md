@@ -5,6 +5,65 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
 `tools/fetch_metro_stations.py` (station micro-geometry from OSM), `data/pub/v2/metrostations/` (my data),
 `notes/bart/stations.md`, `notes/bart/shots/stations/`.
 
+## M3.7 (lead: 12th St's black escalator wedge, and a sweep of all 52 stations for the class)
+
+Based on lead-int 7d70a0a (= main 2518273 in content). Before = 7d70a0a, after = this branch; in the page (GPU, one
+headless Chrome at a time) unless it says offline.
+- **What the wedge was.** The lead's view (`shot('12TH', {u: -70, v: 0, h: 1.65})`, on the upper island) stands inside
+  the foot of the bank to the mezzanine: v 0 is 0.65 m off the escalator's centre line, 3.9 m up its run. Hiding one
+  mesh at a time in that frame: without the escalator steps (the instanced 'escsteps' draw) the near-black part of the
+  frame's left 40 % drops from 45 % to 4 %. The steps were a drain-grating finish (0x3c3f42 risers, the grating pattern
+  keeps 15 % of it between its bars, 60-80 % metal): a rider saw black blocks going up (19th St's view is the same, from
+  the lower comb). Seen from the platform beside a bank, the rest of the class: the truss cladding's stainless (metal 1)
+  drew black under cover. Root causes, all fixed:
+  1. **Metals under cover.** A metal mirrors the sky and the daylight; underground (vertex sky 0) and inside Under's
+     volumes (daylight 0, the environment turned down to a faint tint) there was nothing to mirror, and a full metal is
+     black but for the line lights' highlights: escalator cladding, balustrades, fare gate cabinets, ticket machines. The
+     station material now reads the cover (the vertex sky factor and, with Under, its daylight at the fragment) and a
+     covered metal is satin: at most 45 % metal, the rest of its colour diffuse, lit by the station's lights and bounce
+     light like the walls (27_stationkit.js; full metal where it sees the sky, unchanged outdoors).
+  2. **The steps.** Cleated aluminium treads and risers (a new CLEAT pattern: grooves along the run, faded out before
+     they alias), yellow demarcation, painted step sides, the zone's interior environment underground; and one instanced
+     draw per lighting zone, in that zone's near group, bound to its lights: one draw per station had bound the top
+     level's lights to every escalator, so a lower level's steps were out of their range (12th, 19th St).
+  3. **The truss soffit** is painted panels (the stainless underside faced away from every light; its satin still read
+     as a black slab over the platform); the sides stay stainless (satin under cover).
+  4. **Banks down to a concourse** (aerial and at-grade stations: the lobby under the deck, the underpasses) are built in
+     the concourse's lighting zone, covered: they were in the platform's zone, whose lights are up on the deck, so their
+     soffits and cheek walls drew black in the lobby (Lafayette, Fremont, Richmond, Union City...).
+  5. **Lobbies above ground had no bounce light.** The concourse zone's ambient was 0.03 (the 1970s aerial style's open
+     platform value), and the underpasses' Under cells got the same (ambOf); both now take the fixtures' interior value
+     (the subway levels' cell ambient), on covered surfaces (1 - 0.75 sky). The concourse's detail (fare arrays, booths,
+     machines) is marked covered (it had the open sky's factor and mirrored the environment's dark lower half).
+- **The sweep** (`tools/metro_dark_audit.js`, a metro_shots evalFile; 52 stations in two halves of 26, each half one
+  Chrome session of ~3 min): walker views on every platform (a fifth, the middle and four fifths along it, eye 1.65 m,
+  both ways along the platform) and in every concourse, plus a rider on every escalator (on each comb, looking along the
+  run): 704 views. Each is drawn with the station alone (no trains, people, tunnels or world), read back and cut
+  into 48 x 27 cells; a cell darker than sRGB luma 0.05 is traced into the station, and cells whose first opaque hit is
+  a station surface (not a sign, board, lamp, glass or opening) are grouped into regions; a region of 0.4 % of the frame
+  or more counts, classed by its commonest surface: **unlit** (a finish of albedo >= 0.12, or a metal: the defect),
+  **dark** (a dark finish, 0.04-0.12, near-black in shade by design), **track** (below the walker's floor: the trackway,
+  the recess under a platform's lip), **close** (the camera within 1 m of it).
+  | | unlit regions | stations with unlit | largest (of the frame) | >= 5 % / 2-5 % / < 2 % | dark | track |
+  |---|---|---|---|---|---|---|
+  | before (7d70a0a) | 320 | 45 | 28.5 % (Richmond's underpass) | 42 / 100 / 178 | 162 | 60 |
+  | after | 25 | 15 | 1.7 % | 0 / 0 / 25 | 138 | 59 |
+  Walker views 119 -> 23, escalator riders 201 -> 2. 12th St 8 -> 0, 19th St 8 -> 1.
+  What is left (all under 2 % of a frame: the fare gate cabinets' sides in five aerial lobbies (10: Coliseum 4,
+  Oakland Airport 2, Bay Fair 2, San Leandro 1, West Oakland 1: dark satin, backlit by the open sides at noon), canopy
+  and deck soffits at their edges (SFO 3, 16th St 2, Powell 2, West Oakland 1), the floor under three banks' low ends
+  (Pittsburg Center, Pittsburg's transfer, Dublin), Castro Valley's lobby stair nosings, Richmond's canopy sign
+  housing, a trackway recess seen from an escalator's head at 19th St and MacArthur).
+  The dark class is the research's dark finishes in shade at noon (Fruitvale's, Fremont's, Daly City's and Philadelphia's
+  dark canopy soffits, South Hayward's quarry tile, the Market St mezzanines' grille ceilings): unchanged, a choice of
+  colour rather than a lighting fault; the sweep reports it so the lead can decide.
+- **Offline** (the whole tree against 7d70a0a): all 52 stations build without errors; walk floors and walls identical at
+  every station; triangles identical but 19th St (+14: its steps are two draws); the 31 Peninsula stations identical
+  with the metro off and on (layouts, stops, doors, geometry hashes).
+- Views: `shots/stations/m37_12th_19th.jpg` (the lead's two views, the upper platform beside the bank, the lower
+  platform), `m37_escalator_riders.jpg`, `m37_lobbies.jpg` (the sweep's worst before: Lafayette, Fremont, Richmond,
+  MacArthur), `m37_lobbies_2.jpg`.
+
 ## M3.5 (lead, after M3.4 shipped as main e548da6)
 
 Before/after below is always against main e548da6 (built from `git archive e548da6 src/js`), in the page (GPU, one

@@ -54,6 +54,7 @@ const StationKit = (() => {
     MARBLE: 26,    // veined marble slabs; w: slab size m
     BUBBLE: 27,    // domed hexagon tiles; w: tile size m
     CIRCLES: 28,   // line reliefs of large overlapping circles on a pale wall (Embarcadero); w: circle scale
+    CLEAT: 29,     // escalator step cleats (aluminium): grooves across u, every w m
   };
 
   // ------------------------------------------------------------------------------------------------ geometry buffer
@@ -409,6 +410,11 @@ const StationKit = (() => {
         float aa = clamp(0.01 / fw, 0.0, 1.0); float edge = 1.0 - smoothstep(0.42, 0.5, d);
         col *= mix(0.9, 0.78 + 0.26 * dome, aa); gBump = dome * s * 0.12 * aa; gRough = mix(0.5, 0.12 + 0.1 * (1.0 - edge), aa); return col;
       }
+      if (k < 29.5) {                                       // escalator step cleats: aluminium, grooves every w m across q.x
+        float s = w > 0.0 ? w : 0.009; float ph = fract(q.x / s); float gr = 1.0 - smoothstep(0.1, 0.2, min(ph, 1.0 - ph));
+        float aa = 1.0 - smoothstep(0.12 * s, 0.35 * s, fw); col *= mix(0.86, mix(1.0, 0.5, gr), aa); gBump = -gr * 0.0012 * aa;   // (grooves only while resolved: moire)
+        gRough = 0.42; gMetal = 0.7; return col;
+      }
       return col;
     }
   `;
@@ -478,10 +484,24 @@ const StationKit = (() => {
       .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
         {
           float sky = vExt.x * uSkyK, ao = vExt.y;
+          // a metal mirrors the sky and the daylight: under cover (the vertex sky factor: underground, under decks and
+          // roofs) and inside Under's volumes (no daylight: the environment there is a faint tint) there is nothing to
+          // mirror, and a full metal drew black but for the line lights' highlights (escalator cladding, fare gate
+          // cabinets, the steps). There it reads as satin: at most 45 % metal, the rest of its colour diffuse, lit by
+          // the station's lights and bounce light like the walls (the direct sun, already added, is scaled by the sky)
+          if ( metalnessFactor > 0.0 ) {
+            float cover = sky;
+            #ifdef BL_UNDER_DEF
+              cover = min( cover, blUnderL( blUnderWorld( - vViewPosition ) ).y );
+            #endif
+            float mt = mix( min( metalnessFactor, 0.45 ), metalnessFactor, smoothstep( 0.35, 0.9, cover ) );
+            material.diffuseColor = diffuseColor.rgb * ( 1.0 - mt );
+            material.specularColor = mix( vec3( 0.04 ), diffuseColor.rgb, mt );
+          }
           reflectedLight.directDiffuse *= sky; reflectedLight.directSpecular *= sky;
           #if defined( RE_IndirectDiffuse )
             irradiance *= sky * ao;
-            irradiance += uAmb * ao * uLightK;
+            irradiance += uAmb * ao * uLightK * ( 1.0 - 0.75 * clamp( sky, 0.0, 1.0 ) );   // (the fixtures' bounce light: covered parts)
             iblIrradiance *= mix(1.0, sky, uEnvSky) * ao;
           #endif
           #if defined( RE_IndirectSpecular )
