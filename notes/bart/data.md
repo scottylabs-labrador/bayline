@@ -509,7 +509,7 @@ compares the AWS terrarium z15 surface (WORLD's base) with the USGS 3DEP 1 m bar
 
 | # | road | area | lat / lon range | length (m) | max diff (m) | mean diff (m) | sign | nearest metro track, s |
 |---|---|---|---|---|---|---|---|---|
-| 1 | SR-4 | North Concord (north strip) | 38.0107-38.0170 N, -122.0178 to -121.9904 | 3560 | +41.7 | -8.5 | mixed (40 high / 136 low) | C1 34779-36999 |
+| 1 | SR-4 | Willow Pass, west slope (north strip) | 38.0107-38.0170 N, -122.0178 to -121.9904 | 3560 | +41.7 | -8.5 | mixed (40 high / 136 low) | C1 34779-36999 |
 | 2 | SR-4 | Willow Pass (north strip) | 38.0149-38.0223 N, -121.9947 to -121.9789 | 2600 | +44.8 | +8.7 | mixed (78 high / 52 low) | C2 36527-38092 |
 | 3 | SR-4 ramp | Willow Pass (north strip) | 38.0127-38.0174 N, -122.0030 to -121.9905 | 1880 | +39.8 | +9.1 | mixed (66 high / 28 low) | C2 35752-36992 |
 | 4 | SR-4 ramp | Willow Pass (north strip) | 38.0154-38.0171 N, -121.9943 to -121.9903 | 320 | +43.3 | +24.7 | terrarium HIGH | C1 36789-37009 |
