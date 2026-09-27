@@ -93,7 +93,11 @@ structure's way, `Flora.reloadIn(rects)` for the teardown; `Terrain.reloadHeight
    (a trough 3-5 m deep along the median at E1 5300), so the ground rose through the outer lanes. Fixed at the root in
    two places: the rebake (the ground is the freeway now) and the **crest guard** in `roadRibbon` (each station's strip
    rises by the most the ground stands above it there or halfway to either neighbour on the quads' real triangles, at
-   most 1.2 m; tapers to 0 at the ribbon's outer edge; `Towns.roadsNear` edges include it, so traffic follows).
+   most 1.2 m; tapers to 0 at the ribbon's outer edge; each piece keeps its raises (`r._rib`) and `Towns.roadsNear`
+   edges read them by arc length, so traffic follows; bridges without a model hand traffic their drawn deck line the
+   same way; ~2-5 ms more per 800 m tile's ground build, time-sliced). Lane audit at the 15 worst sites of the 63
+   (LAKE FTVL FRMT ROCK LAFY PITT MCAR CAST POWL DELN BERY COLM DALY WCRK HAYW): 86 of 188,796 lane points off the drawn
+   ground by > 0.5 m (0.046 %; the MacArthur maze -18 m as before).
    Road samples under the terrain, network-wide (3,528 Towns tiles, 46.9 M samples: every 2 m across the asphalt, 4 per
    12 m span, the quads' triangles, the ground after MetroGround's carve; `tools/metro_world/road_terrain_check.py
    --all --fine [--guard] [--overlay data/raw/tiles/fix_terrain]`): production 166,551 (0.355 %); rebake alone

@@ -987,6 +987,9 @@ const Towns = (() => {
       }
     }
     const Y = Rg === null ? Y0 : (i, off) => { const a = Math.abs(off); return Y0(i, off) + (a <= hw ? Rg[i] : a >= outer ? 0 : Rg[i] * (outer - a) / (outer - hw)); };
+    // (what road traffic follows: the raises of a road, the deck line of a bridge without a modelled deck)
+    if (!bridge) r._rib = Rg === null ? { us: null, R: null } : { us: Float32Array.from(us), R: Rg };
+    else if (dk === null) { const D = new Float32Array(n); for (let i = 0; i < n; i++) D[i] = Y0(i, 0); r._rib = { us: Float32Array.from(us), D }; }
     const w4 = Math.min(255, Math.round(r.width * 4)), lanes = Math.min(255, r.lanes);
     for (let bi = 0; bi < bands.length; bi++) {
       const [o0, o1, dy0, dy1, col, mark, vert, kind] = bands[bi];
@@ -2049,12 +2052,15 @@ const Towns = (() => {
         if ((rd.flags & 2) && a === a0 && rd.off) { const lift = LIFT[Math.min(rd.cls, 14)] + 0.1, off = rd.off;
           // (as roadRibbon: never below the straight line between the piece's two ends)
           const cum = new Float32Array(n); for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]);
-          const AN = anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), a0 = anchorAt(AN, P[0], P[1]), a1 = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
+          const AN = T._anchR || anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), a0 = anchorAt(AN, P[0], P[1]), a1 = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
           const tot = cum[n - 1] || 1, E0 = a0 !== null ? a0 : ctx.groundY(T.ox + P[0], T.oz + P[1]) + off[0], E1 = a1 !== null ? a1 : ctx.groundY(T.ox + P[n * 2 - 2], T.oz + P[n * 2 - 1]) + off[n - 1];
           o.surf = (cx, cz) => { let best = 1e18, os = 0, u = 0;
             for (let i = 0; i + 1 < n; i++) { const ax = T.ox + P[i * 2], az = T.oz + P[i * 2 + 1], dx = T.ox + P[i * 2 + 2] - ax, dz = T.oz + P[i * 2 + 3] - az, L2 = dx * dx + dz * dz || 1;
               const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cz - az) * dz) / L2)), d2 = (ax + dx * t - cx) ** 2 + (az + dz * t - cz) ** 2;
               if (d2 < best) { best = d2; os = off[i] + (off[i + 1] - off[i]) * t; u = cum[i] + (cum[i + 1] - cum[i]) * t; } }
+            const rib = rd._rib;                          // (the deck line as its ribbon draws it, once built)
+            if (rib && rib.D) { const us = rib.us, D = rib.D, m = us.length; let j = 0; while (j < m - 2 && us[j + 1] < u) j++;
+              const f = Math.max(0, Math.min(1, (u - us[j]) / ((us[j + 1] - us[j]) || 1))); return D[j] + (D[j + 1] - D[j]) * f + lift; }
             return Math.max(ctx.groundY(cx, cz) + os, E0 + (E1 - E0) * (u / tot)) + lift; };
           o.hw = Math.max(0.5, rd.width / 2); o.edges = (cx, cz, nx, nz, e) => { e[0] = e[1] = o.surf(cx, cz); return e; }; }
         // (Bayline Metro world, M3.7) the drawn ribbon's surface across the centreline point (cx, cz), at the signed offset
@@ -2065,11 +2071,27 @@ const Towns = (() => {
         if (!(rd.flags & 2)) { const outer = ribbonOuter(rd, T.region >= 6 ? T.region : regionOf(T.oz + P[1])), lift = LIFT[Math.min(rd.cls, 14)], hw = rd.width / 2, k = Math.min(1, hw / outer);
           // edges(cx, cz, nx, nz, out): the strip's two edge heights (out[0] at -hw, out[1] at +hw along n); surf: a point on it
           o.hw = hw;
-          const AN = anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), aS = anchorAt(AN, P[0], P[1]), aE = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
+          const AN = T._anchR || anchors(T, (x, z) => ctx.groundY(T.ox + x, T.oz + z), '_anchL'), aS = anchorAt(AN, P[0], P[1]), aE = anchorAt(AN, P[n * 2 - 2], P[n * 2 - 1]);
           const sx = T.ox + P[0], sz = T.oz + P[1], ex = T.ox + P[n * 2 - 2], ez = T.oz + P[n * 2 - 1];
-          o.edges = (cx, cz, nx, nz, e) => { const gC = ctx.groundY(cx, cz);
+          const cum = new Float32Array(n); for (let i = 1; i < n; i++) cum[i] = cum[i - 1] + Math.hypot(P[i * 2] - P[i * 2 - 2], P[i * 2 + 1] - P[i * 2 - 1]);
+          // the raise the drawn ribbon got at this point (crest guard, bridge approach), by arc length along the piece; before
+          // its ribbon is built, the same estimated here
+          const raise = (cx, cz, nx, nz, gC) => {
+            const rib = rd._rib;
+            if (rib) {
+              if (!rib.R) return 0;
+              let best = 1e18, u = 0;
+              for (let i = 0; i + 1 < n; i++) { const ax = T.ox + P[i * 2], az = T.oz + P[i * 2 + 1], dx = T.ox + P[i * 2 + 2] - ax, dz = T.oz + P[i * 2 + 3] - az, L2 = dx * dx + dz * dz || 1;
+                const t = Math.max(0, Math.min(1, ((cx - ax) * dx + (cz - az) * dz) / L2)), d2 = (ax + dx * t - cx) ** 2 + (az + dz * t - cz) ** 2;
+                if (d2 < best) { best = d2; u = cum[i] + (cum[i + 1] - cum[i]) * t; } }
+              const us = rib.us, R = rib.R, m = us.length; let j = 0; while (j < m - 2 && us[j + 1] < u) j++;
+              const f = Math.max(0, Math.min(1, (u - us[j]) / ((us[j + 1] - us[j]) || 1))); return R[j] + (R[j + 1] - R[j]) * f;
+            }
             let ra = 0; if (aS !== null) ra = Math.max(ra, (aS - gC) * anchW(Math.hypot(cx - sx, cz - sz))); if (aE !== null) ra = Math.max(ra, (aE - gC) * anchW(Math.hypot(cx - ex, cz - ez)));
-            const up = lift + Math.max(crestAt(ctx.groundY, cx, cz, nx, nz, hw, outer), ra);
+            return Math.max(crestAt(ctx.groundY, cx, cz, nx, nz, hw, outer), ra);
+          };
+          o.edges = (cx, cz, nx, nz, e) => { const gC = ctx.groundY(cx, cz);
+            const up = lift + raise(cx, cz, nx, nz, gC);
             e[1] = Math.max(gC + (ctx.groundY(cx + nx * outer, cz + nz * outer) - gC) * k, gC - 0.6) + up; e[0] = Math.max(gC + (ctx.groundY(cx - nx * outer, cz - nz * outer) - gC) * k, gC - 0.6) + up; return e; };
           o.surf = (cx, cz, nx, nz, off) => { const e = o.edges(cx, cz, nx, nz, [0, 0]); return e[0] + (e[1] - e[0]) * Math.min(1, Math.max(0, (off + hw) / (2 * hw))); }; }
         yield o;
