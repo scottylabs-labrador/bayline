@@ -341,10 +341,13 @@ float skyFogDensity(vec3 p) {
   // ---------------------------------------------------------------- sky dome + environment-map sky
   const domeMat = new THREE.ShaderMaterial({
     uniforms: Object.assign({ uSunDisk: { value: 1 }, uDomeScale: { value: 1 } }, uniforms), side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false,
-    vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+    vertexShader: `varying vec3 vDir; varying float vTanHalf; void main(){ vDir = position; vTanHalf = 1.0 / projectionMatrix[1][1]; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
     fragmentShader: glsl + /* glsl */`
-      uniform float uSunDisk, uDomeScale; varying vec3 vDir;
+      uniform float uSunDisk, uDomeScale; varying vec3 vDir; varying float vTanHalf;
       float hsh(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      // a star's visibility through twilight, by its brightness m (0..1): a handful of the brightest from sun -4 deg, all by
+      // the end of nautical twilight (-12 deg); tw: the twilight depth (0 at -3.5 deg, 1 at -12 deg)
+      float starVis(float m, float tw) { float a = (1.0 - m) * 0.85; return smoothstep(a, a + 0.12, tw); }
       void main() {
         vec3 d = normalize(vDir);
         vec3 col = skyRadiance(d) * uDomeScale;
@@ -372,10 +375,36 @@ float skyFogDensity(vec3 p) {
           }
         }
         col += vec3(0.5, 0.56, 0.7) * (pow(max(mm, 0.0), 40000.0) * 0.05 + pow(max(mm, 0.0), 2500.0) * 0.006) * uSkyNight * uSkyMoon;   // aureole
-        // stars (twinkle; fade into the horizon haze and the city glow)
+        // stars (twinkle; fade into the horizon haze and the city glow). Each is a cell of a direction grid (420 per unit:
+        // ~0.136 deg). Where a cell spans under ~3 px (the normal lens up to 1440p, the environment map) the whole cell is lit,
+        // as it always was; on longer lenses and finer pixels a star is a point at its cell's centre direction, a Gaussian of
+        // 0.7 px (the pixel's angular size from the derivatives, so the viewport, the device scale and any render scale are all
+        // in it) carrying the whole-cell look's light at the normal lens (60 deg) and the same on longer lenses, like a lens's
+        // point spread: on an 11 deg lens a cell was a ~13 px square or triangle (Bayline Metro world)
         if (uSkyNight > 0.02 && d.y > 0.0) {
-          vec3 g = floor(d * 420.0); float s = hsh(g); float tw = 0.7 + 0.3 * sin(uSkyTime * 3.0 + s * 80.0);
-          col += vec3(0.85, 0.9, 1.0) * smoothstep(0.9962, 1.0, s) * uSkyNight * tw * smoothstep(0.04, 0.35, d.y) * 0.22;
+          float twl = clamp((-asin(clamp(uSkySunDir.y, -1.0, 1.0)) * 57.29578 - 3.5) / 8.5, 0.0, 1.0);
+          float pxA = max(max(length(dFdx(d)), length(dFdy(d))), 1e-6), cellPx = (1.0 / 420.0) / pxA, wPt = smoothstep(3.0, 4.5, cellPx);
+          if (wPt < 1.0) {
+            vec3 g = floor(d * 420.0); float s = hsh(g), m = smoothstep(0.9962, 1.0, s); float tw = 0.7 + 0.3 * sin(uSkyTime * 3.0 + s * 80.0);
+            col += vec3(0.85, 0.9, 1.0) * m * starVis(m, twl) * uSkyNight * tw * smoothstep(0.04, 0.35, d.y) * 0.22 * (1.0 - wPt);
+          }
+          if (wPt > 0.0) {
+            // light per star: the whole-cell look's mean (2/3 of a cell's area crossed by the sphere) over the Gaussian's area,
+            // at the normal lens's pixel size for this resolution (longer lenses: the same point; wider: smaller, as before)
+            float pxRef = pxA / min(1.0, vTanHalf / 0.57735), cellRef = (1.0 / 420.0) / pxRef;
+            float peak = 0.6667 * cellRef * cellRef / (6.2831853 * 0.49);
+            vec3 g0 = floor(d * 420.0); float pts = 0.0;
+            for (int k = 0; k < 27; k++) {
+              vec3 c = g0 + vec3(float(k % 3), float((k / 3) % 3), float(k / 9)) - 1.0;
+              float s = hsh(c); if (s < 0.9962) continue;
+              vec3 lo = c, hi = c + 1.0;                                               // (the old look's stars: cells the sphere crosses)
+              if (length(clamp(vec3(0.0), lo, hi)) > 420.0 || length(max(abs(lo), abs(hi))) < 420.0) continue;
+              vec3 sd = normalize(c + 0.5); if (sd.y <= 0.0) continue;
+              float m = smoothstep(0.9962, 1.0, s), r = length(d - sd) / pxA;
+              pts += m * starVis(m, twl) * (0.7 + 0.3 * sin(uSkyTime * 3.0 + s * 80.0)) * smoothstep(0.04, 0.35, sd.y) * exp(-r * r / 0.98);
+            }
+            col += vec3(0.85, 0.9, 1.0) * pts * peak * uSkyNight * 0.22 * wPt;
+          }
         }
         gl_FragColor = vec4(col, 1.0);
         #include <tonemapping_fragment>

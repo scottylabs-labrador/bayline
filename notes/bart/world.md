@@ -6,23 +6,61 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Updated 2026-09-26 06:45.** All bakes are done except the last GPU pass (the new L8 tiles to 1024 px) and t2 (tree
-heights); PUBLISH READY is targeted for ~11:00-11:30 EDT.
+**Updated 2026-09-26 17:40. M3 is LIVE (11:36) on the world: all world sets are published on both servers. M3.2 world items and the four promo shots are committed on bart-world (not deployed).**
 
-| step | state |
+| set / change | state |
 |---|---|
-| stage 1 (`bart1`): every BART corridor: +992 L6, +1749 L7, +3003 L8 (502 / 811 / 1334 in the north strip), strip L2-L5 | baked + indexed 02:21 |
-| stage 2 (`bart2`): the whole north strip at L6 + L7 (+522 L6, +3285 L7) | baked + indexed 03:44 |
-| stage 3 (`bart3`): the East Bay hills L7 inside the old square (lat 37.55..37.8429, lon -122.25..-121.78: +121 L6, +1446 L7) | baked + indexed 04:40 |
-| masks, tree crowns (t) | done (with each stage) |
-| towns b2 | done 02:40: 1692 new tiles + 127 replacing changed b tiles (14.2 MB) |
-| lidar h9 (3003 new L8 tiles + L9 children) | done |
-| materials (the square's L7 + the strip within 3 km of BART) | done (stage-3 hills have none: they fall back to the photo guess) |
-| L9 super-resolution (3594 new tiles + the dropout top-up) | done 06:38 (index L9 6026 square + strip) |
-| L8 to 1024 px | running (~670 parents left; the GPU is shared with the other workstreams' captures) |
-| t2 tree heights (11.5k L7 tiles incl. the strip and the hills) | running (75 / 160 rows at 06:35) |
-| NAIP band dropouts: new tiles | repaired (99 tiles re-baked); 7 boxes the server kept returning broken are being re-fetched through a bypass |
-| NAIP band dropouts: **12 published tiles** + their L8 / L9 / mosaic descendants | replacements being staged (GPU) with a manifest |
+| the world (56,327 tile files + 5 indexes) | published 08:51 |
+| NAIP dropout fixes (49) | published 08:51 |
+| JPEG scan-tail fixes (269, `fix_jpeg`) | published 10:11 |
+| L8 to 1024 px (1,706, `sr_l8_stage`) | published 12:20-12:25 |
+| bay water re-tone (2,359: 2,317 img + 42 masks, `fix_water`) | published ~12:40 |
+| downtown SF plazas (535 h9, `fix_plaza`) | published ~12:40 |
+| Globe ocean (pale bands west of Marin) | bart-world a2d5bda, accepted for M3.1 |
+| night lights from the air (checkerboard, dusk) | bart-world 9f03eff, accepted for M3.1 |
+| INFRA items (tunnel-mouth / open-cut buildings, trees / grass on cut ground, traffic near BART, carve checks) | done (40bae4e, 74ec930, 0bb0e39; analyses below) |
+| M3.2: night lights from the air, resolved (a world-stable lamp field instead of the averaged wash beyond ~2 m pixels) | bart-world 4d7e83f, accepted; `shots/world/night_aerials_*` |
+| M3.2: street lamps seen from above (the glare a small point, the pool a faint glow once the camera is well over it) | bart-world 32025b9; `shots/world/street_lamps_from_above_before_after.jpg` |
+| M3.2: no street lamp on cut ground (openings, trenches, platform cuts, track bed; stations' 'lamp' keep-out; late openings drop lamps in place: `Towns.relamp`), pools never below their lamp's footing, tilted with hills, faded at grazing angles | bart-world 21246e1; `shots/world/lamp_on_cut_ground_before_after.jpg` (P02's West Oakland portal) |
+| M3.3: street-lamp glare keeps its size in pixels whatever the lens (k = tan(fov/2) / tan(27.5 deg); pools stay in world space) | bart-world 16f4cb4, approved; `shots/world/lamp_glare_long_lens_before_after.jpg` (P05 at 135 mm) |
+| Promo shots P01 `p_dawn_bay` (+ `p_dawn_bay_blue`), P20 `p_night_flyover`, P26 `p_embr_rise`, P27 `p_bay_night` (modules in `tools/trailer/shots/`, helpers `_world.mjs`), service day pinned to 2026-09-29 | committed; 6-frame sheets in `shots/promo/<shot>.jpg` (960x540 previews, 2.39 guides) |
+
+**Backlog (post-M3, queued):**
+1. Night aerials (lead): the glow almost entirely from the street / road mask at L7-L9 (thin bright lines), blocks dark apart
+   from sparse building points, the wash only at L5-L6 distances. (M3.2's lamp field covers the far look; freeway lines
+   from far away need an L0-L4 max re-pool of the mask: backlog.)
+2. Milpitas trench facets: infra geometry (a ground-coloured coping on the walls' outer top); DATA: fewer, longer
+   trench / cut-and-cover pieces.
+3. The faint line at lat 38.07 over San Pablo Bay (terrain vs Globe water shading; the data now match in tone).
+4. Plazas beyond downtown SF (the Peninsula downtowns): the same `fix_plaza.py` rule, a wider region list.
+5. Road traffic on cross slopes (outer lanes keep the centreline height; up to ~1.5 m at Walnut Creek, pre-existing):
+   re-sample the ground per lane point in `Life.setRoads`.
+6. The 90 broadly different pre-Metro mosaic parents (built from older children; left alone by the lead's call) and the
+   invisible JPEG tails (~8,600 files, extra bytes or a last MCU off by a few levels): no action unless wanted.
+7. Housekeeping once Velroi has everything: delete the staging folders (`data/raw/tiles/sr_l8_stage` 470 MB, `fix_*`).
+
+**Promo shots (world):** the service day is pinned in each (SIM's `mDay('2026-09-29')`, first thing in setup; `_metro.mjs`
+is an identical copy of SIM's, last changed in bart-sim 75649ea), and each finds its moment in that day's timetable, so the draft and
+the 4K capture see the same trains, sun and moon whatever day they run.
+- P01 `p_dawn_bay` (06:15) and `p_dawn_bay_blue` (06:42, civil dawn; same framing, the draft picks one): ~100 mm from
+  600 m over the bay by Treasure Island, past Yerba Buena (below the frame): San Francisco's skyline and its reflections
+  fill the band, the Bay Bridge's west span leading in from the left. The waning gibbous moon of the 29th is high in the
+  south-west, above the frame, its glitter well below it.
+- P01 alternative `p_dawn_east` (06:50 on the 29th, into the dawn): ~65 mm from ~220 m over the water off the northern
+  Embarcadero (Piers 35-39) looking east: the east span's white tower standing clear between Treasure Island and Yerba
+  Buena right in front of the glow (the sun rises at azimuth ~91 deg, behind it), the Skyway, the East Bay and the Oakland
+  hills as silhouettes with their lights on under a sky from deep blue to warm at the horizon; a slow lateral drift. Off
+  Rincon Hill, Yerba Buena hides the east span. No aircraft (live ADS-B off, simulated traffic hidden: a clean gradient,
+  and the draft and 4K captures match).
+- P20 `p_night_flyover` (evening, found by `metroFramed`): a slow glide west-north-west at ~85 m over the Port side of
+  West Oakland, ~80 m north of the aerial, ~75 mm tilted down 6.5 deg: the aerial the leading line to the Tube portal, a
+  train 280-480 m ahead in the lower-left third at every tap, the Bay Bridge's lights on the horizon inside the band,
+  the street lamps points (32025b9, 16f4cb4).
+- P26 `p_embr_rise` (19:21:30 on the 29th = the sun of 19:26 on the 26th, the approved light): from eye level at
+  Embarcadero's A1 entrance on Market St, straight up past the towers and the Ferry Building to 2 km over the bay.
+- P27 `p_bay_night` (the busiest evening minute of the 29th, `metroBusiest`): a 25 s orbit of the whole bay at night
+  from 12 km with the Bay Bridge at its centre; smooth end to end (300 consecutive frames over the last 10 s: the
+  frame-to-frame change steady, easing out, no pops; the only local spikes are a beacon blinking at the frame edge).
 
 **M3 blocker fixed (bart-world ebd8fba ... 44c7379):** MetroGround no longer disposes Towns / Flora. Terrain re-filters its
 loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched tiles keeping their meshes and photo
@@ -78,10 +116,10 @@ drawing in the strip wherever Towns has no tile), `66_ui.js` (map rows), `16_air
 
 ## Budget (<= ~18 GB raw + published)
 
-**Measured 08:05 (everything baked):** raw **+7.0 GB** (files written since the pre-Metro snapshot: NAIP cache +5.05 GB,
-lidar +1.10 GB, OSM +0.32 GB, terrarium +0.33 GB, tile work files +0.21 GB); published **+2.35 GB** in 56,327 tile files
-(+ 5 index files), **+~0.3 GB** more when the 1706 L8 tiles still at 512 px are replaced by their 1024 px versions.
-Total **~9.7 GB**. The staging folders (`data/raw/tiles/sr_l8_stage` ~0.45 GB, `fix_dropouts` 6 MB) go once applied.
+**Final (12:55):** raw **+7.0 GB** (NAIP cache +5.05 GB, lidar +1.10 GB, OSM +0.32 GB, terrarium +0.33 GB, tile work
+files +0.21 GB); published **+2.66 GB** (56,327 new tile files 2.35 GB, the L8 set to 1024 px +0.31 GB net; the JPEG,
+water and plaza sets replace files at about the same size). Total **~9.7 GB** of the ~18 GB budget. The staging folders
+(`sr_l8_stage` ~0.47 GB, `fix_*` ~0.17 GB) go once both servers have everything.
 
 ## Publish list
 
@@ -174,6 +212,15 @@ platform is at or below the bed. v0 profile vs the ground (main tracks, before t
   sediment-brown bays as land and ran ocean surf through them (white speckles). `tiles/globe/baywater.png` (44 KB, from OSM
   bay / strait / water polygons, 1024 px over lon -123.3..-120.9, lat 36.4..38.8) now marks them in the Bay frame as calm
   bay water with one uniform tone (`15_globe.js`, cache key bayline-globe-v4); old clients never load it.
+
+- **JPEG scan tails (production since Sep 23).** Pillow 10.1's JPEG encoder here gets the end of the scan wrong for
+  30-60 % of encodes, at random (the same image encoded 20 times gave two outputs, one of them right): extra bytes before
+  EOI (harmless) or a scan that ends early ("premature end of data segment"), which libjpeg-turbo decoders (Chrome) draw
+  as a wrong last 16 px MCU in the tile's bottom-right corner: mostly invisible, sometimes a solid or green square.
+  Strict scan (`scan_corrupt.py`, libjpeg's own warning): production 12,333 files: 2,889 early / 1,211 extra; this
+  morning's 15,101: 5,768 / 2,129. Visible (corner damage > 20 levels, `mcu_damage.py`) or green: 233 files, re-made in
+  `fix_jpeg`. Every tile writer now encodes with OpenCV (deterministic, byte-identical to Pillow's good output) and checks
+  the decode (`tools/tiles/common.jpeg_bytes`).
 
 ## Flight / production QA after the publish (lat, lon, altitude m, yaw rad (0 north, pi/2 east), pitch rad)
 

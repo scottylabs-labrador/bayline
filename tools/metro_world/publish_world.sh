@@ -10,6 +10,9 @@
 #                                                           local data/pub (so a later publish_data.sh never reverts them)
 #   sh tools/metro_world/publish_world.sh sr-check       later: the 1024 px L8 set, server sha256 == old_sha256 ?
 #   sh tools/metro_world/publish_world.sh sr             later: the 1024 px L8 set (server, then local data/pub)
+#   sh tools/metro_world/publish_world.sh jpeg-check / jpeg     the truncated-JPEG replacement set (data/raw/tiles/fix_jpeg)
+#   sh tools/metro_world/publish_world.sh water-check / water   the bay-water re-tone set (data/raw/tiles/fix_water)
+#   sh tools/metro_world/publish_world.sh plaza-check / plaza   downtown SF h9 set (data/raw/tiles/fix_plaza)
 #   DRY=1 sh tools/metro_world/publish_world.sh <step>   rsync --dry-run: lists what would be sent, changes nothing
 set -euf          # (-f: no pathname expansion, the rsync patterns below stay literal)
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -67,7 +70,16 @@ case "${1:-}" in
   sr-check)    shacheck "$ROOT/data/raw/tiles/sr_l8_stage/manifest.json" old_sha256 ;;
   sr)          replace_set "$ROOT/data/raw/tiles/sr_l8_stage" "$ROOT/data/raw/tiles/sr_l8_stage/manifest.json"
                [ -z "$N" ] && shacheck "$ROOT/data/raw/tiles/sr_l8_stage/manifest.json" new_sha256 ;;
-  *) sed -n 2,16p "$0"; exit 1 ;;
+  jpeg-check)  shacheck "$ROOT/data/raw/tiles/fix_jpeg/manifest.json" old_sha256 ;;
+  jpeg)        replace_set "$ROOT/data/raw/tiles/fix_jpeg" "$ROOT/data/raw/tiles/fix_jpeg/manifest.json"
+               [ -z "$N" ] && shacheck "$ROOT/data/raw/tiles/fix_jpeg/manifest.json" new_sha256 ;;
+  water-check) shacheck "$ROOT/data/raw/tiles/fix_water/manifest.json" old_sha256 ;;
+  water)       replace_set "$ROOT/data/raw/tiles/fix_water" "$ROOT/data/raw/tiles/fix_water/manifest.json"
+               [ -z "$N" ] && shacheck "$ROOT/data/raw/tiles/fix_water/manifest.json" new_sha256 ;;
+  plaza-check) shacheck "$ROOT/data/raw/tiles/fix_plaza/manifest.json" old_sha256 ;;
+  plaza)       replace_set "$ROOT/data/raw/tiles/fix_plaza" "$ROOT/data/raw/tiles/fix_plaza/manifest.json"
+               [ -z "$N" ] && shacheck "$ROOT/data/raw/tiles/fix_plaza/manifest.json" new_sha256 ;;
+  *) sed -n 2,19p "$0"; exit 1 ;;
 esac
 [ -z "$N" ] && $SSH "root@$IP" "chmod -R a+rX $VOL/v2/tiles"
 echo "done: $1 ${N:+(dry run)}"

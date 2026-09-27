@@ -263,7 +263,7 @@ const MetroTrack = (() => {
   // sides, a polished running band on rail heads, ballast stones), wet surfaces in rain, lamps. Tunnel geometry uses the
   // TUNNEL variant: its own fixtures light it per fragment (the periodic light line of each tunnel, evaluated with the
   // engine's own BRDF, so rails glint and the lining shows light pools), on top of the Under patch that removes daylight.
-  const uWet = { value: 0 }, uLampK = { value: 1 }, uRailSwitch = { value: 190 };
+  const uWet = { value: 0 }, uLampK = { value: 1 }, uRailSwitch = { value: 190 }; let railBase = 190;
   const MATS = {};
   function infraMaterial(kind) {
     const tunnel = kind === 'tunnel', far = kind === 'far';
@@ -730,10 +730,33 @@ const MetroTrack = (() => {
   }
   const nearSets = { detail: new Set(), body: new Set(), far: new Set() };
   function chunkDist(ch, p) { const b = ch.bb; const dx = Math.max(b[0] - p.x, 0, p.x - b[3]), dy = Math.max(b[1] - p.y, 0, p.y - b[4]), dz = Math.max(b[2] - p.z, 0, p.z - b[5]); return Math.sqrt(dx * dx + dy * dy + dz * dz); }
+  // ---------------------------------------------------------------- lens and capture (M3.2)
+  // The ranges are for the game's 55° lens. A longer lens shows the same detail on screen from further away, so a chunk
+  // in the view frustum is judged at its effective distance = distance x tan(fov / 2) / tan(27.5°) (never more than the
+  // distance: wider lenses keep today's ranges; at most 1/8 of it); in capture mode (tools/capture.mjs, where frame time
+  // does not matter) every distance is divided by 3 as well. The rail switch and the instanced parts follow suit.
+  const TAN_REF = Math.tan(27.5 * U.DEG), _lm = new THREE.Matrix4(), _lb = new THREE.Box3();
+  const lens = { k: 1, cap: 1, tele: false, kMin: 1, frustum: new THREE.Frustum(), fov: 55, dir: new THREE.Vector3() };
+  function updateLens() {
+    const cam = Env.camera, B = typeof window !== 'undefined' ? window.__bayline : null, capOn = !!(B && B.capture && B.capture.on);
+    lens.cap = capOn ? 3 : 1; lens.fov = cam.fov || 55;
+    lens.k = Math.max(0.125, Math.min(1, Math.tan(lens.fov * U.DEG / 2) / TAN_REF));
+    lens.tele = lens.k < 0.95; lens.kMin = lens.k / lens.cap;
+    cam.getWorldDirection(lens.dir);
+    if (lens.tele) { cam.updateMatrixWorld(); _lm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse); lens.frustum.setFromProjectionMatrix(_lm); }
+    uRailSwitch.value = railBase * lens.cap / lens.k;
+  }
+  function lensD(ch, d) {
+    let f = 1 / lens.cap;
+    if (lens.tele) { const b = ch.bb; _lb.min.set(b[0], b[1], b[2]); _lb.max.set(b[3], b[4], b[5]); if (lens.frustum.intersectsBox(_lb)) f *= lens.k; }
+    return d * f;
+  }
+  // (detail and body chunks at their effective distance, gathered over the widened radius; far silhouettes as they were)
   function gather(layer, p, R0) {
-    const set = nearSets[layer]; set.clear(); const G = grids[layer], rr = Math.ceil((R0 || LAYERS[layer].R) * LAYERS[layer].keep / CG), ci = Math.floor(p.x / CG), cj = Math.floor(p.z / CG);
+    const set = nearSets[layer]; set.clear(); const scaled = layer !== 'far', grow = scaled ? Math.min(layer === 'body' ? 7.5 : 16, 1 / lens.kMin) : 1;
+    const G = grids[layer], rr = Math.ceil((R0 || LAYERS[layer].R) * LAYERS[layer].keep * grow / CG), ci = Math.floor(p.x / CG), cj = Math.floor(p.z / CG);
     for (let a = -rr; a <= rr; a++) for (let b = -rr; b <= rr; b++) { const l = G.get((ci + a) * 100003 + (cj + b)); if (l) for (const ch of l) set.add(ch); }
-    for (const ch of set) ch.d = chunkDist(ch, p);
+    for (const ch of set) { const d = chunkDist(ch, p); ch.d = scaled ? lensD(ch, d) : d; }
     return set;
   }
   function schedule(ch, gen, dExtra) { ch.job = gen; built[ch.layer].add(ch); jobs.push({ gen, ch, d: ch.d + dExtra }); }
@@ -748,10 +771,11 @@ const MetroTrack = (() => {
   // graphics tier: Low draws the structures and rails only (no instanced fasteners / ties / insulators, no fences)
   let tierName = 'high';
   function setQuality(name) { tierName = name || 'high'; const low = tierName === 'low'; if (MATS.fence) MATS.fence.visible = !low; if (typeof MetroGuide !== 'undefined' && MetroGuide.setLow) MetroGuide.setLow(low);
-    uRailSwitch.value = low ? 110 : tierName === 'medium' ? 150 : 190; }
+    railBase = low ? 110 : tierName === 'medium' ? 150 : 190; uRailSwitch.value = railBase; }
   function update(camPos, dt) {
     applyShot();
     if (!ready) return;
+    updateLens();
     const alt = camPos.y - groundAt(camPos.x, camPos.z); farR = U.lerp(FAR_GROUND, R_FAR, U.smooth(60, 450, alt));
     if (!bartWithin(camPos.x, camPos.z, farR + 1000)) {
       if (!away) { away = true; disposeAll(); if (typeof MetroGuide !== 'undefined' && MetroGuide.updateInstances) MetroGuide.updateInstances(camPos, TRACKS, true); }
@@ -845,6 +869,6 @@ const MetroTrack = (() => {
   const thirdRail = (id, s) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdAt(R, s) : null; };
   const thirdRuns = (id, s0, s1) => { const R = trackOf(id); return R && typeof MetroGuide !== 'undefined' ? MetroGuide.thirdRuns(R, s0, s1) : []; };
   return { enabled: true, init, update, setQuality, group, stats, DIM, PAL, GB, TGB, MATS, frameAt, shot, shotG, pairAt, nbrAt, inStation, thirdSide, thirdRail, thirdRuns, sampleS, rowsAt, groundAt, TRACKS, uWet, uLampK,
-    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf };
+    get ready() { return ready; }, get net() { return net; }, jobs, CH, LAYERS, R_DETAIL, R_BODY, R_FAR, UNDERGROUND, STRUCT, trackOf, lens };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroTrack = MetroTrack;   // debug handle (window.__bayline.MetroTrack)

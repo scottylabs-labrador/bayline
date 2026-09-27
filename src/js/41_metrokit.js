@@ -105,6 +105,7 @@ const MetroKit = (() => {
   pal('lime', '#b8c43a', 0.5, 0, { ...IN, pat: PAT.plastic, gr: 0.15 });
   pal('ceil', '#e8e8e4', 0.6, 0, { ...IN, pat: PAT.ceil, gr: 0.1 });
   pal('lightStrip', '#fffdf5', 0.3, 0, { ...IN, eg: G.interior, ew: 3.2 });
+  pal('cabLight', '#fffdf5', 0.3, 0, { ...IN, eg: G.cab, ew: 3.2 });
   pal('floor', '#45484c', 0.62, 0, { ...IN, pat: PAT.floor, gr: 0.5 });              // dark grey resilient floor (photos)
   pal('floorDecal', '#e9eaea', 0.6, 0, { ...IN, pat: PAT.floor, gr: 0.4 });
   pal('seatBlue', '#1b679d', 0.42, 0, { ...IN, cc: 0.35, pat: PAT.vinyl, gr: 0.3 });
@@ -171,10 +172,12 @@ const MetroKit = (() => {
   let _blank = null;
   function blankTex() { if (!_blank) { _blank = new THREE.DataTexture(new Uint8Array([200, 202, 205, 110]), 1, 1); _blank.needsUpdate = true; } return _blank; }
   // world-wide state shared by every MetroKit material: wetness (0 dry .. 1 soaked; follows the rain, see setWet)
-  const MKG = { mkWet: { value: 0 }, mkTimeG: U.uTime || { value: 0 } };
+  // (mkLcdGain: the screens' brightness, mkReflK: the glazing's reflections of the car's own interior; see look())
+  const MKG = { mkWet: { value: 0 }, mkTimeG: U.uTime || { value: 0 }, mkLcdGain: { value: 1 }, mkReflK: { value: 1 } };
   function carUniforms() {
     return {
       mkWet: MKG.mkWet, mkTimeG: MKG.mkTimeG, mkSpd: { value: 0 },   // (mkSpd: the car's speed along its design +X)
+      mkLcdGain: MKG.mkLcdGain, mkReflK: MKG.mkReflK, mkLcdCab: { value: new THREE.Vector4(0.5, 0, 1, 1) },
       mkLv: { value: new Float32Array(NLV) },             // light group levels (index = G.*)
       mkNight: { value: 0 },
       mkAge: { value: 0.3 },                               // 0 new .. 1 old and grimy
@@ -208,12 +211,32 @@ const MetroKit = (() => {
       #endif
       mkAx = normalize(normalMatrix * (mkM * vec3(1.0, 0.0, 0.0))); mkAy = normalize(normalMatrix * (mkM * vec3(0.0, 1.0, 0.0)));
       mkAz = normalize(normalMatrix * (mkM * vec3(0.0, 0.0, 1.0))); }`;
+  // the D cab's display panel (42_metrokit_int.js cab()): its centre (x, height over the desk top, z), recline (rad)
+  // and the panel's axes in the car (ex: its normal away from the driver, ey: up the panel); two 0.26 x 0.2 m screens
+  // at z +-0.19 on its face (x_local -0.047)
+  const CAB_PANEL = { x: 9.98, dy: 0.17, z: 0.72, a: 0.52 };
+  { const c = Math.cos(CAB_PANEL.a), s = Math.sin(CAB_PANEL.a); CAB_PANEL.glsl = { ex: `vec3(${c.toFixed(5)}, ${(-s).toFixed(5)}, 0.0)`, ey: `vec3(${s.toFixed(5)}, ${c.toFixed(5)}, 0.0)`,
+    sx: (CAB_PANEL.x - 0.047 * c).toFixed(5), sy: (CAB_PANEL.dy + 0.047 * s).toFixed(5) }; }
+  // light from the two console screens on a surface at p (design space) facing n; their radiance is the LCD canvas
+  // averaged by a coarse mip
+  const SCREEN_GLOW = `
+    vec3 mkScreenGlow(vec3 p, vec3 n) {
+      vec3 g = vec3(0.0), nS = -${CAB_PANEL.glsl.ex};
+      for (int k = 0; k < 2; k++) {
+        vec3 L = vec3(${CAB_PANEL.glsl.sx}, mkCabI.z + ${CAB_PANEL.glsl.sy}, ${CAB_PANEL.z.toFixed(2)} + (k == 0 ? -0.19 : 0.19)) - p; float d2 = dot(L, L) + 0.004; L *= inversesqrt(d2);
+        vec3 Ls = textureLod(mkLcd, vec2(mix(mkLcdCab.x, mkLcdCab.z, k == 0 ? 0.25 : 0.75), 0.5 * (mkLcdCab.y + mkLcdCab.w)), 7.5).rgb * 1.6 * mkLcdGain;
+        g += Ls * (0.052 * max(dot(nS, -L), 0.0) * max(dot(n, L), 0.0) / d2);
+      }
+      return g * RECIPROCAL_PI;
+    }`;
   const MK_FRAG_HEAD = `
     uniform sampler2D mkPalA, mkPalB, mkPalC, mkPalD;
     uniform float mkLv[16]; uniform float mkNight, mkAge, mkSeed, mkBar, mkHalfW, mkFloorY, mkCeilY, mkWet, mkTimeG, mkSpd;
     uniform vec4 mkIndoor, mkLamp;
     uniform sampler2D mkSign, mkLcd, mkAtlas, mkBake; uniform vec2 mkSignRes; uniform float mkNum[6];
+    uniform vec4 mkCabI, mkLcdCab; uniform float mkLcdGain;
     varying vec3 mkP; varying vec3 mkN; varying vec2 mkUv; varying vec2 mkUv1; varying vec3 mkAx; varying vec3 mkAy; varying vec3 mkAz;
+    ${SCREEN_GLOW}
     float mkRough, mkMetal, mkCC, mkCCR, mkAniso, mkPat, mkGrime, mkInside, mkEmW; vec3 mkEm; vec3 mkBump; vec3 mkAlb;
     float mkH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     float mkV(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -367,7 +390,7 @@ const MetroKit = (() => {
         col = vec3(0.012) + led * 0.06; mkEm = e * 2.4; eg = 0.0;
       } else if (mkPat == 19.0) {                                // LCD screen (screen canvas, uv1): pixel grid up close
         vec3 s = texture2D(mkLcd, mkUv1).rgb;
-        col = vec3(0.01); mkEm = s * 1.6; eg = 0.0;
+        col = vec3(0.01); mkEm = s * 1.6 * mkLcdGain; eg = 0.0;
       } else if (mkPat == 20.0) {                                // atlas decal (uv1, alpha tested)
         vec4 d = texture2D(mkAtlas, mkUv1);
         if (d.a < 0.5) discard;
@@ -467,11 +490,20 @@ const MetroKit = (() => {
         // contact shadow near the floor and in the wall corners
         float ao = 1.0 - 0.3 * exp(-max(p.y - mkFloorY, 0.0) * 7.0) * step(p.y, mkFloorY + 0.6);
         ao *= 1.0 - 0.18 * smoothstep(0.25, 0.0, mkHalfW - abs(p.z));
-        mkEm += col * il * mkLv[1] * ao;
+        // (the D cab: its own light level, and the console's two screens light what faces them)
+        float cab = step(0.5, mkCabI.w) * step(mkCabI.x + 0.5, p.x);
+        mkEm += col * (il * mix(mkLv[1], mkLv[9], cab) * ao + cab * mkScreenGlow(p, normalize(mkN)));
       }
       mkAlb = col;
       diffuseColor.rgb = col;
     }`;
+  // Underground (24_metrounder.js), the tunnel's ambient light is added to every lit material's irradiance at the end of
+  // the lights; inside a car it only comes in through the windows, like the sky's (mkIndoor.x): scaled in the Under
+  // engine's own term (blU, computed at the start of the lights), when its patch is in the build
+  const UNDER_IN = typeof THREE !== 'undefined' && THREE.ShaderChunk.lights_fragment_begin.includes('vec4 blU =') ? `
+    #ifdef BL_UNDER_DEF
+      blU.z *= mkIndoor.x;
+    #endif` : '';
   // One material per car and variant: 'ext' (clearcoat + anisotropy, skinned), 'int' (interior, skinned), 'lod' (plain).
   let _tmpl = null;
   function palMaterial(variant, S) {
@@ -496,7 +528,7 @@ const MetroKit = (() => {
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = clamp(mkMetal, 0.0, 1.0);')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n normal = normalize(normal - (mkBump - dot(mkBump, normal) * normal));')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n totalEmissiveRadiance = mkEm;')
-        .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n if (mkInside > 0.5) { irradiance *= mkIndoor.x; iblIrradiance *= mkIndoor.x; radiance *= mkIndoor.y; }');
+        .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n if (mkInside > 0.5) { irradiance *= mkIndoor.x; iblIrradiance *= mkIndoor.x; radiance *= mkIndoor.y;' + UNDER_IN + '\n }');
       if (variant === 'bake') f = f.replace('#include <opaque_fragment>', '#include <opaque_fragment>\n gl_FragColor = vec4(mkAlb, clamp(mkMetal, 0.0, 1.0) * 0.5);');
       if (variant !== 'lod' && variant !== 'bake') {
         f = f.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
@@ -1130,7 +1162,7 @@ const MetroKit = (() => {
           {
             mkDayK = 1.0; mkDayA = vec3(0.0); mkLitK = mkLv[1];
             #ifdef BL_UNDER_DEF
-              { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI; }
+              { vec4 u = blUnder(blUnderWorld(-vViewPosition)); mkDayK = u.y; mkDayA = blUTint * u.z * RECIPROCAL_PI * mkIndoor.x; }
             #endif
             vec3 rd = normalize(mkP - mkCamO);
             #ifdef MK_OPENING
@@ -1194,6 +1226,7 @@ const MetroKit = (() => {
     S.mkTint = { value: GLASS_TINT };
     S.mkImDet = { value: 1 };
     S.mkDoorO = { value: new THREE.Vector2() };            // doors open (design -Z side, +Z side), for the doorway impression
+    S.mkHalfL = { value: (d.length || 21.3) / 2 };
   }
   // the doorway impression's quads (d.openings: [{ x, hw, y0, y1, z, side, bone }]), in the door portals behind the leaves
   function openingsGeometry(d) {
@@ -1222,8 +1255,11 @@ const MetroKit = (() => {
   // ------------------------------------------------------------------------------------------ runtime: Car
   const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _ax = new V3();
   const _one = new V3(1, 1, 1), _rpi = new THREE.Matrix4().makeRotationY(Math.PI);
-  const LOD0_R = 110;
-  const _I4 = new THREE.Matrix4();                                  // a car farther than this from the camera draws its LOD 1
+  // a car farther than LOD0_R from the camera draws its LOD 1; the distance is the apparent one under a long lens (see
+  // camLens), and in capture mode (trailer frames, where frame time doesn't matter) every car within LOD0_CAP of it
+  // draws LOD 0
+  const LOD0_R = 110, LOD0_CAP = 600, TAN_GAME = Math.tan(27.5 * Math.PI / 180);
+  const _I4 = new THREE.Matrix4();
   // body sway: roll f 0.8 Hz / damping / rad per g of unbalanced lateral acceleration; pitch per g of longitudinal
   // acceleration; bounce; roll centre height; track excitation amplitudes at 70 mph (rad, rad, m)
   const SWAY = { fr: 0.8, zr: 0.3, kr: 0.07, fp: 1.1, zp: 0.35, kp: 0.02, fb: 1.3, zb: 0.3, hrc: 0.9, exR: 0.0022, exP: 0.0007, exB: 0.006 };
@@ -1255,7 +1291,9 @@ const MetroKit = (() => {
       if (d.cabBox) S.mkCab.value.copy(d.cabBox);
       S.mkHalfW.value = d.halfW || 1.47; S.mkFloorY.value = d.floorY || 0.991; S.mkCeilY.value = d.ceilY || 3.1;
       this.mat = palMaterial('ext', S);
-      this.matGlass = glassMaterial(S); this.matGlassClear = consist.glassClear;
+      // (the clear glazing once the interior is built: per car when 42_metrokit_cine.js is in, reflecting the car's own
+      // interior seen from inside)
+      this.matGlass = glassMaterial(S); this.matGlassClear = K.clearGlass ? K.clearGlass(S) : consist.glassClear;
       // skeleton: bones exist only for the renderer's bookkeeping; the matrices are written here (car-local)
       const nb = d.bones.length, bones = []; for (let i = 0; i < nb; i++) bones.push(new THREE.Bone());
       const sk = this.skeleton = new THREE.Skeleton(bones, bones.map(() => new THREE.Matrix4()));
@@ -1521,12 +1559,13 @@ const MetroKit = (() => {
         const endState = e => { const side = e * (c.flip ? -1 : 1); if ((side > 0 && c !== first) || (side < 0 && c !== last)) return 0; return side === leadSide ? 1 : -1; };
         const A = endState(1), B = endState(-1);
         lv[G.interior] = L.interior * (0.8 + 0.2 * n);
-        lv[G.head] = A > 0 ? L.head * (6 + 16 * n) : 0; lv[G.headB] = B > 0 ? L.head * (6 + 16 * n) : 0;
-        lv[G.marker] = A > 0 ? L.head * (1.5 + 3 * n) : 0;
-        lv[G.tail] = A < 0 ? L.tail * (3 + 7 * n) : 0; lv[G.tailB] = B < 0 ? L.tail * (3 + 7 * n) : 0;
+        const lk = K.lookLamps === undefined ? 1 : K.lookLamps;                  // (a shot's lamp level, look({ lamps }))
+        lv[G.head] = A > 0 ? L.head * (6 + 16 * n) * lk : 0; lv[G.headB] = B > 0 ? L.head * (6 + 16 * n) * lk : 0;
+        lv[G.marker] = A > 0 ? L.head * (1.5 + 3 * n) * lk : 0;
+        lv[G.tail] = A < 0 ? L.tail * (3 + 7 * n) * lk : 0; lv[G.tailB] = B < 0 ? L.tail * (3 + 7 * n) * lk : 0;
         lv[G.bar] = A !== 0 ? (1.2 + 2.5 * n) : 0; c.S.mkBar.value = A < 0 ? 1 : 0;
         lv[G.sign] = L.signs * (0.8 + 0.4 * n);
-        lv[G.cab] = L.cab;
+        lv[G.cab] = K.lookCab !== undefined && K.lookCab >= 0 ? K.lookCab : L.cab;
         c.S.mkNight.value = n; c.S.mkIntOn.value = 1;
         if (c.glow) {                                   // billboard colours follow the lamps' state; they matter at dusk and night
           const C = c.glow.col.array, lamps = c.design.lamps, k = 0.25 + 0.75 * n; let any = false;
@@ -1581,20 +1620,24 @@ const MetroKit = (() => {
       for (const c of this.cars) c.setInteriorVisible(best >= 0 && Math.abs(c.index - best) <= 1);
     }
     // LOD: the caller's level for the whole consist (the sim decides by the head's distance), refined per car by its own
-    // distance to the camera: a car beyond ~110 m draws LOD 1 even when its consist is at LOD 0 (a 10-car train is
-    // 213 m long, and from the air every car is that far). Re-evaluated every update (with hysteresis).
+    // apparent distance to the camera (the real one under a long lens: see camLens): a car beyond ~110 m draws LOD 1 even
+    // when its consist is at LOD 0 (a 10-car train is 213 m long, and from the air every car is that far). In capture
+    // mode every car within 600 m draws LOD 0, also when the caller asked for LOD 1 (offline, frame time doesn't
+    // matter). Re-evaluated every update (with hysteresis).
     setLOD(level) { this.lodReq = clamp(level | 0, 0, 2); this._applyLod(); }
+    _lodLive() { return this.lodReq === 0 || (this.lodReq === 1 && capturing()); }
     _applyLod() {
-      const base = this.lodReq === undefined ? 0 : this.lodReq, p = base === 0 ? camPos() : null;
+      const base = this.lodReq === undefined ? 0 : this.lodReq, cap = capturing(), p = base === 0 || (cap && base === 1) ? camPos() : null;
+      const k = p ? camLens() : 1, k2 = k * k, R = cap ? LOD0_CAP : LOD0_R;
       for (const c of this.cars) {
         let l = base;
-        if (p) { const g = c.group.position, d2 = (g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2, r = c.lod === 0 ? LOD0_R + 8 : LOD0_R - 8; if (d2 > r * r) l = 1; }
+        if (p) { const g = c.group.position, d2 = ((g.x - p.x) ** 2 + (g.y - p.y) ** 2 + (g.z - p.z) ** 2) * k2, r = c.lod === 0 ? R + 8 : R - 8; l = d2 > r * r ? 1 : 0; }
         c.setLOD(l);
       }
     }
     // free the per-consist GPU resources (shared design geometry stays cached)
     dispose() {
-      for (const c of this.cars) { for (const m of [c.mat, c.matGlass, c.matInt, c.matLod, c.openMesh && c.openMesh.material]) if (m) m.dispose(); if (c.skeleton) c.skeleton.dispose(); if (c.group.parent) c.group.parent.remove(c.group); }
+      for (const c of this.cars) { for (const m of [c.mat, c.matGlass, c.matInt, c.matLod, c.openMesh && c.openMesh.material, c.matGlassClear !== this.glassClear && c.matGlassClear, c.matCine]) if (m) m.dispose(); if (c.skeleton) c.skeleton.dispose(); if (c.group.parent) c.group.parent.remove(c.group); }
       this.signTex.dispose(); if (this.lcdTex) this.lcdTex.dispose(); this.glassClear.dispose();
       live.delete(this); releaseUnused();
     }
@@ -1657,8 +1700,9 @@ const MetroKit = (() => {
       if (moved) this._applyDoorLamps();
       const spin = this.speed * dt / 0.381;
       MKG.mkWet.value = wetNow();
-      if (this.lodReq === 0) this._applyLod();
+      if (this._lodLive()) this._applyLod();
       if (this.intAllowed || this.intAuto) this._applyInt();
+      if (K.cineUpdate) K.cineUpdate(this);
       if (dt > 0) { const a = (this.speed - this._v0) / dt; this._aL += (clamp(a, -4, 4) - this._aL) * Math.min(1, dt / 0.25); this._v0 = this.speed; this.odo += Math.abs(this.speed) * dt; }
       for (const c of this.cars) {
         if (moved) { c.doorPos[0] = c.flip ? T[1] : T[0]; c.doorPos[1] = c.flip ? T[0] : T[1]; c.dirty = true; c.doorDirty = true; }
@@ -1813,13 +1857,20 @@ const MetroKit = (() => {
   }
   // the camera's world position (the interior policy needs it): the camera the cars were last drawn with (their glass
   // or LOD mesh notes it; that is the view, also when a capture camera stands in for the player's), else Env's camera
-  const _camW = new V3(); let _camT = -1e9;
+  const _camW = new V3(); let _camT = -1e9, _camTan = TAN_GAME;
   function camPos() {
     if (performance.now() - _camT < 400) return _camW;
-    const cam = typeof Env !== 'undefined' && Env.camera; if (cam) return _camW.copy(cam.position);
+    const cam = typeof Env !== 'undefined' && Env.camera; if (cam) { _camTan = camTan(cam); return _camW.copy(cam.position); }
     return null;
   }
-  K.noteCamera = cam => { _camW.setFromMatrixPosition(cam.matrixWorld); _camT = performance.now(); };
+  K.noteCamera = cam => { _camW.setFromMatrixPosition(cam.matrixWorld); _camTan = camTan(cam); _camT = performance.now(); };
+  // a long lens magnifies: distances for the level of detail are the apparent ones (the real distance x tan(fov / 2) /
+  // tan(55 deg / 2), the game's view; never more than the real one, so nothing changes at the game's field of view).
+  // A 120 mm trailer lens (vertical fov ~11 deg) makes a car 400 m away count as ~77 m. Same rule as MetroSim's
+  function camTan(cam) { return cam && cam.isPerspectiveCamera ? Math.tan(cam.fov * Math.PI / 360) / (cam.zoom || 1) : TAN_GAME; }
+  function camLens() { return Math.min(1, _camTan / TAN_GAME); }
+  // capture mode (tools/capture.mjs: frames stepped offline by the harness)
+  function capturing() { const B = typeof window !== 'undefined' && window.__bayline; return !!(B && B.capture && B.capture.on); }
 
   // wetness: an explicit value (setWet, previews), else infra's rain-driven wetness (MetroTrack.uWet: wets in ~40 s of
   // rain, dries in ~15 min), else dry
@@ -1857,7 +1908,7 @@ const MetroKit = (() => {
       const g = new THREE.Group(), bind = (geo, mat, car) => { const m = new THREE.SkinnedMesh(geo, mat); m.bind(car.skeleton, _I4); m.bindMode = 'detached'; m.frustumCulled = false; g.add(m); _keep.push(mat); return m; };
       for (const car of c.cars) { g.add(car.group); _keep.push(car.mat, car.matGlass); if (car.int) { car.int.visible = true; car.int.traverse(o => { if (o.material) _keep.push(o.material); }); } }
       const car = c.cars[0], d = car.design;
-      bind(d.glass, c.glassClear, car);                                             // the glazing with the interior built
+      bind(d.glass, car.matGlassClear, car);                                        // the glazing with the interior built
       const og = openingsGeometry(d); if (og) bind(og, glassMaterial(car.S, true), car);   // a doorway impression
       bind(d.glass, palMaterial('lod', car.S), car);                                // the Low tier's LOD material (skinned)
       const im = new THREE.InstancedMesh(d.glass, palMaterial('lod', car.S), 1); im.frustumCulled = false; g.add(im); _keep.push(im.material);   // the far batch's
@@ -1882,10 +1933,14 @@ const MetroKit = (() => {
     precompile();
   }, 1500);
   K.imapUniforms = imapUniforms; K.blankTex = blankTex;
+  Object.assign(K, { MKG, GLASS_FRAG_HEAD, GLASS_TINT, MK_VERT_HEAD, MK_VERT_BODY, SCREEN_GLOW, CAB_PANEL, camPos, capturing, G, live });
   K.builders = builders; K.SIGN = SIGN; K.getDesign = getDesign; K.glassMaterial = glassMaterial; K.LINE_COLORS = LINE_COLORS; K.ledText = ledText;
   K.FONT = FONT; K.Consist = Consist; K.Car = Car;
 
   const createFarBatch = (scene, o) => K.createFarBatch(scene, o);
-  return { _k: K, setQuality, setWet, stats, precompile, setRenderer: r => K.setRenderer && K.setRenderer(r), bakesSettled: () => K.bakesSettled ? K.bakesSettled() : Promise.resolve(), createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
+  // viewHint(p, fov): where the camera will be for the next frame (trailer hooks: the capture camera is placed after the
+  // runtime has updated, so without it the first captured frame is judged from the previous view)
+  const viewHint = (p, fov) => { _camW.set(p.x, p.y, p.z); _camTan = fov ? Math.tan(fov * Math.PI / 360) : TAN_GAME; _camT = performance.now(); };
+  return { _k: K, setQuality, setWet, stats, precompile, viewHint, look: o => K.look ? K.look(o) : null, setRenderer: r => K.setRenderer && K.setRenderer(r), bakesSettled: () => K.bakesSettled ? K.bakesSettled() : Promise.resolve(), createConsist, poseCar, poseOnTrack, createFarBatch, LINE_COLORS, designs, get quality() { return Q; } };
 })();
 if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).MetroKit = MetroKit;

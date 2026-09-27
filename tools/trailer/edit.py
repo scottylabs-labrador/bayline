@@ -11,13 +11,15 @@ A cut is {shot, in, dur} plus optional:
           source frames per output frame, so blur 2 = a 360-degree shutter)
   fade_in / fade_out (s), flash (white flash on the cut, 0..1)
   lightning [[t, strength], ...] flickering flashes; shake [[t, px, duration], ...] impact jolts (t from the cut's start)
-  vf      extra ffmpeg filters for this cut's grade (e.g. 'eq=brightness=-0.06:saturation=0.85')
+  vf      extra ffmpeg filters for this cut's grade (e.g. 'eq=brightness=-0.06:saturation=0.85'); grade: false skips the
+          global grade (a UI shot keeps its true colours)
   zoom    [z, ax, ay] a z-times closer crop anchored at (ax, ay) (0..1 across the frame), e.g. [1.14, 0.5, 0] loses the bottom;
           zoom_end (and zoom_t [t0, t1]) ease it to another factor over that window: a digital push-in
   lb      letterbox amount 0..1 (only when the EDL sets `letterbox`, the bars' aspect, e.g. 2.2): the bars ease from the
           previous cut's amount over lb_t s (default 0.7) at the start of this cut; cuts default to 1
 A title is {png, t0, t1, fade?, style: 'slam' | 'drift' | 'slide'} or {layers: [[png, delay], ...], ...} (revealed in turn).
-The EDL may also set name (output base name), music (file in WORKDIR/music), lra (loudness range, default 11) and
+The EDL may also set name (output base name), music (file in WORKDIR/music), lra (loudness range, default 11), loudness
+('static': one gain to lufs (default -14) with a peak limiter, instead of loudnorm, whose dynamic mode flattens climaxes) and
 letterbox (see lb); without letterbox
 the whole picture gets 2.2:1 bars (the first trailer).
 The capture rate of each shot comes from its shot module (fps, default 30)."""
@@ -93,7 +95,7 @@ def render_cut(i, cut):
              ['-c:v', 'libx264', '-preset', 'fast', '-crf', '11', '-pix_fmt', 'yuv420p'] if UHD else      # near-lossless (4K ProRes would be ~13 GB)
              ['-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le'])
     p = subprocess.Popen(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{OUT_W}x{OUT_H}', '-r', str(FPS), '-i', '-',
-                          '-vf', GRADE + (',' + cut['vf'] if cut.get('vf') else ''), *codec, dst], stdin=subprocess.PIPE)
+                          '-vf', (GRADE if cut.get('grade', True) else 'null') + (',' + cut['vf'] if cut.get('vf') else ''), *codec, dst], stdin=subprocess.PIPE)
     bolts, shakes = cut.get('lightning', []), cut.get('shake', [])
     rng = np.random.default_rng(i)
     for fi, t in enumerate(source_times(cut)):
@@ -237,9 +239,18 @@ def main():
     LN = f"loudnorm=I=-14:TP=-1.0:LRA={EDL.get('lra', 11)}"      # (lra 20: keep the music's dynamics, so the drops still hit)
     r = run(['ffmpeg', '-hide_banner', '-i', base + '.mix.wav', '-af', LN + ':print_format=json', '-f', 'null', '-'])
     m = json.loads(r.stderr[r.stderr.rindex('{'):r.stderr.rindex('}') + 1])
-    ln2 = (f"{LN}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}"
-           f":offset={m['target_offset']}:linear=true,aresample=48000")
-    print(f"loudness in {m['input_i']} LUFS / {m['input_tp']} dBTP -> -14 LUFS", flush=True)
+    if EDL.get('loudness') == 'static':
+        # one gain to the target and a look-ahead limiter on the peaks only: loudnorm falls back to its dynamic mode
+        # whenever the gain would push the true peak past -1 dBTP, and that flattens a track's loud sections (a
+        # cinematic cue's climax lost ~4 dB). Here the dynamics stay; only the transients above the ceiling are held.
+        tgt = EDL.get('lufs', -14.0); G = tgt - float(m['input_i']); ceil = -1.0 - G - 0.4      # (peak ceiling before the gain, 0.4 dB inter-sample margin)
+        lim = f"alimiter=limit={10 ** (ceil / 20):.4f}:attack=5:release=90:level=false," if float(m['input_tp']) > ceil else ''
+        ln2 = f"{lim}volume={G:.2f}dB,aresample=48000"
+        print(f"loudness in {m['input_i']} LUFS / {m['input_tp']} dBTP -> {tgt} LUFS (static gain {G:+.2f} dB, peaks held at {ceil:.1f} dBFS first)", flush=True)
+    else:
+        ln2 = (f"{LN}:measured_I={m['input_i']}:measured_TP={m['input_tp']}:measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}"
+               f":offset={m['target_offset']}:linear=true,aresample=48000")
+        print(f"loudness in {m['input_i']} LUFS / {m['input_tp']} dBTP -> -14 LUFS", flush=True)
     run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-i', base + '.mix.wav', '-af', ln2, '-c:a', 'aac', '-b:a', '256k', '-ar', '48000', base + '.audio.m4a'])
     out = base + '.mp4'
     run(['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error', '-i', base + '.video.mp4', '-i', base + '.audio.m4a', '-map', '0:v', '-map', '1:a', '-c', 'copy', '-shortest', '-movflags', '+faststart', out])

@@ -7,6 +7,35 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **13:20 lens-aware ranges (M3.2, promo tele shots)**: every guideway range now uses an effective distance: in the
+  view frustum, distance x tan(fov / 2) / tan(27.5°) (clamped to at most 1, so wider lenses keep today's budgets, and
+  to at least 1/8), and in capture mode (`__bayline.capture.on`) every distance is divided by 3 as well. It applies to
+  the detail ring (240 m), the body ring (1.6 km), shadow casters (650 m), fences (450 m), the rail switch (190 m:
+  `uRailSwitch` = tier value x 3 (capture) / k), and the instanced ties, fasteners and insulators (a 20 m-piece frustum
+  test, re-placed when a long lens turns 1.5° or zooms). Chunks outside the frustum keep their normal distance, so a
+  narrow lens only builds more along what it sees. `MetroTrack.lens` = { k, cap, tele, frustum }. At 55° nothing
+  changes. Tele preview, West Oakland aerial at 120 mm (11.4°) from ~335 m: detail chunks 8 -> 19, instanced parts
+  798 -> 2,509, rails detailed out to ~1 km along the view; draw calls 187 -> 190, triangles 2.35 M -> 2.54 M.
+  Before / after: `notes/bart/shots/infra/tele_lens_before_after.jpg`.
+- **12:40 M3.1 performance (under-map reads)**: the hypothesis holds. Before, every lit material and the post composite
+  read the under map (2 fetches from a 32 MB atlas per fragment, 4 on cut terrain) wherever cells were within ~4 km,
+  i.e. all of central SF and Oakland. Now:
+  - **lighting reads only near the volumes**: `blUMK.z` is on only with the camera in a cell / the fail-safe, or within
+    600 m of a cell's footprint and less than 150 m above the ground; the post composite uses the same gate. From the
+    air (sf_golden, 199 m up) and at mcar_air (no cell within 600 m) the lighting and post read nothing at all.
+  - **occupancy pre-check**: every read (lighting, post, the terrain's cut test) first samples a 64 x 64 occupancy
+    texture of level 1 (4 KB, 64 m texels, built from the cells' and cuts' footprints with the map); the big map is only
+    fetched where something is registered, so the terrain and the sea never touch it.
+  - A/B at runtime: `__bayline.Under.debug.mode = 'off'` (no reads), `'old'` (the pre-M3.1 reads), `undefined` (new).
+  - Measured (q=high, 1440x900, same build, 30 interleaved samples per mode of 2 frames each, `Post.render` + readback
+    sync). The GPU is heavily shared right now (WORLD's SR plus other workstreams' captures: medians swing 80-230 ms), so
+    low percentiles are the only usable statistic: **sf_golden p25 off 53.3 / old 64.6 (+21 %) / new 55.3 (+4 %, noise)**,
+    p10 43.8 / 60.2 / 50.1; **mcar_air p10 off 95.6 / old 119 (+25 %) / new 102 (+7 %)**. Draw calls and triangles are
+    identical across modes. Please re-run on a quiet GPU with the switch above.
+  - **Other infra costs at the aerials** (renderer.info, infra hidden vs shown): mcar_air infra 49 calls / 295 k tris
+    incl. shadows (22 shadow casters: 4 calls / 75 k shadow tris; fences 11 meshes, dithered discard, no blending;
+    far layer 10 meshes; detail 12; instanced parts 0 from 110 m); woak_air (420 m) infra 27 calls / 94 k tris (5
+    casters, 32 k shadow tris; far 29 pieces, ~10 draws). Nothing else stands out.
 - **10:00 INFRA round2 OK** (M2b round 2, frozen, `#metrodir=metro-next/`, one capture session): San Bruno: junction
   chamber jc569 (W1 6337-6473) takes W1, M2 and the pocket tracks W-sd1 / W-sd3 with the switches out of the platform;
   the pocket-track box meets the chamber; the third rail gaps at the W1 switch (6440-6453). Concord: the viaduct and its

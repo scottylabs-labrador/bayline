@@ -1,15 +1,23 @@
 // QA: a scripted human driver that only uses keyboard events (the real input path).
-// Injected with tools/shot.mjs --eval. Results land in window.__qa.
+// Injected with tools/shot.mjs --eval. Results land in window.__qa (done: the run has ended; result: its report card).
+// window.__qaDriveSummary() is one JSON line with the short fields first (maxMph, done, stops, missed, score, grade)
+// and the long ones (the score log, the events) last, so a log line cut at 400 characters still carries the verdict.
 new Promise(waitBoot => { const f = () => window.__bayline && window.__bayline.Sim.TT ? waitBoot() : setTimeout(f, 200); f(); }).then(() => {
   const B = window.__bayline; const G = B.Game;
   const key = (code) => { window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code, bubbles: true })); window.dispatchEvent(new KeyboardEvent('keyup', { code, key: code, bubbles: true })); };
   const m = G.missionList().find(m => m.id === (window.__qaMission || 'short')); G.startMission(m);
   B.Env.time.scale = window.__qaScale || 4;
-  const qa = window.__qa = { events: [], samples: 0, maxV: 0, ptcWarn: 0, ptcEnf: 0 };
+  const qa = window.__qa = { events: [], samples: 0, maxV: 0, ptcWarn: 0, ptcEnf: 0, done: false, result: null };
+  Object.defineProperty(qa, 'run', { value: G.run, enumerable: false });   // (the run's record, kept after it ends; not in JSON.stringify(__qa))
+  G.on((e, d) => { if (e === 'result' && !qa.result) qa.result = { score: d.score, grade: d.grade, title: d.title }; });
+  window.__qaDriveSummary = () => { const R = qa.run, st = R && R.stats, res = qa.result;
+    return JSON.stringify({ maxMph: Math.round(qa.maxV / 0.44704), done: qa.done, stops: st ? st.stops : 0, missed: st ? st.missed : 0, ontime: st ? st.ontime : 0,
+      errM: st && st.stops ? +(st.errSum / st.stops).toFixed(1) : null, score: res ? res.score : R ? Math.round(R.score) : null, grade: res ? res.grade : null,
+      ptcWarn: qa.ptcWarn, ptcEnf: qa.ptcEnf, log: R ? R.log.filter(l => l[2]).map(l => l[2]) : [], events: qa.events }); };
   const log = (s) => qa.events.push(B.Env.clockText(B.Env.time.sec) + ' ' + s);
   let lastGuide = '';
   const iv = setInterval(() => {
-    const D = B.Sim.drive, r = G.run; if (!D || !r) { log('run finished'); clearInterval(iv); return; }
+    const D = B.Sim.drive, r = G.run; if (!D || !r) { log('run finished'); qa.done = true; clearInterval(iv); return; }
     const dm = G.dmi(); qa.samples++; qa.maxV = Math.max(qa.maxV, D.v);
     const gk = dm.guide.replace(/[0-9.:]+/g, '#'); if (gk !== lastGuide) { lastGuide = gk; log('guide: ' + dm.guide); }
     if (dm.ptc === 'warn') qa.ptcWarn++; if (dm.ptc === 'enforce') qa.ptcEnf++;

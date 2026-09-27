@@ -23,12 +23,22 @@ def sha(p):
 
 def main():
     pend = json.load(open(os.path.join(STAGE, 'pending_512.json')))['files']
+    # a 512 px file may since have been replaced by another published set (the truncated-JPEG fixes): its new sha is then
+    # the expected old one here
+    also = {}
+    for other in ('fix_jpeg', 'fix_water'):
+        mp = os.path.join(ROOT, 'data', 'raw', 'tiles', other, 'manifest.json')
+        if os.path.exists(mp):
+            for f in json.load(open(mp))['files']:
+                also.setdefault(f['path'], set()).add(f['new_sha256'])
     man, missing, changed, truncated = [], [], [], []
     for r in pend:
         new, old = os.path.join(STAGE, r['path']), os.path.join(PUB, r['path'])
-        if sha(old) != r['sha256']:
-            changed.append(r['path'])                        # (the local 512 px file changed since the list: stop)
+        cur = sha(old)
+        if cur != r['sha256'] and cur not in also.get(r['path'], ()):
+            changed.append(r['path'])                        # (the local 512 px file changed otherwise: stop)
             continue
+        r = dict(r, sha256=cur)
         if not os.path.exists(new):
             missing.append(r['path']); continue
         with Image.open(new) as im:

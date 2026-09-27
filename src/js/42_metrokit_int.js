@@ -243,7 +243,9 @@
     E.pal('ceil'); E.q4([8.46, 3.13, 0.45], [8.46, 3.13, -0.45], [8.98, 3.13, -0.45], [8.98, 3.13, 0.45]);
     E.pal('wallInt2'); E.shape([[-0.45, FY], [0.45, FY], [0.45, 3.13], [-0.45, 3.13]], [[[-0.2, FY + 1.1], [-0.2, FY + 1.85], [0.2, FY + 1.85], [0.2, FY + 1.1]]], (z, y) => ({ p: [8.98, y, z], n: [-1, 0, 0] }));
     G.pal('lensClear'); G.shape([[-0.2, FY + 1.1], [0.2, FY + 1.1], [0.2, FY + 1.85], [-0.2, FY + 1.85]], [], (z, y) => ({ p: [8.985, y, z], n: [-1, 0, 0] }));
-    E.pal('seatFrame'); E.box(8.95, FY + 1.0, -0.36, 8.975, FY + 1.06, -0.27);
+    // (and its cab side: without it the door vanished seen from the cab, and the lit saloon showed through the nose)
+    E.pal('wallInt2'); E.shape([[-0.45, FY], [0.45, FY], [0.45, 3.13], [-0.45, 3.13]], [[[-0.2, FY + 1.1], [-0.2, FY + 1.85], [0.2, FY + 1.85], [0.2, FY + 1.1]]], (z, y) => ({ p: [8.99, y, z], n: [1, 0, 0] }));
+    E.pal('seatFrame'); E.box(8.95, FY + 1.0, -0.36, 8.975, FY + 1.06, -0.27); E.box(8.995, FY + 1.0, -0.36, 9.02, FY + 1.06, -0.27);
     // next-stop sign over the passage
     const S = K.SIGN.next; E.pal('bezel'); E.box(8.44, FY + 2.05, -0.5, 8.46, FY + 2.26, 0.5);
     E.pal('ledInt'); { const y0 = FY + 2.09, y1 = FY + 2.22, x = 8.438; const a = E.v(x, y0, 0.48, -1, 0, 0, 0, S[1]), b = E.v(x, y0, -0.48, -1, 0, 0, 1, S[1]), c = E.v(x, y1, -0.48, -1, 0, 0, 1, S[3]), dd = E.v(x, y1, 0.48, -1, 0, 0, 0, S[3]); E.quadA(a, b, c, dd); }
@@ -260,7 +262,7 @@
     // floor, side walls (under the side windows), ceiling
     E.pal('floor'); E.q4([x0, FY + 0.001, zR], [xw + 0.2, FY + 0.001, zR], [xw + 0.2, FY + 0.001, -zR], [x0, FY + 0.001, -zR]);
     E.pal('ceil'); E.q4([x0, 3.05, -zR], [xw, 3.05, -zR], [xw, 3.05, zR], [x0, 3.05, zR]);
-    E.pal('lightStrip'); E.q4([9.3, 3.045, -0.3], [9.8, 3.045, -0.3], [9.8, 3.045, 0.3], [9.3, 3.045, 0.3]);
+    E.pal('cabLight'); E.q4([9.3, 3.045, -0.3], [9.8, 3.045, -0.3], [9.8, 3.045, 0.3], [9.3, 3.045, 0.3]);
     E.pal('wallInt2');
     for (const s of [1, -1]) {
       const z = s * 1.44;
@@ -278,8 +280,9 @@
     E.pal('console'); rbox(E, dx0, deskY - 0.035, dz0, dx1, deskY, dz1, 0.012, 3);
     E.pal('consoleDk'); rbox(E, dx0 - 0.012, deskY - 0.06, dz0 + 0.02, dx0 + 0.012, deskY - 0.005, dz1 - 0.02, 0.01, 2);
     E.pal('grilleInt'); E.box(dx0 + 0.055, FY + 0.12, 0.2, dx0 + 0.06, FY + 0.26, 0.5);
-    // back panel with the displays (reclined 0.28 rad)
-    E.at(mul(tr(9.98, deskY + 0.17, 0.72), rotZ(-0.28)), m => {
+    // back panel with the displays, reclined (K.CAB_PANEL: the glazing's reflections and the screens' glow use it too)
+    const CP = K.CAB_PANEL;
+    E.at(mul(tr(CP.x, deskY + CP.dy, CP.z), rotZ(-CP.a)), m => {
       m.pal('console'); rbox(m, -0.025, -0.17, -0.58, 0.02, 0.17, 0.58, 0.015, 3);
       const L = K.LCD.cab, um = (L[0] + L[2]) / 2, scr = (zc, u0, u1) => { m.pal('bezel'); rbox(m, -0.045, -0.125, zc - 0.155, -0.02, 0.125, zc + 0.155, 0.01, 2);
         m.pal('lcd'); const a = m.v(-0.047, -0.1, zc - 0.13, -1, 0, 0, u0, L[1]), b = m.v(-0.047, -0.1, zc + 0.13, -1, 0, 0, u1, L[1]), c = m.v(-0.047, 0.1, zc + 0.13, -1, 0, 0, u1, L[3]), e = m.v(-0.047, 0.1, zc - 0.13, -1, 0, 0, u0, L[3]); m.quadA(a, b, c, e); };
