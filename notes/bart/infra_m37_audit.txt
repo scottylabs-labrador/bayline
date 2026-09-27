@@ -1,0 +1,829 @@
+Bayline Metro, infra M3.7: network-wide offline audit (tools/metro_infra_offline.mjs, L7 terrain + MetroGround carve)
+before = lead-int b3d189a, after = bart-infra M3.7. Every chunk of every track, layers body (800 m), detail (200 m), far (2 km).
+A chunk not listed below has an identical geometry hash and Under-registration hash (3,020 of 4,134).
+
+  hash --layers body,detail,far --bins (both trees), then diff:
+    chunks 4134, changed 1114 (body 332, detail 747, far 35), unchanged 3020
+    triangles: body -795,549, detail +2,359,706 (rails, plinths and third rail where they were missing), far -282
+  track detail ownership (eval): 1,002,350 half-metre samples on 368 tracks, each built by exactly one chunk
+  cover --rails (rail heads every 4 m): holes 684 runs / 39.5 km -> 199 runs / 0.84 km; new holes: 3 single samples
+      (K3.1 2686, L1 426, L1 578); doubles 181 -> 215 runs, 94 new ones, single samples where two tracks' rails meet at a turnout
+  cover (support under centreline and rails every 4 m): holes 393 runs / 13.8 km -> 396 runs / 13.2 km; new holes: 33 runs,
+      224 m, largest K3.2 + K4 1010-1026 (bridge: the K3.2/K4 pair hands over to the K-main.8/R2 group), C2 2154-2166,
+      K-main.6 382-502 (3 x 8 m); doubles 829 -> 827
+  clear (train envelope hw 1.55 m, 0.6-3.3 m above rail) on the 332 changed body chunks:
+      hits 739,022 -> 49,560 (infra 369,008 -> 18,174; fences 348,370 -> 11,810; tunnel 21,643 -> 19,575, junction tunnels,
+      pre-existing); tracks with a clash 277 -> 93; new clashes: 5 runs / 21 hits, all at the envelope's edge
+      (M2 10282-10284 at 1.48 m, Y1 571 and 598 at 1.54-1.57 m, Y-xo2 66 at 1.41 m, A-yd46 at its switch point s 0)
+
+Changed chunks (layer, track, s ranges of the changed chunks), then where in them (material: s ranges of the nearest
+track in 20 m steps; [the chunks that built it, when another track's]):
+
+chunks A 4134 B 4134 changed 1114 unchanged 3020
+body A-sd1         0-440 (geometry; tris -8416)
+body A-sp1         0-312 (geometry; tris -642)
+body A-sp3         0-654 (geometry; tris +16)
+body A-yd1         0-3632 (geometry; tris -29740)
+body A-yd10        0-852 (geometry; tris -14850)
+body A-yd11        0-476 (geometry; tris -13518)
+body A-yd12        0-455 (geometry; tris -13348)
+body A-yd13        0-358 (geometry; tris -9680)
+body A-yd14        0-500 (geometry; tris -1580)
+body A-yd15        0-544 (geometry; tris -13380)
+body A-yd16        0-526 (geometry; tris -8972)
+body A-yd17        0-365 (geometry; tris -10554)
+body A-yd18        0-322 (geometry; tris -396)
+body A-yd2         0-168 (geometry; tris -2732)
+body A-yd20        0-473 (geometry; tris -3328)
+body A-yd21        0-321 (geometry; tris -476)
+body A-yd22        0-305 (geometry; tris -750)
+body A-yd23        0-571 (geometry; tris -13310)
+body A-yd25        0-741 (geometry; tris -6098)
+body A-yd26        0-352 (geometry; tris -5606)
+body A-yd27        0-1458 (geometry; tris -36874)
+body A-yd28        0-77 (geometry; tris -694)
+body A-yd29        0-57 (geometry; tris -808)
+body A-yd3         0-1337 (geometry; tris -4012)
+body A-yd30        0-65 (geometry; tris -288)
+body A-yd31        0-384 (geometry; tris -3094)
+body A-yd32        0-64 (geometry; tris -80)
+body A-yd35        0-497 (geometry; tris -396)
+body A-yd36        0-64 (geometry; tris -282)
+body A-yd38        0-65 (geometry; tris -80)
+body A-yd39        0-226 (geometry; tris -912)
+body A-yd4         800-1167 (geometry; tris -3572)
+body A-yd40        0-200 (geometry; tris -462)
+body A-yd41        0-180 (geometry; tris -486)
+body A-yd44        0-175 (geometry; tris -2160)
+body A-yd45        0-101 (geometry; tris -596)
+body A-yd46        0-296 (geometry; tris -420)
+body A-yd47        0-134 (geometry; tris -252)
+body A-yd48        0-44 (geometry; tris -208)
+body A-yd49        0-420 (geometry; tris -272)
+body A-yd50        0-1176 (geometry; tris -7978)
+body A-yd51        0-49 (geometry; tris -38)
+body A-yd52        0-402 (geometry; tris -1198)
+body A-yd53        0-140 (geometry; tris +16)
+body A-yd54        0-166 (geometry; tris -60)
+body A-yd8         0-421 (geometry; tris -326)
+body A1.1          0-800 (geometry; tris +374)  1600-2400 (geometry; tris -2436)
+body A1.2          0-1600 (geometry; tris -10822)  9600-14400 (geometry; tris -31198)  20800-21600 (geometry; tris -28)  27200-28800 (geometry; tris -110)
+body A2.1          16800-18463 (geometry; tris -8262)
+body A2.2          0-800 (geometry; tris -618)  18400-19200 (geometry; tris +292)  26400-28000 (geometry; tris -102)  34400-34617 (geometry; tris -648)
+body C-sd1         0-457 (geometry; tris -3534)
+body C-sd2         0-104 (geometry; tris -590)
+body C-sd3         0-108 (geometry; tris -612)
+body C-sp1         0-333 (geometry; tris -2504)
+body C-yd1         0-585 (geometry; tris -1588)
+body C-yd10        0-361 (geometry; tris -5276)
+body C-yd11        0-864 (geometry; tris -19092)
+body C-yd12        0-504 (geometry; tris -1990)
+body C-yd13        0-255 (geometry; tris -6904)
+body C-yd14        0-58 (geometry; tris -1366)
+body C-yd15        0-542 (geometry; tris -12596)
+body C-yd16        0-289 (geometry; tris -976)
+body C-yd17        0-232 (geometry; tris -5360)
+body C-yd18        0-335 (geometry; tris -4978)
+body C-yd19        0-364 (geometry; tris -9816)
+body C-yd2         0-691 (geometry; tris -1028)
+body C-yd20        0-193 (geometry; tris -160)
+body C-yd21        0-595 (geometry; tris -6510)
+body C-yd23        0-284 (geometry; tris -8156)
+body C-yd24        0-351 (geometry; tris -3906)
+body C-yd25        0-451 (geometry; tris -7640)
+body C-yd26        0-308 (geometry; tris -396)
+body C-yd28        0-361 (geometry; tris -828)
+body C-yd29        0-800 (geometry; tris -7924)
+body C-yd3         0-77 (geometry; tris -144)
+body C-yd30        0-311 (geometry; tris -784)
+body C-yd31        0-334 (geometry; tris -748)
+body C-yd32        0-313 (geometry; tris -3554)
+body C-yd33        0-357 (geometry; tris -8412)
+body C-yd34        0-378 (geometry; tris -480)
+body C-yd35        0-476 (geometry; tris -3294)
+body C-yd36        0-63 (geometry; tris -352)
+body C-yd38        0-220 (geometry; tris -1638)
+body C-yd39        0-68 (geometry; tris -620)
+body C-yd4         0-502 (geometry; tris -2844)
+body C-yd40        0-255 (geometry; tris -160)
+body C-yd42        0-95 (geometry; tris -990)
+body C-yd45        0-311 (geometry; tris -7512)
+body C-yd46        0-314 (geometry; tris -3272)
+body C-yd49        0-710 (geometry; tris -2844)
+body C-yd5         0-50 (geometry; tris -586)
+body C-yd6         0-529 (geometry; tris -1426)
+body C-yd7         0-117 (geometry; tris -668)
+body C-yd8         0-97 (geometry; tris -332)
+body C-yd9         0-395 (geometry; tris -198)
+body C1            0-3200 (geometry; tris -406)  8000-9600 (geometry; tris -86)  14400-16000 (geometry; tris -288)  18400-19200 (geometry; tris -172)  27200-29600 (geometry; tris -4456)  32800-34400 (geometry; tris -120)  35200-37600 (geometry; tris -10560)  40800-42244 (geometry; tris -324)
+body C2            8000-8800 (geometry; tris +0)  15200-16000 (geometry; tris -334)  32800-34400 (geometry; tris -596)  36000-37600 (geometry; tris -1532)  41600-42222 (geometry; tris -228)
+body CT            0-787 (geometry; tris -228)
+body E-sd1         0-89 (geometry; tris -1092)
+body E-sd2         0-89 (geometry; tris -512)
+body E-sd3         0-88 (geometry; tris -1018)
+body E-sd4         0-88 (geometry; tris -416)
+body E1            0-800 (geometry; tris -172)  2400-4800 (geometry; tris -494)  12800-13532 (geometry; tris -20)
+body E2            0-800 (geometry; tris -210)  3200-4000 (geometry; tris -454)
+body ET            0-789 (geometry; tris -38)
+body K-main.1      0-107 (geometry; tris -1858)
+body K-main.10     0-627 (geometry+under; tris -1586)
+body K-main.3      0-179 (geometry+under; tris +1132)
+body K-main.4      0-613 (geometry; tris -1224)
+body K-main.6      0-631 (geometry+under; tris -3286)
+body K-main.8      0-642 (geometry; tris -1248)
+body K-sd1         0-64 (geometry; tris -1192)
+body K-sp1         0-852 (geometry; tris -4980)
+body K1            0-2400 (geometry; tris -8002)
+body K2            0-2400 (geometry,geometry+under; tris -9426)
+body K3.1          2400-3189 (geometry; tris +32)
+body K3.2          0-1526 (geometry; tris -2156)
+body K4            800-1545 (geometry; tris -176)
+body L-sd1         0-1030 (geometry; tris -6572)
+body L-sd2         0-125 (geometry; tris -454)
+body L-sd3         0-115 (geometry; tris -494)
+body L-sd4         0-1101 (geometry; tris -9020)
+body L-sd5         0-114 (geometry; tris -396)
+body L-sd6         0-96 (geometry; tris -648)
+body L-sd7         0-119 (geometry; tris -458)
+body L-sd8         0-96 (geometry; tris -226)
+body L-sp1         0-98 (geometry; tris -774)
+body L-sp2         0-321 (geometry; tris -442)
+body L1            0-1600 (geometry; tris -580)  4000-5600 (geometry; tris +44)  6400-7200 (geometry; tris -20)  8800-10400 (geometry; tris -24)  12000-12800 (geometry; tris -284)  13600-14400 (geometry; tris -132)  18400-19200 (geometry; tris -20)  20000-20800 (geometry; tris -20)  21600-22253 (geometry; tris -20)
+body L2            8000-8800 (geometry; tris -190)  9600-10400 (geometry; tris -304)  16000-17600 (geometry; tris -76)  20800-21402 (geometry; tris -722)
+body M-sp1         0-269 (geometry; tris -1632)
+body M-xo4         0-66 (geometry; tris +0)
+body M-xo7         0-69 (geometry+under; tris -345)
+body M1.1          19200-21600 (geometry; tris +0)  22400-23200 (geometry; tris -1112)
+body M1.2          0-3249 (geometry+under,geometry; tris -14153)
+body M2            0-800 (geometry+under; tris +920)  8800-11200 (geometry,geometry+under; tris +1182)  12000-12800 (geometry; tris -118)  17600-18400 (geometry+under; tris +318)  24000-25600 (geometry+under; tris +1842)
+body M3            0-3200 (geometry,geometry+under; tris +412)
+body R-main.1      0-707 (geometry; tris -13370)
+body R-yd1         0-633 (geometry; tris -16548)
+body R-yd10        0-1161 (geometry; tris -14884)
+body R-yd11        0-463 (geometry; tris -12288)
+body R-yd12        0-497 (geometry; tris -7222)
+body R-yd13        0-423 (geometry; tris -568)
+body R-yd14        0-409 (geometry; tris -6918)
+body R-yd15        0-701 (geometry; tris -4460)
+body R-yd16        0-421 (geometry; tris -9766)
+body R-yd17        0-393 (geometry; tris -9772)
+body R-yd19        0-288 (geometry; tris -582)
+body R-yd2         0-775 (geometry; tris -788)
+body R-yd21        0-141 (geometry; tris -1536)
+body R-yd22        0-58 (geometry; tris -890)
+body R-yd23        0-202 (geometry; tris -1568)
+body R-yd24        0-61 (geometry; tris -530)
+body R-yd26        0-484 (geometry; tris -1982)
+body R-yd27        0-398 (geometry; tris -5222)
+body R-yd28        0-287 (geometry; tris -3448)
+body R-yd29        0-383 (geometry; tris -80)
+body R-yd3         0-372 (geometry; tris -9236)
+body R-yd30        0-423 (geometry; tris -54)
+body R-yd31        0-350 (geometry; tris -360)
+body R-yd34        0-83 (geometry; tris -428)
+body R-yd5         0-290 (geometry; tris -8224)
+body R-yd6         0-384 (geometry; tris +20)
+body R1            0-800 (geometry; tris -304)  13600-14400 (geometry; tris +0)  16000-16845 (geometry; tris -726)
+body R2            0-800 (geometry; tris -142)  12000-12800 (geometry+under; tris +852)  16000-16847 (geometry; tris -352)
+body S-main.1      0-91 (geometry; tris -758)
+body S-sd1         0-513 (geometry; tris -6172)
+body S-sd2         0-381 (geometry; tris -258)
+body S-xo11        0-70 (geometry+under; tris -667)
+body S-xo12        0-73 (geometry+under; tris -632)
+body S1            800-1600 (geometry; tris -6870)  3200-4000 (geometry; tris +108)  6400-8000 (geometry; tris -136)  8800-9550 (geometry; tris -114)
+body S2            7200-8000 (geometry; tris -64)
+body W-xo8         0-74 (geometry; tris +0)
+body W-xo9         0-62 (geometry; tris +0)
+body W-yd1         0-477 (geometry; tris -13230)
+body W-yd10        0-350 (geometry; tris -9340)
+body W-yd11        0-399 (geometry; tris -5696)
+body W-yd12        0-390 (geometry; tris -1154)
+body W-yd13        0-163 (geometry; tris -4046)
+body W-yd14        0-194 (geometry; tris -2984)
+body W-yd15        0-121 (geometry; tris -1900)
+body W-yd16        0-82 (geometry; tris -576)
+body W-yd17        0-268 (geometry; tris -1678)
+body W-yd18        0-130 (geometry; tris -1066)
+body W-yd19        0-304 (geometry; tris -5306)
+body W-yd2         0-366 (geometry; tris -6554)
+body W-yd20        0-158 (geometry; tris -968)
+body W-yd21        0-195 (geometry; tris -892)
+body W-yd23        0-338 (geometry; tris -7996)
+body W-yd24        0-352 (geometry; tris -2492)
+body W-yd26        0-242 (geometry; tris -1468)
+body W-yd27        0-404 (geometry; tris -3472)
+body W-yd28        0-608 (geometry; tris -2292)
+body W-yd29        0-280 (geometry; tris -4154)
+body W-yd3         0-800 (geometry; tris -6966)
+body W-yd30        0-507 (geometry; tris -948)
+body W-yd31        0-256 (geometry; tris -208)
+body W-yd32        0-333 (geometry; tris -160)
+body W-yd33        0-52 (geometry+under; tris +382)
+body W-yd34        0-175 (geometry; tris -412)
+body W-yd37        0-92 (geometry; tris -160)
+body W-yd4         0-508 (geometry; tris -5594)
+body W-yd5         0-800 (geometry; tris -3372)
+body W-yd6         0-131 (geometry; tris -684)
+body W-yd7         0-87 (geometry; tris -172)
+body W-yd8         0-63 (geometry; tris -522)
+body W-yd9         0-132 (geometry; tris -226)
+body W1            5600-7200 (geometry+under; tris +1216)
+body W3            0-767 (geometry; tris -10)
+body Y-main.1      0-1378 (geometry; tris -4888)
+body Y-main.2      0-1600 (geometry,geometry+under; tris -13240)
+body Y-main.3      0-1149 (geometry; tris -54)
+body Y-main.4      0-97 (geometry; tris +0)
+body Y-main.5      0-1550 (geometry; tris -6150)
+body Y-main.6      0-832 (geometry; tris -790)
+body Y-main.7      0-45 (geometry; tris -420)
+body Y-main.8      800-997 (geometry; tris -12)
+body Y-xo3         0-62 (geometry; tris +0)
+body Y-xo5         0-78 (geometry+under; tris -2040)
+body Y1            0-702 (geometry; tris -2634)
+detail A-sd1       0-440 (geometry; tris +11620)
+detail A-sp1       0-312 (geometry; tris +5992)
+detail A-sp3       0-200 (geometry; tris +1576)
+detail A-yd1       0-200 (geometry; tris -3936)  1000-1600 (geometry; tris +10812)  2200-3400 (geometry; tris -37334)
+detail A-yd10      0-852 (geometry; tris +36764)
+detail A-yd11      0-476 (geometry; tris +15772)
+detail A-yd12      0-455 (geometry; tris +1600)
+detail A-yd13      0-358 (geometry; tris +10754)
+detail A-yd14      0-500 (geometry; tris +18788)
+detail A-yd15      0-544 (geometry; tris +13592)
+detail A-yd16      0-526 (geometry; tris +4966)
+detail A-yd17      0-365 (geometry; tris +13154)
+detail A-yd18      0-322 (geometry; tris +11296)
+detail A-yd19      0-200 (geometry; tris +68)
+detail A-yd2       0-168 (geometry; tris +4688)
+detail A-yd20      0-473 (geometry; tris +2816)
+detail A-yd21      0-321 (geometry; tris +2180)
+detail A-yd22      0-305 (geometry; tris +7390)
+detail A-yd23      0-200 (geometry; tris +68)  400-571 (geometry; tris +546)
+detail A-yd24      400-408 (geometry; tris +306)
+detail A-yd25      0-741 (geometry; tris -636)
+detail A-yd26      0-352 (geometry; tris +7624)
+detail A-yd27      0-1458 (geometry; tris +22740)
+detail A-yd28      0-77 (geometry; tris +1064)
+detail A-yd29      0-57 (geometry; tris +3728)
+detail A-yd3       0-1337 (geometry; tris +42732)
+detail A-yd30      0-65 (geometry; tris +520)
+detail A-yd31      0-384 (geometry; tris +13612)
+detail A-yd32      0-64 (geometry; tris +5090)
+detail A-yd33      0-56 (geometry; tris +1316)
+detail A-yd34      0-66 (geometry; tris +1384)
+detail A-yd35      0-200 (geometry; tris +2100)
+detail A-yd36      0-64 (geometry; tris +4700)
+detail A-yd37      0-56 (geometry; tris +2720)
+detail A-yd38      0-65 (geometry; tris +5748)
+detail A-yd39      0-226 (geometry; tris +9384)
+detail A-yd4       0-1167 (geometry; tris +67594)
+detail A-yd40      0-200 (geometry; tris +1076)
+detail A-yd41      0-180 (geometry; tris +7730)
+detail A-yd43      0-54 (geometry; tris +626)
+detail A-yd44      0-175 (geometry; tris +508)
+detail A-yd45      0-101 (geometry; tris +4532)
+detail A-yd46      0-200 (geometry; tris +4728)
+detail A-yd47      0-134 (geometry; tris +3714)
+detail A-yd49      200-400 (geometry; tris +956)
+detail A-yd5       0-200 (geometry; tris +68)
+detail A-yd50      0-400 (geometry; tris -352)  600-800 (geometry; tris -1500)  1000-1176 (geometry; tris +1440)
+detail A-yd51      0-49 (geometry; tris -864)
+detail A-yd52      0-400 (geometry; tris +7274)
+detail A-yd54      0-166 (geometry; tris +3272)
+detail A-yd55      0-64 (geometry; tris +1986)
+detail A-yd6       0-416 (geometry; tris +1974)
+detail A-yd7       200-540 (geometry; tris +11374)
+detail A-yd8       0-421 (geometry; tris +14748)
+detail A-yd9       0-330 (geometry; tris +6268)
+detail A1.1        0-200 (geometry; tris +3392)  400-600 (geometry; tris +3348)  800-1000 (geometry; tris +3428)  1800-2200 (geometry; tris -124)  8000-8200 (geometry; tris +88)  8800-9000 (geometry; tris +2928)  17000-17200 (geometry; tris +5524)
+detail A1.2        0-1200 (geometry; tris -20318)  10000-10400 (geometry; tris +0)  10600-11400 (geometry; tris -992)  12400-13200 (geometry; tris +2178)  13400-13600 (geometry; tris +384)  18400-18800 (geometry; tris +0)  19800-20000 (geometry; tris +284)  20800-21000 (geometry; tris +3412)  22400-22800 (geometry; tris -36)  27200-27400 (geometry; tris +96)  28400-28600 (geometry; tris +2784)  29600-30000 (geometry; tris -16)  35200-35373 (geometry; tris +96)
+detail A2.1        0-200 (geometry; tris +116)  800-1000 (geometry; tris +152)  1800-2200 (geometry; tris +384)  8800-9000 (geometry; tris +116)  17000-17200 (geometry; tris +268)  17600-18400 (geometry; tris +1340)
+detail A2.2        0-400 (geometry; tris +3388)  10200-10600 (geometry; tris +960)  11600-12800 (geometry; tris +35310)  19000-19200 (geometry; tris +184)  20000-20200 (geometry; tris -68)  27000-27400 (geometry; tris +9200)  27600-27800 (geometry; tris +96)  34400-34617 (geometry; tris +6108)
+detail C-sd1       0-457 (geometry; tris +9518)
+detail C-sd2       0-104 (geometry; tris +988)
+detail C-sd3       0-108 (geometry; tris +1408)
+detail C-sp1       0-333 (geometry; tris +7240)
+detail C-yd1       0-200 (geometry; tris +15054)
+detail C-yd10      0-361 (geometry; tris +9986)
+detail C-yd11      0-400 (geometry; tris +19136)  600-864 (geometry; tris +18202)
+detail C-yd12      0-504 (geometry; tris +16482)
+detail C-yd13      0-255 (geometry; tris +9410)
+detail C-yd14      0-58 (geometry; tris +6468)
+detail C-yd15      0-400 (geometry; tris +15558)
+detail C-yd16      0-289 (geometry; tris +2196)
+detail C-yd17      0-232 (geometry; tris +6470)
+detail C-yd18      0-335 (geometry; tris +15124)
+detail C-yd19      0-364 (geometry; tris +8884)
+detail C-yd2       0-400 (geometry; tris +14046)
+detail C-yd20      0-193 (geometry; tris +2872)
+detail C-yd21      0-595 (geometry; tris +15616)
+detail C-yd22      0-161 (geometry; tris +5824)
+detail C-yd23      0-284 (geometry; tris -40)
+detail C-yd24      0-351 (geometry; tris +9884)
+detail C-yd25      0-451 (geometry; tris +12136)
+detail C-yd26      0-308 (geometry; tris +4302)
+detail C-yd27      0-317 (geometry; tris +2936)
+detail C-yd28      0-361 (geometry; tris +3160)
+detail C-yd29      0-800 (geometry; tris +33672)
+detail C-yd3       0-77 (geometry; tris +392)
+detail C-yd30      200-311 (geometry; tris +868)
+detail C-yd31      0-334 (geometry; tris +11254)
+detail C-yd32      0-313 (geometry; tris +17698)
+detail C-yd33      0-357 (geometry; tris -8440)
+detail C-yd34      0-378 (geometry; tris +13550)
+detail C-yd35      0-476 (geometry; tris +16058)
+detail C-yd36      0-63 (geometry; tris +5182)
+detail C-yd38      0-220 (geometry; tris +18236)
+detail C-yd39      0-68 (geometry; tris +5084)
+detail C-yd4       0-502 (geometry; tris +26450)
+detail C-yd40      0-255 (geometry; tris +16692)
+detail C-yd41      0-55 (geometry; tris +2584)
+detail C-yd42      0-95 (geometry; tris +10618)
+detail C-yd43      0-176 (geometry; tris +4296)
+detail C-yd44      0-287 (geometry; tris +17392)
+detail C-yd45      0-311 (geometry; tris -626)
+detail C-yd46      0-314 (geometry; tris -2420)
+detail C-yd47      0-312 (geometry; tris +8360)
+detail C-yd48      0-200 (geometry; tris +3640)
+detail C-yd49      0-710 (geometry; tris +33560)
+detail C-yd5       0-50 (geometry; tris +2180)
+detail C-yd50      0-56 (geometry; tris +1350)
+detail C-yd6       0-529 (geometry; tris +16176)
+detail C-yd7       0-117 (geometry; tris +2458)
+detail C-yd8       0-97 (geometry; tris +448)
+detail C-yd9       0-395 (geometry; tris +15752)
+detail C1          0-600 (geometry; tris +2084)  1400-1600 (geometry; tris +576)  2000-2200 (geometry; tris +304)  2400-2800 (geometry; tris +0)  3000-3200 (geometry; tris +192)  8400-8600 (geometry; tris +848)  9200-9400 (geometry; tris +864)  14400-14600 (geometry; tris +2016)  15200-16000 (geometry; tris +2038)  27200-27600 (geometry; tris +4210)  28400-28800 (geometry; tris +1834)  29200-29400 (geometry; tris +7772)  30000-30200 (geometry; tris +380)  32000-32400 (geometry; tris -36)  33000-33200 (geometry; tris +2688)  34000-34200 (geometry; tris +5580)  35800-36000 (geometry; tris +2332)  36800-37000 (geometry; tris +2400)  41000-41200 (geometry; tris +2536)  42000-42244 (geometry; tris +2484)
+detail C2          0-200 (geometry; tris +164)  2000-2200 (geometry; tris +48)  2800-3000 (geometry; tris +96)  8400-8600 (geometry; tris +260)  9200-9400 (geometry; tris +96)  15200-16000 (geometry; tris +5996)  27200-27400 (geometry; tris +1784)  28400-28800 (geometry; tris +2528)  30000-30200 (geometry; tris +444)  33600-34000 (geometry; tris +5546)  36800-37000 (geometry; tris +96)  42000-42200 (geometry; tris +96)
+detail CT          200-787 (geometry; tris +9052)
+detail E-sd1       0-89 (geometry; tris +3400)
+detail E-sd2       0-89 (geometry; tris +2382)
+detail E-sd3       0-88 (geometry; tris +4148)
+detail E-sd4       0-88 (geometry; tris +4694)
+detail E1          0-200 (geometry; tris +4148)  2800-3000 (geometry; tris +1156)  3400-3800 (geometry; tris +1020)  4000-4200 (geometry; tris +748)  6200-6600 (geometry; tris -48)  7800-8200 (geometry; tris -172)  12800-13000 (geometry; tris +1768)
+detail E2          0-200 (geometry; tris +816)  3400-4200 (geometry; tris +2516)
+detail ET          200-789 (geometry; tris +2720)
+detail K-main.1    0-107 (geometry; tris +8278)
+detail K-main.10   200-627 (geometry; tris +14382)
+detail K-main.12   0-184 (geometry; tris +1536)
+detail K-main.2    0-185 (geometry; tris +5842)
+detail K-main.3    0-179 (geometry; tris +2468)
+detail K-main.4    0-600 (geometry; tris +7428)
+detail K-main.5    0-231 (geometry; tris +2838)
+detail K-main.6    200-631 (geometry; tris -13444)
+detail K-main.7    0-111 (geometry; tris +1020)
+detail K-main.8    0-200 (geometry; tris +864)  400-600 (geometry; tris -10692)
+detail K-main.9    0-200 (geometry; tris +724)
+detail K-sd1       0-64 (geometry; tris +384)
+detail K-sp1       0-852 (geometry; tris -862)
+detail K1          600-2400 (geometry; tris -30152)
+detail K2          600-2200 (geometry; tris +17934)
+detail K3.1        0-400 (geometry; tris +888)  1600-1800 (geometry; tris +664)  2200-2800 (geometry; tris +14206)  3000-3189 (geometry; tris +3066)
+detail K3.2        0-400 (geometry; tris +910)  1200-1526 (geometry; tris +256)
+detail K4          0-400 (geometry; tris +796)  1200-1545 (geometry; tris +148)
+detail L-sd1       0-1000 (geometry; tris +23124)
+detail L-sd2       0-125 (geometry; tris +7604)
+detail L-sd3       0-115 (geometry; tris +3998)
+detail L-sd4       0-1101 (geometry; tris +29346)
+detail L-sd5       0-114 (geometry; tris +2810)
+detail L-sd6       0-96 (geometry; tris +1120)
+detail L-sd7       0-119 (geometry; tris +5628)
+detail L-sd8       0-96 (geometry; tris +4042)
+detail L-sp1       0-98 (geometry; tris +1880)
+detail L-sp2       0-321 (geometry; tris +3442)
+detail L1          0-400 (geometry; tris +12826)  1000-1200 (geometry; tris +2352)  4200-4400 (geometry; tris +960)  4800-6000 (geometry; tris +23224)  6400-6600 (geometry; tris +672)  9400-9800 (geometry; tris +7308)  12600-13600 (geometry; tris +21938)  13800-14200 (geometry; tris +2170)  18600-18800 (geometry; tris +6876)  20400-20600 (geometry; tris +2784)  21600-21800 (geometry; tris +288)  22200-22253 (geometry; tris +272)
+detail L2          1600-1800 (geometry; tris +0)  8000-9600 (geometry; tris +25308)  12600-12800 (geometry; tris +192)  16000-16200 (geometry; tris +96)  16400-17400 (geometry; tris +12902)  17800-18000 (geometry; tris +96)  21000-21200 (geometry; tris +192)
+detail M-sp1       0-269 (geometry; tris +14220)
+detail M1.1        0-200 (geometry; tris -680)  4200-4400 (geometry; tris -20)  10200-10400 (geometry; tris +2284)  10600-10800 (geometry; tris +5376)  17400-17600 (geometry; tris +400)  18600-18800 (geometry; tris +2000)  19400-19600 (geometry; tris +4676)  20600-20800 (geometry; tris +284)  21200-21400 (geometry; tris +0)  23000-23200 (geometry; tris +3824)
+detail M1.2        0-200 (geometry; tris +8744)  400-1800 (geometry; tris +62368)  3000-3200 (geometry; tris +4468)
+detail M2          0-600 (geometry; tris +2468)  2000-2200 (geometry; tris +1980)  2400-2600 (geometry; tris +3048)  3000-3400 (geometry; tris +5460)  5800-6000 (geometry; tris +5008)  6200-6400 (geometry; tris +152)  8800-9000 (geometry; tris +2940)  9400-10200 (geometry; tris +28554)  10400-11400 (geometry; tris +48102)  12000-12200 (geometry; tris +844)  14200-14400 (geometry; tris +0)  14800-15000 (geometry; tris +228)  16600-16800 (geometry; tris +132)  17800-18000 (geometry; tris +152)  24600-24800 (geometry; tris +1000)  25000-25200 (geometry; tris +248)  31000-31200 (geometry; tris +116)
+detail M3          0-200 (geometry; tris +164)  1400-2800 (geometry; tris +33664)  3200-3256 (geometry; tris +6574)
+detail R-main.1    0-707 (geometry; tris +50810)
+detail R-yd1       0-400 (geometry; tris +27386)  600-633 (geometry; tris +68)
+detail R-yd10      0-1161 (geometry; tris +17806)
+detail R-yd11      0-463 (geometry; tris +10700)
+detail R-yd12      0-497 (geometry; tris +30086)
+detail R-yd13      0-200 (geometry; tris +736)
+detail R-yd14      0-409 (geometry; tris +37484)
+detail R-yd15      0-600 (geometry; tris +24480)
+detail R-yd16      0-200 (geometry; tris +2970)  400-421 (geometry; tris +288)
+detail R-yd17      0-393 (geometry; tris -4386)
+detail R-yd19      0-288 (geometry; tris +8580)
+detail R-yd2       0-200 (geometry; tris +8160)  400-775 (geometry; tris +5802)
+detail R-yd20      0-238 (geometry; tris +5964)
+detail R-yd21      0-141 (geometry; tris +5172)
+detail R-yd22      0-58 (geometry; tris +6064)
+detail R-yd23      0-200 (geometry; tris +3338)
+detail R-yd24      0-61 (geometry; tris +2040)
+detail R-yd25      0-56 (geometry; tris +1976)
+detail R-yd26      0-484 (geometry; tris +23164)
+detail R-yd27      0-398 (geometry; tris +7090)
+detail R-yd28      0-287 (geometry; tris +8966)
+detail R-yd29      0-383 (geometry; tris +9104)
+detail R-yd3       0-372 (geometry; tris +1160)
+detail R-yd30      0-423 (geometry; tris +11790)
+detail R-yd31      0-350 (geometry; tris +8356)
+detail R-yd33      0-56 (geometry; tris +2020)
+detail R-yd34      0-83 (geometry; tris +592)
+detail R-yd4       0-57 (geometry; tris +762)
+detail R-yd5       0-290 (geometry; tris +1560)
+detail R-yd6       200-384 (geometry; tris +136)
+detail R-yd7       0-200 (geometry; tris +4352)
+detail R-yd8       0-200 (geometry; tris +1496)  400-413 (geometry; tris +136)
+detail R-yd9       0-330 (geometry; tris +5260)
+detail R1          0-600 (geometry; tris +3076)  2400-2600 (geometry; tris +648)  2800-3000 (geometry; tris +3580)  4200-4400 (geometry; tris +3524)  4800-5000 (geometry; tris +21280)  6000-6200 (geometry; tris +4032)  6400-6600 (geometry; tris +6960)  13800-14200 (geometry; tris -132)  16200-16400 (geometry; tris +288)  16600-16800 (geometry; tris +4770)
+detail R2          0-200 (geometry; tris +1020)  600-800 (geometry; tris +548)  10600-10800 (geometry; tris +580)  12000-12200 (geometry; tris +1360)  12400-12600 (geometry; tris +132)  14400-14600 (geometry; tris +132)  16400-16800 (geometry; tris +13920)
+detail S-main.1    0-91 (geometry; tris +768)
+detail S-sd1       0-513 (geometry; tris -8)
+detail S-sd2       0-200 (geometry; tris +4732)
+detail S1          0-200 (geometry; tris +6746)  1000-1200 (geometry; tris -1936)  1400-1600 (geometry; tris -2464)  7000-7400 (geometry; tris +96)  7800-8000 (geometry; tris +768)  9000-9400 (geometry; tris +2340)
+detail S2          0-200 (geometry; tris +490)  1400-1600 (geometry; tris +1416)
+detail W-main.1    0-200 (geometry; tris +19674)  400-600 (geometry; tris +3428)
+detail W-main.2    0-200 (geometry; tris +728)
+detail W-sd1       0-400 (geometry; tris +2192)  600-721 (geometry; tris +3668)
+detail W-sd2       0-59 (geometry; tris +2936)
+detail W-sd3       0-42 (geometry; tris +734)
+detail W-yd1       0-477 (geometry; tris +12904)
+detail W-yd10      0-350 (geometry; tris +8028)
+detail W-yd11      0-399 (geometry; tris +5602)
+detail W-yd12      0-390 (geometry; tris +15464)
+detail W-yd13      0-163 (geometry; tris +13874)
+detail W-yd14      0-194 (geometry; tris +13250)
+detail W-yd15      0-121 (geometry; tris +4236)
+detail W-yd16      0-82 (geometry; tris +1716)
+detail W-yd17      0-268 (geometry; tris +10656)
+detail W-yd18      0-130 (geometry; tris +418)
+detail W-yd19      0-304 (geometry; tris +12328)
+detail W-yd2       0-366 (geometry; tris +13142)
+detail W-yd20      0-158 (geometry; tris +11504)
+detail W-yd21      0-195 (geometry; tris +5912)
+detail W-yd22      0-89 (geometry; tris +5138)
+detail W-yd23      0-338 (geometry; tris +3568)
+detail W-yd24      0-352 (geometry; tris +6300)
+detail W-yd25      0-316 (geometry; tris +2320)
+detail W-yd26      0-242 (geometry; tris +10504)
+detail W-yd27      0-400 (geometry; tris +3672)
+detail W-yd28      0-608 (geometry; tris +9610)
+detail W-yd29      0-280 (geometry; tris +6138)
+detail W-yd3       400-800 (geometry; tris +11110)  1000-1154 (geometry; tris +4498)
+detail W-yd30      0-200 (geometry; tris +15026)  400-507 (geometry; tris +4232)
+detail W-yd31      0-200 (geometry; tris +12828)
+detail W-yd32      0-333 (geometry; tris +7150)
+detail W-yd33      0-52 (geometry; tris +1464)
+detail W-yd34      0-175 (geometry; tris +12576)
+detail W-yd35      0-50 (geometry; tris +1928)
+detail W-yd36      0-252 (geometry; tris +5484)
+detail W-yd37      0-92 (geometry; tris +5794)
+detail W-yd38      0-54 (geometry; tris +3234)
+detail W-yd4       0-200 (geometry; tris +68)  400-508 (geometry; tris +9634)
+detail W-yd5       400-1000 (geometry; tris +20262)
+detail W-yd6       0-131 (geometry; tris +6590)
+detail W-yd7       0-87 (geometry; tris +2398)
+detail W-yd8       0-63 (geometry; tris +3444)
+detail W-yd9       0-132 (geometry; tris +7446)
+detail W1          0-200 (geometry; tris +512)  2800-3000 (geometry; tris +116)  5600-5800 (geometry; tris +728)  6000-6200 (geometry; tris +400)  6400-6800 (geometry; tris +1012)
+detail W3          0-400 (geometry; tris +13670)  600-767 (geometry; tris -38)
+detail Y-main.1    0-200 (geometry; tris -3022)  600-800 (geometry; tris +2784)  1000-1378 (geometry; tris +4264)
+detail Y-main.2    0-200 (geometry; tris +15014)  600-800 (geometry; tris +68)  1200-1400 (geometry; tris +824)  1600-1795 (geometry; tris +6820)
+detail Y-main.3    0-200 (geometry; tris +1452)  400-600 (geometry; tris +96)  1000-1149 (geometry; tris -36)
+detail Y-main.4    0-97 (geometry; tris +1688)
+detail Y-main.5    0-400 (geometry; tris -9670)  800-1200 (geometry; tris +2016)
+detail Y-main.6    0-200 (geometry; tris +6352)  400-832 (geometry; tris +3488)
+detail Y-main.7    0-45 (geometry; tris +248)
+detail Y-main.8    0-200 (geometry; tris +728)  800-997 (geometry; tris +1292)
+detail Y1          200-702 (geometry; tris +11306)
+detail Y2          0-200 (geometry; tris +546)
+far A1.2           0-2000 (geometry; tris +0)
+far A2.1           16000-18463 (geometry; tris +0)
+far A2.2           18000-20000 (geometry; tris +8)
+far C-sd1          0-457 (geometry; tris +0)
+far C-yd4          0-502 (geometry; tris +0)
+far C-yd6          0-529 (geometry; tris +8)
+far C-yd7          0-117 (geometry; tris +8)
+far C1             2000-4000 (geometry; tris +0)  14000-16000 (geometry; tris +8)  26000-30000 (geometry; tris -8)
+far C2             14000-16000 (geometry; tris +8)
+far K-main.10      0-627 (geometry; tris +0)
+far K-main.4       0-613 (geometry; tris +0)
+far K-main.8       0-642 (geometry; tris +0)
+far K-sp1          0-852 (geometry; tris +0)
+far K1             0-2000 (geometry; tris -16)
+far K2             0-2000 (geometry; tris +0)
+far K3.2           0-1526 (geometry; tris -16)
+far L-sd3          0-115 (geometry; tris +0)
+far L1             4000-6000 (geometry; tris +8)
+far M1.2           0-3249 (geometry; tris +0)
+far M2             8000-10000 (geometry; tris +8)
+far M3             0-2000 (geometry; tris +8)
+far R2             16000-16847 (geometry; tris +8)
+far S1             8000-9550 (geometry; tris +6)
+far Y-main.3       0-1149 (geometry; tris +0)
+far Y-main.4       0-97 (geometry; tris +0)
+far Y-main.5       0-1550 (geometry; tris -48)
+far Y-main.6       0-832 (geometry; tris -40)
+far Y-main.7       0-45 (geometry; tris -40)
+far Y-main.8       0-997 (geometry; tris -8)
+far Y1             0-702 (geometry; tris -184)
+
+where (material: nearest track s ranges, 20 m steps; [chunks that built it]):
+A-sd1        fence 0-60 [body:A1.2,body:A2.1], 100-180 [body:A2.1]; infra 0-180 [body:A1.2,body:A2.1,body,detail], 340-440 [detail,body,detail:A-sp1]
+A-sp1        fence 0-280 [body:A-sd1,body:A2.1]; infra 0-300 [body:A-sd1,detail,detail:A-sd1,body,body:A2.1]
+A-sp3        infra 80-100 [body], 580-600 [body]
+A-xo19       fence 20-100 [body:A-yd25]; infra 0-100 [detail:A2.2,body:A-yd25]
+A-xo20       fence 20-80 [body:A-yd27,body:A-yd26]; infra 20-80 [body:A-yd27,body:A-yd26,detail:A-yd27,detail:A1.2]
+A-xo21       infra 0-100 [detail:A-yd27,detail:A1.2,body:A-yd27,detail:A-yd1]
+A-xo22       fence 20-40 [body:A-yd50]; infra 20-100 [body:A-yd50,detail:A-yd50,detail:A1.2,detail:A2.2]
+A-xo6        fence 0-80 [body:A-sd1,body:A1.2]; infra 0-100 [body:A-sd1,detail:A1.2,detail:L1,body:A1.2,detail:A-sd1,detail:A-sp1]
+A-xo7        infra 20-100 [detail:A1.2]
+A-xo8        infra 0-60 [detail:A1.2,detail:A2.1]
+A-xo9        fence 20-80 [body:A-sd1]; infra 0-80 [detail:A1.2,detail:A2.1,body:A-sd1,detail:L1]
+A-yd1        fence 0-220 [body:A1.2], 940-1000 [body:A-yd44], 1040-1140 [body:A-yd44,body:A-yd22], 1180-1220 [body:A-yd21], 1440-1460 [body:A-yd21], 2000-2580 [body:A1.2], 2600-2680 [body:A-yd4,body:A1.2], 2700-3600 [body:A-yd27,body:A1.2]; infra 0-220 [body:A1.2,body], 940-1000 [body:A-yd44,body,detail,detail:A-yd44], 1020-1160 [detail,body:A-yd44,body,body:A-yd22], 1180-1220 [body:A-yd21], 1420-1480 [body,body:A-yd21,detail,detail:A-yd21], 2000-2580 [body,body:A1.2], 2600-2680 [body:A-yd4,body:A1.2], 2700-3600 [body:A-yd27,body:A1.2,detail,body]
+A-yd10       fence 0-100 [body:A-yd15,body:A-yd23], 120-180 [body:A-yd18,body:A-yd17], 300-360 [body:A-yd2], 420-560 [body:A-yd8,body:A-yd14,body:A-yd20,body:A-yd41], 620-800 [body:A-yd20], 820-860 [body:A-yd20]; infra 0-220 [body:A-yd15,body:A-yd23,body,detail,detail:A-yd8,body:A-yd17,body:A-yd18,body:A-yd8,detail:A-yd17], 260-280 [body], 300-580 [body:A-yd2,body,detail,detail:A-yd39,body:A-yd8,detail:A-yd8,body:A-yd14,detail:A-yd14,detail:A-yd9,body:A-yd20,body:A-yd41], 620-860 [body:A-yd20,detail,body]
+A-yd11       fence 0-280 [body:A-yd13], 320-360 [body:A-yd12], 400-440 [body:A-yd27]; infra 0-480 [body,body:A-yd13,detail,detail:A-yd13,body:A-yd12,detail:A-yd12,detail:A-yd24,body:A-yd27,detail:A-yd27]
+A-yd12       fence 0-20 [body,body:A-yd13], 60-440 [body:A-yd27,body:A-yd28,body:A-yd13,body:A-yd11]; infra 0-20 [body,body:A-yd13], 60-460 [body:A-yd27,body:A-yd28,body:A-yd13,body:A-yd11,detail,detail:A-yd11]
+A-yd13       fence 0-340 [body,body:A-yd11,body:A-yd12]; infra 0-360 [body,body:A-yd11,body:A-yd12,detail]
+A-yd14       fence 0-80 [body:A-yd10,body:A-yd20], 100-140 [body:A-yd11,body:A-yd40], 240-260 [body:A1.2], 280-320 [body:A-yd40], 400-420 [body:A-yd10], 480-500 [body:A-yd20]; infra 0-80 [body:A-yd10,detail,detail:A-yd10,detail:A-yd9,body,body:A-yd20], 100-180 [body:A-yd11,body:A-yd40,body,detail,detail:A-yd40], 240-320 [body,body:A1.2,detail,body:A-yd40], 400-440 [body:A-yd10,body], 460-500 [body,detail,detail:A-yd20,body:A-yd20]
+A-yd15       fence 0-400 [body:A-yd17,body:A-yd23,body:A-yd10], 440-540 [body,body:A-yd27,body:A-yd3,body:A-yd23]; infra 0-560 [body:A-yd17,body:A-yd23,detail,body,body:A-yd10,detail:A-yd10,detail:A-yd6,body:A-yd27,body:A-yd3,detail:A-yd16,detail:A-yd27,detail:A-yd3]
+A-yd16       fence 0-500 [body:A-yd15,body:A-yd27,body:A-yd3,body:A-yd30,body:A-yd29]; infra 0-540 [body:A-yd15,body:A-yd27,body:A-yd3,detail,detail:A-yd15,body:A-yd30,body,detail:A-yd3,detail:A-yd30,body:A-yd29,detail:A-yd27]
+A-yd17       fence 0-340 [body:A-yd15,body:A-yd2,body:A-yd39,body:A-yd10]; infra 0-380 [body:A-yd15,body:A-yd2,body,detail,body:A-yd39,body:A-yd10]
+A-yd18       fence 0-200 [body:A-yd17,body:A-yd10,body:A-yd8,body:A-yd39], 240-280 [body:A-yd10,body:A-yd8]; infra 0-340 [body:A-yd10,body:A-yd17,detail,detail:A-yd10,detail:A-yd8,body:A-yd8,body:A-yd39]
+A-yd19       fence 0-280 [body:A-yd11,body:A-yd13]; infra 0-320 [body:A-yd11,body:A-yd13,detail,detail:A-yd13,detail:A-yd11]
+A-yd2        fence 0-180 [body:A-yd17,body:A-yd10]; infra 0-180 [body:A-yd17,detail,body,body:A-yd10,detail:A-yd39]
+A-yd20       fence 40-80 [body:A-yd14], 120-180 [body:A-yd14,body:A-yd10], 400-440 [body:A-yd41]; infra 40-480 [body:A-yd14,detail,detail:A-yd14,body:A-yd10,detail:A-yd10,detail:A-yd9,body:A-yd41]
+A-yd21       fence 280-320 [body,body:A-yd1]; infra 0-80 [detail:A-yd1,detail:A-yd22,detail], 240-320 [detail:A-yd1,body,body:A-yd1,detail]
+A-yd22       fence 60-100 [body:A-yd49], 180-300 [body:A-yd1]; infra 40-120 [body,body:A-yd49,detail], 160-320 [detail,body:A-yd1,detail:A-yd21,detail:A-yd1]
+A-yd23       fence 80-540 [body,body:A-yd15,body:A-yd35,body:A-yd10,body:A-yd27]; infra 80-580 [body,body:A-yd15,body:A-yd35,body:A-yd10,detail,detail:A-yd7,body:A-yd27,detail:A-yd15,detail:A-yd27]
+A-yd24       fence 0-360 [body:A-yd12,body:A-yd13,body:A-yd11]; infra 0-420 [body:A-yd12,body:A-yd13,detail:A-yd12,body:A-yd11,detail:A-yd13,detail:A-yd11,detail]
+A-yd25       fence 0-140 [body:A-yd16], 280-600 [body:A-yd16,body:A-yd27,body:A-yd3,body:A-yd26], 700-760 [body:A-yd26,body:A-yd44]; infra 0-160 [body:A-yd16,detail,detail:A-yd16], 220-600 [detail:A-yd16,body:A-yd16,detail,body:A-yd27,body:A-yd3,body:A-yd26], 640-760 [detail,body,body:A-yd26,body:A-yd44]
+A-yd26       fence 0-20 [body:A1.2], 80-160 [body:A1.2], 280-360 [body:A-yd44,body:A1.2]; infra 0-360 [body:A-yd27,body:A1.2,detail,body,detail:A-yd3,detail:A-yd25,body:A-yd25,body:A-yd44]
+A-yd27       fence 0-220 [body:A-yd1,body:A1.2,body:A-yd4], 540-620 [body:A-yd12,body:A-yd11], 700-1040 [body:A-yd15,body:A-yd16,body:A-yd3,body:A-yd25], 1200-1420 [body:A-yd16,body:A-yd25,body:A-yd3,body:A1.2]; infra 0-220 [body:A-yd1,body:A1.2,body,detail,body:A-yd4], 320-400 [body,detail,body:A-yd28], 540-1040 [body:A-yd12,body:A-yd11,detail,body,detail:A-yd3,body:A-yd23,detail:A-yd32,body:A-yd15,detail:A-yd23,body:A-yd16,body:A-yd3,detail:A-yd38,detail:A-yd30,detail:A-yd36,body:A-yd25], 1200-1460 [body,body:A-yd16,detail,detail:A-yd4,body:A-yd25,body:A-yd3,detail:A-yd34,body:A1.2,detail:A-yd3,body:A-yd26,detail:A-yd26]
+A-yd28       infra 0-80 [body:A-yd27,detail,detail:A-yd27,detail:A-yd4,body]
+A-yd29       fence 0-20 [body:A-yd36], 40-60 [body:A-yd16]; infra 0-60 [body:A-yd27,body:A-yd36,detail,detail:A-yd25,detail:A-yd27,detail:A-yd3,body:A-yd16]
+A-yd3        fence 0-460 [body:A-yd12,body:A-yd27,body:A-yd28,body:A-yd11], 480-600 [body:A-yd35,body:A-yd23,body:A-yd27,body:A-yd10,body:A-yd15,body:A-yd32], 640-660 [body:A-yd38], 740-840 [body:A-yd36,body:A-yd27,body:A-yd16], 900-1120 [body:A-yd16,body:A-yd27], 1240-1340 [body:A-yd27,body:A-yd26,body:A1.2]; infra 0-1340 [body:A-yd12,detail,body:A-yd27,detail:A-yd27,body:A-yd28,body:A-yd11,detail:A-yd12,detail:A-yd11,body:A-yd35,body:A-yd23,detail:A-yd33,body:A-yd10,body:A-yd15,body:A-yd32,detail:A-yd23,detail:A-yd15,body,detail:A-yd16,body:A-yd38,detail:A-yd37,detail:A-yd43,detail:A-yd30,body:A-yd16,body:A-yd36,detail:A-yd29,detail:A-yd25,detail:A-yd26,body:A-yd26,body:A1.2]
+A-yd30       fence 40-60 [body:A-yd27]; infra 0-80 [detail,detail:A-yd16,detail:A-yd3,body:A-yd16,body:A-yd3,body:A-yd27]
+A-yd31       fence 0-40 [body:A1.1], 60-140 [body:A1.1,body:A-yd47], 160-280 [body:A1.1,body:A-yd46]; infra 0-140 [body:A1.1,body,detail,body:A-yd47], 160-280 [body:A1.1,body,detail,detail:A-yd45,body:A-yd46]
+A-yd32       fence 0-20 [body:A-yd3], 40-60 [body:A-yd23]; infra 0-80 [body:A-yd27,body:A-yd3,detail,detail:A-yd27,detail:A-yd4,body:A-yd23]
+A-yd33       fence 0-20 [body:A-yd23,body:A-yd35]; infra 0-60 [body:A-yd23,body:A-yd35,detail:A-yd27,detail:A-yd3,detail]
+A-yd34       infra 0-80 [detail:A-yd3,body:A-yd27,detail,detail:A-yd25,detail:A-yd27]
+A-yd35       fence 0-500 [body:A-yd15,body:A-yd11]; infra 0-500 [body:A-yd15,detail:A-yd23,detail:A-yd7,body:A-yd11,detail]
+A-yd36       fence 0-40 [body:A-yd16,body:A-yd3], 60-80 [body:A-yd29]; infra 0-80 [body:A-yd16,body:A-yd3,detail,body:A-yd27,detail:A-yd27,detail:A-yd4,body:A-yd29]
+A-yd37       fence 0-20 [body:A-yd15]; infra 0-60 [body:A-yd15,detail:A-yd23,detail:A-yd27,detail:A-yd3,body:A-yd3,detail,detail:A-yd15,detail:A-yd16,detail:A-yd38,body:A-yd38]
+A-yd38       fence 0-20 [body:A-yd15,body:A-yd16], 40-60 [body:A-yd15]; infra 0-80 [body:A-yd15,body:A-yd16,detail,body:A-yd27,detail:A-yd27,detail:A-yd4]
+A-yd39       fence 0-220 [body:A-yd18,body:A-yd2,body:A-yd10,body:A-yd17]; infra 0-240 [body:A-yd18,body:A-yd2,detail,body:A-yd10,detail:A-yd10,detail:A-yd2,body:A-yd17]
+A-yd4        fence 0-40 [body:A-yd16,body:A-yd27], 60-1180 [body:A-yd27,body:A-yd29,body:A-yd3,body:A-yd30,body:A-yd15,body:A-yd23,body:A-yd28,body:A1.2,body:A-yd1]; infra 0-1180 [body:A-yd16,body:A-yd27,detail,detail:A-yd27,body:A-yd29,detail:A-yd36,body:A-yd3,body:A-yd30,detail:A-yd38,body:A-yd15,body:A-yd23,detail:A-yd32,body:A-yd28,detail:A-yd28,body:A1.2,body:A-yd1,body]
+A-yd40       fence 0-60 [body:A-yd14], 120-200 [body:A-yd14]; infra 0-80 [body:A-yd14,detail,detail:A-yd14], 120-200 [body:A-yd14,detail,detail:A-yd14]
+A-yd41       fence 140-180 [body:A-yd10,body:A-yd20]; infra 120-180 [body,body:A-yd10,body:A-yd20,detail,body:A-yd14,detail:A-yd10,detail:A-yd20]
+A-yd43       fence 40-60 [body:A-yd16]; infra 0-60 [detail,detail:A-yd27,detail:A-yd3,body:A-yd27,detail:A-yd30,body:A-yd16,body:A-yd3]
+A-yd44       fence 20-180 [body:A-yd1,body:A1.2,body:A-yd26,body:A-yd25,body:A-yd22]; infra 20-180 [body:A-yd1,body:A1.2,detail,detail:A-yd1,body:A-yd26,body,body:A-yd25,detail:A1.2,detail:A2.2,body:A-yd22]
+A-yd45       fence 40-100 [body:A-yd31,body:A-yd46]; infra 0-120 [detail,body:A-yd31,detail:A-yd31,detail:A-yd47,body,body:A-yd46]
+A-yd46       fence 0-40 [body:A-yd45], 80-100 [body:A-yd48], 120-140 [body]; infra 0-40 [body:A-yd45,detail,detail:A-yd45], 60-140 [body,body:A-yd48,detail]
+A-yd47       fence 0-40 [body:A-yd31], 100-140 [body:A-yd31]; infra 0-140 [body:A-yd31,detail,detail:A-yd31,detail:A-yd45,body]
+A-yd48       fence 0-60 [body:A-yd46]; infra 0-60 [body:A-yd46,detail:A-yd46]
+A-yd49       fence 80-100 [body:A-sp3], 380-420 [body:A-yd22]; infra 0-100 [detail:A-sp3,body:A-sp3], 380-420 [body:A-yd22,detail,detail:A-yd22]
+A-yd5        fence 0-20 [body:A-yd17], 60-120 [body:A-yd2], 140-280 [body:A-yd10]; infra 0-320 [body:A-yd17,body:A-yd2,detail,detail:A-yd17,body:A-yd10,detail:A-yd39,detail:A-yd10]
+A-yd50       fence 180-220 [body:A-yd52], 280-300 [body:A-yd52], 580-660 [body:A1.2], 1040-1060 [body:A1.2], 1100-1180 [body:A1.2,body:A-yd51]; infra 180-220 [body,body:A-yd52,detail:A-yd52], 280-300 [body,body:A-yd52], 580-660 [body,body:A1.2], 680-720 [detail], 1040-1180 [body:A1.2,detail,body,body:A-yd51]
+A-yd52       fence 140-200 [body:A-yd50], 280-300 [body:A-yd50], 340-360 [body:A-yd54]; infra 140-300 [body:A-yd50,detail,detail:A-yd50,detail:A-yd55], 320-400 [body:A-yd54,body,detail,body:A-yd53]
+A-yd53       fence 0-40 [body:A-yd52]; infra 0-40 [body:A-yd52,detail:A-yd52,body]
+A-yd54       fence 100-160 [body:A-yd52,body:A-yd53,body]; infra 80-180 [detail,body:A-yd52,body:A-yd53,detail:A-yd52,body]
+A-yd55       infra 0-80 [detail,detail:A-yd50,detail:A-yd52,body:A-yd50]
+A-yd6        fence 20-380 [body:A-yd17,body:A-yd10,body:A-yd15]; infra 0-420 [detail:A-yd15,detail:A-yd17,body:A-yd17,detail,body:A-yd10,body:A-yd15,detail:A-yd10]
+A-yd7        fence 0-540 [body:A-yd23,body:A-yd40,body:A-yd11,body:A-yd13,body:A-yd12,body:A-yd27,body:A-yd15,body:A-yd3,body:A-yd10]; infra 0-540 [body:A-yd23,body:A-yd40,detail:A-yd11,body:A-yd11,detail,body:A-yd13,body:A-yd12,body:A-yd27,detail:A-yd35,body:A-yd15,detail:A-yd23,body:A-yd3,body:A-yd10,detail:A-yd15]
+A-yd8        fence 0-120 [body:A-yd10], 340-420 [body:A-yd10,body:A-yd17,body:A-yd15]; infra 0-160 [body:A-yd10,detail,detail:A-yd10,detail:A-yd18], 280-420 [body:A-yd10,detail,detail:A-yd18,detail:A-yd10,body:A-yd17,body:A-yd15]
+A-yd9        fence 20-40 [body:A-yd14], 60-340 [body:A-yd10,body:A-yd41]; infra 0-340 [body:A-yd10,detail,detail:A-yd10,detail:A-yd14,body:A-yd14,detail:A-yd20,detail:A-yd41,body:A-yd41]
+A1.1         fence 1780-1880 [body:A-yd31,body:A-yd45], 1920-1960 [body:A-yd31,body:A-yd47], 17600-17620 [body:A-sp1]; infra 1780-1880 [body:A-yd31,body:A-yd45], 1920-1960 [body:A-yd31,body:A-yd47], 1980-2020 [detail,detail:A-yd31,body:A-yd31], 2100-2120 [detail], 8980-9000 [detail], 17000-17060 [detail], 17080-17120 [detail], 17600-17620 [body:A-sp1]; tunnel 0-200 [body,detail]
+A1.2         fence 0-40 [body:L1], 280-360 [body:A2.1], 380-660 [body:A-sd1,body:A2.1], 680-860 [body:A2.1,body:L1], 10340-11200 [body:A-yd1], 11260-11300 [body:A-yd1], 11360-11940 [body:A-yd1,body:A-yd27], 12500-12680 [body:A-yd3,body:A-yd27,body:A-yd26,body:A-yd25], 12720-12820 [body:A-yd25], 12860-12900 [body:A-yd1,body:A-yd44], 12940-12960 [body:A-yd50], 13720-13960 [body:A-yd1], 27400-27420 [body:A2.2], 28000-28020 [body:A2.2], 28240-28260 [body:A2.2]; infra 0-60 [body:L1,body,detail], 260-360 [body:A2.1], 380-860 [body:A-sd1,body:A2.1,detail,body,body:L1], 1060-1080 [body], 10340-11200 [body:A-yd1], 11220-11300 [detail,body:A-yd1,body:A-yd27,detail:A-yd27], 11320-11940 [detail,body:A-yd4,detail:A-yd4,body:A-yd1,body:A-yd27,body:A-yd28], 12400-12440 [body:A-yd27], 12500-12680 [body:A-yd3,body:A-yd27,body:A-yd26,detail,detail:A-yd27,body:A-yd25,detail:A-yd26], 12700-13100 [detail,body:A-yd25,detail:A-yd26,body:A-yd26,body:A-yd1,body:A-yd44,body,body:A-yd50,detail:A-yd50], 13360-13500 [detail:A-yd50,detail,body:A-yd50], 13720-13960 [body:A-yd1], 20900-20920 [body], 27400-27420 [body,body:A2.2], 28000-28020 [body:A2.2], 28220-28260 [body:A2.2], 28460-28480 [body], 35360-35380 [detail:A2.2]; mesh 660-680 [far]; tunnel 22600-22640 [detail]
+A2.1         fence 1780-1820 [body:A-yd31], 1920-2020 [body:A-yd31,body:A-yd47], 17560-17600 [body:A-sp1], 17660-18020 [body:A-sd1,body:A1.2], 18040-18280 [body:A1.2], 18300-18480 [body:A1.2]; infra 1780-1820 [body:A-yd31], 1920-2120 [body:A-yd31,body:A-yd47,detail,detail:A1.1,detail:A-yd31], 8180-8220 [detail:A1.1], 8860-9020 [detail,detail:A1.1], 17000-17220 [detail:A1.1,body,detail], 17560-18480 [body:A-sp1,detail,detail:A-sp1,detail:A-sd1,body:A-sd1,body:A1.2,body]; mesh 17180-17200 [far], 18260-18300 [far,far:A1.2]; tunnel 0-200 [body:A1.1,detail,detail:A1.1], 400-500 [detail:A1.1], 840-1020 [detail,detail:A1.1]
+A2.2         fence 9500-9520 [body:A-yd1], 10380-10580 [body:A-yd27,body:A-yd4], 11080-11100 [body:A-yd1], 11620-11640 [body:A-yd21], 11720-11860 [body:A-yd27,body:A-yd26], 11960-12640 [body:A-yd25,body:A-yd26,body:A-yd1,body:A-yd50], 12880-12900 [body:A-yd1], 20060-20080 [body:A1.2], 26540-26560 [body:A1.2], 27140-27160 [body], 27600-27620 [body:A1.2], 34560-34620 [body:S-main.1]; infra 60-140 [body,detail], 200-360 [body,detail,body:A1.2,detail:A1.2], 9340-9400 [detail:A1.2], 9480-9520 [body:A-yd1], 9700-10900 [detail:A-yd1,detail:A1.2,body:A-yd27,detail,detail:A-yd4,body:A-yd4,body:A1.2], 11080-11100 [body:A-yd1], 11620-11640 [body:A-yd21], 11720-12700 [body:A-yd27,detail,detail:A1.2,body:A-yd26,body:A-yd25,body:A-yd1,body:A-yd44,detail:A-yd44,body:A-yd50,detail:A-yd51], 12880-13100 [body:A-yd1,detail:A-yd1], 17740-17760 [detail:A1.2], 19040-19120 [detail:A1.2,body,detail], 20040-20140 [body:A1.2,detail,detail:A1.2], 26540-26580 [body:A1.2,detail:A1.2], 27140-27160 [body], 27380-27400 [body], 27600-27760 [body:A1.2,detail,detail:A1.2], 28940-29000 [detail:A1.2], 34520-34620 [detail,detail:A1.2,body,body:S-main.1,detail:S2]; mesh 19060-19200 [far]; tunnel 21740-21800 [detail:A1.2]
+C-sd1        fence 0-140 [body:C1,body,body:C-sd3], 160-180 [body], 200-220 [body], 240-260 [body], 280-300 [body], 360-460 [body:C-sd2,body:C2]; infra 0-220 [body,body:C1,body:C-sd3,detail,detail:C1,detail:C-sd3], 240-260 [body], 280-460 [body,body:C1,body:C-sd2,detail,body:C2,detail:C2]; mesh 300-360 [far]
+C-sd2        fence 0-100 [body:C-sd1,body:C1]; infra 0-100 [body,body:C-sd1,detail,detail:C-sd1,body:C1,detail:C1]
+C-sd3        fence 0-100 [body:C-sd1,body:C2]; infra 0-100 [body,body:C-sd1,detail,detail:C-sd1,body:C2]
+C-sp1        fence 0-40 [body:CT], 100-140 [body], 180-200 [body], 240-340 [body,body:CT]; infra 0-80 [body:CT,body,detail,detail:CT], 100-140 [body], 160-340 [body,body:CT,body:ET]
+C-xo10       fence 60-100 [body:C-yd2]; infra 60-100 [body:C-yd2]
+C-xo17       infra 20-100 [detail:C1,body:C-yd11,detail:C-yd11]
+C-xo19       infra 20-80 [detail:C1,body:C-yd6,detail:C-yd6]
+C-xo9        fence 40-80 [body:C-yd2]; infra 0-80 [detail:C-yd2,body:C-yd2]
+C-yd1        fence 80-100 [body:C2]; infra 0-100 [detail:C-yd2,detail:C2,body,detail,detail:C-yd3,body:C2], 440-460 [detail:C1]
+C-yd10       fence 0-220 [body:C-yd15,body:C-yd19,body:C-yd4,body:C-yd26,body:C-yd23,body:C-yd5,body:C-yd17,body:C-yd20], 240-280 [body:C-yd4], 340-360 [body:C-yd4]; infra 0-300 [body:C-yd15,body:C-yd19,detail:C-yd15,detail:C-yd29,body,detail,detail:C-yd6,body:C-yd4,body:C-yd26,body:C-yd23,body:C-yd5,body:C-yd17,detail:C-yd17,body:C-yd20,detail:C-yd20,detail:C-yd22], 340-360 [body:C-yd4,body:C-yd7]
+C-yd11       fence 0-60 [body:C1], 100-320 [body:C-yd49,body:C1,body:C-yd8,body:C-yd29], 660-700 [body:C-yd36], 720-740 [body:C-yd18], 760-880 [body:C-yd24,body:C-yd15,body:C-yd35,body:C-yd40]; infra 0-80 [body:C1,body,detail], 100-360 [body:C-yd49,body:C1,body:C-yd8,detail,body,detail:C-yd49,body:C-yd29,detail:C-yd9,body:C-yd12,detail:C-yd12], 600-880 [body,detail,detail:C-yd9,body:C-yd36,detail:C-yd24,detail:C-yd28,body:C-yd18,detail:C-yd12,body:C-yd24,detail:C-yd38,body:C-yd15,body:C-yd35,body:C-yd40]
+C-yd12       fence 0-480 [body:C-yd29,body:C-yd11,body:C-yd39,body:C-yd24]; infra 0-520 [body,body:C-yd29,detail,body:C-yd11,detail:C-yd11,body:C-yd39,detail:C-yd36,body:C-yd24,detail:C-yd50,detail:C-yd15]
+C-yd13       fence 160-200 [body:C-yd32]; infra 0-20 [body], 160-260 [body:C-yd32,body,detail,detail:C-yd32]
+C-yd14       infra 0-60 [body,detail,detail:C-yd31]
+C-yd15       fence 0-60 [body:C-yd11], 100-140 [body:C-yd29,body:C-yd38,body:C-yd45], 180-560 [body:C-yd32,body:C-yd10,body:C-yd19,body:C-yd26]; infra 0-560 [body:C-yd11,detail,detail:C-yd12,detail:C-yd29,detail:C-yd11,body:C-yd29,detail:C-yd41,body,body:C-yd38,body:C-yd45,detail:C-yd32,body:C-yd32,body:C-yd10,body:C-yd19,body:C-yd26]
+C-yd16       fence 0-280 [body:C-yd13,body:C-yd19,body:C-yd32]; infra 0-300 [body:C-yd13,body:C-yd19,detail,detail:C-yd13,body:C-yd32,body,detail:C-yd32]
+C-yd17       fence 0-240 [body:C-yd23,body:C-yd10,body:C-yd20]; infra 0-240 [body,body:C-yd23,body:C-yd10,body:C-yd20,detail,detail:C-yd10]
+C-yd18       fence 0-20 [body:C-yd11,body:C-yd24], 40-80 [body:C-yd24,body:C-yd21], 240-340 [body:C-yd21,body:C-yd24,body:C-yd34,body:C-yd28]; infra 0-80 [body:C-yd11,body:C-yd24,detail:C-yd24,body,detail,detail:C-yd34,body:C-yd21], 240-340 [body:C-yd21,body:C-yd24,detail,body,body:C-yd34,detail:C-yd34,body:C-yd28]
+C-yd19       fence 0-180 [body:C-yd13], 200-280 [body:C-yd13,body:C-yd16,body:C-yd32], 300-360 [body:C-yd15,body:C-yd38,body:C-yd10,body:C-yd32]; infra 0-180 [body:C-yd13,detail], 200-380 [body:C-yd13,body:C-yd16,body:C-yd32,body,detail,body:C-yd15,detail:C-yd27,body:C-yd38,detail:C-yd15,body:C-yd10]
+C-yd2        fence 0-40 [body:C2], 120-220 [body:C2,body:C-yd1,body:C-yd3]; infra 0-60 [body:C2,body,detail], 80-300 [detail,detail:C-yd1,body:C-yd1,body:C2,body:C-yd3], 560-580 [detail:C1]
+C-yd20       fence 0-20 [body:C-yd17], 120-160 [body:C-yd10]; infra 0-200 [body:C-yd17,detail,detail:C-yd17,body:C-yd10,detail:C-yd10]
+C-yd21       fence 100-160 [body:C-yd42], 280-560 [body:C-yd31,body:C-yd34,body:C-yd28,body:C-yd24,body:C-yd18]; infra 100-600 [body:C-yd42,detail,detail:C-yd14,body:C-yd14,body,detail:C-yd42,detail:C-yd34,detail:C-yd40,detail:C-yd31,body:C-yd31,body:C-yd34,body:C-yd28,body:C-yd24,body:C-yd18,detail:C-yd18,detail:C-yd24]
+C-yd22       fence 20-180 [body:C-yd10,body:C-yd17]; infra 0-180 [body:C-yd10,detail,detail:C-yd20,body:C-yd17,detail:C-yd10]
+C-yd23       fence 0-220 [body:C-yd17,body:C-yd10]; infra 0-280 [body:C-yd17,body:C-yd10,detail,detail:C-yd17,detail:C-yd10]
+C-yd24       fence 0-80 [body:C-yd11], 100-120 [body:C-yd18]; infra 0-160 [body:C-yd11,detail,detail:C-yd11,detail:C-yd28,body,body:C-yd18,detail:C-yd18,detail:C-yd21], 300-360 [detail,detail:C-yd21,body:C-yd21]
+C-yd25       fence 320-360 [body:C-yd30,body:C-yd33], 400-420 [body:C-yd35], 440-460 [body:C-yd38]; infra 40-60 [body], 300-460 [detail,body,body:C-yd30,body:C-yd33,body:C-yd35,body:C-yd38,body:C-yd45]
+C-yd26       fence 0-320 [body:C-yd15,body:C-yd17,body:C-yd10]; infra 0-320 [body:C-yd15,body:C-yd17,detail,detail:C-yd23,body:C-yd10,detail:C-yd15]
+C-yd27       fence 0-320 [body:C-yd15,body:C-yd16]; infra 0-320 [body:C-yd15,detail,detail:C-yd19,body:C-yd16,body:C-yd19]
+C-yd28       fence 20-100 [body:C-yd12,body:C-yd11,body:C-yd18,body:C-yd21], 120-220 [body:C-yd35,body:C-yd40,body:C-yd25], 260-300 [body:C-yd21], 360-380 [body:C-yd31]; infra 0-220 [body:C-yd11,detail,detail:C-yd24,body:C-yd12,body:C-yd18,detail:C-yd11,body:C-yd21,body:C-yd35,body:C-yd40,body:C-yd25], 260-380 [body:C-yd21,detail,detail:C-yd24,body:C-yd31]
+C-yd29       fence 0-80 [body:C-yd11,body:C-yd12], 380-440 [body:C-yd39,body:C-yd36], 520-600 [body:C-yd12,body:C-yd15,body:C-yd11], 660-1060 [body:C-yd15,body:C-yd19,body:C-yd10,body:C-yd4,body:C-yd23]; infra 0-80 [body,body:C-yd11,detail:C-yd11,detail:C-yd49,detail,body:C-yd12], 360-440 [body:C-yd39,detail:C-yd39,body,detail,body:C-yd36], 520-1060 [body:C-yd12,detail,body:C-yd15,detail:C-yd15,detail:C-yd49,body:C-yd11,detail:C-yd4,body,detail:C-yd32,body:C-yd19,body:C-yd10,detail:C-yd10,body:C-yd4,detail:C-yd26,body:C-yd23]
+C-yd3        infra 0-80 [body:C-yd1,detail,detail:C-yd2,detail:C-yd1]
+C-yd30       fence 0-300 [body:C-yd25,body:C-yd33]; infra 0-300 [body:C-yd25,body:C-yd33,detail:C-yd25,detail]
+C-yd31       fence 120-320 [body:C-yd14,body:C-yd21,body:C-yd42,body:C-yd34,body:C-yd28]; infra 100-340 [body:C-yd14,detail,detail:C-yd21,body:C-yd21,detail:C-yd14,body:C-yd42,body:C-yd34,body:C-yd28,detail:C-yd40]
+C-yd32       fence 0-40 [body:C-yd33,body:C-yd35,body:C-yd46], 60-80 [body:C-yd13], 160-320 [body:C-yd19,body:C-yd46,body:C-yd15,body:C-yd10,body:C-yd38,body:C-yd45]; infra 0-320 [body:C-yd33,body:C-yd35,body:C-yd46,detail:C-yd35,detail:C-yd46,detail:C-yd47,body,detail,body:C-yd13,detail:C-yd13,detail:C-yd16,body:C-yd16,body:C-yd19,detail:C-yd19,detail:C-yd38,body:C-yd15,body:C-yd10,body:C-yd38,detail:C-yd15,body:C-yd45]
+C-yd33       fence 0-300 [body:C-yd25,body:C-yd32,body:C-yd35,body:C-yd46,body:C-yd45]; infra 0-340 [body:C-yd25,detail,body:C-yd32,body:C-yd35,body:C-yd46,body:C-yd45,detail:C-yd30,detail:C-yd25]
+C-yd34       fence 0-120 [body:C-yd21,body:C-yd31,body:C-yd18,body:C-yd28], 340-380 [body:C-yd18]; infra 0-380 [body:C-yd21,detail,body:C-yd31,detail:C-yd21,detail:C-yd44,body:C-yd18,body:C-yd28,detail:C-yd18]
+C-yd35       fence 100-120 [body:C-yd32], 160-400 [body:C-yd45,body:C-yd25,body:C-yd30,body:C-yd38], 460-480 [body:C-yd11]; infra 0-480 [detail,detail:C-yd33,body:C-yd33,detail:C-yd47,detail:C-yd32,body:C-yd32,body:C-yd45,body:C-yd25,body:C-yd30,body:C-yd38,detail:C-yd25,body,detail:C-yd40,body:C-yd11,detail:C-yd11,detail:C-yd38]
+C-yd36       fence 0-60 [body:C-yd11,body:C-yd29]; infra 0-80 [body:C-yd11,body:C-yd29,detail,detail:C-yd11,detail:C-yd12,detail:C-yd39,detail:C-yd49]
+C-yd38       fence 0-220 [body:C-yd15,body:C-yd46,body:C-yd45,body:C-yd32,body:C-yd35,body:C-yd11,body:C-yd12]; infra 0-220 [body:C-yd15,body:C-yd46,detail,detail:C-yd19,detail:C-yd32,body:C-yd45,detail:C-yd46,detail:C-yd47,body,body:C-yd32,body:C-yd35,detail:C-yd45,body:C-yd11,detail:C-yd35,detail:C-yd40,detail:C-yd11,body:C-yd12]
+C-yd39       fence 40-60 [body:C-yd12]; infra 0-80 [detail,detail:C-yd29,detail:C-yd36,detail:C-yd49,body:C-yd12,body:C-yd29]
+C-yd4        fence 40-160 [body:C1,body:C-yd10], 300-520 [body:C-yd5,body:C-yd10,body:C-yd32,body:C-yd15,body:C-yd29,body:C-yd11]; infra 0-160 [detail,detail:C-yd6,detail:C-yd7,body,body:C-yd6,body:C-yd7,body:C1,body:C-yd10], 300-520 [body:C-yd5,body:C-yd10,detail,body,body:C-yd32,body:C-yd15,body:C-yd29,detail:C-yd29,body:C-yd11,detail:C-yd15]; mesh 20-60 [far]
+C-yd40       fence 0-200 [body:C-yd24,body:C-yd35,body:C-yd25,body:C-yd33,body:C-yd30,body:C-yd21], 240-260 [body:C-yd34]; infra 0-260 [body:C-yd24,body:C-yd35,detail,detail:C-yd35,detail:C-yd25,body:C-yd25,body:C-yd33,body:C-yd30,body:C-yd21,detail:C-yd31,detail:C-yd28,body:C-yd34]
+C-yd41       infra 0-60 [detail:C-yd15,detail:C-yd29,detail:C-yd32,body:C-yd15,detail,body:C-yd29]
+C-yd42       fence 20-80 [body:C-yd14,body:C-yd21]; infra 0-100 [detail:C-yd44,body,body:C-yd14,detail,detail:C-yd14,detail:C-yd21,body:C-yd21]
+C-yd43       fence 0-180 [body:C-yd21,body:C-yd14]; infra 0-180 [body:C-yd21,detail,body:C-yd14,body:C-yd42,detail:C-yd42,detail:C-yd21,detail:C-yd14]
+C-yd44       fence 120-280 [body:C-yd42,body:C-yd21,body:C-yd14]; infra 0-300 [detail,body:C-yd42,body:C-yd21,detail:C-yd42,body:C-yd14,detail:C-yd34,detail:C-yd21]
+C-yd45       fence 20-320 [body:C-yd33,body:C-yd46,body:C-yd25,body:C-yd38,body:C-yd35,body:C-yd11]; infra 0-320 [detail,detail:C-yd33,detail:C-yd35,body:C-yd33,body:C-yd46,body:C-yd25,body:C-yd38,body:C-yd35,detail:C-yd38,body:C-yd11]
+C-yd46       fence 0-80 [body:C-yd32,body:C-yd33,body:C-yd35], 100-120 [body:C-yd32], 140-160 [body:C-yd32], 200-260 [body:C-yd38,body:C-yd32], 280-300 [body:C-yd35]; infra 0-320 [body:C-yd32,detail,detail:C-yd33,detail:C-yd35,body:C-yd33,detail:C-yd45,body:C-yd35,body:C-yd38,detail:C-yd38]
+C-yd47       fence 0-320 [body:C-yd33,body:C-yd35,body:C-yd32,body:C-yd45,body:C-yd13,body:C-yd16,body:C-yd19,body:C-yd15]; infra 0-320 [body:C-yd33,detail,detail:C-yd33,detail:C-yd35,detail:C-yd32,body:C-yd32,detail:C-yd46,body:C-yd35,body:C-yd45,body:C-yd13,body:C-yd16,body:C-yd19,detail:C-yd38,body:C-yd15]
+C-yd48       fence 0-200 [body:C-yd13,body:C-yd32]; infra 0-220 [body:C-yd13,detail,body:C-yd32,detail:C-yd32,detail:C-yd13]
+C-yd49       fence 60-120 [body:C1,body:C-yd11], 160-700 [body:C-yd9,body:C-yd11,body:C-yd12]; infra 0-720 [detail,detail:C-yd11,detail:C1,body:C1,body,body:C-yd11,body:C-yd29,body:C-yd9,detail:C-yd29,body:C-yd12,detail:C-yd12,detail:C-yd36,detail:C-yd39,detail:C-yd15]
+C-yd5        fence 0-40 [body:C-yd10]; infra 0-40 [body:C-yd10,body:C-yd4,detail,detail:C-yd10,detail:C-yd4]
+C-yd50       fence 20-60 [body:C-yd18,body:C-yd24]; infra 0-60 [detail:C-yd12,body:C-yd11,body:C-yd18,body:C-yd24,detail,detail:C-yd11]
+C-yd6        fence 0-40 [body:C1], 60-180 [body:C1,body:C-yd7,body:C-yd4,body], 260-280 [body:C-yd10], 300-320 [body:C-yd10], 460-540 [body:C-yd10,body:C-yd23,body:C-yd4,body:C-yd15]; infra 0-540 [body:C1,body,body:C-yd7,body:C-yd4,detail,detail:C-yd4,detail:C-yd7,body:C-yd10,detail:C-yd5,body:C-yd23,detail:C-yd10,body:C-yd15]; mesh 160-200 [far,far:C-yd7]
+C-yd7        infra 0-120 [detail,detail:C-yd6,body:C-yd6,body,body:C-yd4,detail:C-yd4]; mesh 80-100 [far,far:C-yd4]
+C-yd8        infra 0-100 [detail:C-yd49,body:C-yd11,detail,body:C-yd49,body:C1,detail:C-yd11]
+C-yd9        fence 0-40 [body:C-yd11], 60-400 [body:C-yd11,body:C-yd12]; infra 0-400 [body:C-yd11,detail,detail:C-yd11,body:C-yd12]
+C1           fence 2680-2700 [body], 15340-15460 [body:C-sd1,body:C-sd3], 15620-15640 [body,body:C-sd1], 15680-15780 [body:C-sd1,body:C-sd2], 18480-18500 [body], 27360-27500 [body:C-yd6,body:C-yd4], 28440-28460 [body:C-yd11], 28480-28560 [body:C-yd11,body:C-yd49], 33120-33140 [body:C2], 33780-33800 [body:C-yd1], 36520-37360 [body], 42200-42260 [body:C2]; infra 80-100 [body], 1420-1440 [body], 2160-2200 [body], 2660-2700 [body], 2880-2900 [body], 3000-3020 [body], 8280-8320 [body], 8520-8540 [body], 9360-9380 [body], 14500-14540 [body], 15340-15540 [body:C-sd1,detail,detail:C-sd1,body:C-sd3], 15620-15800 [body,body:C-sd1,detail:C-sd1,body:C-sd2,detail,detail:C-sd2], 15960-15980 [body], 18480-18500 [body], 27240-27300 [detail,body:C-yd6,detail:C-yd6], 27320-27520 [detail:C-yd6,detail:C-yd7,detail,body:C-yd6,detail:C-yd4,body:C-yd4,body], 28040-28060 [body:C-yd29], 28440-28460 [body:C-yd11], 28480-28680 [body:C-yd11,body:C-yd49,detail,detail:C-yd49,detail:C-yd8,detail:C-yd11], 29200-29260 [detail], 29380-29400 [body], 33120-33140 [body,body:C2], 33780-33820 [body:C-yd1], 34000-34020 [body], 34180-34200 [detail], 35920-35940 [body], 36520-37360 [body,body:C2], 41040-41060 [body], 42120-42160 [body], 42200-42260 [body,body:C2]; mesh 2140-2180 [far], 15620-15700 [far,far:C-sd1], 27400-27420 [far,far:C-yd4], 29380-29400 [far]
+C2           fence 60-80 [body:C1], 1400-1420 [body:C1], 2660-2680 [body:C1], 2980-3000 [body:C1], 8500-8520 [body:C1], 9340-9360 [body:C1], 14480-14500 [body:C1], 15320-15640 [body:C-sd3,body:C-sd1,body], 15660-15780 [body:C-sd1,body:C-sd2], 15940-15960 [body:C1], 18460-18500 [body:C1], 27220-27380 [body:C-yd6,body:C-yd4,body:C-yd7], 28480-28660 [body:C-yd49,body:C-yd8,body:C-yd11], 33100-33120 [body:C1], 33740-33820 [body:C-yd1,body:C-yd2], 33960-34000 [body:C1], 35900-35920 [body:C1], 36080-36180 [body], 36620-36720 [body], 36760-37360 [body,body:C1], 41020-41040 [body:C1], 42120-42140 [body:C1], 42180-42220 [body:C1]; infra 60-180 [body:C1,detail,detail:C1], 360-400 [detail:C1], 1380-1420 [detail:C1,body:C1], 2140-2180 [body:C1,detail,detail:C1], 2580-2600 [detail:C1], 2640-2680 [body:C1], 2980-3020 [body:C1,detail,detail:C1], 8280-8300 [body], 8480-8520 [body:C1,detail,detail:C1], 9320-9380 [body:C1,detail,detail:C1], 14380-14500 [detail:C1,body:C1], 15320-15800 [body:C-sd3,body:C-sd1,detail:C-sd1,detail,detail:C-sd3,body,body:C-sd2], 15920-16000 [detail,body:C1,detail:C1], 18460-18500 [body:C1], 18940-19040 [body:C1], 27220-27400 [body:C-yd6,detail,detail:C1,detail:C-yd7,body:C-yd4,body:C-yd7,body:C1], 28480-28660 [body:C-yd49,body:C-yd8,detail,detail:C1,body:C-yd11,detail:C-yd49], 29160-29380 [detail:C1,body:C1], 30140-30180 [detail,detail:C1], 32160-32260 [detail:C1], 32960-33120 [detail:C1,body:C1], 33640-33860 [detail,body:C-yd2,detail:C-yd2,body:C-yd1,detail:C-yd1,detail:C-yd3], 33960-34180 [body:C1,detail,detail:C1], 35780-35940 [detail:C1,body:C1], 36080-36180 [body], 36620-36720 [body], 36760-37360 [body,body:C1,detail,detail:C1], 40980-41040 [detail:C1,body:C1], 42100-42220 [detail,body:C1,detail:C1]; mesh 2140-2180 [far:C1], 15620-15680 [far:C-sd1,far], 27380-27400 [far:C-yd4,far:C1], 29360-29380 [far:C1]
+CT           fence 260-300 [body:C-sp1], 320-380 [body:C-sp1], 460-600 [body:C-sp1,body], 660-680 [body]; infra 260-600 [body:C-sp1,detail,detail:C-sp1,body], 660-680 [body]
+E-sd1        fence 0-100 [body:E2,body:E-sd2,body]; infra 0-100 [body:E2,detail:E2,body,body:E-sd2,detail]
+E-sd2        fence 0-80 [body:E1,body:E-sd1]; infra 0-100 [body:E1,detail,body,body:E-sd1,detail:E-sd1]
+E-sd3        fence 0-100 [body:E1,body:E-sd4,body,body:E2]; infra 0-100 [body:E1,body,body:E-sd4,detail,detail:E-sd4,body:E2]
+E-sd4        fence 0-100 [body:E2,body,body:E-sd3]; infra 0-100 [body:E2,body,body:E-sd3,detail,detail:E-sd3]
+E1           fence 0-40 [body:E2], 3520-3620 [body:E-sd3,body:E-sd4], 3760-3860 [body:E-sd1,body:E-sd2], 4140-4160 [body]; infra 0-40 [body:E2,body,detail], 2880-2900 [body], 3500-3620 [body:E-sd3,detail,detail:E-sd3,body:E-sd4,body], 3740-3860 [detail,detail:E-sd1,body:E-sd1,detail:E-sd2,body:E-sd2], 4120-4160 [body], 12920-12940 [body]
+E2           fence 0-40 [body:E1], 2880-2900 [body:E1], 3520-3620 [body:E-sd4,body:E-sd3], 3760-3860 [body:E-sd1,body:E-sd2], 4140-4160 [body:E1], 12920-12940 [body:E1]; infra 0-220 [body:E1,detail,detail:E1], 2800-2920 [detail:E1,body:E1], 3520-3620 [body:E-sd4,body:E-sd3,detail,detail:E-sd3,detail:E-sd4], 3740-3860 [detail,body:E-sd1,body:E-sd2,detail:E-sd1], 4140-4220 [body:E1,detail,detail:E1], 6400-6440 [detail:E1], 8000-8040 [detail:E1], 12800-12940 [detail:E1,body:E1]
+ET           fence 300-320 [body:C-sp1], 340-460 [body:C-sp1], 560-580 [body], 640-660 [body:CT]; infra 260-580 [detail,body:C-sp1,detail:C-sp1,body], 640-780 [body:CT,detail,detail:CT]
+K-main.1     infra 20-120 [detail,body,detail:K-main.6,body:K-main.10,detail:K-main.10,detail:K3.1]; mesh 80-100 [far:K-main.10]
+K-main.10    fence 440-620 [body:K-main.6,body:K-main.1]; infra 360-640 [body,body:K-main.6,body:K-main.1,detail,detail:K-main.1,detail:K-main.6]; tunnel 260-300 [detail:K3.1,detail:K-main.6]
+K-main.11    tunnel 0-20 [body:A1.1,detail:K-main.2], 140-180 [detail:K-main.12,detail:K-main.5,detail:K-main.9]
+K-main.12    tunnel 0-20 [detail,detail:K-main.9], 160-200 [detail:K-main.2,body:A1.1]
+K-main.2     tunnel 20-40 [detail:K-main.3], 140-200 [detail]
+K-main.3     tunnel 80-140 [body,detail,detail:K-main.2]
+K-main.4     fence 0-60 [body:K3.2], 300-340 [body], 540-600 [body:R1]; infra 0-60 [body:K3.2,body,detail], 140-160 [body,body:K3.2], 300-340 [body], 520-600 [detail,body,body:R1]; mesh 40-80 [far]
+K-main.5     tunnel 0-80 [detail,detail:K-main.12,detail:K-main.9], 200-220 [detail,detail:K-main.3]
+K-main.6     fence 440-620 [body,body:K-main.10,body:K-main.1]; infra 360-620 [body,body:K-main.10,detail,body:K-main.1,detail:K-main.1]; mesh 520-560 [far:K-main.10]
+K-main.7     infra 0-20 [body:K-main.1,body:K-main.10,detail:K-main.10,detail:K3.1], 40-120 [body:K-main.1,detail:K-main.1,detail:K-main.10,detail:K-main.6]; mesh 0-20 [far:K-main.10]
+K-main.8     fence 0-60 [body:K4], 340-360 [body:R2], 480-500 [body:R2], 580-640 [body:R2]; infra 0-80 [body:K4,body,detail], 140-160 [body], 340-400 [body:R2,body], 480-640 [body,body:R2,detail]; mesh 500-540 [far]
+K-main.9     tunnel 0-80 [detail:K-main.5,detail:K-main.12], 200-220 [detail:K-main.3,detail:K-main.5]
+K-sd1        fence 0-40 [body:K-sp1], 60-80 [body:K-sp1]; infra 0-80 [body,body:K-sp1,body:K2,detail,detail:K2]
+K-sp1        fence 0-40 [body:K2], 60-200 [body:K2], 240-260 [body], 280-420 [body:K2,body:K-sd1], 680-780 [body:K2], 840-860 [body:K2]; infra 0-220 [body:K2,body,detail], 240-260 [body], 280-440 [body:K2,body,body:K-sd1,detail,detail:K-sd1], 460-480 [body], 500-560 [detail], 580-600 [body,detail], 640-780 [body:K2,body], 840-860 [body:K2]; mesh 280-300 [far], 560-600 [far], 660-680 [far]
+K-xo10       fence 0-80 [body:K1,body:K-sp1]; infra 0-100 [body:K-sp1,body:K1,detail:K1,detail:K2,detail:K-sp1,detail:K3.1]
+K-xo2        infra 60-80 [body:K-main.4]
+K-xo3        fence 0-60 [body:K-main.8,body:K3.2,body:R2], 120-140 [body:K-main.8]; infra 0-80 [body:K-main.8,body:K3.2,detail:K-main.8,detail:R2,body:R2], 120-140 [body:K-main.8]; mesh 60-100 [far:K-main.8]
+K-xo4        fence 120-140 [body:K2]; infra 60-80 [detail:K3.2], 120-160 [body:K2]
+K-xo5        infra 60-80 [body:K1]
+K-xo7        fence 0-60 [body:K1]; infra 0-80 [body:K1,detail:K2]
+K-xo8        fence 0-40 [body:K2], 60-100 [body:K-sp1,body:K2]; infra 0-100 [body:K2,detail:K1,detail:K3.1,body:K-sp1,detail:K2]
+K-xo9        fence 20-100 [body:K2]; infra 0-100 [body:K2,detail:K1,detail:K2,detail:K3.1]
+K1           fence 800-1220 [body:K3.2,body:K2,body:K-sp1], 1240-1280 [body:K2], 1300-1500 [body:K2], 1680-1800 [body:K2], 1840-1940 [body:K2]; infra 580-600 [body], 800-1660 [body:K3.2,body:K2,body:K-sp1,detail,body,body:K3.1], 1680-1800 [body:K2], 1840-1960 [body:K2]; mesh 1200-1240 [far], 1500-1700 [far,far:K-sp1]; tunnel 2000-2020 [detail]
+K2           fence 800-1200 [body:K3.2,body:K1,body,body:K-sp1], 1220-1280 [body:K-sp1,body:K1], 1300-1400 [body:K-sd1,body:K-sp1,body:K1], 1420-1500 [body:K1,body:K-sp1], 1680-1960 [body:K1]; infra 600-620 [body], 800-1280 [body:K3.2,body:K1,detail,body:K-sp1,detail:K-sp1,body], 1300-1960 [body,body:K-sd1,body:K-sp1,body:K1,body:K3.1,detail,detail:K-sp1]; mesh 1200-1240 [far,far:K1], 1280-1300 [far,far:K-sp1], 1480-1680 [far,far:K1,far:K-sp1]; tunnel 1940-1960 [detail], 2220-2280 [detail:K1]
+K3.1         fence 2240-2420 [body:K-sp1], 2640-2740 [body:K-sp1,body:K-sd1], 2760-2800 [body:K2,body:K-sp1], 2880-3060 [body:K-sp1], 3100-3180 [body:K2]; infra 0-160 [body:K-main.10,body:K-main.6,detail,detail:K-main.10,detail:K-main.6], 2140-3200 [body:K2,detail:K2,detail:K1,body:K-sp1,detail,body:K1,body:K-sd1,body,detail:K3.2]; mesh 2400-2620 [far:K1,far:K2,far:K-sp1], 2780-2800 [far:K2], 2860-2900 [far:K1,far:K2]; tunnel 200-300 [detail:K-main.6,detail], 1760-1900 [detail,detail:K1], 2060-2160 [detail:K1,detail:K2]
+K3.2         fence 0-140 [body:K2,body,body:K1], 320-340 [body:K1], 1140-1200 [body:K-main.4], 1360-1400 [body,body:K-main.4], 1460-1520 [body:K-main.4]; infra 0-140 [body:K2,detail,detail:K1,detail:K2,body,body:K1], 280-340 [body:K2,detail:K1,body:K1], 1000-1060 [body,body:K-main.8], 1140-1200 [body:K-main.4], 1360-1440 [body,detail,body:K-main.4,detail:K-main.4], 1460-1520 [body:K-main.4,detail,detail:K-main.4]; mesh 1000-1060 [far,far:K-main.8], 1460-1480 [far:K-main.4]
+K4           fence 0-140 [body:K1,body:K3.2,body:K2], 280-300 [body:K2], 1060-1160 [body:K-main.8,body:K3.2], 1180-1200 [body:R2], 1360-1400 [body:K3.2,body:K-main.8], 1480-1540 [body,body:K-main.8]; infra 0-380 [body:K1,detail:K1,detail:K2,detail:K3.2,body:K3.2,body:K2,detail], 1000-1160 [body:K3.2,body:K-main.8,body:R2], 1180-1200 [body:R2], 1360-1440 [body:K3.2,detail,detail:K3.2,body:K-main.8,detail:K-main.8], 1460-1540 [body:K-main.4,body,body:K-main.8,detail,detail:K-main.8]; mesh 1000-1060 [far:K3.2,far:K-main.8]
+L-sd1        fence 0-20 [body:L2], 260-380 [body,body:L-sd8,body:L-sd2], 400-500 [body], 540-800 [body], 820-880 [body,body:L2], 920-940 [body:L-sd3], 960-980 [body:L-sd3]; infra 0-20 [body:L2], 240-500 [detail,body,body:L-sd8,detail:L-sd8,body:L-sd2], 520-880 [body,body:L2], 900-980 [detail:L-sd3,body,body:L-sd3,detail,detail:L2]
+L-sd2        fence 0-40 [body:L-sd1], 60-120 [body:L-sd8,body:L-sd1]; infra 0-140 [body,body:L-sd1,detail,detail:L-sd1,body:L-sd8,detail:L1]
+L-sd3        fence 60-100 [body:L-sd1]; infra 20-120 [detail,detail:L1,body,body:L-sd1,detail:L-sd1]; mesh 40-60 [far]
+L-sd4        fence 0-160 [body,body:L2], 180-320 [body], 360-520 [body,body:L-sd6], 540-720 [body:L-sd7,body], 760-860 [body], 880-1100 [body,body:L-sd5,body:L1]; infra 0-320 [body,body:L2], 360-720 [body,detail,body:L-sd6,body:L-sd7], 760-1100 [body,body:L-sd5,detail,body:L1]
+L-sd5        fence 0-120 [body:L-sd4,body:L2,body]; infra 0-120 [body,body:L-sd4,detail,detail:L-sd4,body:L2]
+L-sd6        fence 0-20 [body:L-sd4]; infra 0-100 [body,body:L-sd4,detail,detail:L-sd4,detail:L2]
+L-sd7        fence 0-120 [body,body:L-sd4,body:L-sd6]; infra 0-120 [body,body:L-sd4,detail,detail:L-sd4,body:L-sd6,detail:L1]
+L-sd8        fence 80-100 [body:L-sd1,body:L-sd2]; infra 0-100 [detail,detail:L-sd1,detail:L2,body:L-sd1,body:L-sd2]
+L-sp1        fence 0-100 [body:L2,body,body:L-sp2]; infra 0-100 [body:L2,body,detail,detail:L2,body:L-sp2]
+L-sp2        fence 260-320 [body:L-sp1,body:L1]; infra 260-320 [body:L-sp1,detail,body:L1,detail:L1]
+L1           fence 0-20 [body:A1.2], 60-360 [body:A-sd1], 820-940 [body:A2.1,body:A1.2,body:L2], 1060-1080 [body:A1.2], 1340-1380 [body], 4840-4900 [body:L-sd3,body:L-sd1], 4980-5020 [body:L-sd1], 5220-5320 [body:L-sd1], 5340-5400 [body:L-sd1], 5420-5560 [body:L-sd1,body:L-sd2], 12580-12700 [body:L-sd4,body:L-sd5], 12840-12920 [body:L-sd4], 12960-13020 [body:L-sd4], 13080-13180 [body:L-sd4,body:L-sd7,body:L-sd6], 13220-13300 [body:L-sd4], 13420-13520 [body:L-sd4], 13600-13700 [body:L-sd4], 14060-14080 [body:L-sp1], 14100-14120 [body:L-sp2]; infra 0-940 [body:A1.2,body:A-sd1,detail,detail:A1.2,detail:A2.1,body:A2.1,body:L2], 1060-1100 [body:A1.2,body:A2.2,detail:A1.2,detail:A2.2], 1340-1380 [body], 4240-4260 [body], 4820-5040 [detail,detail:L-sd3,body,body:L-sd3,body:L-sd1,detail:L-sd1], 5220-5860 [body:L-sd1,detail,detail:L-sd1,body:L-sd2,detail:L-sd2], 6560-6580 [body], 9580-9640 [body], 12580-13700 [body:L-sd4,detail,detail:L-sd4,body:L-sd5,body:L-sd7,detail:L-sd7,body:L-sd6,body:L2], 13800-13820 [detail,detail:L-sp2], 14060-14140 [body:L-sp1,detail,detail:L-sp2,body:L-sp2], 18620-18660 [body], 20540-20560 [body], 21760-21800 [body]; mesh 640-680 [far:A2.1,far:A1.2], 4840-4860 [far,far:L-sd3]
+L2           fence 460-480 [body:L1], 1700-1720 [body:L1], 3600-3620 [body:L1], 8120-8220 [body:L-sp1,body:L-sp2], 8560-8760 [body:L-sd4], 8800-8880 [body:L-sd4], 8920-8980 [body:L-sd4], 9000-9240 [body:L-sd4,body:L-sd6,body:L-sd7], 9380-9680 [body:L-sd4,body:L-sd5], 12620-12660 [body:L1], 15680-15700 [body:L1], 16400-16420 [body], 16640-16880 [body:L-sd1,body:L-sd2], 17000-17240 [body:L-sd1], 17260-17380 [body:L-sd1,body:L-sd3], 17980-18000 [body:L1], 20880-20920 [body:L1], 21180-21200 [body:A2.2], 21320-21380 [body:A2.2]; infra 0-60 [detail:L1], 440-480 [detail:L1,body:L1], 1680-1860 [detail,body:L1,detail:L1], 3440-3620 [detail:L1,body:L1], 8120-8500 [body:L-sp1,detail,detail:L-sp1,body:L-sp2], 8560-9300 [body:L-sd4,detail,body,detail:L-sd4,body:L-sd6,detail:L-sd6,body:L-sd7], 9360-9680 [detail:L-sd4,body:L-sd4,detail,body:L-sd5,detail:L-sd5], 12600-12860 [detail,body:L1,detail:L1], 15640-15700 [detail:L1,body:L1], 16180-16200 [detail], 16400-16460 [body,detail,detail:L-sd1], 16620-17400 [detail:L-sd1,body:L-sd1,detail,detail:L-sd8,body:L-sd2,body:L-sd3], 17980-18060 [body:L1,detail,detail:L1], 20880-20920 [body:L1], 21100-21140 [detail:L1,detail], 21160-21380 [body:A1.2,detail,body:A2.2,detail:A2.2]; tunnel 21080-21120 [detail:L1]
+M-sp1        fence 0-20 [body:M2], 180-280 [body:M1.1]; infra 0-40 [body,body:M2,detail], 180-280 [body:M1.1]
+M-xo1        fence 120-140 [body:M3]; infra 120-140 [body:M1.2,body:M3]
+M-xo2        fence 80-100 [body:M3]; infra 80-100 [body:M3]
+M-xo3        infra 20-40 [detail:M1.2]
+M-xo4        fence 40-60 [body,body:M1.2]; infra 0-60 [detail:M1.2,body,body:M1.2,body:M3]; tunnel 40-80 [body:M1.2]
+M-xo5        infra 0-80 [body:M1.2,detail:M2]; mesh 0-80 [far:M1.2]
+M-xo6        infra 0-60 [body:M1.2]; mesh 0-80 [far:M1.2]
+M-xo7        fence 40-60 [body,body:M-xo4,body:M1.2]; infra 20-80 [body,body:M-xo4,body:M1.2,detail:M1.2,detail:M2]; tunnel 20-60 [body,body:M1.2]
+M1.1         fence 23060-23160 [body:M-sp1], 23340-23360 [body:M-sp1]; infra 20360-20380 [body], 21280-21300 [body], 21320-21340 [body], 23060-23160 [body:M-sp1,body], 23320-23360 [body:M-sp1]
+M1.2         fence 600-720 [body:M3,body:W-yd1,body:W-yd30,body,body:W-xo9], 800-820 [body:W-xo8], 1000-1160 [body:M3,body:W-yd28], 1380-1400 [body:M2], 1420-1440 [body], 1560-1580 [body], 1740-1760 [body,body:M-xo4,body:M-xo7], 3180-3240 [body:M3]; infra 0-100 [body,detail,detail:M3,detail:W1], 600-720 [body,body:M3,body:W-yd1,detail,body:W-yd30,body:W-xo9], 800-820 [body,body:M3,body:W-xo8,detail], 880-900 [body], 1000-1160 [body:M3,body,body:W-yd28], 1260-1280 [body], 1380-1400 [body,body:M2], 1420-1600 [body,body:M2,body:M3], 1720-1760 [body:M-xo7,body,body:M-xo4], 1780-1800 [detail], 2120-2540 [body], 3080-3120 [detail], 3140-3240 [detail,body,body:M3,detail:M3]; mesh 0-100 [far], 2120-2540 [far]; tunnel 700-720 [body], 800-820 [body:M3,detail], 1380-1400 [body:M2], 1420-1440 [body], 1540-1580 [body:M3,body], 1720-1760 [body,body:M-xo7]
+M2           fence 0-160 [body:Y-main.2,body], 8940-9000 [body:M1.2], 9420-9460 [body:M1.2], 9480-9580 [body:M1.2,body:W-xo9], 9660-9740 [body:M1.2,body:W-xo8], 9880-10120 [body:M1.2], 10240-10260 [body], 10280-10300 [body:M1.2], 10600-11000 [body:M-xo4,body:M-xo7,body:M1.2], 12100-12140 [body:M-sp1], 12280-12300 [body:M1.1]; infra 0-200 [body:Y-main.2,detail,body], 8840-9000 [detail,detail:M1.2,body:M1.2,body], 9420-9580 [body:M1.2,detail,detail:M1.2,body:W-xo9], 9660-10460 [body:M1.2,body:W-xo8,detail,detail:M1.2,body], 10580-11400 [body:M-xo7,body:M-xo4,body:M1.2,detail,detail:M1.2], 12100-12320 [body:M-sp1,detail,detail:M-sp1,body:M1.1], 12360-12460 [detail:M-sp1,detail:M1.1,body:M1.1], 14160-14180 [body:M1.1], 15540-15560 [body:M1.1], 35420-35460 [detail:K-main.7,detail:M1.1]; mesh 8900-8980 [far:M1.2,far], 10980-11380 [far:M1.2]; tunnel 140-200 [body,detail,body:Y-main.2], 400-620 [body,body:Y-xo5], 2400-2440 [detail:W-sd3,detail], 3080-3120 [detail], 9560-9680 [body:M1.2,body:W-xo9,detail,detail:M1.2], 10240-10300 [body,detail:M1.2,body:M1.2], 10440-10620 [detail,detail:M1.2,body:M-xo7,body:M1.2], 14240-14260 [detail,detail:M1.1], 14820-14860 [detail,detail:M1.1], 15840-16020 [detail:M1.1], 16740-16860 [detail,detail:M1.1], 17840-18400 [detail:M1.1,body,detail], 24720-24860 [detail,body,detail:M1.1], 25040-25200 [detail:M1.1,body,detail], 31020-31080 [detail,detail:M1.1]
+M3           fence 0-80 [body:M1.2], 1120-1140 [body:M1.2], 1480-1520 [body:M1.2,body], 1680-1720 [body:M1.2,body], 1820-2000 [body:M1.2], 2200-2380 [body:W-yd28,body:M1.2], 2420-2460 [body], 2540-2580 [body:M1.2,body:W-yd33], 2600-2680 [body:M1.2,body:W-yd2,body:W-yd28,body:W-yd30,body:W-yd1,body:W-yd27]; infra 0-180 [body:M1.2,detail,detail:M1.2], 700-920 [body:M1.2], 940-1140 [body:M1.2,body], 1440-1540 [detail:M1.2,body:M1.2,detail,body,body:M-xo4], 1660-2100 [body,body:M1.2,detail,detail:M1.2,detail:W-yd28], 2120-2460 [detail,detail:M1.2,detail:W-yd28,detail:W-yd30,body:M1.2,body:W-yd28,body], 2540-2720 [body,body:M1.2,body:W-yd33,detail,detail:M1.2,body:W-yd30,detail:W-yd30,detail:W-yd1,detail:W-yd33,body:W-yd1,body:W-yd2,body:W-yd28,body:W-yd27], 3140-3260 [detail:M1.2,body:M1.2,detail,detail:W1]; mesh 700-900 [far:M1.2], 940-1120 [far:M1.2,far], 3160-3260 [far:M1.2]; tunnel 1520-1720 [detail,detail:M1.2,body,body:M1.2], 1820-1860 [body:M1.2,detail], 2420-2460 [body,detail:M1.2], 2540-2560 [body:M1.2,body:W-yd33,detail:M1.2]
+R-main.1     fence 40-420 [body:R-yd10,body:R-yd15,body:R-yd2,body:R-yd17], 460-540 [body:R-yd10], 640-700 [body:R-yd2,body:R-yd34]; infra 0-540 [body,detail,detail:R-yd15,detail:R-yd1,body:R-yd10,body:R-yd2,body:R-yd15,detail:R-yd2,detail:R-yd31,body:R-yd17], 620-720 [detail,body:R-yd2,body,body:R-yd34]
+R-yd1        fence 0-100 [body:R-main.1,body:R-yd10,body:R-yd15], 120-220 [body:R-yd10,body:R-yd12,body:R-yd26,body:R-yd28,body:R-yd29,body:R-yd15,body:R-yd11], 280-640 [body:R-yd15,body:R-yd16]; infra 0-260 [body:R-main.1,body:R-yd10,detail,detail:R-main.1,detail:R-yd30,body:R-yd15,body,detail:R-yd26,detail:R-yd15,detail:R-yd25,body:R-yd12,body:R-yd26,body:R-yd28,body:R-yd29,detail:R-yd7,body:R-yd11,detail:R-yd13], 280-640 [body:R-yd15,body:R-yd16]
+R-yd10       fence 0-100 [body:R-main.1], 120-140 [body:R-main.1], 180-740 [body:R-yd17,body:R-yd15,body:R-main.1,body:R-yd1,body:R-yd11], 760-1180 [body:R-yd11,body:R-yd3]; infra 0-140 [body:R-main.1,detail,detail:R-main.1,body], 160-1180 [body:R-yd17,body,body:R-yd15,detail,detail:R-yd15,detail:R-yd17,body:R-main.1,body:R-yd1,detail:R-yd4,detail:R-yd33,body:R-yd11,detail:R-yd11,detail:R-yd8,body:R-yd3]
+R-yd11       fence 0-480 [body:R-yd1,body:R-yd10,body:R-yd15,body:R-yd3,body:R-yd16,body:R-yd5]; infra 0-480 [body:R-yd1,detail,body:R-yd10,detail:R-yd10,body,body:R-yd15,body:R-yd3,body:R-yd16,body:R-yd5]
+R-yd12       fence 60-200 [body:R-yd14,body:R-yd19,body:R-yd21,body:R-yd23,body:R-yd26,body:R-yd22,body:R-yd24], 240-500 [body:R-yd28,body:R-yd26,body:R-yd30]; infra 60-500 [body:R-yd14,detail:R-yd26,body:R-yd19,body:R-yd21,body:R-yd23,detail:R-yd21,detail:R-yd23,body,detail,body:R-yd26,body:R-yd22,body:R-yd24,detail:R-yd30,body:R-yd28,body:R-yd30,detail:R-yd28]
+R-yd13       fence 0-60 [body:R-yd10,body:R-yd14,body:R-yd27], 80-440 [body:R-yd27]; infra 0-440 [body:R-yd1,body:R-yd10,body:R-yd14,detail,detail:R-yd1,body:R-yd27]
+R-yd14       fence 0-20 [body:R-yd1,body:R-yd26], 80-120 [body:R-yd27,body:R-yd19], 220-260 [body:R-yd19,body:R-yd22,body:R-yd23], 300-420 [body:R-yd21,body:R-yd23,body:R-yd12,body]; infra 0-120 [body:R-yd1,body:R-yd26,detail,detail:R-yd1,detail:R-yd13,body,detail:R-yd27,body:R-yd27,body:R-yd19], 160-280 [detail:R-yd19,detail:R-yd23,body,body:R-yd19,body:R-yd22,body:R-yd23], 300-420 [body:R-yd21,body:R-yd23,detail,body,body:R-yd12,body:R-yd19,detail:R-yd12]
+R-yd15       fence 0-20 [body:R-main.1,body:R-yd31], 100-120 [body:R-yd1], 160-180 [body:R-yd1], 220-340 [body:R-yd1,body:R-yd13,body:R-yd10,body:R-yd11], 360-400 [body:R-yd16], 440-720 [body:R-yd5]; infra 0-720 [body:R-main.1,body:R-yd31,detail:R-yd10,detail:R-yd17,body,body:R-yd10,detail,detail:R-main.1,detail:R-yd2,body:R-yd1,detail:R-yd1,detail:R-yd4,detail:R-yd25,detail:R-yd33,detail:R-yd11,body:R-yd13,body:R-yd11,detail:R-yd16,body:R-yd16,detail:R-yd9,detail:R-yd5,body:R-yd5]
+R-yd16       fence 0-380 [body:R-yd1,body:R-yd11,body:R-yd15]; infra 0-420 [body:R-yd1,body:R-yd11,detail,detail:R-yd15,body:R-yd15,body]
+R-yd17       fence 0-400 [body:R-main.1,body:R-yd10,body:R-yd31,body:R-yd2]; infra 0-400 [body:R-main.1,detail,detail:R-main.1,body:R-yd10,detail:R-yd10,body:R-yd31,body:R-yd15,body:R-yd2,detail:R-yd15,body:R-yd1]
+R-yd19       fence 0-40 [body:R-yd12,body:R-yd14,body:R-yd21,body:R-yd23], 160-200 [body:R-yd14,body:R-yd23], 220-260 [body:R-yd27]; infra 0-300 [body,body:R-yd12,body:R-yd14,body:R-yd21,body:R-yd23,detail,detail:R-yd14,detail:R-yd20,body:R-yd27,detail:R-yd27]
+R-yd2        fence 20-380 [body:R-yd10,body:R-main.1], 420-440 [body:R-yd10], 580-720 [body:R-main.1,body:R-yd34,body:R1]; infra 0-720 [detail,detail:R-main.1,detail:R-yd15,body:R-yd10,body:R-yd15,body:R-main.1,detail:R-yd17,detail:R-yd31,detail:R-yd10,detail:R-yd34,body,body:R-yd34,body:R1], 740-780 [detail:R1,detail:R2]
+R-yd20       fence 160-240 [body:R-yd14]; infra 160-240 [body:R-yd14,detail,detail:R-yd19,detail:R-yd14]
+R-yd21       fence 80-120 [body:R-yd19,body:R-yd14]; infra 0-140 [detail:R-yd12,detail:R-yd14,body:R-yd19,detail,body,body:R-yd12,body:R-yd14,detail:R-yd23,detail:R-yd26]
+R-yd22       fence 0-20 [body:R-yd12], 40-60 [body:R-yd14]; infra 0-60 [body,body:R-yd12,detail,detail:R-yd26,body:R-yd14,detail:R-yd14,detail:R-yd23]
+R-yd23       fence 0-160 [body:R-yd12,body:R-yd14,body:R-yd22,body:R-yd26,body:R-yd24]; infra 0-220 [body:R-yd12,detail,detail:R-yd14,body:R-yd14,body:R-yd21,detail:R-yd21,body:R-yd22,body:R-yd26,body:R-yd24,detail:R-yd22,detail:R-yd19]
+R-yd24       fence 0-20 [body:R-yd28], 40-60 [body:R-yd22]; infra 0-80 [body,body:R-yd28,detail,body:R-yd12,detail:R-yd12,body:R-yd22,detail:R-yd26,detail:R-yd29]
+R-yd25       fence 40-60 [body:R-yd10]; infra 0-60 [detail,detail:R-yd1,detail:R-yd15,body:R-yd1,detail:R-yd33,body:R-yd10]
+R-yd26       fence 0-40 [body:R-yd19,body:R-yd14], 100-500 [body:R-yd12,body:R-yd24,body:R-yd14,body:R-yd19,body:R-yd27,body:R-yd13,body:R-yd28,body:R-yd1,body:R-yd15,body:R-yd10]; infra 0-500 [body:R-yd19,detail,detail:R-yd21,detail:R-yd23,body:R-yd12,body:R-yd14,body:R-yd21,detail:R-yd12,detail:R-yd29,body:R-yd22,detail:R-yd22,body:R-yd24,body:R-yd27,detail:R-yd14,body:R-yd13,body:R-yd28,body:R-yd1,body,detail:R-yd28,body:R-yd15,detail:R-yd1,body:R-yd10]
+R-yd27       fence 60-100 [body:R-yd14]; infra 0-100 [body:R-yd14,detail,detail:R-yd14,detail:R-yd19], 380-400 [body]
+R-yd28       fence 20-80 [body:R-yd12,body:R-yd14], 260-300 [body:R-yd22,body:R-yd23,body:R-yd24,body:R-yd12]; infra 0-120 [body:R-yd12,detail,detail:R-yd26,body:R-yd26,body:R-yd14], 240-300 [body,detail,body:R-yd22,body:R-yd23,body:R-yd24,detail:R-yd24,detail:R-yd29,body:R-yd12]
+R-yd29       fence 40-340 [body:R-yd22,body:R-yd12,body:R-yd24,body:R-yd26], 360-400 [body:R-yd1]; infra 0-400 [detail,detail:R-yd12,detail:R-yd23,body:R-yd22,body:R-yd23,detail:R-yd26,body:R-yd12,detail:R-yd24,detail:R-yd28,body:R-yd24,body:R-yd28,body:R-yd26,body:R-yd1,detail:R-yd1]
+R-yd3        fence 0-20 [body:R-yd11]; infra 0-40 [body:R-yd11,detail,body:R-yd10,detail:R-yd10], 120-160 [detail,detail:R-yd10], 200-380 [detail:R-yd10]
+R-yd30       fence 0-60 [body:R-yd12,body:R-yd22,body:R-yd24], 240-440 [body:R-yd12,body:R-yd28,body:R-yd26,body:R-yd1,body:R-main.1,body:R-yd10,body:R-yd15]; infra 0-440 [body:R-yd12,body:R-yd22,detail,body:R-yd24,detail:R-yd12,body:R-yd28,body:R-yd26,body:R-yd1,detail:R-yd1,body:R-main.1,body:R-yd10,body:R-yd15,detail:R-main.1]
+R-yd31       fence 0-360 [body:R-main.1,body:R-yd17,body:R-yd15]; infra 0-360 [body:R-main.1,detail,detail:R-main.1,body:R-yd17,body:R-yd15]
+R-yd32       fence 0-20 [body:R-yd10], 40-60 [body:R-yd10,body:R-yd15]; infra 0-60 [body:R-yd10,detail:R-main.1,detail:R-yd15,detail:R-yd17,detail:R-yd2,detail:R-yd31,body:R-main.1,body:R-yd15]
+R-yd33       fence 0-20 [body:R-yd1]; infra 0-60 [body:R-yd1,detail,detail:R-yd10,body:R-yd10,body:R-yd15,detail:R-yd15]
+R-yd34       infra 0-60 [detail,detail:R-main.1,detail:R-yd2,body:R-main.1,body:R-yd2]
+R-yd4        fence 0-40 [body:R-main.1,body:R-yd1]; infra 0-60 [body:R-main.1,detail,detail:R-yd15,body:R-yd1,body:R-yd10,detail:R-yd1,detail:R-yd10]
+R-yd5        fence 20-280 [body:R-yd11]; infra 0-280 [detail,detail:R-yd11,body:R-yd11,detail:R-yd15]
+R-yd6        fence 20-400 [body:R-yd11,body:R-yd15,body:R-yd5,body:R-yd16]; infra 0-400 [detail:R-yd11,detail:R-yd15,detail:R-yd16,body:R-yd11,body:R-yd15,body:R-yd5,body,body:R-yd16,detail]
+R-yd7        fence 0-480 [body:R-yd10,body:R-yd12,body:R-yd15,body:R-yd26,body:R-yd28,body:R-yd11,body:R-yd1,body:R-yd14,body:R-yd19,body:R-yd27]; infra 0-480 [body:R-yd10,body:R-yd12,body:R-yd15,body:R-yd26,body:R-yd28,detail,body:R-yd1,body:R-yd11,detail:R-yd1,detail:R-yd14,detail:R-yd13,body:R-yd14,detail:R-yd27,body:R-yd19,body:R-yd27]
+R-yd8        fence 40-420 [body:R-yd11,body:R-yd10]; infra 0-420 [body:R-yd10,detail,detail:R-yd11,detail:R-yd10,detail:R-yd3,body:R-yd11]
+R-yd9        fence 0-340 [body:R-yd16,body:R-yd11,body:R-yd15]; infra 0-340 [body:R-yd16,detail,detail:R-yd11,body:R-yd11,detail:R-yd15,body:R-yd15,detail:R-yd5]
+R1           fence 0-80 [body:K-main.4], 280-300 [body:K-main.4], 16220-16240 [body:R2], 16800-16840 [body:R2]; infra 0-100 [body:K-main.4,detail,detail:K-main.4], 200-300 [detail:K-main.4,body:K-main.4], 14020-14080 [body], 16200-16240 [body,body:R2], 16780-16840 [body,detail,body:R2]; tunnel 260-300 [detail:K-main.4,detail], 2940-2960 [detail], 4900-4980 [detail], 5980-6000 [detail], 6540-6580 [detail]
+R2           fence 600-640 [body,body:R1], 16540-16660 [body,body:K3.2,body:K-main.8], 16780-16840 [body:K-main.8]; infra 20-120 [detail,body:R1,detail:R1], 600-660 [body,detail,body:R1,detail:R1], 2840-2900 [detail:R1], 16240-16300 [detail:R1], 16540-16860 [body,body:K3.2,detail,body:K-main.8,detail:K-main.8]; mesh 16700-16740 [far,far:K-main.8]; tunnel 10240-10380 [detail:R1], 10760-10860 [detail,detail:R1], 11840-12140 [detail:R1,body,detail], 12480-12660 [detail,detail:R1], 13840-14000 [detail:R1], 14400-14460 [detail,detail:R1]
+S-main.1     infra 0-100 [detail:A2.2,detail:S1,body,body:A2.2,detail,detail:S2]
+S-sd1        fence 0-520 [body:S1]; infra 0-520 [body:S1,body,detail:S1,detail]
+S-sd2        fence 0-20 [body:S1], 160-180 [body:S1]; infra 0-40 [body:S1,detail:S1,body,detail], 160-180 [body,body:S1]; mesh 0-40 [far:S1]
+S-sp1        fence 220-240 [body:A2.2]; infra 0-240 [detail:A2.2,body:A2.2]
+S-xo11       fence 20-40 [body], 60-80 [body]; infra 20-40 [body], 60-80 [body]; tunnel 60-80 [body,body:S1]
+S-xo12       fence 60-80 [body]; infra 0-20 [body], 60-80 [body]; tunnel 0-20 [body:S1], 60-80 [body]
+S-xo7        infra 60-80 [body:A1.2]
+S-xo8        fence 60-80 [body:A2.2]; infra 60-120 [body:A2.2,detail:A2.2]
+S1           fence 0-60 [body:A2.2,body:S-main.1], 1080-1560 [body:S-sd1], 3280-3300 [body:S-xo12], 3320-3340 [body:S-xo12], 3380-3400 [body:S-xo11], 3420-3440 [body:S-xo11], 7840-7860 [body:S2], 9140-9180 [body:S-sd2], 9300-9320 [body:S-sd2]; infra 0-100 [body:A2.2,detail,detail:A2.2,body:S-main.1,detail:S-main.1], 1080-1560 [body:S-sd1,detail], 3280-3300 [body:S-xo12], 3320-3340 [body:S-xo12], 3380-3400 [body:S-xo11], 3420-3440 [body:S-xo11], 6900-6960 [body], 7840-7860 [body,body:S2], 9140-9360 [body,body:S-sd2,detail,detail:S-sd2]; mesh 9140-9180 [far]; tunnel 3280-3300 [body:S-xo12], 3320-3400 [body,body:S-xo11]
+S2           fence 3180-3200 [body:S-xo12], 3240-3260 [body:S-xo12], 3300-3340 [body:S-xo11], 7740-7760 [body:S1], 9060-9080 [body:S1]; infra 0-80 [detail,detail:S1], 1000-1300 [body:S-sd1,detail:S-sd1,detail:S1], 1420-1480 [detail:S-sd1,detail:S1,body:S-sd1,detail], 3180-3200 [body:S-xo12], 3240-3260 [body:S-xo12], 3300-3340 [body:S-xo11], 6780-6880 [body:S1], 7100-7200 [body:S1,detail:S1], 7700-7780 [detail:S1,body:S1], 9040-9100 [body:S-sd2,body:S1], 9220-9240 [body:S-sd2]; tunnel 3180-3200 [body:S-xo12], 3240-3320 [body:S1,body:S-xo11], 7100-7120 [detail:S1]
+W-main.1     tunnel 20-80 [detail,detail:W-yd3], 120-200 [detail]
+W-main.2     tunnel 20-200 [detail,detail:W-main.1], 380-560 [detail:W-main.1]
+W-sd1        tunnel 20-40 [detail], 660-700 [detail,detail:M2]
+W-sd2        tunnel 0-60 [detail,detail:W-sd1,detail:W1]
+W-sd3        tunnel 0-40 [detail,detail:M2]
+W-xo1        infra 0-100 [body:M1.2,detail:M1.2,detail:M2]; mesh 0-100 [far:M1.2]
+W-xo3        tunnel 40-60 [detail:W-main.1]
+W-xo4        infra 40-80 [detail:M3,detail:M1.2]
+W-xo5        infra 0-60 [detail:M1.2,detail:W-yd28]
+W-xo6        infra 20-80 [body:M1.2,detail:M1.2]
+W-xo7        infra 40-80 [detail:M1.2,detail:M3]
+W-xo8        fence 60-80 [body]; infra 40-80 [detail:M2,body,body:M1.2]; tunnel 40-60 [detail:M2]
+W-xo9        fence 20-40 [body,body:M1.2]; infra 20-80 [body,body:M1.2,detail:M1.2,detail:M2]; tunnel 20-40 [body,body:M1.2]
+W-yd1        fence 0-480 [body:M1.2,body:W-yd2,body:W-yd28,body:W-yd34,body:W-yd11,body:W-yd10,body:W-yd23,body:W-yd24]; infra 0-480 [body,body:M1.2,body:W-yd2,body:W-yd28,detail,detail:M1.2,detail:M3,body:M3,detail:W-yd28,detail:W-yd30,body:W-yd30,body:W-yd34,body:W-yd11,detail:W-yd23,body:W-yd10,body:W-yd23,body:W-yd24]
+W-yd10       fence 0-40 [body:W-yd11,body:W-yd19,body:W-yd2], 60-180 [body:W-yd11], 220-340 [body:W-yd12,body:W-yd11,body:W-yd37]; infra 0-180 [body,body:W-yd11,body:W-yd19,body:W-yd2,detail:W-yd12,detail], 220-360 [body:W-yd12,body:W-yd11,body:W-yd37,body]
+W-yd11       fence 0-20 [body:W-yd10], 220-380 [body:W-yd24,body:W-yd10,body:W-yd1,body:W-yd12,body:W-yd2,body:W-yd31]; infra 0-20 [body:W-yd10,detail:W-yd10], 60-180 [detail,detail:W-yd10], 220-400 [body:W-yd24,detail,body:W-yd10,detail:W-yd10,body:W-yd1,body:W-yd12,detail:W-yd25,body:W-yd2,detail:W-yd1,detail:W-yd24,body:W-yd31,detail:W-yd2]
+W-yd12       fence 0-380 [body:W-yd1,body:W-yd19,body:W-yd2,body:W-yd26,body:W-yd10,body:W-yd17]; infra 0-400 [body:W-yd1,detail,detail:W-yd11,detail:W-yd31,detail:W-yd34,body:W-yd10,body:W-yd19,body:W-yd2,detail:W-yd10,body:W-yd26,body:W-yd13,body:W-yd17,detail:W-yd37]
+W-yd13       fence 20-180 [body:W-yd26,body:W-yd2,body:W-yd19,body:W-yd20,body:W-yd14,body:W-yd21]; infra 0-180 [body,detail,body:W-yd26,body:W-yd2,body:W-yd19,body:W-yd20,body:W-yd14,detail:W-yd18,detail:W-yd14,detail:W-yd38,body:W-yd21,detail:W-yd19,detail:W-yd20]
+W-yd14       fence 0-140 [body:W-yd15,body:W-yd18,body:W-yd13,body:W-yd17], 160-200 [body:W-yd13,body:W-yd17]; infra 0-200 [body:W-yd15,body:W-yd18,detail,detail:W-yd18,body:W-yd13,detail:W-yd38,body,body:W-yd16,body:W-yd17,body:W-yd37,detail:W-yd17]
+W-yd15       fence 0-140 [body:W-yd17,body:W-yd16,body:W-yd14,body:W-yd18]; infra 0-140 [body:W-yd17,body,detail,body:W-yd16,body:W-yd14,body:W-yd18]
+W-yd16       infra 0-60 [detail,detail:W-yd15,body:W-yd15]
+W-yd17       fence 0-60 [body:W-yd15], 80-140 [body:W-yd15,body:W-yd12,body:W-yd14,body:W-yd37], 180-240 [body:W-yd13,body:W-yd26]; infra 0-280 [body:W-yd15,detail,detail:W-yd16,detail:W-yd15,body,body:W-yd12,body:W-yd14,body:W-yd37,detail:W-yd14,detail:W-yd37,body:W-yd13,detail:W-yd13,body:W-yd26,detail:W-yd31]
+W-yd18       fence 0-100 [body:W-yd14,body:W-yd19,body:W-yd13,body:W-yd20,body:W-yd21]; infra 0-140 [body:W-yd14,body:W-yd19,detail,detail:W-yd14,detail:W-yd38,body:W-yd13,body:W-yd21,detail:W-yd13,body:W-yd20,body]
+W-yd19       fence 0-120 [body:W-yd13,body:W-yd18,body:W-yd2], 140-320 [body:W-yd2,body:W-yd26,body:W-yd10,body:W-yd12]; infra 0-120 [body:W-yd13,detail,detail:W-yd21,detail:W-yd22,body,body:W-yd18,body:W-yd2], 140-320 [body:W-yd2,body:W-yd26,detail,body,body:W-yd10,body:W-yd12]
+W-yd2        fence 0-180 [body:M1.2,body:W-yd1,body:W-yd28,body:W-yd30,body:W-yd27,body:W-yd34,body:W-yd11,body:W-yd31,body:W-yd10], 240-280 [body:W-yd17], 300-380 [body:W-yd26,body:W-yd13]; infra 0-280 [body,body:M1.2,body:W-yd1,body:W-yd28,body:M3,body:W-yd30,detail,body:W-yd27,body:W-yd34,detail:W-yd34,detail:W-yd35,body:W-yd11,body:W-yd31,detail:W-yd31,body:W-yd12,body:W-yd10,body:W-yd19,detail:W-yd19,detail:W-yd26,body:W-yd17], 300-380 [body:W-yd26,detail,detail:W-yd19,body:W-yd13,body:W-yd19]
+W-yd20       fence 0-120 [body:W-yd14,body:W-yd18,body:W-yd21], 140-160 [body:W-yd13]; infra 0-160 [body:W-yd14,body:W-yd18,detail,detail:W-yd21,detail:W-yd22,detail:W-yd19,body:W-yd13,body:W-yd21,detail:W-yd13,body:W-yd19,detail:W-yd18]
+W-yd21       fence 0-20 [body:W-yd18], 40-180 [body:W-yd20,body:W-yd13,body:W-yd19,body:W-yd2]; infra 0-180 [body:W-yd18,detail,body:W-yd20,body:W-yd13,body:W-yd19,detail:W-yd19,detail:W-yd22,body:W-yd2]
+W-yd22       fence 0-100 [body:W-yd19,body:W-yd13,body:W-yd14,body:W-yd18]; infra 0-100 [body:W-yd19,detail,detail:W-yd19,detail:W-yd21,body:W-yd13,detail:W-yd20,body:W-yd14,body:W-yd18]
+W-yd23       fence 0-300 [body:W-yd27,body:W-yd32,body:W-yd1], 320-340 [body:W-yd1]; infra 0-300 [body:W-yd27,body:W-yd32,detail,body:W-yd1,detail:W-yd1], 320-340 [body:W-yd1,detail]
+W-yd24       fence 0-360 [body:W-yd1,body:W-yd10,body:W-yd23]; infra 0-360 [body:W-yd1,body:W-yd10,body:W-yd12,body:W-yd23,detail,detail:W-yd1,detail:W-yd11,detail:W-yd25]
+W-yd25       fence 0-20 [body:W-yd1,body:W-yd10], 40-160 [body:W-yd11], 240-320 [body:W-yd11,body:W-yd1]; infra 0-320 [body:W-yd1,body:W-yd10,detail,detail:W-yd1,detail:W-yd11,detail:W-yd24,body:W-yd11]
+W-yd26       fence 20-180 [body:W-yd19,body:W-yd17,body:W-yd13], 220-240 [body:W-yd19]; infra 0-260 [detail,detail:W-yd19,detail:W-yd2,body:W-yd19,body:W-yd17,body:W-yd13,detail:W-yd13,detail:W-yd20,detail:W-yd18]
+W-yd27       fence 0-120 [body:M1.2,body:W-yd1,body:W-yd2], 140-400 [body:W-yd29,body:W-yd32,body:W-yd1]; infra 0-420 [body:M1.2,body:W-yd1,body:W-yd2,detail,detail:W-yd1,detail:W-yd23,detail:W-yd32,body:W-yd29,body:W-yd32]
+W-yd28       fence 0-200 [body:M1.2,body:M3], 380-420 [body], 520-560 [body:M1.2,body:W-yd30], 580-620 [body:M3]; infra 0-200 [body:M1.2,detail,detail:M1.2,detail:M3,body:M3], 380-420 [body], 520-620 [body:M1.2,body:W-yd30,body,body:W-yd2,detail,body:M3,detail:W-yd2,detail:W-yd30,detail:W-yd34]
+W-yd29       fence 0-20 [body:W-yd23], 60-120 [body:W-yd27]; infra 0-120 [body:W-yd23,detail,detail:W-yd27,detail:W-yd32,detail:W-yd36,body,body:W-yd27]
+W-yd3        fence 0-40 [body:W-yd4], 200-440 [body:W-yd4,body:W-yd5], 460-540 [body:W-yd5,body:W-yd7,body:W-yd6], 560-660 [body:W-yd5,body:W-yd6,body:W-yd8,body:W-yd9]; infra 0-40 [body:W-yd4,body], 200-680 [body,body:W-yd4,body:W-yd5,detail,detail:W-yd7,body:W-yd7,body:W-yd6,body:W-yd8,body:W-yd9,detail:W-yd9]; tunnel 1080-1160 [detail,detail:W-main.1]
+W-yd30       fence 20-120 [body:M1.2,body:W-yd28,body:W-yd33], 200-220 [body:M1.2,body:M3,body:W-yd28], 420-460 [body:M1.2]; infra 0-120 [body,body:M3,detail,detail:M3,detail:W-yd28,body:M1.2,body:W-yd1,detail:W-yd1,detail:W-yd34,body:W-yd2,body:W-yd28,body:W-yd33], 200-220 [body:M1.2,body:M3,body:W-yd28,detail:W-yd28], 260-280 [body:M1.2], 400-520 [detail:M3,detail:W-yd28,body:M1.2,detail,detail:M1.2]; tunnel 80-220 [body:W-yd33,detail:M3,detail,detail:W-yd33,detail:W-yd28]
+W-yd31       fence 20-200 [body:W-yd10,body:W-yd11,body:W-yd19,body:W-yd2,body:W-yd13], 220-240 [body:W-yd19]; infra 0-260 [detail,body:W-yd10,body:W-yd11,detail:W-yd12,detail:W-yd2,detail:W-yd34,body:W-yd19,detail:W-yd26,body:W-yd2,body:W-yd17,detail:W-yd17,body:W-yd13,detail:W-yd13,detail:W-yd20]
+W-yd32       fence 0-280 [body:W-yd23], 300-320 [body:W-yd23]; infra 0-340 [body:W-yd23,detail,detail:W-yd29,detail:W-yd27,body:W-yd29,detail:W-yd23]
+W-yd33       fence 0-60 [body,body:M1.2]; infra 0-60 [body,body:M1.2,body:M3,detail:M3,detail:W-yd30,body:W-yd30,detail:M1.2,detail]; tunnel 0-20 [body,detail,detail:M3,detail:W-yd30]
+W-yd34       fence 0-100 [body:W-yd10,body:W-yd1], 120-140 [body:M3], 160-180 [body:M1.2]; infra 0-180 [body:W-yd10,detail,detail:W-yd12,detail:W-yd2,body:W-yd1,detail:W-yd11,detail:W-yd31,detail:W-yd1,detail:W-yd35,body:M3,body:W-yd30,detail:W-yd28,detail:W-yd30,body:M1.2,body:W-yd2,body:W-yd28]
+W-yd35       fence 20-60 [body:W-yd1]; infra 0-60 [detail,detail:W-yd2,detail:W-yd34,body:W-yd1]
+W-yd36       fence 180-240 [body:W-yd29,body:W-yd27]; infra 160-260 [detail,body:W-yd29,body:W-yd27,detail:W-yd29]
+W-yd37       fence 20-100 [body:W-yd15,body:W-yd17,body:W-yd14]; infra 0-100 [body:W-yd15,detail,detail:W-yd12,body:W-yd17,body:W-yd14,detail:W-yd17,detail:W-yd14]
+W-yd38       fence 0-60 [body:W-yd19,body:W-yd13,body:W-yd15]; infra 0-60 [body:W-yd13,body:W-yd14,body:W-yd19,detail,detail:W-yd13,detail:W-yd14,detail:W-yd18,body:W-yd15]
+W-yd4        fence 0-40 [body:W-yd3], 200-480 [body:W-yd3,body:W3,body:W-yd5]; infra 0-40 [body:W-yd3], 200-500 [body:W-yd3,body:W3,body:W-yd5,detail,body]
+W-yd5        fence 20-40 [body:W-yd3], 200-220 [body:W-yd3], 440-500 [body:W-yd3], 560-620 [body:W-yd3]; infra 0-80 [detail:W-yd4,body:W-yd3], 180-220 [body:W-yd3], 380-520 [detail:W-yd4,detail:W-yd7,detail,detail:W-yd3,body:W-yd3,body,body:W-yd4], 540-680 [body,detail,detail:W-yd9,body:W-yd3,body:W-yd8], 940-960 [detail]; tunnel 940-1060 [detail,detail:W3]
+W-yd6        fence 0-140 [body:W-yd3,body:W-yd5,body:W-yd8]; infra 0-140 [body:W-yd3,detail,body:W-yd5,body:W-yd8,detail:W-yd5,detail:W-yd9,detail:W-yd3]
+W-yd7        fence 0-60 [body:W-yd3,body:W-yd4,body:W-yd5]; infra 0-100 [body:W-yd3,body:W-yd4,detail,body:W-yd5,detail:W-yd3,detail:W-yd5,detail:W-yd4]
+W-yd8        fence 20-40 [body:W-yd6]; infra 0-60 [detail:W-yd5,detail:W3,body:W-yd5,body:W-yd6,detail,body]
+W-yd9        fence 0-140 [body:W-yd3,body:W-yd5,body:W-yd6,body:W-yd8]; infra 0-140 [body:W-yd3,body:W-yd5,detail,body:W-yd6,detail:W-yd3,body:W-yd8,detail:W-yd5,detail:W-yd6]
+W1           infra 0-40 [detail,detail:M2]; tunnel 2440-2480 [detail:M2], 2900-3060 [detail,detail:M2], 5440-5640 [detail:M2], 5720-5780 [detail:W-sd2,detail,detail:W-sd1], 5940-6120 [body,detail,detail:W-sd1], 6400-6440 [detail,detail:W-sd1], 6740-6860 [body,detail,detail:M2], 8240-8460 [body:M2,detail:M2,body:Y-xo5,detail:Y-main.2]
+W3           fence 0-80 [body:W-yd4], 100-180 [body:W-yd4,body:W-yd5], 220-320 [body:W-yd5,body:W-yd6,body:W-yd8]; infra 0-480 [body:W-yd4,detail,detail:W-yd4,body:W-yd5,detail:W-yd5,detail:W-yd9,body:W-yd6,body:W-yd8,detail:W-yd8], 620-640 [detail:W-yd5]; tunnel 620-740 [detail:W-yd5,detail]
+Y-main.1     fence 160-380 [body,body:Y-main.5], 1320-1340 [body:Y-main.2]; infra 160-400 [body,body:Y-main.5], 620-640 [body], 1020-1040 [body], 1180-1200 [body], 1260-1380 [detail,body,body:Y-main.2,detail:Y-main.6]; tunnel 20-60 [detail], 80-100 [detail]
+Y-main.2     fence 160-380 [body:Y-main.5], 620-640 [body:Y-main.1], 1020-1040 [body:Y-main.1], 1320-1540 [body:Y-main.1,body:Y-main.3,body:M2,body]; infra 160-400 [body:Y-main.5,body], 620-820 [body:Y-main.1,detail,detail:Y-main.1], 1000-1060 [detail:Y-main.1,body:Y-main.1], 1320-1580 [body,body:Y-main.1,body:Y-main.3,body:M2]; mesh 340-380 [far:Y-main.5]; tunnel 20-140 [detail,detail:Y-main.8], 1520-1580 [body,body:M2], 1720-1800 [detail,detail:M2]
+Y-main.3     fence 260-280 [body:M2,body:Y-main.2], 460-500 [body:Y-main.6]; infra 220-500 [body:M2,body:Y-main.2,detail:M2,detail:Y-main.2,detail:Y-main.1,body:Y-main.1,body:Y-main.6,detail], 580-620 [body:Y-main.1], 740-760 [body:Y-main.1], 980-1020 [body], 1140-1160 [body]; mesh 980-1020 [far], 1140-1160 [far]; tunnel 0-280 [detail:M2,detail:Y-main.2,detail,body:M2,body:Y-main.2]
+Y-main.4     infra 0-100 [body,body:Y-main.3,detail,detail:Y1,body:Y-main.6,detail:Y-main.6,body:Y-main.7,detail:Y-main.7]; mesh 0-100 [far,far:Y-main.3,far:Y-main.6]
+Y-main.5     fence 160-400 [body:Y-main.1,body:Y-main.2,body:Y-xo3]; infra 160-400 [body:Y-main.1,body:Y-main.2,body:Y-xo3,detail:Y-main.1,body], 860-1280 [body,body:Y-main.4,body:Y-main.6,detail,body:Y1]; mesh 340-380 [far], 860-1280 [far,far:Y-main.4]; tunnel 20-100 [detail,detail:Y-main.1], 120-180 [detail:Y-main.1]
+Y-main.6     fence 0-80 [body:Y-main.2,body:Y-main.1], 180-200 [body:Y-main.1]; infra 0-220 [body:Y-main.1,body:Y-main.2,detail,detail:Y-main.1], 560-620 [body:Y-main.3,detail,detail:Y-main.3], 720-840 [body:Y-main.3,detail:Y-main.3,detail:Y-main.4,body:Y-main.4,detail,body,body:Y-main.5,body:Y-main.7]; mesh 560-600 [far:Y-main.3], 720-840 [far:Y-main.3,far:Y-main.4,far,far:Y-main.5]
+Y-main.7     infra 0-60 [body,body:Y-main.4,body:Y-main.5,body:Y-main.6,detail,detail:Y-main.5,body:Y-main.8,detail:Y2]; mesh 0-60 [far,far:Y-main.4,far:Y-main.5,far:Y-main.8]
+Y-main.8     fence 160-400 [body:Y-main.1,body:Y-xo3,body:Y-main.2]; infra 160-420 [body:Y-main.1,body:Y-xo3,detail:Y-main.5,detail:Y-main.2,body:Y-main.2,body:Y-main.5], 800-1000 [detail:Y-main.5,body:Y-main.4,body:Y-main.5,body:Y-main.6,detail,detail:Y-main.6,body:Y-main.7]; mesh 340-400 [far:Y-main.5], 860-1000 [far:Y-main.5,far:Y-main.4,far:Y-main.6,far:Y-main.7,far]; tunnel 20-180 [detail,detail:Y-main.2,detail:Y-main.5]
+Y-xo1        infra 0-60 [body:Y-main.5,body:Y1,detail:Y1,body:Y-main.7,body:Y-main.8,detail:Y2,detail:Y-main.5]; mesh 0-60 [far:Y-main.5,far:Y1]
+Y-xo2        infra 0-80 [body:Y-main.5,body:Y1,detail:Y-main.5,detail:Y1]; mesh 0-80 [far:Y-main.5,far:Y1]
+Y-xo3        fence 20-40 [body,body:Y-main.1]; infra 20-80 [body,body:Y-main.1,detail:Y-main.2,detail:Y-main.5]; tunnel 0-20 [detail:Y-main.1]
+Y-xo4        tunnel 40-60 [detail:Y-main.2]
+Y-xo5        tunnel 0-80 [body,body:M2,detail:M2]
+Y-xo6        infra 100-140 [body:M2]; tunnel 0-60 [detail:M2], 100-140 [body:M2,body:Y-main.2]
+Y-xo7        tunnel 0-60 [detail:M2,detail:Y-main.2]
+Y-xo8        infra 0-80 [body:Y-main.5,body:Y1,detail:Y-main.5,detail:Y1]; mesh 0-80 [far:Y-main.5,far:Y1]
+Y1           infra 260-720 [body,body:Y-main.5,detail,detail:Y-main.5,body:Y-main.7,body:Y-main.8,detail:Y-main.7,body:Y-main.4,body:Y-main.6,detail:Y-main.4,detail:Y-main.6,body:Y-main.3]; mesh 280-720 [far,far:Y-main.5,far:Y-main.7,far:Y-main.8,far:Y-main.4,far:Y-main.6,far:Y-main.3]
+Y2           infra 0-300 [body:Y-main.5,body:Y-main.7,body:Y-main.8,body:Y1,detail,detail:Y-main.5,detail:Y1]; mesh 0-300 [far:Y-main.5,far:Y-main.7,far:Y1]
