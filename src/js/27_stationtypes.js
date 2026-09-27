@@ -772,6 +772,12 @@ const StationTypes = (() => {
   function footprint(st, C) { const T = setup(st, C); return T ? footprintT(T) : []; }
   function footprintT(T) {
     const out = [];
+    // (the spawn's view target, heroes' spawnView: the footbridge hall's middle, over the island's strip where there is
+    // one, at eye height on the platform)
+    // (and where to stand: 14 m in from the platform's end, where the hall shows over the end of the platform's roof)
+    if (T.H.spawnView === 'hall' && T.ub0 !== undefined) { const u = (T.ub0 + T.ub1) / 2, p = T.plats[0], back = p.sideV < 0 ? p.eL(u) : p.eR(u);
+      const v = T.xp ? (T.xp.face(u) + T.xp.back(u)) / 2 : back, [x, z] = T.WUV(u, v), uf = p.u0 + 14, [fx, fz] = T.WUV(uf, (p.eL(uf) + p.eR(uf)) / 2);
+      out.view = { x, z, y: p.y + 1.6, from: { x: fx, z: fz } }; }
     const quad = (kind, u0, u1, v0, v1) => out.push({ kind, pts: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => T.WUV(u, v)) });
     const strip = (kind, u0, u1, vl, vr, step = 8) => { for (let u = u0; u < u1 - 1e-3; u += step) { const ub = Math.min(u1, u + step);
       out.push({ kind, pts: [[u, vl(u)], [ub, vl(ub)], [ub, vr(ub)], [u, vr(u)]].map(([a, b]) => T.WUV(a, b)) }); } };

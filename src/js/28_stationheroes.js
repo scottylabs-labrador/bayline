@@ -13,6 +13,8 @@
 //   benches   round platform benches: 'bullseye' (terrazzo) | 'drum' (precast); benchStyle: the long benches' style
 //             ('steel' | 'stone' | 'terrazzo' | 'wood'; default steel, stone underground), benchCol its colour
 //   rail      the station's own railings (well guards, the fare line's): { infill: 'bars' | 'glass', col }; default glass
+//   spawnView what a platform spawn (#mst, "go to the platform") looks at: 'hall' (the footbridge hall's middle, along
+//             the island: Millbrae); default up the platform toward the arriving train
 //   light     [r, g, b] lamp colour; lightI
 //   feature   named hero features built by StationHeroes.build(name, T)
 // Everything else falls back to the era defaults.
@@ -60,7 +62,7 @@ const StationHeroes = (() => {
     SFIA: { type: 'aerial', access: 'end', endHall: { toward: [133, -43], len: 30 }, floor: TERR(0xb3b0aa, 4.0), ceil: PANEL(0x9a9d9f, 0.6), enclosed: true, canopy: { style: 'shed', len: 216, top: 0xa9adb0, under: 0x8e9194, fascia: 0x6f7377,
       posts: { shape: 'round', col: 0xaaa59c, size: 1.2, spacing: 18, where: 'centre', kind: K.BOARDFORM } }, feature: ['windPortal'], hero: 1 },
     MLBR: { type: 'surface', access: 'bridge', floor: GRAN(0xa3a098, 0.6), canopy: { style: 'flat', len: 150, top: 0xefe8d6, under: 0xf2ecdd, fascia: 0xe4dcc8, posts: { shape: 'round', col: 0xf2f0ea, size: 0.3, spacing: 10, where: 'centre' } },
-      bridgeStyle: 'wings', benchStyle: 'terrazzo', hero: 1,
+      bridgeStyle: 'wings', benchStyle: 'terrazzo', spawnView: 'hall', hero: 1,
       // the shared intermodal hall over the Caltrain island and BART platform 3 (replaces the Caltrain-era depot hall with
       // the metro on): the Peninsula station it spans, and fallbacks in station v if that is not there
       sharedHall: { peninsula: 'place_MLBR', vWest: -20.5, vNB: -16.0, len: 84, rise: 5.2 } },

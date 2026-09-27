@@ -79,13 +79,20 @@ const MetroPlay = (() => {
     let spS = spawnFromStations(id, p.gtfs); if (spS && (!MN.nearest(spS.x, spS.z, 9, (tt) => tt === t) || (yData !== null && Math.abs(spS.y - yData) > 1.5))) spS = null;
     const yKnown = spS ? spS.y : yData;
     const hasFloors = typeof MetroStations !== 'undefined' && MetroStations.floorAt;
-    let sQ = sQ0, lat = 0, yPlat = yKnown !== null ? yKnown : 0, ok = false;
-    const pick = hasFloors ? pickSpot(t, sQ0, s0, s1, side, dirS, yKnown) : null;
+    // (a station may ask for a view, the stations' heroes' spawnView: Millbrae looks along its island at the shared hall;
+    // the spot's clear corridor then runs that way and the walker faces it, whichever end the train comes in at)
+    let view = null; try { view = typeof MetroStations !== 'undefined' && MetroStations.spawnView ? MetroStations.spawnView(id) : null; } catch (e) { view = null; }
+    let sQv = sQ0; if (view && view.from) { const nf = MN.nearest(view.from.x, view.from.z, 30, (tt) => tt === t); if (nf) sQv = U.clamp(nf.s, s0 + 5, s1 - 5); }
+    let dirC = dirS; if (view) { MN.frame(t, sQv, F); dirC = (view.x - F.x) * F.tx + (view.z - F.z) * F.tz > 0 ? -1 : 1; }
+    let sQ = sQv, lat = 0, yPlat = yKnown !== null ? yKnown : 0, ok = false;
+    const pick = hasFloors ? pickSpot(t, sQv, s0, s1, side, dirC, yKnown) : null;
     if (pick) { sQ = pick.s; lat = pick.lat; yPlat = pick.y; ok = true; }
     // the station hasn't streamed in yet (its floors appear within ~1.5 km of the camera): an estimate now, the platform's
     // centreline as soon as its floors exist (MetroPlay.update)
-    if (!ok) { MN.frame(t, sQ0, F); sQ = sQ0; lat = side * (EDGE + ((S.layout === 'island' || S.layout === 'split') ? 2.1 : 1.8)); if (yKnown === null) yPlat = F.y + FLOOR;
-      pending = { t, s: sQ, s0, s1, dirS, side, y: yPlat, yKnown: yKnown !== null, sp: spS, until: performance.now() + 15000 }; }
+    if (!ok) { MN.frame(t, sQv, F); sQ = sQv; lat = side * (EDGE + ((S.layout === 'island' || S.layout === 'split') ? 2.1 : 1.8)); if (yKnown === null) yPlat = F.y + FLOOR;
+      // (held until the station's floors exist, up to 45 s: a slow first build dropped the walker to the ground under an
+      // aerial or embanked platform after 15 s, where the floor above is not drawn from below)
+      pending = { t, s: sQ, s0, s1, dirS: dirC, side, y: yPlat, yKnown: yKnown !== null, sp: spS, view, until: performance.now() + 45000 }; }
     MN.frame(t, sQ, F);
     let x = F.x + F.rx * lat, z = F.z + F.rz * lat;
     if (pending) { pending.x0 = x; pending.z0 = z; }                // (where the walker starts: settling stops if they go elsewhere)
@@ -93,7 +100,7 @@ const MetroPlay = (() => {
     if (ok && spS && MetroStations.floorAt(x, yPlat + 0.3, z) === null && MetroStations.floorAt(spS.x, yPlat + 0.3, spS.z) !== null) { x = spS.x; z = spS.z; }
     // heading: up the platform toward where the train comes from, 12 degrees toward its track
     const ax = -dirS * F.tx, az = -dirS * F.tz, tx = -side * F.rx, tz = -side * F.rz, k = Math.tan(12 * Math.PI / 180);
-    const yaw = Math.atan2(ax + tx * k, az + tz * k);
+    const yaw = view ? Math.atan2(view.x - x, view.z - z) : Math.atan2(ax + tx * k, az + tz * k);
     Player.setMode('walk', { pos: { x, y: yPlat, z, yaw } });
     Player.walk.y = yPlat; Player.walk.vy = 0; Player.walk.hold = performance.now() + 15000;   // (until the station's floors stream in)
     if (next) { const key = next.leg.chainKey || next.plan.key; Player.setFocus(key); watch = { key, st: id, gtfs: p.gtfs, dep: next.dep }; }
@@ -151,6 +158,7 @@ const MetroPlay = (() => {
   function settleSpawn() {
     const P = pending; if (!P || Player.mode !== 'walk') { pending = null; return; }
     if (performance.now() > P.until) { pending = null; return; }
+    Player.walk.hold = Math.max(Player.walk.hold || 0, performance.now() + 1000);       // (still waiting for the floors: hold)
     // the player has gone somewhere else meanwhile (another station, the Peninsula): leave them there
     if (P.x0 !== undefined && Math.hypot(Player.walk.x - P.x0, Player.walk.z - P.z0) > 150) { pending = null; return; }
     // the floors are there once a probe across the platform finds them (on the expected side, or the other one: the
@@ -162,6 +170,7 @@ const MetroPlay = (() => {
     if (k) { MetroSim.net.frame(P.t, k.s, F2); x = F2.x + F2.rx * k.lat; z = F2.z + F2.rz * k.lat; y = k.y; }
     if (x === null || MetroStations.floorAt(x, y + 0.3, z) === null) { if (!spOk) return; x = P.sp.x; z = P.sp.z; y = P.y; }
     Player.walk.x = x; Player.walk.z = z; Player.walk.y = y; pending = null;
+    if (P.view) Player.setMode('walk', { pos: { x, y, z, yaw: Math.atan2(P.view.x - x, P.view.z - z) } });   // (facing the station's view from where it settled)
   }
   // (the older helper: where the stations workstream would put you; kept for tools)
   function spawnFromStations(id, gtfs) {
