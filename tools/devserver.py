@@ -18,6 +18,8 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
 # BAYLINE_OVERLAY=<dir with tiles/...>[:<dir>...]: files there are served instead of data/pub/v2's (staged sets, checked
 # locally; the first dir that has a file wins, so list a set before the ones it builds on, e.g. fix_trench:fix_terrain)
 OVERLAYS = [os.path.realpath(p) for p in os.environ.get('BAYLINE_OVERLAY', '').split(':') if p]
+# BAYLINE_HDELAY=<s>: every height tile of level 5-9 is served that much later (QA: a cold arrival over a slow link)
+HDELAY = float(os.environ.get('BAYLINE_HDELAY', '0') or 0)
 if OVERLAYS:
     ALLOWED = sorted(set(ALLOWED) | set(OVERLAYS))
 mimetypes.add_type('application/octet-stream', '.bin')
@@ -77,6 +79,8 @@ class Handler(BaseHTTPRequestHandler):
             if not head: self.wfile.write(body)
             return
         fp = os.path.realpath(resolve(self.path))
+        if HDELAY and re.match(r'^/data/v2/tiles/(h/[5-7]|h9/[89])/', self.path):     # (QA: heights stream slowly, as over a slow link)
+            import time; time.sleep(HDELAY)
         if not any(fp.startswith(a + os.sep) for a in ALLOWED) or not os.path.isfile(fp):
             body = b'not found\n'
             self.send_response(404); self.send_header('Content-Type', 'text/plain'); self.send_header('Content-Length', str(len(body))); self.end_headers()
