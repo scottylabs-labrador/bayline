@@ -151,6 +151,19 @@ const MetroTube = (() => {
         gb.box(b[0], b[1] + 0.55, b[2], T2, U2, L2, 0.07, 0.09, 0.07, PAL.blueLamp);
       }
     });
+    // a box of several tracks: the ceiling over each centre wall, hidden in the wall's top while it stands; where a
+    // crossover takes the wall out (cullInside: it stays, 4.8 m up), the two ceilings would leave a slot open to the sky
+    // (W1 north of the SFO wye, M3.7: the crossover's own box had covered it). Only in junction zones, where walls are culled.
+    if (sec.kind === 'box' && pair && cell.zoned) {
+      const prof = (s) => { const T = (perRow ? (perRow.get(s) || cell.tlAt(s)) : tracksL).map((t, i) => ({ t, o: tracksL[i].o, wi: t.wi !== undefined ? t.wi : tracksL[i].wi }));
+        const H = topAt ? topAt(s) + TB : sec.H, top = -TB + H, out = [];
+        const wall = (x) => boxProfile(Object.assign({}, sec, { H }), x.t.L, x.o, x.wi !== undefined ? x.wi : Math.max(1.9, Math.abs(tracksL[1].L - tracksL[0].L) / 2 - 0.3), x.t.wo).wallAt();
+        const S = T.slice().sort((x, y) => x.t.L - y.t.L);
+        for (let i = 0; i + 1 < S.length; i++) { const wA = wall(S[i]), wB = wall(S[i + 1]); if (wB > wA - 0.4) out.push([wB + 0.36, top], [wA - 0.36, top]); }
+        return out; };
+      const pr0 = prof(ss[0]);
+      for (let k = 0; k < pr0.length; k += 2) sweepVarT(gb, rows.map(row => { const p = prof(row.s); return Object.assign({}, row, { prof: [p[k] || pr0[k], p[k + 1] || pr0[k + 1]], col: [sec.lining] }); }));
+    }
     gb.wear = 0.5;
   }
   function setRef(gb, ctx, F) { gb.ref = { o: [F.x - ctx.ox, F.y, F.z - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], t: [F.tx, F.ty, F.tz] }; }
@@ -170,7 +183,12 @@ const MetroTube = (() => {
           if (A.x0 < B.x1 + 0.15 && B.x0 < A.x1 + 0.15 && A.y0 < B.y1 + 0.15 && B.y0 < A.y1 + 0.15) {
             const u0 = Math.min(A.x0, B.x0), u1 = Math.max(A.x1, B.x1), v0 = Math.min(A.y0, B.y0), v1 = Math.max(A.y1, B.y1);
             holes[i] = { x0: u0, x1: u1, y0: v0, y1: v1, pts: [[u0, v0], [u1, v0], [u1, v1], [u0, v1]] }; holes.splice(j, 1); merged = true; } } }
-      for (const h of holes) { x0 = Math.min(x0, h.x0 - 0.4); x1 = Math.max(x1, h.x1 + 0.4); } }
+      for (const h of holes) { x0 = Math.min(x0, h.x0 - 0.4); x1 = Math.max(x1, h.x1 + 0.4); }
+      // (and short of an open-air track alongside (no opening of its own here): its envelope stays clear, M3.7 Daly City,
+      // M2's trench beside M1.2's headwall)
+      for (const o of MT.net.nearAll(F.x, F.z, Math.max(-x0, x1) + 2)) { const Q = MT.trackOf(o.track); if (!Q || own.includes(Q) || holes.some(h => h.id === Q.id)) continue;
+        const G = MT.frameAt(Q, o.s, {}); if (Math.abs(G.y - F.y) > 1.5 || MT.UNDERGROUND.has(MT.runAt(Q, o.s).type)) continue; const l = (G.x - F.x) * F.lx + (G.z - F.z) * F.lz;
+        if (l < lo - 0.5) x0 = Math.max(x0, Math.min(lo - 2.5, l + 1.7)); else if (l > hi + 0.5) x1 = Math.min(x1, Math.max(hi + 2.5, l - 1.7)); } }
     let gTop = -1e9; for (const l of [x0, (x0 + x1) / 2, x1]) gTop = Math.max(gTop, MT.groundAt(F.x + F.lx * l + T[0] * 3, F.z + F.lz * l + T[2] * 3) - F.y);
     const top = Math.max(crown + 1.2, Math.min(gTop + 0.9, crown + 9));
     // wall face as an extruded shape with the tunnel openings as holes (x = lateral, y = up, z = outward)
@@ -591,6 +609,7 @@ const MetroTube = (() => {
         const wiP = p ? Math.max(1.9, Math.abs(p.lat) / 2 - 0.3) : 2.25, lat0 = Math.min(...tl.map(t => t.L)), lat1 = Math.max(...tl.map(t => t.L));
         const cov = sec.kind === 'box' && run.type === 'cutcover' ? coverFor(R, s0, s1, lat0, lat1, sec.H, run.s0, run.s1) : null; if (cov && cov.thin) { cell.thin = true; MT.stats.thinBoxes = (MT.stats.thinBoxes || 0) + 1; }
         // (built in pieces of ~25 m that share their boundary rows, a step each)
+        cell.zoned = MetroGuide.zonesOf(R).some(z => z[1] > s0 && z[0] < s1);
         ctx.ch.stage = 'tube:cell'; for (let i0 = 0; i0 < ss.length - 1;) { let i1 = i0 + 1; while (i1 < ss.length - 1 && ss[i1] - ss[i0] < 25) i1++; buildCell(ctx, cell, sec, tl, ss.slice(i0, i1 + 1), cov && cov.thin ? cov.top : null); i0 = i1; yield; }
         MetroGuide.midRails(ctx, cell.tgb, R, s0, s1, tl.map(t => t.L));
         ctx.ch.stage = 'tube:strip';

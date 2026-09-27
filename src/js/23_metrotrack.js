@@ -515,6 +515,7 @@ const MetroTrack = (() => {
   // pair in a trench keeps its box. The lexically smallest id builds a group's structure.
   const CAT = { grade: 0, embankment: 0, median: 0, trench: 0, aerial: 1, bridge: 1, portal: 2, cutcover: 2, bored: 2, tube: 2 };
   const binOf = (R, s) => U.clamp(Math.round(s / BIN), 0, R.pairT.length - 1);
+  const OPEN = new Set(['grade', 'embankment', 'median']);
   function runAt(R, s) { for (const r of R.runs) if (s >= r.s0 && s < r.s1) return r; return R.runs[s <= 0 ? 0 : R.runs.length - 1]; }
   const catOf = (R, s) => { const c = CAT[runAt(R, s).type]; return c === undefined ? 0 : c; };
   // does my partner at bin b point back at me there? (groups: where a middle track's partner switches sides, not a bin
@@ -574,17 +575,26 @@ const MetroTrack = (() => {
     }
     return mem;
   }
+  const _Fr = {};
   function rawGroup(R, b) {
     const rc = R.rc || (R.rc = new Map()); let mem = rc.get(b); if (mem) return mem;
     mem = chain(R, b * BIN, false);
     if (mem.length > 2) mem = chain(R, b * BIN, true);                         // (three or more: by kind of structure)
+    // (on open ground, beds side by side need no shared structure: a pair or a lone track stays its own group there, as
+    // before; a yard's whole ladder chained into one bed, handed from owner to owner, left tracks without one)
+    // (and only tracks at the owner's level: a group's structure is built in one level frame, and a track 0.3 m lower
+    // had its floor 0.3 m over its rails (K2 beside K1 at the Oakland wye))
+    if (mem.length > 2) { const y0 = frameAt(R, b * BIN, _Fr).y; const lv = mem.filter(m => Math.abs(frameAt(m.Q, m.s, _Fr).y - y0) < 0.2); if (lv.length > 2) mem = lv; else mem.levels = true; }
+    if (mem.length > 2 && (mem.levels || mem.every(m => OPEN.has(runAt(m.Q, m.s).type)))) { const p = R.pairT[b]; mem = [mem[0]]; if (p >= 0) mem.push({ Q: TRACKS[p], s: R.pairS[b] }); mem.legacy = true; }
     rc.set(b, mem); return mem;
   }
   // (only members that see me in their own group there: where a run changes kind between the two tracks' bins, a track
   // is never left to a partner that does not build for it)
   function groupAt(R, s) {
     const b = binOf(R, s); const gc = R.gc || (R.gc = new Map()); let g = gc.get(b); if (g) return g;
-    const raw = rawGroup(R, b), mem = raw.length < 2 ? raw : raw.filter((m, i) => i === 0 || rawGroup(m.Q, binOf(m.Q, m.s)).some(x => x.Q === R));
+    const raw = rawGroup(R, b);
+    if (raw.legacy) { const p = R.pairT[b]; g = { mem: raw, owner: p < 0 || R.primary[b] ? R : TRACKS[p], legacy: true }; gc.set(b, g); return g; }
+    const mem = raw.length < 2 ? raw : raw.filter((m, i) => i === 0 || rawGroup(m.Q, binOf(m.Q, m.s)).some(x => x.Q === R));
     let owner = R; for (const m of mem) if (m.Q.id < owner.id) owner = m.Q;
     g = { mem, owner }; gc.set(b, g); return g;
   }

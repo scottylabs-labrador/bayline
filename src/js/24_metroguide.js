@@ -40,7 +40,7 @@ const MetroGuide = (() => {
   const pairOrLone = (g, p) => g.mem.length === 1 ? !p : (g.mem.length === 2 && !!p && g.mem[1].Q === p.R2);
   function lanes(ctx, s) {
     const p = ctx.pairAt(ctx.R, s), g = MT.groupAt ? MT.groupAt(ctx.R, s) : null;
-    if (!g || pairOrLone(g, p)) return p ? { lo: Math.min(0, p.lat), hi: Math.max(0, p.lat), p, g } : { lo: 0, hi: 0, p: null, g };
+    if (!g || g.legacy || pairOrLone(g, p)) return p ? { lo: Math.min(0, p.lat), hi: Math.max(0, p.lat), p, g } : { lo: 0, hi: 0, p: null, g };
     let lo = 0, hi = 0, pin = null; const lats = [0];
     for (const m of g.mem) { if (m.Q === ctx.R) continue; let lat;
       if (p && m.Q === p.R2) { lat = p.lat; pin = p; } else { lat = MT.latOf(ctx.R, s, m.Q); if (lat === null || Math.abs(lat) > 60) continue; }
@@ -237,8 +237,11 @@ const MetroGuide = (() => {
         // (none where another track runs within 6 m outside it (it would stand in its envelope), nor where the ground at
         // the barrier line lies more than 0.75 m over the rail: there the median is a cut whose slopes the barrier was
         // draped on, a wavy white band along their foot (Willow Pass, C1 36500-37350), M3.7)
-        const all = ss.map(s => { MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const lat = side < 0 ? ln.lo - 3.9 : ln.hi + 3.9; const gy = gRel(F, lat, -3, 2);
-          return { s, o: [F.x + F.lx * lat - ctx.ox, F.y + gy, F.z + F.lz * lat - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], top: F.y + gy + 0.97, gnd: F.y + gy, clash: gy > 0.75 || sideNeighbour(ctx, s, ln, side, 6) !== null }; });
+        // (and none within 15 m of such ground, so no stubs stand between the dips of a cut's foot)
+        const high = (q) => { MT.frameAt(ctx.R, U.clamp(q, 0, ctx.R.t.length), F); const ln = lanes(ctx, q); return gRel(F, side < 0 ? ln.lo - 3.9 : ln.hi + 3.9, -3, 2) > 0.75; };
+        const all = ss.map(s => { let cut = false; for (let d = -15; d <= 15 && !cut; d += 5) cut = high(s + d);
+          MT.frameAt(ctx.R, s, F); const ln = lanes(ctx, s); const lat = side < 0 ? ln.lo - 3.9 : ln.hi + 3.9; const gy = gRel(F, lat, -3, 2);
+          return { s, o: [F.x + F.lx * lat - ctx.ox, F.y + gy, F.z + F.lz * lat - ctx.oz], r: [F.lx, F.ly, F.lz], u: [F.vx, F.vy, F.vz], top: F.y + gy + 0.97, gnd: F.y + gy, clash: cut || sideNeighbour(ctx, s, ln, side, 6) !== null }; });
         const pieces = []; let cur = []; for (const r0 of all) { const pv = cur[cur.length - 1];
           if (r0.clash || (pv && Math.hypot(r0.o[0] - pv.o[0], r0.o[2] - pv.o[2]) > 0 && Math.abs((r0.o[0] - pv.o[0]) * r0.r[0] + (r0.o[2] - pv.o[2]) * r0.r[2]) > 1.5)) { if (cur.length > 1) pieces.push(cur); cur = []; }
           if (!r0.clash) cur.push(r0); } if (cur.length > 1) pieces.push(cur);

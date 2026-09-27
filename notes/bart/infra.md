@@ -7,6 +7,42 @@ Files owned: `src/js/23_metrotrack.js`, `src/js/24_metro*.js`, `preview/metrotra
 
 ## To the lead (latest first)
 
+- **13:40 (09-27) M3.7 three-track structures, W1 rails, Willow Pass barrier** (on `bart-infra`, lead-int b3d189a
+  merged in; before = b3d189a, after = this commit; q=high, 12:00). Sheets in `notes/bart/shots/infra/m37_*.jpg`, the
+  network audit in `notes/bart/infra_m37_audit.txt`.
+  - **Groups** (`MetroTrack.groupAt`): parallel tracks at one level within 7.6 m, chained through their pairs and
+    neighbours. Three or more tracks group by the kind of structure each has there (open, elevated, underground), and
+    only tracks within 0.2 m of the owner's level join. The smallest id builds the group's structure. A pair or a lone
+    track is its own group, as before. On open ground (grade, embankment, median) the old pairs are kept: a yard's whole
+    ladder chained into one bed had left tracks with no bed. Daly City: [M3, M1.2, M2] is one three-track trench, M3
+    keeps its own portal box (q 1680-1716) and trench, M2 keeps its trench at M1.2 s 1565-1598. No open sky, no holes.
+  - **Walls, fences and median barriers** stay out of a neighbouring track's envelope (`sideNeighbour`): a trench wall
+    goes midway, 0.3-0.6 m thick; fences and barriers are left out. Sweeps are split where a group's width jumps.
+    Headwalls stop short of an open-air track alongside (M2's trench beside M1.2's portal).
+  - **Track detail** (rails, plinths, third rail): a pair's primary builds its partner's, now decided a 10 m bin at a
+    time the same way by both tracks (`MetroTrack.detailCover` / `detailFor`). Every metre of every track is built
+    exactly once (offline, 1,002,350 samples). Rail holes: 39.5 km -> 0.84 km network-wide. **W1 at the SFO wye**
+    (8255-8443) had no rails: its partner M2 skipped the whole range because the pairing changed at one end. Also at
+    8360, W1 ran into a wall: crossover Y-xo5 built its own box inside the M2/W1 box. A crossover inside its pair's box
+    now builds none (the same for W-xo3, R-xo3, R-xo4, M-xo7, Y-xo6, and parts of S-xo11 and S-xo12). Where a crossover
+    takes out a centre wall, a ceiling strip closes the slot between the two cells' ceilings (sky showed through it).
+  - **Willow Pass** (C1 ~37000-37600): DATA confirms the rails are right; the terrain there is 11-45 m too high, and
+    WORLD is rebaking it. My part: no median barrier where the ground at its line is more than 0.75 m above the rail, or
+    within 15 m of such ground (no stubs). The white band is gone.
+  - **A1.2 33300 mounds**: not mine to fix. The lidar surface (h9) is 3.2-3.7 m above the rail 4-6 m right of A1.2,
+    about 0.7 m above the natural ground (probably the real wall and fence in the lidar). It lies beyond the carve's
+    3.9 m reach, so it buries the right wall's coping (2.8 m). The L7 base, which the builders read, is 2.5 m there.
+    Request to WORLD: flatten h9 to the natural ground (L7 beyond the carve) out to ~7 m behind trench walls.
+  - Optional ballast edge (#5): not done.
+  - Audits (both trees, every chunk): 4,134 chunks, 1,114 changed (body 332, detail 747, far 35), 3,020 identical.
+    - Clearance on the 332 changed body chunks: 739,022 -> 49,560 hits. The 5 new clash runs (21 hits) are all at the
+      envelope's edge (at most 7 cm in, plus one at a switch point).
+    - Support: holes 13.8 -> 13.2 km. New holes add up to 224 m in 33 runs, mostly single 4 m samples. The largest:
+      K3.2/K4 1010-1026 on a bridge, where a pair hands over to a group; C2 2154-2166.
+    - Rails: 3 new single-sample holes. 94 new single-sample doubles, where two tracks' rails meet at turnouts.
+  - Cost at Daly City (metro_share views, High): draw calls 258 -> 265 (wall view), 308 -> 314 (air), 310 -> 317 (M3
+    cab); metro draw calls +7 (the M3/M2 cells, split sweeps); metro triangles 5-12 % fewer. Under map redraw
+    0.3-0.8 ms before and after (camera hops of 25 m).
 - **02:20 (09-27) M3.5 trench skirt + Daly City chamber** (on `bart-infra`, fast-forwarded to lead-int ba97382 first;
   before = ba97382, after = this commit; q=high, 12:00):
   - **Skirt behind every trench wall** (`24_metroguide.js` buildTrench): a 1.6 m earth-and-gravel strip at the natural
@@ -483,17 +519,10 @@ catenary, Concord at grade with the ROW fence, MacArthur median (5:30 PM), EMBR/
 
 ## Open problems
 
-- **Daly City: tracks paired one way only (pre-existing, found in the M3.5 cab rides)**. Structures are shared by pairs
-  (`MetroTrack.pairAt`: each track takes its nearest parallel track; the smaller id builds). With three tracks 5 m
-  apart the middle track, M1.2, pairs with one neighbour, and the third track's partner (M1.2) never builds for it:
-  - M3's portal and trench at M3 q 1680-1826 (M1.2 s 1426-1572) are not built: open sky, a hole in the ground, and
-    M3's trains pass 0.25 m inside M1.2's trench wall;
-  - M2's trench at M1.2 s 1565-1598 is missing (ties over a hole just before the chamber).
-
-  The same one-way pairs exist in yards and on some sidings (probe: `MetroTrack.TRACKS` `pairT` vs the partner's). Fix
-  proposed for M3.6+: the middle track's structure takes in the one-way partner's lane (a three-track trench, bed or
-  box: `lanes()` lo / hi and the box's track list), instead of the orphan building its own (5 m spacing leaves no room
-  for two walls). Its reach is network-wide, so not in M3.5.
+- (resolved in M3.7) Daly City's one-way pairs: groups build the three-track trench (see M3.7 above).
+- Support holes left at pair/group handovers (e.g. K3.2/K4 1010-1026 on a bridge, 16 m) and the pre-existing
+  13 km of support holes (mostly yards and crossovers). See `notes/bart/infra_m37_audit.txt`.
+- A1.2 ~33300: lidar bumps outside the carve's reach bury the right trench wall (WORLD request).
 - (resolved in M3.5) Daly City junction chamber jc279 ran past its tracks' mouths: it now ends at the first mouth.
 - The data's accuracy limits the builders (aerial heights from clearance rules, the Wye's solved levels, portal
   profiles); builders adapt, but accuracy follows the data.
