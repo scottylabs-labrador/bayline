@@ -44,6 +44,8 @@ const StationCrowds = (() => {
       if (island) { side = rnd() < 0.5 ? -1 : 1; const d = 1.3 + rnd() * rnd() * Math.max(0.5, (b - a) / 2 - 1.6); v = side < 0 ? a + d : b - d; }
       else { side = p.sideV > 0 ? -1 : 1; const d = 1.3 + rnd() * Math.max(0.5, (b - a) - 2.2); v = p.sideV > 0 ? a + d : b - d; }
       if (p.busy(u, v)) continue;
+      // (not where the player stands: a spawn onto a platform put someone's head in the lens)
+      { const [wx, wz] = R.toWorld(u, v), cp = typeof Env !== 'undefined' ? Env.camera.position : null; if (cp && Math.hypot(wx - cp.x, wz - cp.z) < 2.5 && Math.abs(p.y + 1.6 - cp.y) < 2.5) continue; }
       const faceYaw = R.yawAt(u) + (side < 0 ? Math.PI / 2 : -Math.PI / 2);       // look toward the edge (the track): +pi/2 turns +u to -v
       const walker = rnd() < 0.14;
       list.push({ p, u, v, side, y: p.y, yaw: faceYaw + (rnd() - 0.5) * 1.2, mode: walker ? 1 : 0, speed: 0.9 + rnd() * 0.6, state: walker ? 'walk' : 'wait', tu: u, tv: v, ph: rnd() * 6.28, key: island ? p.keys[side < 0 ? 0 : 1] || p.keys[0] : p.keys[0] });
@@ -80,6 +82,7 @@ const StationCrowds = (() => {
     people.mesh.visible = people.warm !== false && !!best.root && best.root.userData.warm !== false;
     if (best !== active || !list.length && population(best.id) > 3 && Math.random() < 0.01) spawn(best);
     const R = active.res; const [ox, oz] = R.origin;
+    const camL = camPos ? { x: camPos.x - ox, y: camPos.y, z: camPos.z - oz } : null;
     doorT -= dt; if (doorT <= 0) { doorT = 0.5; doors = trainDoors(active); }
     let k = 0;
     for (const c of list) {
@@ -106,11 +109,15 @@ const StationCrowds = (() => {
         } else { const sp = Math.min(d, c.speed * dt); c.u += du / d * sp; c.v += dv / d * sp; c.walkYaw = R.yawAt(c.u) + Math.atan2(-dv, du); }
         const L = R.toLocal(c.u, c.v); lx = L[0]; lz = L[1]; c.yaw = c.walkYaw !== undefined ? c.walkYaw : c.yaw;
       } else { const L = R.toLocal(c.u, c.v); lx = L[0]; lz = L[1]; if (Math.random() < dt * 0.01) { c.state = 'walk'; c.mode = 1; } }
+      // (anyone within 0.8 m of the camera at their level is not drawn this frame: no one walks through the lens)
+      if (camL && Math.abs(lx - camL.x) < 0.8 && Math.abs(lz - camL.z) < 0.8 && Math.hypot(lx - camL.x, lz - camL.z) < 0.8 && Math.abs(c.y + 1.2 - camL.y) < 1.6) continue;
       people.set(k++, lx, c.y, lz, c.yaw, c.state === 'wait' ? 0 : 1, c.ph, c.state === 'wait' ? undefined : c.speed);
     }
     people.count = k; people.update && people.update(dt);
+    // (trailer shots: a hook after the crowd is placed, before the frame is drawn: riders added or the crowd replaced)
+    if (api.after) try { api.after(people, dt, active); } catch (e) { console.warn('StationCrowds.after', e); }
   }
-  const api = { update, population, EXITS, get people() { return people; }, get active() { return active; } };
+  const api = { update, population, EXITS, get people() { return people; }, get active() { return active; }, after: null };
   if (typeof window !== 'undefined') (window.__baylineMods = window.__baylineMods || {}).StationCrowds = api;   // (QA, trailer shots)
   return api;
 })();

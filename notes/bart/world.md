@@ -6,7 +6,7 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 
 ## Status
 
-**Updated 2026-09-26 12:55. M3 is LIVE (11:36) on the world: all world sets are published on both servers.**
+**Updated 2026-09-26 17:40. M3 is LIVE (11:36) on the world: all world sets are published on both servers. M3.2 world items and the four promo shots are committed on bart-world (not deployed).**
 
 | set / change | state |
 |---|---|
@@ -19,10 +19,16 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 | Globe ocean (pale bands west of Marin) | bart-world a2d5bda, accepted for M3.1 |
 | night lights from the air (checkerboard, dusk) | bart-world 9f03eff, accepted for M3.1 |
 | INFRA items (tunnel-mouth / open-cut buildings, trees / grass on cut ground, traffic near BART, carve checks) | done (40bae4e, 74ec930, 0bb0e39; analyses below) |
+| M3.2: night lights from the air, resolved (a world-stable lamp field instead of the averaged wash beyond ~2 m pixels) | bart-world 4d7e83f, accepted; `shots/world/night_aerials_*` |
+| M3.2: street lamps seen from above (the glare a small point, the pool a faint glow once the camera is well over it) | bart-world 32025b9; `shots/world/street_lamps_from_above_before_after.jpg` |
+| M3.2: no street lamp on cut ground (openings, trenches, platform cuts, track bed; stations' 'lamp' keep-out; late openings drop lamps in place: `Towns.relamp`), pools never below their lamp's footing, tilted with hills, faded at grazing angles | bart-world 21246e1; `shots/world/lamp_on_cut_ground_before_after.jpg` (P02's West Oakland portal) |
+| M3.3: street-lamp glare keeps its size in pixels whatever the lens (k = tan(fov/2) / tan(27.5 deg); pools stay in world space) | bart-world 16f4cb4, approved; `shots/world/lamp_glare_long_lens_before_after.jpg` (P05 at 135 mm) |
+| Promo shots P01 `p_dawn_bay` (+ `p_dawn_bay_blue`), P20 `p_night_flyover`, P26 `p_embr_rise`, P27 `p_bay_night` (modules in `tools/trailer/shots/`, helpers `_world.mjs`), service day pinned to 2026-09-29 | committed; 6-frame sheets in `shots/promo/<shot>.jpg` (960x540 previews, 2.39 guides) |
 
 **Backlog (post-M3, queued):**
 1. Night aerials (lead): the glow almost entirely from the street / road mask at L7-L9 (thin bright lines), blocks dark apart
-   from sparse building points, the wash only at L5-L6 distances.
+   from sparse building points, the wash only at L5-L6 distances. (M3.2's lamp field covers the far look; freeway lines
+   from far away need an L0-L4 max re-pool of the mask: backlog.)
 2. Milpitas trench facets: infra geometry (a ground-coloured coping on the walls' outer top); DATA: fewer, longer
    trench / cut-and-cover pieces.
 3. The faint line at lat 38.07 over San Pablo Bay (terrain vs Globe water shading; the data now match in tone).
@@ -32,6 +38,29 @@ BART line; ground that meets the BART structures; world quality in the East Bay;
 6. The 90 broadly different pre-Metro mosaic parents (built from older children; left alone by the lead's call) and the
    invisible JPEG tails (~8,600 files, extra bytes or a last MCU off by a few levels): no action unless wanted.
 7. Housekeeping once Velroi has everything: delete the staging folders (`data/raw/tiles/sr_l8_stage` 470 MB, `fix_*`).
+
+**Promo shots (world):** the service day is pinned in each (SIM's `mDay('2026-09-29')`, first thing in setup; `_metro.mjs`
+is an identical copy of SIM's, last changed in bart-sim 75649ea), and each finds its moment in that day's timetable, so the draft and
+the 4K capture see the same trains, sun and moon whatever day they run.
+- P01 `p_dawn_bay` (06:15) and `p_dawn_bay_blue` (06:42, civil dawn; same framing, the draft picks one): ~100 mm from
+  600 m over the bay by Treasure Island, past Yerba Buena (below the frame): San Francisco's skyline and its reflections
+  fill the band, the Bay Bridge's west span leading in from the left. The waning gibbous moon of the 29th is high in the
+  south-west, above the frame, its glitter well below it.
+- P01 alternative `p_dawn_east` (06:50 on the 29th, into the dawn): ~65 mm from ~220 m over the water off the northern
+  Embarcadero (Piers 35-39) looking east: the east span's white tower standing clear between Treasure Island and Yerba
+  Buena right in front of the glow (the sun rises at azimuth ~91 deg, behind it), the Skyway, the East Bay and the Oakland
+  hills as silhouettes with their lights on under a sky from deep blue to warm at the horizon; a slow lateral drift. Off
+  Rincon Hill, Yerba Buena hides the east span. No aircraft (live ADS-B off, simulated traffic hidden: a clean gradient,
+  and the draft and 4K captures match).
+- P20 `p_night_flyover` (evening, found by `metroFramed`): a slow glide west-north-west at ~85 m over the Port side of
+  West Oakland, ~80 m north of the aerial, ~75 mm tilted down 6.5 deg: the aerial the leading line to the Tube portal, a
+  train 280-480 m ahead in the lower-left third at every tap, the Bay Bridge's lights on the horizon inside the band,
+  the street lamps points (32025b9, 16f4cb4).
+- P26 `p_embr_rise` (19:21:30 on the 29th = the sun of 19:26 on the 26th, the approved light): from eye level at
+  Embarcadero's A1 entrance on Market St, straight up past the towers and the Ferry Building to 2 km over the bay.
+- P27 `p_bay_night` (the busiest evening minute of the 29th, `metroBusiest`): a 25 s orbit of the whole bay at night
+  from 12 km with the Bay Bridge at its centre; smooth end to end (300 consecutive frames over the last 10 s: the
+  frame-to-frame change steady, easing out, no pops; the only local spikes are a beacon blinking at the frame edge).
 
 **M3 blocker fixed (bart-world ebd8fba ... 44c7379):** MetroGround no longer disposes Towns / Flora. Terrain re-filters its
 loaded height tiles in place; `Towns.refresh(rects)` rebuilds only the touched tiles keeping their meshes and photo

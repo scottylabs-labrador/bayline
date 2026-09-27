@@ -70,6 +70,33 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   face's body; the audit now flags any island wider than 14 m. MacArthur's lobby is now at street level too (the
   underpass mode, floor 30.4 m from the lidar at its entrance; it was 26.1 m, the terrain sampled before the lidar
   streamed, and stood in a pit graded 4.4 m under the plaza).
+- **Signs that faced their walls** (found in the promo previews): a one-sided sign with yaw = yawAt(u) faces +v, and the
+  trackway walls' big station-name panels, the concourse name signs and the concourse map were turned into their own
+  walls (the backs were culled until the navy backs arrived at 08:44, so the platforms' walls showed nothing, then
+  blank navy slabs); the platform totems' platform-number signs and maps faced into their totems. All now face the
+  room: 'Montgomery Street' with the mark and line bullets on every trackway wall and concourse wall.
+- **Footbridge walkways' glass and light strips** (found through a "white streak in the sky" in promo P12): the glass
+  panes and the ceiling light strip of every walkway segment were drawn with builders that did not take the segment's
+  frame, so they floated from the station's origin along its x axis (the walkways had no glass, and a bright bar hung
+  in the air near every footbridge station); now in the segment's frame, with a softly luminous ceiling at night.
+- **Platform furniture is solid** (benches, bins, totems, maps as walls in the walk data): walkers cannot pass through
+  them, and SIM's spawn pick (`#mst=`) keeps its line of sight clear of them (MacArthur's bin 1.5 m ahead). The crowd
+  never spawns within 2.5 m of the player, and no one is drawn within 0.8 m of the camera. Sweep
+  (`tools/metro_walk_gaps.js`: along every platform every 0.5 m, the widest run across it at least 0.25 m from every
+  wall at walking height): **0 places under 0.9 m** on all 52 records, with or without the furniture; the narrowest
+  beside furniture is 1.7 m (SFO's 5.9 m island at its back-to-back benches), the narrowest anywhere 1.4 m (Fruitvale's
+  side platforms beside the escalators).
+- **MacArthur's roof from above**: its box canopy's top was the fascia's dark brown (read as a black slab from the
+  air, promo P06); now a grey roof, the underside and fascia stay dark.
+- **SFO's real access** (hero; `access: 'end'`, `endHall()`): no more ground-level lobby with stairs under the deck.
+  The platforms meet a glazed fare hall at platform level past the bumpers (fare line, booth, ticket machines, light
+  lines, walkers), which opens at its far end toward the International Terminal's departures level (research: "East
+  end: into the International Terminal departures level (Level 3)"); the deck runs on under it, and the terminal
+  building it meets stays (the hall's keep-out is soft). Found on the way: **platforms ending at a bumper ran on past
+  it** to the end of the station's spine (the nearest point on a track sticks at its end): SFO's three faces were 264 m
+  (now 224), Oakland Airport's 60 m (46), the Coliseum connector's 56 m (38), Pittsburg / Bay Point's transfer face 266
+  m (224); every other platform unchanged (the platform check on all 52 records compared with round 2's). Walk gaps 0,
+  back faces as before (`shots/stations/sfia_end_hall*.jpg`, `sfia_platform_to_hall.jpg`).
 - **Opening rims faced outward**: the walls round an opening in a slab (escalator wells through a platform or a
   concourse roof) were wound to look out of the opening, so from inside the well they were culled and whatever stood
   beside it showed through (found at Richmond's new well: the fill's gravel beside the escalators; also the rims of the
@@ -84,13 +111,46 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   builders, several MB each, stayed alive through the update closure): about 4 MB per built station
   (`metro_shots.mjs --gc` for exact heap numbers).
 
+## Promo v3 (lead, 13:30): the station shots
+
+Modules in `tools/trailer/shots/` (the lead runs the 4K captures; previews at 1280x720 with `--preview 6`), all on
+SIM's `_metro.mjs` with the service day pinned (`__m.day('2026-09-29')`, a Tuesday) and my `_st.mjs` (stop frames from
+the timetable, the platform's side from the built walk floors, people placed by hand, a guard that hides anyone at the
+lens):
+- P03 `p_embr_arrival` 07:50 Embarcadero: low on the island edge (0.56 m, 40 mm), the train glides in and stops 7 m
+  short of the camera, doors open, the crowd boards; a 1.6 m ease forward.
+- P04 `p_mont_well` 08:00 Montgomery: down the middle stair of an escalator bank in the inclined well, 1.7 m over the
+  nosings (32 mm), riders standing on both escalators moving with the steps.
+- P10 `p_lake_merritt` 17:40: beside a standing train, diagonally across the empty far track at the black circles; its
+  doors close (a departure chosen with the far platform empty).
+- P12 `p_warm_rotunda` 19:24 blue hour: outside the rotunda (50 mm), the art glass lit, a train running in beyond.
+- P14 `p_millbrae_hall` 18:07 (SIM's meet: the Peninsula train leaves as the Red Line arrives): from the Peninsula
+  island's south end, 85 mm, north under the vault.
+- P18 `p_12th_night` 22:40: the lower level, one rider 22 m ahead, the southbound train's lights in the tunnel mouth,
+  70 mm.
+Support in the stations: `res.esc` (escalators in world coordinates), `info.rotunda` (its centre, radius, stair),
+`StationCrowds` on `window.__baylineMods`.
+
 ## Post-M3 backlog (first item, lead 09:00)
 
-1. **Millbrae cross-platform island**: Caltrain NB becomes the east face of the shared island (Peninsula layout `R`
-   from the NB edge to BART platform 3's back, ~12.6 m at the middle; SB the west side platform), Caltrain NB doors
-   open to the east; the BART face keeps its height (0.991 m over its rail) and the Caltrain face its own, with a ramp
-   between; the shared hall's west column row then moves onto the island. Needs Peninsula platform geometry and the
-   Caltrain door/stop logic: after the flip.
+1. **Millbrae cross-platform island (M3.4 proposal; needs a guarded Peninsula change)**. Today (M3.2) the Peninsula
+   layout at `place_MLBR` is one island between Caltrain's two tracks (the OSM fallback), and BART platform 3 is a
+   side platform facing west toward it across a 12-13 m gap under the shared vault. The real station: Caltrain SB on a
+   west side platform (track 5), Caltrain NB (track 4) as the west face of one island whose east face is BART platform
+   3 (track W3). Plan, all behind `Metro.on`, only for `place_MLBR`:
+   - `25_stations.js layout()` (Peninsula file: the lead's call, a ~6-line guarded override like the depot split): plats
+     `[{ side: 'R', w: 4.5 }` (SB, west of lane 1), `{ side: 'L', w: W }]` (NB, east of lane 0, W from the NB edge to BART
+     platform 3's back, read from `MetroStations` once planned: ~10.5 m at the middle); `pick()` and `doorSide()` then give
+     NB doors on the east (-1), SB on the west (+1), stop marks from the new plats. (In the Track frame +lat is west:
+     lane 0 = NB is the east lane; 'L' extends east.) Everything else of the Peninsula station (canopy, lamps,
+     furniture, boards, walk floors, prompts, Peninsula crowd) derives from `st.plats` and follows.
+   - STATIONS: BART platform 3's back meets the Caltrain face (one walking surface: BART 0.991 m over its rail, the
+     Caltrain face at its own height, a 1:12 ramp between, glass rail along the step where the ramp does not run);
+     the shared hall's west columns move onto the island; the keep-out keeps Towns / flora off the new SB platform.
+   - QA: metro-off pixel-identical at `#auto&t=09:10&at=place_MLBR&metro=0`; Caltrain NB and SB stops, door sides,
+     boarding and alighting (SIM's `qa_metro_peninsula.sh`), the walk from BART platform 3 across the island to a Caltrain
+     NB door, P14b re-previewed (its framing is unchanged; the island reads differently).
+   Estimate 3-5 h with the Peninsula QA; not for M3.3.
 2. **Market St Muni Metro level** (EMBR, MONT, POWL, CIVC; research: "the mezzanine looks down onto the Muni
    platforms"): a platform level between the mezzanine and BART with its own box and track (trains later), its
    escalators from the mezzanine, the BART wells passing it behind glass; transfer panels already say "City light rail
@@ -101,7 +161,7 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
    circles and arrows, the 16th/24th St Mitchell reliefs.
    Also seen: at Balboa Park the terrain slopes beside the cover carry the orthophoto's red platforms (MetroGround's
    carve; pre-existing, only from the air).
-6. **SFO's access**: the real station has no street-level lobby: riders leave the platforms at the east (bumper) end
+6. (done: see "SFO's real access" above; the Wind Portal still waits for an AirTrain level) **SFO's access**: the real station has no street-level lobby: riders leave the platforms at the east (bumper) end
    into the International Terminal's departures level, and at the west end go up through the Wind Portal to the
    AirTrain. Ours has a lobby on the ground under the deck with stairs down (the generic aerial pattern). Plan: an
    `end` access (a glazed fare hall at platform level beyond the bumpers, opening into the terminal building), the

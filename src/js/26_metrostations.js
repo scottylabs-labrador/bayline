@@ -87,7 +87,9 @@ const MetroStations = (() => {
     for (const id of tids) { const n = N.nearestOn(id, cx, cz); if (!n) { offs[id] = 0; continue; } N.frame(id, n.s, F2); offs[id] = (F2.x - cx) * -tz + (F2.z - cz) * tx; }
     // the station length along the reference track: all platform extents mapped to u
     const halfL = Math.max(...P.map(p => (p.s1 - p.s0) / 2), Math.max(...P.map(p => veh(p).minHalf)));
-    const margin = isOac ? 15 : 40;
+    // (a station with a fare hall past its bumpers, SFO: the spine runs on under the hall)
+    const HC = typeof StationHeroes !== 'undefined' ? StationHeroes.config(rec.id) : null;
+    const margin = (isOac ? 15 : 40) + (HC && HC.endHall ? (HC.endHall.len || 30) : 0);
     const u0 = -halfL - margin, u1 = halfL + margin;
     const vShift = tids.length > 1 ? (Math.min(...Object.values(offs)) + Math.max(...Object.values(offs))) / 2 : 0;
     // spine samples: along the reference track, shifted by vShift to the station middle
@@ -101,15 +103,17 @@ const MetroStations = (() => {
     // per-track v(u), y(u): intersect the spine normal lines with each track
     const tracks = [];
     for (const id of tids) {
-      const v = new Float32Array(spine.length), y = new Float32Array(spine.length), s = new Float32Array(spine.length);
+      const v = new Float32Array(spine.length), y = new Float32Array(spine.length), s = new Float32Array(spine.length), off = new Uint8Array(spine.length);
       let ok = 0;
       for (let i = 0; i < spine.length; i++) {
         const sp = spine[i]; const n = N.nearestOn(id, sp.x, sp.z);
         if (!n) continue; N.frame(id, n.s, F2);
         // lateral position of the track point in the spine frame
         const rx = -sp.tz, rz = sp.tx; v[i] = (F2.x - sp.x) * rx + (F2.z - sp.z) * rz; y[i] = F2.y; s[i] = n.s; ok++;
+        // (past the track's end the nearest point sticks at the end: the sample is off the track: a bumper)
+        const tl = N.trackLen(id) || 1e9, along = (sp.x - F2.x) * F2.dx + (sp.z - F2.z) * F2.dz; if ((n.s <= 0.05 && along < -1) || (n.s >= tl - 0.05 && along > 1)) off[i] = 1;
       }
-      tracks.push({ id, v, y, s, ok });
+      tracks.push({ id, v, y, s, ok, off });
     }
     // every other track beside the station (storage, pocket and through tracks a platform must keep clear of): its v
     // and rail height per spine sample (NaN where it is not beside the spine)
@@ -133,7 +137,9 @@ const MetroStations = (() => {
       N.frame(p.track, (p.s0 + p.s1) / 2, F2); const along = F2.dx * tx + F2.dz * tz >= 0 ? 1 : -1;
       const sideV = sideR * along;      // +1: the platform is on the +v side of its track
       // platform u-range: its s-range mapped through the track's s(u)
-      let pu0 = 1e9, pu1 = -1e9; for (let i = 0; i < spine.length; i++) { const ss = t.s[i]; if (ss >= p.s0 - 1 && ss <= p.s1 + 1) { pu0 = Math.min(pu0, spine[i].u); pu1 = Math.max(pu1, spine[i].u); } }
+      // (samples past the track's end are not the platform: a platform ending at a bumper stops there, it does not run
+      // on to the end of the spine: SFO's platforms reached 16-40 m past their bumpers)
+      let pu0 = 1e9, pu1 = -1e9; for (let i = 0; i < spine.length; i++) { const ss = t.s[i]; if (!t.off[i] && ss >= p.s0 - 1 && ss <= p.s1 + 1) { pu0 = Math.min(pu0, spine[i].u); pu1 = Math.max(pu1, spine[i].u); } }
       if (pu0 > pu1) { pu0 = -halfL; pu1 = halfL; }
       const V = veh(p);
       return { key: p.code || String(k + 1), gtfs: p.gtfs, track: p.track, sideV, u0: pu0, u1: pu1, t, yRail: stacked ? t.y[mid] : yRail, dataY: p.y, structure: p.structure,

@@ -603,8 +603,13 @@ const Towns = (() => {
         // point, not a disc: smaller, growing less with distance, a little brighter; at eye level unchanged (Bayline Metro world)
         float up = smoothstep(30.0, 180.0, cameraPosition.y - (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y);
         float dist = length(c.xyz); float s = mix(0.8, 2.4 + dist * mix(0.004, 0.0015, up), smoothstep(8.0, 160.0, dist)) * mix(1.0, 0.45, up);
+        // the glare is the lens's bloom, so it keeps its size in pixels whatever the focal length: on a long lens (vertical
+        // fov under 55 deg) it shrinks with the lens, k = tan(fov / 2) / tan(27.5 deg), keeping the apparent size and
+        // brightness it has on the normal lens (the lit luminaire itself, 0.6 m, stays); the normal lens and wider: unchanged
+        float lensK = projectionMatrix[2][3] < -0.5 ? min(1.0, 1.0 / (projectionMatrix[1][1] * 0.520567)) : 1.0;
+        vA = uNight * clamp(2.4 / s, 0.25, 1.0) * mix(1.0, 1.3, up); s = max(s * lensK, min(s, 0.6));
         c.xyz += normalize(-c.xyz) * 0.6;
-        c.xy += (uv - 0.5) * s; vA = uNight * clamp(2.4 / s, 0.25, 1.0) * mix(1.0, 1.3, up); gl_Position = projectionMatrix * blBend(c);
+        c.xy += (uv - 0.5) * s; gl_Position = projectionMatrix * blBend(c);
         #include <logdepthbuf_vertex>
       }`,
     fragmentShader: `#include <common>

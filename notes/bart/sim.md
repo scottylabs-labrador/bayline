@@ -284,6 +284,33 @@ location = /bartrt/tripupdate {
 API (`api.bart.gov/api/etd.aspx`, CORS `*`, public key), polled every 20 s by each client that turns Live on.
 The data is © BART under its developer license (free, as-is; no BART marks in the game).
 
+## Promo v3 (2026-09-26): SIM's shots and the metro shot helpers
+
+- **`tools/trailer/shots/_metro.mjs`** (page-side, like `_lib.mjs`; `${metro}` installs `window.__m`, or the self-installing
+  one-liners `mPass`, `mMeet`, `mCross`, `mArrive`, `mDepart`, `mPair`, `mPairs`, `mPick`, `mPose`, `mTrack`, `mScout`,
+  `mDay`, `mReady`). Trains by timetable, never by luck: `pass(where, f, after, lead)` (the first train past a place:
+  station id, `{lat, lon}`, `{x, z}` or `{track, s}`; filters line / dest / kind / heading / minV / stopping),
+  `meet` (two trains past a place within a gap), `crossings(track, s0, s1, after, until)` (where and when trains pass each
+  other along a stretch; the timetable is periodic, so they meet at the same spots every cycle), `arrive` / `depart`,
+  `pair` / `pairs` (a metro and a Peninsula train at an interchange: Millbrae has no standing overlap on a weekday; with
+  a 30 s margin the Peninsula train leaves as a Red Line train arrives, xx:07:30), `pose` / `rel` / `ahead` / `cab`
+  (car poses, the cab eye) / `pick` / `track` / `focus`, `sight` / `scout` (lines of sight through the loaded world),
+  `day(ymd)` (pins the date for the whole game: both timetables' service day and the sun; all shots pin Tuesday
+  2026-09-29), `ready()`.
+- MetroSim: level of detail and the near budget go by the apparent distance under a long lens (99ab30a); the air map
+  dots are off in captures unless `MetroSim.dotsInCapture` (e2f8edb). MetroUI: `mapState` (the system map's view) and
+  `mapState.trainScale` (marker size, default 1).
+- **Shots** (all previewed on the M3.2 candidate; sheets `notes/bart/shots/promo/p_*.jpg`; scouting with a multi-view
+  tool: one Chrome, several viewpoints at the real lens, in the scratchpad): P02 p_tube_portal (approved), P05
+  p_woak_pass (approved; 135 mm down the West Oakland aerial toward downtown, two trains meeting 550 m out at 07:05),
+  P06 p_mcar_crane (approved; platform to a 60 m crane off the north end), P08 p_concord_viaduct (approved for the
+  draft; 70 mm: 135 mm cannot hold both the train and Diablo's summit without trees hiding the train), P11
+  p_oak_connector (backlit silhouette near the airport), P13 p_antioch_dmu (approved), P16 p_tube_cab (framing final;
+  TRAINS' cabLook, awaited in prime), P19 p_live_map (approved; the schematic view pull-out, markers 1.9x), P22
+  p_fremont_chase (night, 120 fps), P24 p_wye_top (night, down the aerial into the Wye).
+- Found on the way: WORLD's streetlight pool quad on the cut trench floor at the Tube portal (fixed by WORLD 21246e1);
+  the streetlight glow discs from above (routed to WORLD).
+
 ## M3.1 (2026-09-26, after M3 shipped with the metro on by default; bart-sim + bart b97272a, metro/ = promoted M2b)
 
 - **Final verification on the M3.1 build** (bart-sim 0d65b58 + bart b97272a, metro on by default, 12:14-13:00):
