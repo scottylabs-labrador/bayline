@@ -30,7 +30,8 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   top-down plans (SVG). Results for M3.4 so far (against db6f2d8): all 52 stations build, only MLBR and MCAR change
   in size; walk gaps 0 on all 52; with the metro off all 31 Peninsula stations are identical (layouts and geometry
   hashes); with the metro on only place_MLBR changes; the Millbrae walk check passes (below).
-- **Millbrae cross-platform island** (2fde725, WIP, written while the GPU is reserved; not yet run, not for merge).
+- **Millbrae cross-platform island** (2fde725, e5af123, 795f26b, e8fe93e, 0568fc1; built and verified; unmerged, for
+  the lead's M3.4 gate after M3.3).
   Facts from the data: the Peninsula lanes spread 5.4-7.4 m at Millbrae (the fallback island was 2-4 m wide);
   platform 3's back runs 5.6-7.6 m east of the northbound edge; Caltrain's rails are 1.3 m over the metro's, so a
   Caltrain face (rail + 0.25) stands 0.35-0.56 m over platform 3 (rail + 0.991); OSM maps validators, ticket machines,
@@ -55,8 +56,16 @@ Files owned: `src/js/26_metrostations.js`, `src/js/27_*.js` (station kit, heroes
   southbound platform (foot 14 m further west).
   The published lidar ground under the strip and the new southbound platform is 4.04-4.19 m (the strip's floor 4.90,
   the Caltrain faces 5.30-5.47): nothing pokes through.
-  Still to run on the GPU: before/after views metro on and off, the Peninsula suite with `METRO=1`/`METRO=0` (stops,
-  door sides, boarding).
+  **In the page (20:41-20:54, GPU free)**: the walk check gives the same result as offline; Caltrain doors at Millbrae
+  open on the right sides (northbound train 641: 14 doors 1.7-1.8 m east of its lane, onto the island face; southbound
+  642: 1.7-1.8 m west, onto the new side platform); before/after views metro on (`shots/stations/mlbr_island_
+  before_after_1.jpg`, `_2.jpg`: the gravel pit between the northbound track and platform 3 becomes the island with the
+  turquoise fence, steps and ramp; the southbound side platform appears, the footbridge's west stair lands beyond it,
+  `mlbr_island_face_night.jpg`); metro off: the same ten views before/after differ only where things move (traffic,
+  crowds, tree wind, TAA noise), the station geometry matching (and offline all 31 Peninsula stations hash identical).
+  Exit signs (`shots/stations/exit_signs_before_after.jpg`: 12th/19th lower levels' navy backs become "Street · Exit"),
+  platform ends (`platform_ends_before_after.jpg`: WOAK, HAYW, FRMT, MCAR, COLM, SANL, the hollow ends now solid),
+  MacArthur's roof (one roof, the same look and brightness day and night).
 
 ## Since the M3 report (09:10)
 
