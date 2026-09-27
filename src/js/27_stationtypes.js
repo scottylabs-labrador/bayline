@@ -1511,8 +1511,10 @@ const StationTypes = (() => {
       const uOpen = g.uHead, uClosed = up ? (hTop ? (g.dir > 0 ? (hTop.cu0 ?? hTop.u0) : (hTop.cu1 ?? hTop.u1)) : (g.dir > 0 ? u0 + 2 : u1 - 2)) : g.uFoot;
       const railPts = (vv) => { const pts = []; const ua = Math.min(uOpen, uClosed), ub = Math.max(uOpen, uClosed); for (let u = ua; u <= ub + 1e-6; u += 2) { const [x, z] = T.L2(Math.min(u, ub), vv); pts.push([x, yUp, z]); } return pts; };
       const zR = g.upPlat ? (g.upPlat.zone || zones[0]) : up ? zC : zP;
-      SP.railing(zR.d, railPts(hv0), 1.07, 'glass'); SP.railing(zR.d, railPts(hv1), 1.07, 'glass');
-      { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, 'glass'); }
+      // (a station's own railings, research: 12th St's bronze bars; glass elsewhere)
+      const RS = T.H.rail ? [T.H.rail.infill || 'bars', T.H.rail.col] : ['glass'];
+      SP.railing(zR.d, railPts(hv0), 1.07, ...RS); SP.railing(zR.d, railPts(hv1), 1.07, ...RS);
+      { const [x0, z0] = T.L2(uClosed, hv0), [x1, z1] = T.L2(uClosed, hv1); SP.railing(zR.d, [[x0, yUp, z0], [x1, yUp, z1]], 1.07, ...RS); }
       for (const vv of [hv0, hv1]) { const a = T.WUV(Math.min(uOpen, uClosed), vv), b = T.WUV(Math.max(uOpen, uClosed), vv); addWall(T.walk, a, b, yUp - 0.5, yUp + 2.5); }
       addWall(T.walk, T.WUV(uClosed, hv0), T.WUV(uClosed, hv1), yUp - 0.5, yUp + 2.5);
       // direction signs over the group's foot (and, where the station has transfers, the transfer panel beyond it), hung
@@ -1587,7 +1589,7 @@ const StationTypes = (() => {
       // gates: local +X = paid side; face -1 -> paid side is +u
       T.placeB(zC.d, ug, v0, yCF, face < 0 ? 0 : Math.PI); SP.fareGates(zC.d, nG); T.popB(zC.d);
       // fixed barriers (glass) from the walls to the gate array
-      for (const [va, vb] of [[a, v0], [v0 + arrW, b]]) { const [x0, z0] = T.L2(ug, va + 0.1), [x1, z1] = T.L2(ug, vb - 0.1); SP.railing(zC.d, [[x0, yCF, z0], [x1, yCF, z1]], 1.25, 'glass'); addWall(walk, W2(x0, z0), W2(x1, z1), yCF - 0.5, yCF + 2.5); }
+      for (const [va, vb] of [[a, v0], [v0 + arrW, b]]) { const [x0, z0] = T.L2(ug, va + 0.1), [x1, z1] = T.L2(ug, vb - 0.1); SP.railing(zC.d, [[x0, yCF, z0], [x1, yCF, z1]], 1.25, ...(T.H.rail ? [T.H.rail.infill || 'bars', T.H.rail.col] : ['glass'])); addWall(walk, W2(x0, z0), W2(x1, z1), yCF - 0.5, yCF + 2.5); }
       // gate cabinets as walls (aisles stay open in walk mode)
       // agent booth on the unpaid side next to the array
       T.placeB(zC.d, ug - face * 3.5, b - 2.4, yCF, 0); SP.agentBooth(zC.d, { w: 3.0, d: 2.2 }); T.popB(zC.d);

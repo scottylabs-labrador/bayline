@@ -12,6 +12,7 @@
 //   cols      platform-level columns in subway stations: { rows, across, along, shape, size, col, kind }
 //   benches   round platform benches: 'bullseye' (terrazzo) | 'drum' (precast); benchStyle: the long benches' style
 //             ('steel' | 'stone' | 'terrazzo' | 'wood'; default steel, stone underground), benchCol its colour
+//   rail      the station's own railings (well guards, the fare line's): { infill: 'bars' | 'glass', col }; default glass
 //   light     [r, g, b] lamp colour; lightI
 //   feature   named hero features built by StationHeroes.build(name, T)
 // Everything else falls back to the era defaults.
@@ -66,7 +67,7 @@ const StationHeroes = (() => {
     // ---------------------------------------------------------------- Oakland core
     WOAK: { layout: 'side', type: 'aerial', access: 'below', floor: CONC(0x9a958c), deck: FLUTE(0xb9b3a7, 0.1), canopy: { style: 'hipped', len: 100, top: 0x55807e, under: 0x6d8f8b, fascia: 0x3f6f6d, posts: { shape: 'rect', col: 0x3f6f6d, size: 0.3, spacing: 9, where: 'back' } },
       windscreen: 0x35598c, ends: 'poles', poleCol: 0x3f6f6d, hero: 1 },
-    '12TH': { type: 'subway', access: 'above', stacked: true, floor: [0xc8bca6, K.GRANITE, 0.4], wall: TILE(0xeae6dc, 0.2), band: 0xd0512b, wallUp: [0x6b2a22, K.BRICK, 1], ceil: [0xecebe7, K.COFFER, 2.4],
+    '12TH': { type: 'subway', access: 'above', stacked: true, rail: { infill: 'bars', col: 0x8a6a3c }, floor: [0xc8bca6, K.GRANITE, 0.4], wall: TILE(0xeae6dc, 0.2), band: 0xd0512b, wallUp: [0x6b2a22, K.BRICK, 1], ceil: [0xecebe7, K.COFFER, 2.4],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 1.2, depth: 1.2, col: 0x6b2a22, kind: K.BRICK }, cFloor: [0xc8bca6, K.GRANITE, 0.4], cWall: [0x6b2a22, K.BRICK, 1], cCeil: [0xecebe7, K.COFFER, 2.4], hero: 1 },
     '19TH': { type: 'subway', access: 'above', stacked: true, floor: [0xc8bca6, K.GRANITE, 0.4], wall: TILE(0xeae6dc, 0.2), band: 0x2a4fa0, wallUp: [0x1f3570, K.BRICK, 1], ceil: [0xecebe7, K.COFFER, 2.4],
       cols: { rows: 1, across: 0, along: 12, shape: 'rect', size: 1.2, depth: 1.2, col: 0x1f3570, kind: K.BRICK }, cFloor: [0xc8bca6, K.GRANITE, 0.4], cWall: [0x1f3570, K.BRICK, 1], cCeil: [0xecebe7, K.COFFER, 2.4], hero: 1 },
