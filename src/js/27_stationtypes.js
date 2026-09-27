@@ -2288,7 +2288,8 @@ const StationTypes = (() => {
       const top = X.y(q.u), dF = q.n * 0.32;
       addSlope(walk, [[q.u - 1.45, -o * 0.05, top], [q.u + 1.45, -o * 0.05, top], [q.u + 1.45, o * dF, yP], [q.u - 1.45, o * dF, yP]].map(([u, dv, y]) => [...WUV(u, vf + dv), y]));
       for (const x of [-1.5, 1.5]) addWall(walk, WUV(q.u + x, vf - o * 0.3), WUV(q.u + x, vf + o * (q.D + 0.2)), yP - 0.5, top + 1.1);
-      // the transfer panel over the steps, facing platform 3, hung from its roof where the roof reaches
+      // the transfer panel over the steps, facing platform 3, hung from its roof where the roof reaches (its back, toward the
+      // Caltrain face, carries the wordmark: signGeometry)
       const cv = X.p3.canopy; if (cv && q.u > cv[0] + 2 && q.u < cv[1] - 2) { const vs = vf + o * Math.min(q.D + 0.8, X.width(q.u) - 0.4), ys = yP + 2.75;
         z.signs.push({ u: q.u, v: vs, y: ys, yaw: T.yawAt(q.u) + (o > 0 ? 0 : Math.PI), w: 3.4, h: 0.64, region: 'info', both: false, T });
         T.place(z.d.sk, q.u, vs, ys + 0.3, 0); z.d.sk.mat(0x2a2c2e, K.PAINT); for (const x of [-1.5, 1.5]) z.d.sk.cbox(x, 0, 0, 0.03, 0.72, 0.03); z.d.sk.pop(); }
@@ -2702,18 +2703,26 @@ const StationTypes = (() => {
     const pos = [], nor = [], uv = [], idx = []; let n = 0;
     for (const s of list) {
       const [x, z] = s.T.L2(s.u, s.v); const r = rect[s.region] || rect.nameS;
-      // (a one-sided sign gets a plain navy back: seen from behind it was an invisible plane)
+      // (a one-sided sign gets a back: seen from behind it was an invisible plane)
       const faces = s.both ? [s.yaw, s.yaw + Math.PI] : [s.yaw, s.yaw + Math.PI];
       for (const yaw of faces) {
         const back = !s.both && yaw !== s.yaw;
         const c = Math.cos(yaw), sn = Math.sin(yaw); const ax = c, az = -sn; const nx = sn, nz = c;
         const hw = s.w / 2, hh = s.h / 2; const off = s.both ? 0.02 : back ? -0.002 : 0.004;
         const cx = x + nx * off, cz = z + nz * off;
-        const P = [[cx - ax * hw, s.y - hh, cz - az * hw], [cx + ax * hw, s.y - hh, cz + az * hw], [cx + ax * hw, s.y + hh, cz + az * hw], [cx - ax * hw, s.y + hh, cz - az * hw]];
         const q = rect.exit, nv = [q[0] + 0.001, q[3] - 0.004, q[0] + 0.004, q[3] - 0.001];            // (a navy corner of the atlas)
-        const UVs = back ? [[nv[0], nv[1]], [nv[2], nv[1]], [nv[2], nv[3]], [nv[0], nv[3]]] : [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]];
-        for (let k = 0; k < 4; k++) { pos.push(...P[k]); nor.push(nx, 0, nz); uv.push(...UVs[k]); }
-        idx.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4;
+        const quad = (x0, x1, y0, y1, t) => { if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4) return;
+          const Q = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], T2 = [[t[0], t[1]], [t[2], t[1]], [t[2], t[3]], [t[0], t[3]]];
+          for (let k = 0; k < 4; k++) { pos.push(cx + ax * Q[k][0], s.y + Q[k][1], cz + az * Q[k][0]); nor.push(nx, 0, nz); uv.push(...T2[k]); }
+          idx.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4; };
+        if (!back) { quad(-hw, hw, -hh, hh, r); continue; }
+        // the back: navy, the metro's wordmark in its middle (a hanging sign seen from behind was a blank navy board that
+        // read as a sign turned the wrong way: Millbrae's transfer panels from the Caltrain face, the exit signs from the
+        // stairs they point to); the navy around the wordmark in four bands, coplanar with it (no overlap, no z-fighting)
+        const wb = rect.back; if (!wb) { quad(-hw, hw, -hh, hh, nv); continue; }
+        const A = (typeof MetroSigns !== 'undefined' && MetroSigns.BACK_ASPECT) || 256 / 56, wh = Math.min(0.8 * s.h, 0.96 * s.w / A), ww = wh * A;
+        quad(-ww / 2, ww / 2, -wh / 2, wh / 2, wb);
+        quad(-hw, -ww / 2, -hh, hh, nv); quad(ww / 2, hw, -hh, hh, nv); quad(-ww / 2, ww / 2, wh / 2, hh, nv); quad(-ww / 2, ww / 2, -hh, -wh / 2, nv);
       }
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
