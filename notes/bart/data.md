@@ -494,7 +494,89 @@ grade or class; hover any track; the bottom strip is the vertical profile of the
 
 See the table in notes/bart-data.md (platform height, transfer timings, grades, speed limit model, consists).
 
+## Terrain check for WORLD: terrarium vs lidar along freeways and major roads (2026-09-27, lead request)
+
+`python3 tools/metro/terrain_check.py --json notes/bart/terrain_check.json` (tools only; the metro data is untouched).
+It samples every OSM motorway / trunk / primary / secondary way and their links at grade (no bridge, tunnel or cover)
+within 150 m of any metro track. That is 3,377 ways, and 23,528 samples every 20 m have lidar. At each sample it
+compares the AWS terrarium z15 surface (WORLD's base) with the USGS 3DEP 1 m bare-earth lidar.
+
+- **diff** = terrarium − lidar. HIGH means the world's base is above the real ground (ground patches through the
+  road); LOW means it is below.
+- 898 samples (3.8 %) differ by more than 3 m. They form **30 stretches**: at least 3 samples, same road merged
+  within 250 m.
+- Machine-readable list, with the OSM way ids per stretch: `notes/bart/terrain_check.json`.
+
+| # | road | area | lat / lon range | length (m) | max diff (m) | mean diff (m) | sign | nearest metro track, s |
+|---|---|---|---|---|---|---|---|---|
+| 1 | SR-4 | Willow Pass, west slope (north strip) | 38.0107-38.0170 N, -122.0178 to -121.9904 | 3560 | +41.7 | -8.5 | mixed (40 high / 136 low) | C1 34779-36999 |
+| 2 | SR-4 | Willow Pass (north strip) | 38.0149-38.0223 N, -121.9947 to -121.9789 | 2600 | +44.8 | +8.7 | mixed (78 high / 52 low) | C2 36527-38092 |
+| 3 | SR-4 ramp | Willow Pass (north strip) | 38.0127-38.0174 N, -122.0030 to -121.9905 | 1880 | +39.8 | +9.1 | mixed (66 high / 28 low) | C2 35752-36992 |
+| 4 | SR-4 ramp | Willow Pass (north strip) | 38.0154-38.0171 N, -121.9943 to -121.9903 | 320 | +43.3 | +24.7 | terrarium HIGH | C1 36789-37009 |
+| 5 | SR-4 | North Concord (north strip) | 38.0096-38.0114 N, -122.0219 to -122.0130 | 1160 | -14.3 | -10.4 | terrarium LOW | C2 34207-34852 |
+| 6 | SR-4 ramp | North Concord (north strip) | 38.0065-38.0108 N, -122.0229 to -122.0139 | 1660 | -11.3 | -8.9 | terrarium LOW | C-yd2 163-546 |
+| 7 | Willow Pass Road | Willow Pass (north strip) | 38.0125-38.0142 N, -121.9980 to -121.9970 | 340 | +14.2 | +4.4 | mixed (13 high / 4 low) | C1 36264-36284 |
+| 8 | Eastshore Freeway (I 80) | El Cerrito del Norte (north strip) | 37.9295-37.9323 N, -122.3259 to -122.3235 | 520 | -7.2 | -4.5 | terrarium LOW | R2 3074-3239 |
+| 9 | John F Foran Freeway (I 280) | Glen Park (square) | 37.7312-37.7316 N, -122.4354 to -122.4347 | 160 | +11.9 | +8.3 | terrarium HIGH | M2 16234-16304 |
+| 10 | SR-4 ramp | Bailey Rd (north strip) | 38.0217-38.0220 N, -121.9673 to -121.9665 | 160 | +10.4 | +6.4 | terrarium HIGH | C1 39279-39354 |
+| 11 | East Warren Avenue | Warm Springs (square) | 37.4856-37.4861 N, -121.9317 to -121.9304 | 280 | +6.7 | +5.4 | terrarium HIGH | A1.2 29813-29823 |
+| 12 | SR-4 ramp | SR-4, Pittsburg Center-Antioch (north strip) | 37.9984-37.9986 N, -121.8038 to -121.8002 | 340 | -5.5 | -4.7 | terrarium LOW | E2 11126-11441 |
+| 13 | SR-4 | SR-4, Pittsburg Center-Antioch (north strip) | 38.0092-38.0106 N, -121.8613 to -121.8562 | 500 | -4.3 | -3.5 | terrarium LOW | E2 5803-6283 |
+| 14 | Port Chicago Highway | North Concord (north strip) | 38.0049-38.0071 N, -122.0237 to -122.0228 | 320 | -5.2 | -3.9 | terrarium LOW | C-yd2 14-233 |
+| 15 | SR-4 | SR-4, Pittsburg Center-Antioch (north strip) | 37.9984-37.9984 N, -121.8022 to -121.7982 | 380 | -4.1 | -3.7 | terrarium LOW | E2 11261-11616 |
+| 16 | SR-4 ramp | SR-4, Pittsburg Center-Antioch (north strip) | 38.0028-38.0039 N, -121.8387 to -121.8359 | 300 | +4.4 | +1.8 | mixed (11 high / 3 low) | E1 7938-8208 |
+| 17 | freeway ramp | El Cerrito del Norte (north strip) | 37.9310-37.9320 N, -122.3252 to -122.3247 | 140 | -6.4 | -5.1 | terrarium LOW | R1 13779-13829 |
+| 18 | 40th Street | MacArthur (square) | 37.8294-37.8296 N, -122.2672 to -122.2667 | 120 | +6.9 | +6.6 | terrarium HIGH | K2 59-74 |
+| 19 | SR-4 ramp | SR-4, Pittsburg Center-Antioch (north strip) | 38.0117-38.0121 N, -121.8668 to -121.8655 | 140 | +6.2 | +4.7 | terrarium HIGH | E2 5293-5413 |
+| 20 | SR-4 | SR-4, Pittsburg Center-Antioch (north strip) | 37.9984-37.9984 N, -121.8155 to -121.8141 | 140 | +5.8 | +4.4 | terrarium HIGH | E2 10086-10206 |
+| 21 | SR-4 ramp | SR-4, Pittsburg Center-Antioch (north strip) | 37.9984-37.9993 N, -121.8199 to -121.8187 | 220 | -4.3 | -3.7 | terrarium LOW | E1 9702-9812 |
+| 22 | freeway ramp | Castro Valley (square) | 37.6903-37.6912 N, -122.0731 to -122.0708 | 200 | +4.4 | -0.6 | mixed (4 high / 6 low) | L2 17167-17272 |
+| 23 | SR-4 ramp | SR-4, Pittsburg Center-Antioch (north strip) | 38.0004-38.0011 N, -121.8266 to -121.8235 | 200 | +4.1 | +0.1 | mixed (5 high / 5 low) | E2 9052-9332 |
+| 24 | freeway ramp | Warm Springs (square) | 37.4871-37.4875 N, -121.9326 to -121.9318 | 140 | +4.6 | +3.9 | terrarium HIGH | A1.2 29608-29663 |
+| 25 | SR-4 ramp | SR-4, Pittsburg Center-Antioch (north strip) | 37.9963-37.9967 N, -121.7849 to -121.7840 | 120 | +4.8 | +4.1 | terrarium HIGH | E2 12810-12890 |
+| 26 | SR-4 | SR-4, Pittsburg Center-Antioch (north strip) | 38.0015-38.0019 N, -121.8312 to -121.8298 | 160 | +3.5 | +3.3 | terrarium HIGH | E1 8628-8768 |
+| 27 | Port Chicago Highway | North Concord (north strip) | 38.0035-38.0038 N, -122.0248 to -122.0245 | 60 | +5.3 | +4.6 | terrarium HIGH | C2 33427-33467 |
+| 28 | freeway ramp | Orinda (north strip) | 37.8630-37.8636 N, -122.2097 to -122.2095 | 80 | +3.9 | +3.5 | terrarium HIGH | C1 5969-6009 |
+| 29 | freeway ramp | MacArthur (square) | 37.8283-37.8287 N, -122.2666 to -122.2665 | 60 | +3.9 | +3.8 | terrarium HIGH | K1 169-209 |
+| 30 | SR-4 | SR-4, Pittsburg Center-Antioch (north strip) | 37.9952-37.9953 N, -121.7811 to -121.7804 | 80 | -3.1 | -3.1 | terrarium LOW | E1 13167-13227 |
+
+**SR-4 from Pittsburg Center to Antioch (the suspect).** The 3 m stretches above (#12, 13, 15, 16, 19-21, 23, 25, 26, 30)
+understate it. Taking every SR-4 and ramp sample within 150 m of the eBART tracks (2,153 samples):
+
+- From Railroad Ave (-121.87) to Antioch (-121.76), 30-41 % of samples differ by more than 1.5 m and 9-11 % by more
+  than 3 m, up to +6.2 / -5.5 m. Mostly the terrarium is LOW, with HIGH patches: a pre-widening surface.
+- West of Railroad Ave (-121.90 to -121.87) the mean difference is only 0.15 m.
+
+Suggested rebake areas (base surface from the lidar's own low-pass; the L8 3DEP tiles are in `data/raw/lidar3dep/8/`):
+
+1. **Willow Pass and North Concord**, stretches #1-7, 14, 27: 38.003-38.023 N, -122.025 to -121.978 (C1/C2 s
+   33400-38200). Terrarium is up to +45 m / -14 m off, through the summit cut and over the fills of the regraded SR-4.
+2. **SR-4 Pittsburg Center to Antioch**, the whole corridor, not only the 3 m stretches: 37.994-38.013 N, -121.870 to
+   -121.765. Differences are 1.5-6 m, which matches the patches through the road ribbon.
+3. **Isolated spots**, worth it only where WORLD's base there is terrarium; the square south of 37.8429 may already use
+   another source:
+   - I-80 at El Cerrito del Norte (#8, 17): -7 m.
+   - I-280 at Glen Park (#9): +12 m.
+   - The Bailey Rd ramp at Pittsburg/Bay Point (#10): +10 m.
+   - East Warren Ave and its ramp at Warm Springs (#11, 24): +7 m.
+   - 40th St and the ramp at MacArthur (#18, 29): +7 m.
+   - Ramps at Castro Valley (#22) and Orinda (#28): +/-4 m.
+
 ## Requests for other workstreams
+
+- **WORLD (2026-09-27, from INFRA's Willow Pass question):** the SR-4 corridor over Willow Pass (C1/C2 s ~36300-38000,
+  38.015-38.021 N, -121.994 to -121.981) is a 60-100 m wide freeway cut whose floor the 3DEP 1 m lidar puts at 101-114 m,
+  with BART at freeway grade in the median (the rails follow that lidar floor within 0.3 m). The terrarium z15 surface
+  there has no cut (141.7 m against 101.6 m on the centreline at s 37000), and h9's "L7 surface + lidar detail" cannot
+  restore a feature this wide, so the terrain, and the freeway on it, sit 15-40 m above the rails. Please take the base
+  surface along this corridor from the lidar's own low-pass (the L8 3DEP tiles are in data/raw/lidar3dep/8/). Not a
+  trench: there are no retained walls between the tracks and the lanes. **Whole network checked** (every main track,
+  open and aerial samples every 20 m, terrarium vs 3DEP lidar at the centreline): the only stretches where they differ
+  by > 10 m over >= 60 m are all on this corridor, from east of North Concord to past the summit (C1/C2 s 33780-38120,
+  38.006-38.021 N, -122.022 to -121.980): terrarium is 11-42 m too HIGH through the summit cut (s 36540-37420, worst
+  +42 m) and at s 33780-33880 / 36100-36180, and 10-28 m too LOW where the regraded freeway runs on fill (s
+  35060-36020, worst -28 m; s 34780-34900; s 37820-38120). Terrarium there predates the regraded SR-4. Everywhere
+  else along BART the two agree within 10 m.
 
 - **sim**: the timetable's `legs[k]` align with `patterns[pat].legs[k].stops`; a trip's DMU leg and EMU leg are separate
   vehicles. Include yesterday's trips after midnight (times > 86400).
